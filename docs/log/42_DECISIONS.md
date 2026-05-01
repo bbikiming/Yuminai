@@ -1,6 +1,64 @@
 # Decisions Log (ADR-lite)
 
-> 최신: ADR-026 (멀티 에이전트 기반 + Codex CLI + cokacdir chat label)
+> 최신: ADR-027 (v0.4 라운드 기획 — 5개 주제 + Phase 분할 + 외부 OSS 근거)
+
+---
+
+## ADR-027 — v0.4 라운드 기획 + GitHub 최상위 스타 레퍼런스 근거 채택
+
+- **날짜**: 2026-05-01
+- **상태**: Accepted (planning) — 구현 시 phase별 별도 ADR-028~031로 세부 결정
+- **결정**: v0.4 라운드를 5개 주제 (M1 멀티에이전트 패널 / M2 인터-에이전트 메시지 / M3 diff review / M4 delivery loop / M5 embedded terminal-preview)로 정의. 각 주제는 GitHub 최상위 스타 OSS 패턴을 1차 근거로 채택. Phase 분할 (A→B→C→D→E)로 순차 commit
+- **컨텍스트**:
+  - 사용자 — "다음 라운드 각 항목 효율성을 고려해서 기획하고 설계 진행해 줘. 깃허브 최상위 스타 래퍼지토리를 근거와 래퍼런스로 조사하고 기획에 반영해 줘"
+  - codex 식별 5 거대 gap + ADR-026 1단계 후속(인터-에이전트 메시지)
+  - 자체 발명 X — 검증된 패턴만 차용
+- **리서치 방법**:
+  - research-analyst agent (background) — `gh` CLI로 23개 OSS 메타데이터 + README 분석
+  - 카테고리: 멀티 에이전트 프레임워크 / AI 코딩 어시스턴트 / Diff review / Delivery loop / Terminal-Preview
+  - 결과: `docs/research/01_NEXT_ROUND_REFERENCES.md` (270 lines, 1.1M+ stars 합계)
+- **주제별 1순위 reference + 차용**:
+  | M | 주제 | 1순위 ref (stars) | 핵심 차용 |
+  |---|------|------------------|----------|
+  | M1 | 멀티 에이전트 패널 | AutoGen AgentTool (57.6k) + Aider Architect/Editor (44.2k) | 메인 agent가 보조를 tool로 호출 + 좌/우 split UI |
+  | M2 | 인터-에이전트 메시지 | MetaGPT 메시지 환경 (67.6k) | publish/subscribe bus + `@codex` mention |
+  | M3 | Diff review | Cline checkpoint (61.2k) + Aider git-as-source (44.2k) | git이 단일 진실의 원천, view-only diff (editable v0.5) |
+  | M4 | Delivery loop | Aider --auto-test (44.2k) + Devin step budget | 단순 retry counter, max-attempts=3, max-time=5min hard cap |
+  | M5 | Terminal/Preview | SwiftTerm (Miguel de Icaza) + Warp block UX (50.8k) | macOS native PTY + block-단위 output |
+- **핵심 의사결정 근거 (evidence)**:
+  - **AutoGen은 maintenance mode** (Microsoft Agent Framework 후속) → 코드 의존 X, 패턴만 차용
+  - **Aider 내부에 이미 Architect/Editor 2-LLM** (`aider/coders/architect_coder.py`) 검증됨 → Yuminai의 1ws-1agent → 2-역할 진화가 자연스러움
+  - **mini-SWE-agent 100 LoC로 SWE-bench 65%** → "loop은 단순할수록 좋다"는 강한 증거. graph framework 없이 retry counter+budget으로 충분
+  - **Cline editable diff가 SOTA지만 SwiftUI 자체 구현 비용 큼** → v0.4는 view-only, editable v0.5
+  - **ACP (Agent Client Protocol) 부상** (3.0k stars but Zed push, obsidian-agent-client 1.9k 인접 use case) — Yuminai의 정확한 표준 후보지만 Swift SDK 부재 → v0.5 별도 spike
+- **횡단 결정**:
+  - **외부 의존성 정책 변경** — SwiftTerm 추가 (두 번째 외부 dep, 첫째: swift-markdown-ui). M5 phase 시작 시 ADR-031로 세부 명시
+  - **Runtime sandbox**: Docker X, NSTask + sandboxed dir (macOS native 정체성 우선)
+  - **AutoGen 코드 의존**: X (maint mode), 패턴만
+- **Phase 순서** (의존성 + 가치 기반):
+  - A (M3 + M5.a): Diff review + 기본 terminal — 가장 가치 + 단순
+  - B (M4 + M5.b): Delivery loop + Warp block — A 의존
+  - C (M1.a + M1.b): Multi-pane foundation + split — 가장 큰 변경
+  - D (M2): Inter-agent message — C 후 자연스러움
+  - E (M5.c + Codex schema): Preview + Codex 정밀화 — 마무리
+- **결과**:
+  - `docs/design/83_NEXT_ROUND_PLAN.md` (440+ lines, evidence-based)
+  - `docs/research/01_NEXT_ROUND_REFERENCES.md` (270 lines, 23 OSS)
+  - 5 phase, 11-15 commits 예상, 4-6주 작업
+  - ADR-028 ~ 031 phase별 추가 예정
+- **Open Questions** (사용자 답변 시 plan 업데이트):
+  - Q1 split vs tab 우선? (권고: split)
+  - Q2 diff accept policy? (권고: manual, hybrid v0.5)
+  - Q3 delivery loop trigger? (권고: 자동 + hard cap)
+  - Q4 SwiftTerm 외부 dep OK? (권고: OK)
+  - Q5 mention syntax? (권고: `@codex`)
+  - Q6 phase 순서? (권고: M3→M5→M4→M1→M2)
+  - Q7 ACP 채택 검토? (권고: v0.5 별도 spike)
+- **Risks**:
+  - Phase C (multi-pane) AppModel 대규모 refactor — 일정 초과 가능, split commit으로 위험 분산
+  - SwiftTerm + Yuminai 통합 사전 사례 부족 — 1-2일 spike 권장
+  - Telegram bridge ↔ multi-pane 상호작용 (primary만 forward로 단순화)
+- **재검토**: 사용자 Open Questions 답변 후 → ADR-028 (Phase A 시작 시) 작성
 
 ---
 
