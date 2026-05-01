@@ -31,6 +31,7 @@ public struct Composer: View {
     public let onStop: () -> Void
     public let onSettingsApply: (SessionSettings) -> Void
     public let onAttach: () -> Void
+    public let onAttachNote: (() -> Void)?
     public let onCreatePR: (() -> Void)?
 
     public init(
@@ -50,6 +51,7 @@ public struct Composer: View {
         onStop: @escaping () -> Void,
         onSettingsApply: @escaping (SessionSettings) -> Void,
         onAttach: @escaping () -> Void = {},
+        onAttachNote: (() -> Void)? = nil,
         onCreatePR: (() -> Void)? = nil
     ) {
         self._text = text
@@ -68,6 +70,7 @@ public struct Composer: View {
         self.onStop = onStop
         self.onSettingsApply = onSettingsApply
         self.onAttach = onAttach
+        self.onAttachNote = onAttachNote
         self.onCreatePR = onCreatePR
     }
 
@@ -193,6 +196,15 @@ public struct Composer: View {
                 help: "파일이나 폴더를 첨부합니다. Claude가 자동으로 살펴봐요.",
                 action: onAttach
             )
+
+            if let onAttachNote {
+                IconButton(
+                    "doc.text",
+                    size: 13,
+                    help: "Obsidian 노트를 첨부합니다.",
+                    action: onAttachNote
+                )
+            }
 
             if isStreaming {
                 HStack(spacing: 4) {

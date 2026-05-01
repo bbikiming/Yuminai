@@ -110,13 +110,31 @@ struct RootView: View {
                     workspacePath: currentWorkspacePath,
                     recentTools: recentToolNames,
                     vaultConfigured: appModel.isVaultConfigured,
+                    vaultRoot: appModel.vaultRootURL,
                     vaultTree: appModel.vaultTree,
-                    noteSearchQuery: $bindable.noteSearchQuery,
+                    noteSearchQuery: Binding(
+                        get: { appModel.noteSearchQuery },
+                        set: { appModel.updateSearchQuery($0) }
+                    ),
+                    fullTextEnabled: Binding(
+                        get: { appModel.noteFullTextEnabled },
+                        set: { appModel.toggleFullTextSearch($0) }
+                    ),
+                    fullTextHits: appModel.noteFullTextHits,
                     selectedNote: appModel.selectedNote,
+                    isEditing: appModel.isEditingNote,
+                    editingDraft: $bindable.editingDraft,
+                    isDirty: appModel.noteIsDirty,
+                    externalChangeDetected: appModel.externalChangeDetected,
                     onSelectNote: { path in Task { await appModel.selectNote(at: path) } },
                     onClearSelectedNote: { appModel.clearSelectedNote() },
                     onOpenInObsidian: { appModel.openCurrentNoteInObsidian() },
-                    onOpenSettings: openAppSettings
+                    onOpenSettings: openAppSettings,
+                    onWikiLink: { name in Task { await appModel.openNoteByName(name) } },
+                    onStartEditing: { appModel.startEditingNote() },
+                    onSave: { Task { await appModel.saveNote() } },
+                    onDiscardEdits: { appModel.discardEdits() },
+                    onReloadNote: { Task { await appModel.reloadNoteFromDisk() } }
                 )
                 .transition(.move(edge: .trailing).combined(with: .opacity))
             }
@@ -295,8 +313,19 @@ struct ChatPane: View {
                     onSettingsApply: { newSettings in
                         Task { await appModel.updateActiveSettings(newSettings) }
                     },
-                    onAttach: { appModel.openAttachmentPicker() }
+                    onAttach: { appModel.openAttachmentPicker() },
+                    onAttachNote: appModel.isVaultConfigured
+                        ? { appModel.showNotePicker.toggle() }
+                        : nil
                 )
+                .popover(isPresented: $bindable.showNotePicker, arrowEdge: .top) {
+                    NotePickerPopover(
+                        vaultTree: appModel.vaultTree,
+                        query: $bindable.notePickerQuery,
+                        onSelectPath: { path in appModel.attachNoteByPath(path) },
+                        onClose: { appModel.showNotePicker = false }
+                    )
+                }
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)

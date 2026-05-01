@@ -54,6 +54,22 @@ public final class AppModel {
     public var vaultTree: [VaultNode] = []
     public var selectedNote: Note?
     public var noteSearchQuery: String = ""
+    public var noteFullTextEnabled: Bool = false
+    public var noteFullTextHits: [SearchHit] = []
+
+    // 노트 편집
+    public var isEditingNote: Bool = false
+    public var editingDraft: String = ""
+    public var noteIsDirty: Bool { isEditingNote && editingDraft != (selectedNote?.body ?? "") }
+    public var externalChangeDetected: Bool = false
+
+    // NotePicker (Composer)
+    public var showNotePicker: Bool = false
+    public var notePickerQuery: String = ""
+
+    private var vaultWatcher: VaultWatcher?
+    private var watcherTask: Task<Void, Never>?
+    private var fullTextSearchTask: Task<Void, Never>?
 
     // MARK: 내부
     private var streamConsumeTask: Task<Void, Never>?
@@ -95,6 +111,12 @@ public final class AppModel {
     // MARK: - Obsidian Vault
 
     public func setupObsidianVault() async {
+        // 이전 watcher 정리
+        watcherTask?.cancel()
+        watcherTask = nil
+        vaultWatcher?.stop()
+        vaultWatcher = nil
+
         guard let path = preferences.obsidianVaultPath, !path.isEmpty else {
             obsidianVault = nil
             vaultTree = []
@@ -106,6 +128,34 @@ public final class AppModel {
         let vault = ObsidianVault(rootURL: url)
         obsidianVault = vault
         await loadVaultTree()
+
+        // file watcher 시작
+        let watcher = VaultWatcher(rootURL: url)
+        vaultWatcher = watcher
+        watcher.start()
+
+        let stream = watcher.changes
+        watcherTask = Task { [weak self] in
+            for await changes in stream {
+                await self?.handleVaultChanges(changes)
+            }
+        }
+    }
+
+    private func handleVaultChanges(_ changes: Set<String>) async {
+        await loadVaultTree()
+        // 현재 보고 있는 노트가 변경됐다면
+        if let current = selectedNote, changes.contains(current.path) {
+            if isEditingNote && noteIsDirty {
+                externalChangeDetected = true
+            } else {
+                await selectNote(at: current.path)
+            }
+        }
+    }
+
+    public var vaultRootURL: URL? {
+        obsidianVault?.rootURL
     }
 
     public func loadVaultTree() async {
@@ -124,7 +174,11 @@ public final class AppModel {
     public func selectNote(at path: String) async {
         guard let vault = obsidianVault else { return }
         do {
-            selectedNote = try await vault.read(path)
+            let note = try await vault.read(path)
+            selectedNote = note
+            editingDraft = note.body
+            externalChangeDetected = false
+            isEditingNote = false
         } catch {
             self.error = error.localizedDescription
         }
@@ -132,6 +186,126 @@ public final class AppModel {
 
     public func clearSelectedNote() {
         selectedNote = nil
+        isEditingNote = false
+        editingDraft = ""
+        externalChangeDetected = false
+    }
+
+    /// Wiki link 클릭 시 page 이름으로 노트 검색.
+    public func openNoteByName(_ name: String) async {
+        guard let vault = obsidianVault else { return }
+        let q = name.lowercased()
+        let allNotes = try? await vault.tree()
+        let path = (allNotes ?? []).flatMap { Self.flattenForSearch($0) }
+            .first { node in
+                if case .note(let nname, _, _) = node {
+                    return nname.lowercased() == q
+                }
+                return false
+            }?.path
+        if let path {
+            inspectorTab = .notes
+            await selectNote(at: path)
+        } else {
+            self.error = "‘\(name)’ 노트를 찾을 수 없어요"
+        }
+    }
+
+    private static func flattenForSearch(_ node: VaultNode) -> [VaultNode] {
+        switch node {
+        case .note: return [node]
+        case .folder(_, _, let children): return children.flatMap(Self.flattenForSearch)
+        }
+    }
+
+    // MARK: - 본문 검색
+
+    public func runFullTextSearch() async {
+        guard let vault = obsidianVault else {
+            noteFullTextHits = []
+            return
+        }
+        guard !noteSearchQuery.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+            noteFullTextHits = []
+            return
+        }
+        do {
+            noteFullTextHits = try await vault.searchFullText(noteSearchQuery, limit: 50)
+        } catch {
+            noteFullTextHits = []
+        }
+    }
+
+    public func updateSearchQuery(_ q: String) {
+        noteSearchQuery = q
+        if noteFullTextEnabled {
+            fullTextSearchTask?.cancel()
+            fullTextSearchTask = Task { [weak self] in
+                try? await Task.sleep(for: .milliseconds(250))
+                await self?.runFullTextSearch()
+            }
+        }
+    }
+
+    public func toggleFullTextSearch(_ enabled: Bool) {
+        noteFullTextEnabled = enabled
+        if enabled {
+            Task { await runFullTextSearch() }
+        } else {
+            noteFullTextHits = []
+        }
+    }
+
+    // MARK: - 편집 모드
+
+    public func startEditingNote() {
+        guard let note = selectedNote else { return }
+        editingDraft = note.body
+        isEditingNote = true
+    }
+
+    public func saveNote() async {
+        guard let vault = obsidianVault, let note = selectedNote else { return }
+        do {
+            try await vault.write(note.path, content: editingDraft)
+            // selectedNote도 갱신
+            let updated = Note(
+                path: note.path,
+                title: note.title,
+                body: editingDraft,
+                frontmatter: note.frontmatter,
+                lastModified: Date()
+            )
+            selectedNote = updated
+            externalChangeDetected = false
+        } catch {
+            self.error = "저장 실패: \(error.localizedDescription)"
+        }
+    }
+
+    public func discardEdits() {
+        guard let note = selectedNote else {
+            isEditingNote = false
+            editingDraft = ""
+            return
+        }
+        editingDraft = note.body
+        isEditingNote = false
+    }
+
+    public func reloadNoteFromDisk() async {
+        guard let path = selectedNote?.path else { return }
+        await selectNote(at: path)
+    }
+
+    // MARK: - @note 첨부
+
+    public func attachNoteByPath(_ relativePath: String) {
+        guard let root = obsidianVault?.rootURL else { return }
+        let url = root.appending(path: relativePath)
+        if !attachedFiles.contains(url) {
+            attachedFiles.append(url)
+        }
     }
 
     public func openCurrentNoteInObsidian() {

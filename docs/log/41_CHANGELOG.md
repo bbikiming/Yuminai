@@ -4,6 +4,44 @@
 
 ## [Unreleased] — 2026-05-01
 
+### Added — 노트 기능 7종 일괄 (ADR-022)
+
+사용자 요청: "다음 라운드 항목들 하나하나 상세하게 논리적으로 기획해서 구현하고 전부 마친 후에 uiux와 반응형, 단위 기능 정상 작동 테스트까지"
+
+명세 `docs/design/81_NOTES_ENHANCEMENTS.md` (의존성 순서대로 7기능 + UX/반응형 검증 매트릭스).
+
+구현:
+1. **Frontmatter 표시 (NoteHeaderView)** — title, tags pill (accent muted bg), 기타 메타 row. frontmatter 비어있으면 미표시
+2. **VaultWatcher (FSEventStream)** — 800ms debounce + AsyncStream<Set<String>>. AppModel이 구독해서 트리 자동 reload + 현재 노트가 변경되면 reload (편집 모드 시 충돌 banner)
+3. **본문 검색 (searchFullText)** — lazy concurrent file read + 매칭 라인 컨텍스트 추출. NoteTreeView에 "본문도 검색" toggle. SearchHitRow에 매칭 line 미리보기. 250ms debounce search task
+4. **Wiki link `[[Page]]`** — MarkdownPreprocessor가 `[Page](yuminai-note://Page)`로 변환. swift-markdown-ui가 일반 link 렌더, OpenURLAction이 yuminai-note scheme 인터셉트 → AppModel.openNoteByName(이름→path 매칭)
+5. **이미지 임베드 `![[image.png]]`** — vaultRoot 기준 절대 file URL로 변환. swift-markdown-ui NetworkImage가 로드. 노트 임베드 `![[Note]]`는 wiki link로 fallback (v0.3 별도)
+6. **편집 모드** — AppModel.isEditingNote / editingDraft / noteIsDirty. InspectorPanel 헤더에 보기/편집 segmented + ⌘S 저장 + 저장 안 됨 ● 표시. 외부 변경 감지 시 warning banner + "다시 불러오기"
+7. **@note 채팅 주입** — NotePickerPopover (320×360) + Composer 📓 버튼 (Vault 활성 시만 표시). 선택 시 attachNoteByPath → 기존 attachedFiles 메커니즘 재사용 (`@<path>` mention prepend)
+
+신규 파일:
+- `Sources/YuminaiObsidian/VaultWatcher.swift` — FSEventStream wrapper
+- `Sources/YuminaiObsidian/MarkdownPreprocessor.swift` — wiki + embed
+- `Sources/YuminaiUI/NoteHeaderView.swift` — frontmatter UI
+- `Sources/YuminaiUI/NotePickerPopover.swift`
+- `Tests/YuminaiObsidianTests/MarkdownPreprocessorTests.swift` (10 tests)
+- `Tests/YuminaiObsidianTests/SearchAndWriteTests.swift` (5 tests)
+
+확장:
+- `ObsidianVault` — searchFullText / write
+- `NoteTreeView` — fullTextEnabled toggle + SearchHitRow + 매칭 컨텍스트
+- `MarkdownViewer` — vaultRoot + onWikiLink (URL handler)
+- `InspectorPanel` — 외부 변경 banner + 편집 모드 + modeToggle (segmented)
+- `Composer` — onAttachNote (📓 버튼) — Vault 활성 시만 표시
+- `AppModel` — 모든 새 기능의 lifecycle + state (15+ method/property 추가)
+- `RootView` — InspectorPanel + NotePickerPopover binding
+
+기타 fix:
+- ObsidianVault.rootURL → `nonisolated let` (MainActor에서 접근 가능)
+- YuminaiUI → YuminaiObsidian 의존성 추가
+
+ADR-022 채택. 검증: build 2.63s, test 72/72 (57→72, +15 신규), run 정상
+
 ### Added — Obsidian Vault 통합 + Notion급 마크다운 뷰어 (ADR-021)
 
 사용자 요청: "옵시디언 cli를 연동해서 마크다운 파일을 노션, 옵시디언급 퀄리티로 볼 수 있는 뷰어"

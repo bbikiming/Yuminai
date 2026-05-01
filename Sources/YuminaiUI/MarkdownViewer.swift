@@ -1,24 +1,45 @@
 import SwiftUI
 import MarkdownUI
+import YuminaiObsidian
 
 /// Notion급 마크다운 렌더러 — `swift-markdown-ui` wrapping + Yuminai 테마.
 ///
-/// 라이브러리 교체 시 이 파일만 수정하면 호출자 영향 없음 (ADR-021 lock-in 완화).
+/// `vaultRoot`가 있으면 wiki link `[[Page]]` + 이미지 임베드 `![[file]]`을 preprocess.
+/// `onWikiLink` 콜백으로 wiki 링크 클릭 시 page 이름이 전달된다.
 public struct MarkdownViewer: View {
     public let markdown: String
+    public let vaultRoot: URL?
+    public let onWikiLink: ((String) -> Void)?
 
-    public init(markdown: String) {
+    public init(
+        markdown: String,
+        vaultRoot: URL? = nil,
+        onWikiLink: ((String) -> Void)? = nil
+    ) {
         self.markdown = markdown
+        self.vaultRoot = vaultRoot
+        self.onWikiLink = onWikiLink
     }
 
     public var body: some View {
+        let processed = MarkdownPreprocessor.process(markdown, vaultRoot: vaultRoot)
         ScrollView {
-            Markdown(markdown)
+            Markdown(processed)
                 .markdownTheme(.yuminai)
                 .padding(.horizontal, Theme.Spacing.lg)
                 .padding(.vertical, Theme.Spacing.lg)
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .textSelection(.enabled)
+                .environment(\.openURL, OpenURLAction { url in
+                    if url.scheme == "yuminai-note", let onWikiLink {
+                        let page = url.host?.removingPercentEncoding
+                            ?? url.path.removingPercentEncoding?.trimmingCharacters(in: .init(charactersIn: "/"))
+                            ?? ""
+                        onWikiLink(page)
+                        return .handled
+                    }
+                    return .systemAction
+                })
         }
         .background(Theme.Color.bg)
     }

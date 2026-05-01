@@ -7,7 +7,7 @@ import YuminaiCore
 /// `.md` 파일과 폴더 트리를 인덱싱하고, 노트 본문을 읽고, 검색을 제공한다.
 /// Obsidian 앱과의 동기화는 별도 — `obsidian://` URL scheme로만 trigger.
 public actor ObsidianVault {
-    public let rootURL: URL
+    public nonisolated let rootURL: URL
 
     public init(rootURL: URL) {
         self.rootURL = rootURL
@@ -49,7 +49,7 @@ public actor ObsidianVault {
         )
     }
 
-    /// 단순 파일명 매칭 검색 (본문 검색은 v0.3).
+    /// 단순 파일명 매칭 검색.
     public func search(query: String) async throws -> [VaultNode] {
         let q = query.lowercased().trimmingCharacters(in: .whitespacesAndNewlines)
         guard !q.isEmpty else { return [] }
@@ -60,6 +60,58 @@ public actor ObsidianVault {
             }
             return false
         }
+    }
+
+    /// 파일명 + 본문 매칭. 큰 Vault는 비싸므로 limit 제한 + lazy.
+    public func searchFullText(_ query: String, limit: Int = 50) async throws -> [SearchHit] {
+        let q = query.lowercased().trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !q.isEmpty else { return [] }
+
+        let allNotes = try collectNotes(at: rootURL, relativeTo: rootURL)
+        var hits: [SearchHit] = []
+
+        for case .note(let name, let path, _) in allNotes {
+            if hits.count >= limit { break }
+
+            // 파일명 매칭 우선
+            if name.lowercased().contains(q) {
+                hits.append(SearchHit(path: path, title: name, matchedLine: nil, matchSource: .filename))
+                continue
+            }
+
+            // 본문 매칭
+            let url = rootURL.appending(path: path)
+            guard let body = try? String(contentsOf: url, encoding: .utf8) else { continue }
+            let bodyLower = body.lowercased()
+            if let range = bodyLower.range(of: q) {
+                let line = Self.contextSnippet(body: body, around: range, padding: 30)
+                hits.append(SearchHit(path: path, title: name, matchedLine: line, matchSource: .body))
+            }
+        }
+
+        return hits
+    }
+
+    /// 매칭된 위치 주변 컨텍스트 추출.
+    static func contextSnippet(body: String, around range: Range<String.Index>, padding: Int) -> String {
+        let bodyLower = body.lowercased()
+        let lower = bodyLower.distance(from: bodyLower.startIndex, to: range.lowerBound)
+        let upper = bodyLower.distance(from: bodyLower.startIndex, to: range.upperBound)
+        let startOffset = max(0, lower - padding)
+        let endOffset = min(body.count, upper + padding)
+        let startIdx = body.index(body.startIndex, offsetBy: startOffset)
+        let endIdx = body.index(body.startIndex, offsetBy: endOffset)
+        var snippet = String(body[startIdx..<endIdx])
+        snippet = snippet.replacingOccurrences(of: "\n", with: " ")
+        if startOffset > 0 { snippet = "…" + snippet }
+        if endOffset < body.count { snippet += "…" }
+        return snippet
+    }
+
+    /// 노트 본문 저장 (편집 모드용).
+    public func write(_ relativePath: String, content: String) async throws {
+        let url = rootURL.appending(path: relativePath)
+        try content.write(to: url, atomically: true, encoding: .utf8)
     }
 
     /// Obsidian 앱에서 노트 열기 (URL scheme).
@@ -229,4 +281,26 @@ public enum VaultError: Error, LocalizedError, Sendable {
             return "노트를 찾을 수 없어요: \(path)"
         }
     }
+}
+
+// MARK: - Search
+
+public struct SearchHit: Sendable, Identifiable, Equatable {
+    public let path: String
+    public let title: String
+    public let matchedLine: String?
+    public let matchSource: MatchSource
+
+    public var id: String { path }
+
+    public init(path: String, title: String, matchedLine: String? = nil, matchSource: MatchSource = .filename) {
+        self.path = path
+        self.title = title
+        self.matchedLine = matchedLine
+        self.matchSource = matchSource
+    }
+}
+
+public enum MatchSource: String, Sendable, Equatable {
+    case filename, body
 }
