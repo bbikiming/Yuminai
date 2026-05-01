@@ -42,28 +42,38 @@ Yuminai/
 └── .mcp.json        # MCP 서버 등록
 ```
 
-## Quick Start (개발)
+## Quick Start
 
-1. **사전 준비**
-   - macOS 26.0+, Xcode 26.0+, Swift 6.2+
-   - Claude Code CLI 설치 확인: `which claude` → `~/.local/bin/claude` 또는 PATH 내
-   - Obsidian (선택), Telegram bot token (선택)
+### 즉시 실행 (MVP-0)
 
-2. **모듈 빌드 (CLI)**
-   ```bash
-   cd ~/Documents/vibe_coding/Yuminai
-   swift build
-   swift test
-   ```
+```bash
+cd ~/Documents/vibe_coding/Yuminai
+swift run YuminaiApp
+```
 
-3. **Xcode App 타깃 추가**
-   - `App/README.md` 참조 (수동 단계)
-   - 새 macOS App 타깃 추가 → SPM Local Package로 `Yuminai/`를 추가
+처음 실행 시 윈도우가 열리면:
+1. **Settings (`⌘,`) → 일반**: Claude CLI 경로 확인 (자동 탐지됨)
+2. **Settings → Telegram**: 봇 토큰/Chat ID 설정 (옵션)
+3. **사이드바 `+` 또는 `⌘N`**: 새 워크스페이스 생성 → 디렉토리 선택
+4. 워크스페이스 클릭 → 채팅창에 메시지 입력 → `⌘+Return`
 
-4. **첫 실행 시 설정**
-   - Anthropic API Key (또는 Claude Code OAuth가 이미 셋업되어 있으면 자동 위임)
-   - Obsidian Vault 경로
-   - Telegram bot token (Keychain에 저장)
+### 개발 명령
+
+```bash
+swift build          # 모든 모듈 빌드
+swift test           # 47개 단위 테스트 실행
+swift run YuminaiApp # 앱 실행
+```
+
+### 사전 준비
+
+- macOS 26.0+, Xcode 26.0+, Swift 6.2+
+- Claude Code CLI: `which claude` → `~/.local/bin/claude` (자동 탐지)
+- (옵션) Telegram bot: BotFather에서 봇 생성 → 토큰을 SettingsView에 입력
+
+### Xcode App 번들 (v0.2+, 후속)
+
+정식 `.app` 번들/Dock 아이콘/자동 업데이트는 `App/README.md` 참조 (현재 SPM executable로 충분히 사용 가능 — ADR-011).
 
 자세한 내용은 [`docs/prd/00_OVERVIEW.md`](docs/prd/00_OVERVIEW.md), [`docs/design/00_HARNESS_DESIGN.md`](docs/design/00_HARNESS_DESIGN.md) 참고.
 

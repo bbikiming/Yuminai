@@ -10,45 +10,40 @@
 
 ---
 
-## 🔴 Q-B. UI 정확한 형태 (B1 vs B2 vs B3)
+## ✅ Q-B. UI 형태 (해결됨, 2026-05-01)
 
-**질문**: Claude Code "와 동일한" UI/UX의 의미는?
-
-| 옵션 | 의미 | 노력 | 통합 친화도 |
-|---|---|---|---|
-| B1 | 진짜 터미널 임베드 (xterm.js Swift 포팅 또는 SwiftTerm) | 중 | 낮음 (위젯 추가 어려움) |
-| **B2 (잠정)** | CLI 스타일 채팅 GUI (monospace, 다크, 슬래시 명령) | 중 | 높음 |
-| B3 | 풀 GUI (다중 패널, 인스펙터, 풍부한 위젯) | 높음 | 매우 높음 |
-
-**잠정 결정**: B2
-
-**필요 답변**: B1 / B2 / B3 / 다른 방향?
+**확정**: B2 — CLI 스타일 채팅 GUI. ADR-013 참조. `YuminaiUI` 모듈 컴포넌트 완비.
 
 ---
 
-## 🔴 Q-D1. Obsidian 통합 구체 명세
+## 🟡 Q-D1. Obsidian 통합 구체 명세 (잠정 진행 중)
 
-**질문**:
-1. Vault 위치는? (예: `~/Documents/Obsidian/MainVault/`)
-2. Daily Note 경로 패턴? (예: `Daily/{YYYY-MM-DD}.md`)
-3. 자동 노트화 정책: 모든 작업 자동 vs 명시적 슬래시 명령만?
-4. 노트 인라인 주입 시 본문 전체 vs 일부(첫 N줄)?
-5. 사용 중인 Obsidian 플러그인 중 우리가 알아야 할 것? (Templater, Dataview 등)
+**상태 (2026-05-01)**: 사용자가 "기본 세팅으로 기획해서 연동" 요청 → 잠정값으로 진행. 코어/UI 변경 없이 v0.2에 모듈 추가 가능 구조.
 
-**잠정**: Vault 사용자 입력, Daily 자동 추정, 자동 노트화 OFF(슬래시만), 전체 본문 주입
+**잠정 결정 (당분간 적용)**:
+1. Vault 위치 — SettingsView에서 사용자 입력 (현재 `AppPreferences.obsidianVaultPath`)
+2. Daily Note 경로 패턴 — `Daily/{YYYY-MM-DD}.md` 디폴트, 향후 설정에서 변경 가능
+3. 자동 노트화 정책 — OFF (슬래시 명령 `/note save`로만)
+4. 인라인 주입 — 본문 전체 (크기 제한은 Claude가 알아서)
+5. Obsidian 플러그인 호환 — 우리 코드는 plain Markdown만 다룸 (Templater 결과는 그대로 보존)
+
+**언제 정식 답변 필요**: v0.2 Obsidian 모듈 본격 구현 시작 시
 
 ---
 
-## 🔴 Q-D2. Telegram 통합 구체 명세
+## ✅ Q-D2. Telegram 통합 (해결됨, 2026-05-01)
 
-**질문**:
-1. Bot Token 보유 / 새로 만들지?
-2. 본인 Telegram User ID는?
-3. v0.2 알림은 어떤 종류? (제안: 작업 완료, 에러, 의사결정 요청)
-4. v0.3 양방향에서 가능한 명령 범위? (제안: 워크스페이스 활성화, 기존 명령 재실행, 새 메시지 보내기)
-5. 명령 의도 분류기를 어떻게? (제안: Claude에게 작은 분류 요청)
+**확정 (사용자 답변)**: 
+- 설정에서 토큰/Chat ID/허용 user ID 추가 가능 (`SettingsView` Telegram 탭)
+- **양방향**: 알림 송신(`TelegramAlertDispatcher`) + 모바일 명령 수신(`TelegramCommandPump`)
+- 자세한 결정 = ADR-012
 
-**잠정**: BotFather 새 봇, 작업 완료/에러만 v0.2, Claude 위임 분류
+**MVP 라우팅 동작**: 받은 텍스트 → 현재 활성 워크스페이스 채팅 입력 → Claude로 전송. 응답은 봇으로 echo. (`YuminaiCommandRouter`)
+
+**남은 질문 (v0.3 검토)**:
+1. `#workspace command` prefix 라우팅 (다른 워크스페이스에 send 등)
+2. inline keyboard로 결정 요청 UI
+3. 음성 메시지 → Whisper → 명령
 
 ---
 

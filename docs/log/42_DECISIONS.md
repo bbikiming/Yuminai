@@ -114,6 +114,60 @@
 
 ---
 
+## ADR-011 — SPM executable로 MVP 시작, Xcode App 번들은 후속
+
+- **날짜**: 2026-05-01
+- **상태**: Accepted (MVP-0 한정)
+- **결정**: MVP-0의 SwiftUI macOS app은 `Sources/YuminaiApp/` SPM `.executable` 타깃으로 만든다. `swift run YuminaiApp`으로 실행/검증. 정식 `.app` 번들 + Xcode 프로젝트는 v0.2 시작 시 도입.
+- **컨텍스트**: 본인 1인 사용 + 본인이 즉시 실행해보고 피드백 루프 빨리 돌리는 게 우선
+- **대안**:
+  - xcodegen 도입 → 추가 도구 의존성, 사용자 brew install 단계
+  - Xcode 직접 새 프로젝트 → 사용자 GUI 개입 단계 필요
+  - **SPM executable (채택)** → `swift run` 한 줄로 실행. CI/검증도 단순
+- **근거**: SPM executable은 SwiftUI App protocol을 완전 지원. NSApplication, WindowGroup, Settings scene 모두 동작. Dock 아이콘/메뉴는 일부 제한적이지만 본인 사용에 충분.
+- **결과**: `Package.swift`의 `.executableTarget(name: "YuminaiApp", ...)`. 빌드/실행 검증됨 (PID 39282, 12초 stable).
+- **알려진 제약**:
+  - Code signing 없음 (본인 사용 OK)
+  - Info.plist 일부 키 자동 생성 안 됨 → Telegram URL 스킴, 알림 권한 등은 후속 단계에서 .app 번들로 가야 완전
+  - 자동 업데이트 없음
+- **재검토**: v0.2 진입 시 → xcodegen + .app 번들로 승격 검토 (사용자 답변 필요)
+
+---
+
+## ADR-012 — Telegram 양방향 (알림 + 명령) 채택
+
+- **날짜**: 2026-05-01
+- **상태**: Accepted
+- **결정**: Telegram 통합은 시작부터 *양방향* — 알림 송신(`TelegramAlertDispatcher`) + 모바일 명령 수신(`TelegramCommandPump` + `TelegramCommandRouter`). 단방향 알림만 v0.2로 미루는 PRD 초기 안을 *수정함*.
+- **컨텍스트**: 사용자 명시 요청 — "텔레그램 봇으로 직접 제어하거나, 작업 마쳤을 때 알림을 보내주는 형태"
+- **대안**:
+  - 단방향 알림만 v0.2 (이전 안) → 사용자 의도 미흡
+  - 양방향 (채택) → 모바일에서 명령 → 데스크탑 Yuminai 활성 워크스페이스의 Claude로 전달
+- **근거**: Long polling은 actor 1개 + URLSession만으로 구현 가능. `TelegramCommandRouter` protocol로 라우팅 책임 분리해 구현체 교체 가능.
+- **결과**:
+  - `LiveTelegramBot` actor: send / edit / startPolling / incoming AsyncStream
+  - 화이트리스트 `allowedUserIds`로 보안 (다른 user 메시지는 silently drop)
+  - `TelegramCommandPump`: incoming → router → 응답 송신
+  - `YuminaiCommandRouter` (App layer): 받은 텍스트를 현재 활성 워크스페이스의 채팅 입력으로 주입 후 sendMessage()
+  - SettingsView에서 토큰/Chat ID/허용 user ID 모두 GUI 편집 가능
+- **알려진 제약 (v0.3로)**:
+  - 의도 분류 없음 — 모든 메시지가 그대로 채팅에 들어감 (`#workspace command` 같은 prefix 라우팅은 후속)
+  - inline keyboard / callback_query 없음 — 결정 요청 UI는 단순 텍스트
+  - 앱 실행 중일 때만 polling (백그라운드 launchd agent 후순위)
+- **재검토**: 본인 1주일 사용 후 — 양방향이 실제로 가치 있는지 데이터로 확인
+
+---
+
+## ADR-013 — UI 형태 B2 확정
+
+- **날짜**: 2026-05-01
+- **상태**: Accepted (Q-B 답변 완료)
+- **결정**: B2 — CLI 스타일 채팅 GUI. monospace, 다크 친화 토큰, NavigationSplitView (사이드바 + chat detail), MessageBubble 위젯.
+- **컨텍스트**: 사용자 명시 결정
+- **결과**: `YuminaiUI` 컴포넌트 완비. Liquid Glass는 후속에서 chrome에만 적용 검토.
+
+---
+
 ## ADR-010 — 세션 영속을 Claude에 위임, SwiftData는 메타만
 
 - **날짜**: 2026-05-01

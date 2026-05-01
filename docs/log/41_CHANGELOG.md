@@ -4,6 +4,21 @@
 
 ## [Unreleased] — 2026-05-01
 
+### Added (MVP-0 골격, 2026-05-01)
+- **YuminaiCore**: KeychainStore (Live + InMemory), WorkspaceStore/SessionStore protocol, TelegramClient protocol, AppPreferences + UserDefaultsStore
+- **YuminaiPersistence**: SessionModel, MessageModel + SchemaV1 갱신, SwiftDataWorkspaceStore, SwiftDataSessionStore, live ModelContainer factory
+- **YuminaiClaudeAdapter**: JSONStreamParser (NDJSON), LiveClaudeAdapter (Process + Pipe spawn, ADR-009 인자 조합)
+- **YuminaiTelegram (신규 모듈)**: LiveTelegramBot (HTTPS API + long polling), MockTelegramBot, TelegramAlertDispatcher (정책 기반 알림), TelegramCommandPump + TelegramCommandRouter protocol, EchoCommandRouter
+- **YuminaiUI**: MessageBubble, MessageInputView, ChatView, SidebarView + WorkspaceRow, CreateWorkspaceSheet, SettingsView (3-tab) + SecretField/SecretStatus
+- **YuminaiApp (신규 executable)**: @main YuminaiAppMain, AppModel (@MainActor @Observable, 모든 모듈 DI + lifecycle), RootView (NavigationSplitView), ChatDetailView, SettingsContainer, YuminaiCommandRouter (Telegram→Claude 라우터)
+- 단위 테스트: 47개 / 16 suite (KeychainStore, AppPreferences Codable, JSONStreamParser 8건, MockTelegramBot, AlertDispatcher 정책, EchoRouter, SwiftDataWorkspaceStore CRUD 6건, SwiftDataSessionStore CRUD + messages 3건)
+- 검증: `swift build` 성공, `swift test` 47/47 통과, `swift run YuminaiApp` 프로세스 정상 시작/종료
+
+### Decided (2026-05-01 — 사용자 답변)
+- **Q-B 확정**: B2 (CLI 스타일 채팅 GUI). ADR-013 정식 채택
+- **Q-D1 잠정**: Obsidian Vault는 사용자 미정 → SettingsView에서 경로 입력 받고 v0.2에서 활성화. 코어/UI 변경 없이 추후 모듈 추가 가능 구조
+- **Q-D2 확정**: Telegram bot은 SettingsView에서 토큰/Chat ID/허용 user ID 추가. 양방향(알림 + 명령 수신) 둘 다 구현. ADR-012 정식 채택
+
 ### Discovered (W1 Spike, 2026-05-01)
 - Claude CLI 2.1.101이 `-p --input-format stream-json --output-format stream-json --include-partial-messages --include-hook-events` 로 JSON 양방향 스트리밍을 공식 지원 → **PTY 불필요, ANSI 파싱 불필요**
 - `--session-id <uuid>`, `-r/--resume`, `-c/--continue`로 멀티턴 세션 영속을 Claude가 자체 처리

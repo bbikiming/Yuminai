@@ -12,10 +12,13 @@
 
 ## 현재 단계
 
-- **단계**: PRE-MVP (기획 + 골격 스캐폴딩 + W1 Spike 완료)
-- **다음 마일스톤**: MVP-0 (4개 모듈 동작 — `docs/prd/90_ROADMAP.md`)
-- **블로커**: Xcode App 타깃 수동 추가 필요 (`App/README.md`)
-- **W1 Spike 핵심 발견**: Claude CLI는 `-p --input-format stream-json --output-format stream-json` 으로 JSON 양방향. PTY 불필요. 자세히는 `docs/design/30_CLAUDE_ADAPTER.md`와 `docs/log/42_DECISIONS.md` ADR-009/010.
+- **단계**: MVP-0 골격 완료 (실행 가능). 아직 본인 일상 사용 검증 전.
+- **빌드/실행**: `cd ~/Documents/vibe_coding/Yuminai && swift run YuminaiApp` 으로 즉시 실행
+- **테스트**: `swift test` → 47/47 통과
+- **블로커**: 없음 (실행 가능)
+- **다음 단계**: 본인 1주일 사용 → 발견된 이슈/UX 개선 + Telegram 실제 봇 토큰으로 검증
+- **W1 Spike 핵심**: Claude CLI는 `-p --input-format stream-json --output-format stream-json` 으로 JSON 양방향. PTY 불필요. (`docs/design/30_CLAUDE_ADAPTER.md`와 ADR-009/010)
+- **MVP 결정**: SPM executable로 시작 (ADR-011), Telegram 양방향 (ADR-012), B2 UI (ADR-013)
 
 ## 결정된 핵심
 
