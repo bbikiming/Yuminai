@@ -7,13 +7,16 @@ import YuminaiCore
 public final actor MockClaudeAdapter: ClaudeAdapter {
     private let scriptedEvents: [ClaudeEvent]
     private let delayPerEvent: Duration
+    private var settings: SessionSettings
 
     public init(
         scriptedEvents: [ClaudeEvent] = [.text("mock"), .completed(exitCode: 0)],
-        delayPerEvent: Duration = .milliseconds(1)
+        delayPerEvent: Duration = .milliseconds(1),
+        settings: SessionSettings = .default
     ) {
         self.scriptedEvents = scriptedEvents
         self.delayPerEvent = delayPerEvent
+        self.settings = settings
     }
 
     public func spawn(in workspace: Workspace) async throws -> any ClaudeStreamSession {
@@ -22,6 +25,14 @@ public final actor MockClaudeAdapter: ClaudeAdapter {
 
     public func terminate(_ session: any ClaudeStreamSession) async {
         // Scripted session은 자체 종료. no-op.
+    }
+
+    public func updateSettings(_ settings: SessionSettings) async {
+        self.settings = settings
+    }
+
+    public func currentSettings() async -> SessionSettings {
+        settings
     }
 }
 

@@ -3,23 +3,37 @@ import YuminaiCore
 
 /// 실제 `claude` CLI를 자식 프로세스로 spawn하는 어댑터.
 ///
-/// ADR-009 결정에 따라 항상 다음 인자로 호출한다:
-/// `claude -p --input-format stream-json --output-format stream-json --include-partial-messages --verbose`
+/// ADR-009 결정에 따라 항상 다음 인자 조합으로 호출한다:
+/// `claude -p --input-format stream-json --output-format stream-json
+///         --include-partial-messages --verbose
+///         --session-id <uuid>
+///         --model <alias> --permission-mode <mode> --effort <level>`
 ///
-/// 멀티턴 세션은 `--session-id`를 통해 유지된다 (생성자에서 받음).
+/// 활성 `SessionSettings`는 `updateSettings(_:)`로 변경 가능. 변경은 다음 `spawn(in:)`에 적용.
 public final actor LiveClaudeAdapter: ClaudeAdapter {
     private let claudePath: URL
     private let environment: [String: String]
     private let extraArguments: [String]
+    private var sessionSettings: SessionSettings
 
     public init(
         claudePath: URL,
+        sessionSettings: SessionSettings = .default,
         environment: [String: String] = ProcessEnvironment.augmented(),
         extraArguments: [String] = []
     ) {
         self.claudePath = claudePath
+        self.sessionSettings = sessionSettings
         self.environment = environment
         self.extraArguments = extraArguments
+    }
+
+    public func updateSettings(_ settings: SessionSettings) {
+        self.sessionSettings = settings
+    }
+
+    public func currentSettings() -> SessionSettings {
+        sessionSettings
     }
 
     public func spawn(in workspace: Workspace) async throws -> any ClaudeStreamSession {
@@ -37,6 +51,7 @@ public final actor LiveClaudeAdapter: ClaudeAdapter {
             workspaceURL: workspaceURL,
             environment: environment,
             sessionId: UUID(),
+            settings: sessionSettings,
             extraArguments: extraArguments
         )
     }
@@ -62,6 +77,7 @@ final class LiveClaudeStreamSession: ClaudeStreamSession, @unchecked Sendable {
         workspaceURL: URL,
         environment: [String: String],
         sessionId: UUID,
+        settings: SessionSettings,
         extraArguments: [String]
     ) throws {
         let process = Process()
@@ -75,8 +91,18 @@ final class LiveClaudeStreamSession: ClaudeStreamSession, @unchecked Sendable {
             "--output-format", "stream-json",
             "--include-partial-messages",
             "--verbose",
-            "--session-id", sessionId.uuidString
+            "--session-id", sessionId.uuidString,
+            "--model", settings.model.rawValue,
+            "--permission-mode", settings.permissionMode.rawValue,
+            "--effort", settings.effortLevel.rawValue
         ]
+        if settings.includeHookEvents {
+            arguments.append("--include-hook-events")
+        }
+        if let budget = settings.maxBudgetUSD {
+            arguments.append("--max-budget-usd")
+            arguments.append(String(format: "%.4f", budget))
+        }
         arguments.append(contentsOf: extraArguments)
         process.arguments = arguments
 

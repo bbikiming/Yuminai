@@ -22,45 +22,77 @@ public actor JSONStreamParser {
     /// 스트림 종료 시 남은 buffer를 한 번 더 시도.
     public func flush() -> [ClaudeEvent] {
         guard !buffer.isEmpty else { return [] }
-        let event = parseLine(buffer)
+        let events = parseLineToEvents(buffer)
         buffer.removeAll()
-        return event.map { [$0] } ?? []
+        return events
     }
 
     private func drainCompleteLines() -> [ClaudeEvent] {
         var events: [ClaudeEvent] = []
         while let newline = buffer.firstIndex(of: 0x0A) {
             let line = buffer[buffer.startIndex..<newline]
-            // newline까지 포함해서 제거
             buffer.removeSubrange(buffer.startIndex...newline)
             if line.isEmpty { continue }
-            if let event = parseLine(Data(line)) {
-                events.append(event)
-            }
+            events.append(contentsOf: parseLineToEvents(Data(line)))
         }
         return events
     }
 
-    private func parseLine(_ data: Data) -> ClaudeEvent? {
+    private func parseLineToEvents(_ data: Data) -> [ClaudeEvent] {
         guard let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else {
-            return nil
+            return []
         }
         let type = object["type"] as? String ?? ""
+        var events: [ClaudeEvent] = []
 
         switch type {
         case "assistant":
-            return parseAssistant(object)
+            if let event = parseAssistant(object) {
+                events.append(event)
+            }
+            if let delta = extractUsage(from: object["message"] as? [String: Any]) {
+                events.append(.usage(delta))
+            }
         case "user":
-            return parseUserToolResult(object)
+            if let event = parseUserToolResult(object) {
+                events.append(event)
+            }
         case "result":
+            let cost = object["total_cost_usd"] as? Double
+            if let delta = extractUsage(from: object) {
+                events.append(.usage(delta.merging(cost: cost)))
+            } else if let cost {
+                events.append(.usage(ClaudeEvent.UsageDelta(costUSD: cost)))
+            }
             let isError = object["is_error"] as? Bool ?? false
-            return .completed(exitCode: isError ? 1 : 0)
+            events.append(.completed(exitCode: isError ? 1 : 0))
         case "system":
-            // session_id init 등 — 현재는 status idle로 매핑
-            return .statusChange(.idle)
+            events.append(.statusChange(.idle))
         default:
+            break
+        }
+        return events
+    }
+
+    /// `usage` 객체(여러 메시지 타입에 들어있음)에서 token 정보 추출.
+    private func extractUsage(from container: [String: Any]?) -> ClaudeEvent.UsageDelta? {
+        guard let container, let usage = container["usage"] as? [String: Any] else { return nil }
+
+        let input = (usage["input_tokens"] as? Int) ?? 0
+        let output = (usage["output_tokens"] as? Int) ?? 0
+        let cacheCreation = (usage["cache_creation_input_tokens"] as? Int) ?? 0
+        let cacheRead = (usage["cache_read_input_tokens"] as? Int) ?? 0
+
+        if input == 0, output == 0, cacheCreation == 0, cacheRead == 0 {
             return nil
         }
+        return ClaudeEvent.UsageDelta(
+            inputTokens: input,
+            outputTokens: output,
+            cacheCreationTokens: cacheCreation,
+            cacheReadTokens: cacheRead,
+            costUSD: nil
+        )
     }
 
     private func parseAssistant(_ object: [String: Any]) -> ClaudeEvent? {

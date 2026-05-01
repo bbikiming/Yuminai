@@ -33,6 +33,16 @@ public final class AppModel {
     public var telegramTokenStatus: SecretStatus = .notSet
 
     public var showCreateWorkspaceSheet: Bool = false
+    public var showUsageDashboard: Bool = false
+    public var showInspector: Bool = false
+
+    // 활성 세션 설정 (toolbar에서 즉시 변경 가능)
+    public var activeSettings: SessionSettings = .default
+
+    // 사용량 (실시간 갱신)
+    public var currentSessionUsage: UsageStats = .zero
+    public var allTimeUsage: UsageStats = .zero
+    public var lastCostDelta: Double = 0  // status bar 강조 효과용
 
     // MARK: 내부
     private var streamConsumeTask: Task<Void, Never>?
@@ -57,11 +67,14 @@ public final class AppModel {
         self.preferencesStore = preferencesStore
         self.claudeAdapter = claudeAdapter
         self.preferences = preferences
+        self.activeSettings = preferences.defaultSessionSettings
+        self.showInspector = preferences.showInspectorByDefault
     }
 
     // MARK: - bootstrap
 
     public func bootstrap() async {
+        await claudeAdapter.updateSettings(activeSettings)
         await refreshWorkspaces()
         await refreshSecretStatuses()
         await activateTelegramIfReady()
@@ -135,6 +148,7 @@ public final class AppModel {
             try await sessionStore.create(session)
             currentSession = session
             messages = []
+            currentSessionUsage = .zero
 
             let claudeSession = try await claudeAdapter.spawn(in: workspace)
             currentClaudeSession = claudeSession
@@ -146,6 +160,47 @@ public final class AppModel {
         } catch {
             self.error = error.localizedDescription
         }
+    }
+
+    /// 활성 세션 설정 변경. claudeAdapter에 반영하고, 활성 워크스페이스가 있으면 새 ClaudeStreamSession을
+    /// 즉시 시작 (메시지 로그는 UI에 보존, 다음 사용자 입력부터 새 설정 적용).
+    public func updateActiveSettings(_ newSettings: SessionSettings) async {
+        activeSettings = newSettings
+        await claudeAdapter.updateSettings(newSettings)
+
+        guard let id = selectedWorkspaceId,
+              let workspace = workspaces.first(where: { $0.id == id }) else {
+            return
+        }
+
+        streamConsumeTask?.cancel()
+        streamConsumeTask = nil
+        if let claudeSession = currentClaudeSession {
+            await claudeAdapter.terminate(claudeSession)
+        }
+        currentClaudeSession = nil
+        isStreaming = false
+
+        do {
+            let claudeSession = try await claudeAdapter.spawn(in: workspace)
+            currentClaudeSession = claudeSession
+            let captured = claudeSession
+            streamConsumeTask = Task { [weak self] in
+                await self?.consumeStream(captured)
+            }
+        } catch {
+            self.error = "설정 적용을 위한 재시작 실패: \(error.localizedDescription)"
+        }
+    }
+
+    /// 현재 활성 모델의 컨텍스트 윈도우 크기.
+    public var currentContextWindow: Int {
+        activeSettings.model.contextWindowTokens
+    }
+
+    /// 컨텍스트 사용 비율 (0.0 ~ 1.0).
+    public var currentContextUsage: Double {
+        currentSessionUsage.contextUsage(maxTokens: currentContextWindow)
     }
 
     private func consumeStream(_ session: any ClaudeStreamSession) async {
@@ -172,11 +227,26 @@ public final class AppModel {
             appendMessage(role: .tool, content: "Tool \(success ? "OK" : "FAIL"): \(head)")
         case .statusChange:
             break
+        case .usage(let delta):
+            let stats = UsageStats(
+                inputTokens: delta.inputTokens,
+                outputTokens: delta.outputTokens,
+                cacheCreationTokens: delta.cacheCreationTokens,
+                cacheReadTokens: delta.cacheReadTokens,
+                costUSD: delta.costUSD ?? 0,
+                messageCount: 0
+            )
+            currentSessionUsage.add(stats)
+            allTimeUsage.add(stats)
+            if let cost = delta.costUSD, cost > 0 {
+                lastCostDelta = cost
+            }
         case .completed(let exitCode):
             isStreaming = false
             let workspaceName = workspaces.first { $0.id == selectedWorkspaceId }?.name ?? "?"
             let category: AlertCategory = exitCode == 0 ? .workComplete : .workFailed
-            let summary = "Workspace: \(workspaceName) (exit \(exitCode))"
+            let costStr = String(format: "$%.4f", currentSessionUsage.costUSD)
+            let summary = "Workspace: \(workspaceName) (exit \(exitCode), \(costStr))"
             let dispatcher = alertDispatcher
             Task {
                 await dispatcher?.dispatch(category: category, message: summary)
@@ -216,6 +286,8 @@ public final class AppModel {
         let userMsg = Message(sessionId: session.id, role: .user, content: trimmed)
         messages.append(userMsg)
         try? await sessionStore.append(userMsg)
+        currentSessionUsage.messageCount += 1
+        allTimeUsage.messageCount += 1
 
         inputText = ""
         isStreaming = true

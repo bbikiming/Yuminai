@@ -158,6 +158,25 @@
 
 ---
 
+## ADR-014 — Toolbar inline picker + 즉시 재spawn
+
+- **날짜**: 2026-05-01
+- **상태**: Accepted
+- **결정**: 채팅 영역 상단의 picker (model/mode/effort)를 변경하면 즉시 `LiveClaudeAdapter.updateSettings(_:)` 호출 + 활성 워크스페이스의 ClaudeStreamSession을 종료하고 새 settings로 spawn. 메시지 UI 로그는 보존.
+- **컨텍스트**: 사용자가 채팅 도중 모델/모드를 자유롭게 바꿔서 비교 실험을 원함 (Claude Code 데스크탑 마이그레이션 수준의 UX)
+- **대안**:
+  - "Apply" 버튼 추가 후 명시적 적용 → 마찰 큼
+  - 다음 메시지부터 적용 (lazy) → 우리 spawn 모델은 세션 1개 유지라서 어려움
+  - **즉시 재spawn (채택)** → 자연스러움. Claude CLI의 `--session-id`로 컨텍스트 유지되므로 메시지 손실 없음
+- **결과**:
+  - `ClaudeAdapter` protocol에 `updateSettings/currentSettings` 추가
+  - `LiveClaudeAdapter.updateSettings`는 actor state만 변경 (다음 spawn에 적용)
+  - `AppModel.updateActiveSettings(_:)`이 spawn 재실행 + 메시지 UI는 그대로
+- **알려진 한계**: settings 변경 시 진행 중이던 응답은 잃을 수 있음 (intentional)
+- **재검토**: 본인 사용 후 → 충분히 자연스러운지 / 디바운스 필요한지
+
+---
+
 ## ADR-013 — UI 형태 B2 확정
 
 - **날짜**: 2026-05-01

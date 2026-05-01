@@ -48,10 +48,12 @@ public struct SettingsView: View {
     public var body: some View {
         TabView {
             generalTab.tabItem { Label("일반", systemImage: "gear") }
+            modelTab.tabItem { Label("모델·모드", systemImage: "cpu") }
+            editTab.tabItem { Label("편집", systemImage: "pencil.and.outline") }
             telegramTab.tabItem { Label("Telegram", systemImage: "paperplane") }
             anthropicTab.tabItem { Label("Anthropic", systemImage: "key") }
         }
-        .frame(width: 560, height: 480)
+        .frame(width: 640, height: 540)
         .padding()
     }
 
@@ -62,11 +64,6 @@ public struct SettingsView: View {
                     TextField("실행 경로", text: $preferences.claudeBinaryPath)
                         .textFieldStyle(.roundedBorder)
                     Button("선택…", action: onSelectClaudeBinary)
-                }
-                Picker("기본 모델", selection: $preferences.defaultModelAlias) {
-                    Text("Sonnet").tag("sonnet")
-                    Text("Opus").tag("opus")
-                    Text("Haiku").tag("haiku")
                 }
             }
             Section("Obsidian (옵션)") {
@@ -83,13 +80,78 @@ public struct SettingsView: View {
                     .foregroundStyle(.secondary)
             }
             Section("외관") {
-                Stepper(
-                    value: $preferences.fontSizeOffset,
-                    in: -2...6
-                ) {
+                Stepper(value: $preferences.fontSizeOffset, in: -2...6) {
                     Text("폰트 크기 보정: \(preferences.fontSizeOffset >= 0 ? "+" : "")\(preferences.fontSizeOffset)")
                 }
+                Toggle("새 창 열 때 Inspector 자동 표시", isOn: $preferences.showInspectorByDefault)
             }
+        }
+    }
+
+    private var modelTab: some View {
+        Form {
+            Section("기본 모델") {
+                Picker("모델", selection: $preferences.defaultSessionSettings.model) {
+                    ForEach(ClaudeModel.allCases, id: \.self) { m in
+                        Text("\(m.displayName) — \(m.subtitle)").tag(m)
+                    }
+                }
+                Text(modelHelp)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+            Section("기본 권한 모드") {
+                Picker("Permission mode", selection: $preferences.defaultSessionSettings.permissionMode) {
+                    ForEach(PermissionMode.allCases, id: \.self) { m in
+                        Text(m.displayName).tag(m)
+                    }
+                }
+                Text(preferences.defaultSessionSettings.permissionMode.shortDescription)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+            Section("기본 추론 강도 (effort)") {
+                Picker("Effort", selection: $preferences.defaultSessionSettings.effortLevel) {
+                    ForEach(EffortLevel.allCases, id: \.self) { e in
+                        Text(e.displayName).tag(e)
+                    }
+                }
+                Text(preferences.defaultSessionSettings.effortLevel.shortDescription)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+            Section("실행 옵션") {
+                Toggle("Hook 이벤트 포함 (--include-hook-events)", isOn: $preferences.defaultSessionSettings.includeHookEvents)
+                HStack {
+                    Text("최대 비용 (USD)")
+                    Spacer()
+                    TextField(
+                        "제한 없음",
+                        value: $preferences.defaultSessionSettings.maxBudgetUSD,
+                        format: .number
+                    )
+                    .textFieldStyle(.roundedBorder)
+                    .frame(width: 120)
+                }
+            }
+            Text("이 설정은 새 워크스페이스의 *기본값*입니다. 채팅 toolbar에서 세션별로 즉시 변경 가능.")
+                .font(.caption2)
+                .foregroundStyle(.secondary)
+                .padding(.top, Theme.Spacing.sm)
+        }
+    }
+
+    private var editTab: some View {
+        Form {
+            Section("편집 동작") {
+                Toggle("Edit/Write 후 자동 포맷터 실행", isOn: $preferences.editPreferences.autoFormat)
+                Toggle("변경 후 diff 미리보기 표시", isOn: $preferences.editPreferences.showDiffOnEdit)
+                Toggle("편집 자동 백업 (.harness/backups)", isOn: $preferences.editPreferences.autoBackup)
+            }
+            Text("실제 편집 정책은 Claude CLI의 권한 모드 + 워크스페이스 settings.json이 함께 결정합니다.")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                .padding(.top, Theme.Spacing.sm)
         }
     }
 
@@ -154,6 +216,17 @@ public struct SettingsView: View {
                 )
             }
         }
+    }
+
+    private var modelHelp: String {
+        let m = preferences.defaultSessionSettings.model
+        return String(
+            format: "%@ — input $%.2f / 1M · output $%.2f / 1M · ctx %@",
+            m.subtitle,
+            m.inputPricePerMillion,
+            m.outputPricePerMillion,
+            m.contextWindowTokens.formattedShort
+        )
     }
 }
 

@@ -1,4 +1,5 @@
 import SwiftUI
+import AppKit
 import os
 import YuminaiCore
 import YuminaiClaudeAdapter
@@ -11,9 +12,14 @@ import YuminaiUI
 @main
 @MainActor
 struct YuminaiAppMain: App {
+    @NSApplicationDelegateAdaptor(YuminaiAppDelegate.self) private var appDelegate
     @State private var appModel: AppModel
 
     init() {
+        // SPM executable은 .app 번들이 아니므로 macOS가 기본적으로 background-only로 취급한다.
+        // 윈도우/Dock 아이콘이 보이려면 명시적으로 .regular activation policy 지정 필요.
+        NSApplication.shared.setActivationPolicy(.regular)
+
         let logger = Logger(subsystem: "com.yuminai", category: "Bootstrap")
 
         do {
@@ -76,6 +82,18 @@ struct YuminaiAppMain: App {
             SettingsContainer()
                 .environment(appModel)
         }
+    }
+}
+
+/// SPM executable이 첫 윈도우를 활성화하고 ⌘Q 종료를 자연스럽게 처리하기 위한 NSApplicationDelegate.
+final class YuminaiAppDelegate: NSObject, NSApplicationDelegate {
+    func applicationDidFinishLaunching(_ notification: Notification) {
+        NSApplication.shared.setActivationPolicy(.regular)
+        NSApplication.shared.activate(ignoringOtherApps: true)
+    }
+
+    func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool {
+        true
     }
 }
 

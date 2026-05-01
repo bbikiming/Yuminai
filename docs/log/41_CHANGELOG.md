@@ -4,6 +4,27 @@
 
 ## [Unreleased] — 2026-05-01
 
+### Added (UI/UX 대폭 개선, 2026-05-01 후반)
+- **모델·모드·효과 picker (인라인)** — ChatToolbar에서 즉시 변경. 변경 시 Claude CLI 자동 재spawn (현재 메시지 보존)
+- **ChatToolbar** — Claude orange 액센트, monospace 라벨, 워크스페이스명 + model/mode/effort + 스트리밍 뱃지 + dashboard/inspector 버튼
+- **ChatStatusBar** (입력창 위) — 컨텍스트 게이지 (색상 임계값 50/75%), 메시지 수, in/out/cache 토큰, 비용 inline
+- **UsageDashboard sheet (⌘D)** — 현재 세션 + 누적 사용량 통계 + 모델별 가격 풋터
+- **ContextInspector (⌘⌥I 토글)** — 우측 사이드 패널: Active 설정 / Context 게이지 / Tokens / Cost / Recent Tools
+- **SettingsView 5탭** — 일반 / 모델·모드 / 편집 / Telegram / Anthropic. 기본 모델/모드/효과/예산 모두 GUI 편집
+- **EditPreferences struct** — autoFormat, showDiffOnEdit, autoBackup
+- **Liquid Glass chrome** — Toolbar/StatusBar/Inspector에 `.regularMaterial` 배경
+- **Theme 토큰 정밀화** — chrome/surface/role tints, monospace 통계 폰트, pill radius 추가
+- **사용량 트래킹** — JSONStreamParser가 `usage` 객체 + `total_cost_usd` 추출 → `.usage(UsageDelta)` 이벤트 → AppModel이 currentSessionUsage / allTimeUsage 누적
+- **PermissionMode / EffortLevel / ClaudeModel enum** — Claude CLI 옵션 1:1 매핑 + displayName/shortDescription/가격 메타
+- **SessionSettings struct** — model + permissionMode + effortLevel + includeHookEvents + maxBudgetUSD
+- 단위 테스트 추가: UsageStats accumulate/contextUsage clamp (49 tests / 17 suites 모두 통과)
+
+### Decided (ADR-014, 2026-05-01)
+- Toolbar inline picker 패턴 — picker 변경 시 즉시 새 ClaudeStreamSession spawn (활성 settings 적용). 메시지 로그는 UI에 보존.
+
+### Fixed (2026-05-01)
+- SPM executable이 background-only로 시작되어 윈도우가 안 보였던 문제 — `NSApplication.shared.setActivationPolicy(.regular)` + `NSApplicationDelegateAdaptor` + `applicationDidFinishLaunching`에서 `activate(ignoringOtherApps: true)` 추가
+
 ### Added (MVP-0 골격, 2026-05-01)
 - **YuminaiCore**: KeychainStore (Live + InMemory), WorkspaceStore/SessionStore protocol, TelegramClient protocol, AppPreferences + UserDefaultsStore
 - **YuminaiPersistence**: SessionModel, MessageModel + SchemaV1 갱신, SwiftDataWorkspaceStore, SwiftDataSessionStore, live ModelContainer factory

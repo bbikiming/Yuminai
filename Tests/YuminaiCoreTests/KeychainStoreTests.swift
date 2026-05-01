@@ -47,7 +47,9 @@ struct AppPreferencesTests {
     @Test("기본 생성자는 합리적 기본값")
     func defaults() {
         let prefs = AppPreferences()
-        #expect(prefs.defaultModelAlias == "sonnet")
+        #expect(prefs.defaultSessionSettings.model == .sonnet)
+        #expect(prefs.defaultSessionSettings.permissionMode == .default)
+        #expect(prefs.defaultSessionSettings.effortLevel == .medium)
         #expect(prefs.telegramEnabled == false)
         #expect(prefs.fontSizeOffset == 0)
         #expect(prefs.telegramAlertPolicy.sendOnComplete == true)
@@ -57,7 +59,18 @@ struct AppPreferencesTests {
     func codableRoundTrip() throws {
         let original = AppPreferences(
             claudeBinaryPath: "/x",
-            defaultModelAlias: "opus",
+            defaultSessionSettings: SessionSettings(
+                model: .opus,
+                permissionMode: .acceptEdits,
+                effortLevel: .high,
+                includeHookEvents: false,
+                maxBudgetUSD: 10
+            ),
+            editPreferences: EditPreferences(
+                autoFormat: false,
+                showDiffOnEdit: false,
+                autoBackup: true
+            ),
             obsidianVaultPath: "/y",
             telegramEnabled: true,
             telegramAllowedUserIds: [1, 2, 3],
@@ -67,10 +80,37 @@ struct AppPreferencesTests {
                 sendOnError: true,
                 sendOnDecisionRequired: true
             ),
-            fontSizeOffset: 2
+            fontSizeOffset: 2,
+            showInspectorByDefault: true
         )
         let data = try JSONEncoder().encode(original)
         let decoded = try JSONDecoder().decode(AppPreferences.self, from: data)
         #expect(decoded == original)
+    }
+}
+
+@Suite("UsageStats")
+struct UsageStatsTests {
+    @Test("add는 모든 필드를 누적한다")
+    func addAccumulates() {
+        var stats = UsageStats(inputTokens: 10, outputTokens: 20, costUSD: 0.001, messageCount: 1)
+        stats.add(UsageStats(inputTokens: 5, outputTokens: 8, costUSD: 0.0005, messageCount: 1))
+        #expect(stats.inputTokens == 15)
+        #expect(stats.outputTokens == 28)
+        #expect(stats.costUSD == 0.0015)
+        #expect(stats.messageCount == 2)
+    }
+
+    @Test("contextUsage는 0~1로 정규화된다")
+    func contextUsageClamps() {
+        let stats = UsageStats(inputTokens: 50_000, cacheCreationTokens: 10_000)
+        let ratio = stats.contextUsage(maxTokens: 200_000)
+        #expect(ratio == 0.30)
+
+        let overflow = UsageStats(inputTokens: 300_000)
+        #expect(overflow.contextUsage(maxTokens: 200_000) == 1.0)
+
+        let zero = UsageStats(inputTokens: 100)
+        #expect(zero.contextUsage(maxTokens: 0) == 0)
     }
 }

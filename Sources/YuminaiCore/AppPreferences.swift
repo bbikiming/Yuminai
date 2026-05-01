@@ -5,32 +5,38 @@ import Foundation
 /// `UserDefaults` 등에 저장되며 SettingsView에서 편집된다.
 public struct AppPreferences: Sendable, Codable, Hashable {
     public var claudeBinaryPath: String
-    public var defaultModelAlias: String
+    public var defaultSessionSettings: SessionSettings
+    public var editPreferences: EditPreferences
     public var obsidianVaultPath: String?
     public var telegramEnabled: Bool
     public var telegramAllowedUserIds: [Int64]
     public var telegramChatId: Int64?
     public var telegramAlertPolicy: TelegramAlertPolicy
     public var fontSizeOffset: Int
+    public var showInspectorByDefault: Bool
 
     public init(
         claudeBinaryPath: String = AppPreferences.detectClaudeBinaryPath(),
-        defaultModelAlias: String = "sonnet",
+        defaultSessionSettings: SessionSettings = .default,
+        editPreferences: EditPreferences = .default,
         obsidianVaultPath: String? = nil,
         telegramEnabled: Bool = false,
         telegramAllowedUserIds: [Int64] = [],
         telegramChatId: Int64? = nil,
         telegramAlertPolicy: TelegramAlertPolicy = .default,
-        fontSizeOffset: Int = 0
+        fontSizeOffset: Int = 0,
+        showInspectorByDefault: Bool = false
     ) {
         self.claudeBinaryPath = claudeBinaryPath
-        self.defaultModelAlias = defaultModelAlias
+        self.defaultSessionSettings = defaultSessionSettings
+        self.editPreferences = editPreferences
         self.obsidianVaultPath = obsidianVaultPath
         self.telegramEnabled = telegramEnabled
         self.telegramAllowedUserIds = telegramAllowedUserIds
         self.telegramChatId = telegramChatId
         self.telegramAlertPolicy = telegramAlertPolicy
         self.fontSizeOffset = fontSizeOffset
+        self.showInspectorByDefault = showInspectorByDefault
     }
 
     /// `claude` CLI의 가능성 높은 위치들을 순서대로 시도해 첫 번째 존재하는 경로 반환.
