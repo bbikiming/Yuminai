@@ -9,7 +9,9 @@ public enum SecretStatus: Sendable, Equatable {
     case error(String)
 }
 
-/// 앱 글로벌 설정 화면. macOS의 Settings scene으로 노출.
+/// macOS 시스템 설정 룩 — `.formStyle(.grouped)` + `LabeledContent` 표준 패턴.
+///
+/// 모든 Section은 `Section { } header: { } footer: { }` 명시적 형식 사용 (macOS 26 ambiguity 회피).
 public struct SettingsView: View {
     @Binding public var preferences: AppPreferences
 
@@ -47,84 +49,143 @@ public struct SettingsView: View {
 
     public var body: some View {
         TabView {
-            generalTab.tabItem { Label("일반", systemImage: "gear") }
-            modelTab.tabItem { Label("모델·모드", systemImage: "cpu") }
-            editTab.tabItem { Label("편집", systemImage: "pencil.and.outline") }
-            telegramTab.tabItem { Label("Telegram", systemImage: "paperplane") }
-            anthropicTab.tabItem { Label("Anthropic", systemImage: "key") }
+            generalTab
+                .tabItem { Label("일반", systemImage: "gearshape") }
+            modelTab
+                .tabItem { Label("모델·모드", systemImage: "cpu") }
+            editTab
+                .tabItem { Label("편집", systemImage: "pencil.and.outline") }
+            telegramTab
+                .tabItem { Label("텔레그램", systemImage: "paperplane") }
+            anthropicTab
+                .tabItem { Label("Anthropic", systemImage: "key") }
         }
-        .frame(width: 640, height: 540)
-        .padding()
+        .frame(minWidth: 640, idealWidth: 720, maxWidth: 880,
+               minHeight: 480, idealHeight: 560, maxHeight: 760)
     }
+
+    // MARK: - 일반
 
     private var generalTab: some View {
         Form {
-            Section("Claude CLI") {
-                HStack {
-                    TextField("실행 경로", text: $preferences.claudeBinaryPath)
-                        .textFieldStyle(.roundedBorder)
-                    Button("선택…", action: onSelectClaudeBinary)
+            Section {
+                LabeledContent("실행 경로") {
+                    HStack(spacing: 8) {
+                        TextField("", text: $preferences.claudeBinaryPath)
+                            .textFieldStyle(.roundedBorder)
+                            .frame(maxWidth: .infinity)
+                        Button("찾아보기…", action: onSelectClaudeBinary)
+                    }
                 }
+            } header: {
+                Text("Claude CLI")
+            } footer: {
+                Text("`which claude` 결과 또는 직접 지정한 경로를 사용합니다.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
             }
-            Section("Obsidian (옵션)") {
-                TextField(
-                    "Vault 경로 (미정이면 비워두세요)",
-                    text: Binding(
-                        get: { preferences.obsidianVaultPath ?? "" },
-                        set: { preferences.obsidianVaultPath = $0.isEmpty ? nil : $0 }
+
+            Section {
+                LabeledContent("Vault 경로") {
+                    TextField(
+                        "비워두면 Obsidian 통합 비활성",
+                        text: Binding(
+                            get: { preferences.obsidianVaultPath ?? "" },
+                            set: { preferences.obsidianVaultPath = $0.isEmpty ? nil : $0 }
+                        )
                     )
-                )
-                .textFieldStyle(.roundedBorder)
+                    .textFieldStyle(.roundedBorder)
+                }
+            } header: {
+                Text("Obsidian")
+            } footer: {
                 Text("v0.2에서 노트 인라인 주입에 사용됩니다.")
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }
-            Section("외관") {
-                Stepper(value: $preferences.fontSizeOffset, in: -2...6) {
-                    Text("폰트 크기 보정: \(preferences.fontSizeOffset >= 0 ? "+" : "")\(preferences.fontSizeOffset)")
+
+            Section {
+                LabeledContent("폰트 크기 보정") {
+                    Stepper(
+                        value: $preferences.fontSizeOffset,
+                        in: -2...6
+                    ) {
+                        Text("\(preferences.fontSizeOffset >= 0 ? "+" : "")\(preferences.fontSizeOffset)pt")
+                            .monospacedDigit()
+                    }
+                    .fixedSize()
                 }
-                Toggle("새 창 열 때 Inspector 자동 표시", isOn: $preferences.showInspectorByDefault)
+                Toggle(isOn: $preferences.showInspectorByDefault) {
+                    Text("새 창 열 때 Inspector 표시")
+                }
+            } header: {
+                Text("외관")
             }
         }
+        .formStyle(.grouped)
+        .scrollContentBackground(.hidden)
     }
+
+    // MARK: - 모델·모드
 
     private var modelTab: some View {
         Form {
-            Section("기본 모델") {
+            Section {
                 Picker("모델", selection: $preferences.defaultSessionSettings.model) {
                     ForEach(ClaudeModel.allCases, id: \.self) { m in
                         Text("\(m.displayName) — \(m.subtitle)").tag(m)
                     }
                 }
+                .pickerStyle(.menu)
+            } header: {
+                Text("기본 모델")
+            } footer: {
                 Text(modelHelp)
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }
-            Section("기본 권한 모드") {
-                Picker("Permission mode", selection: $preferences.defaultSessionSettings.permissionMode) {
+
+            Section {
+                Picker("권한 모드", selection: $preferences.defaultSessionSettings.permissionMode) {
                     ForEach(PermissionMode.allCases, id: \.self) { m in
                         Text(m.displayName).tag(m)
                     }
                 }
+                .pickerStyle(.menu)
+            } header: {
+                Text("기본 권한 모드")
+            } footer: {
                 Text(preferences.defaultSessionSettings.permissionMode.shortDescription)
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }
-            Section("기본 추론 강도 (effort)") {
-                Picker("Effort", selection: $preferences.defaultSessionSettings.effortLevel) {
+
+            Section {
+                Picker("강도", selection: $preferences.defaultSessionSettings.effortLevel) {
                     ForEach(EffortLevel.allCases, id: \.self) { e in
                         Text(e.displayName).tag(e)
                     }
                 }
+                .pickerStyle(.segmented)
+            } header: {
+                Text("기본 추론 강도")
+            } footer: {
                 Text(preferences.defaultSessionSettings.effortLevel.shortDescription)
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }
-            Section("실행 옵션") {
-                Toggle("Hook 이벤트 포함 (--include-hook-events)", isOn: $preferences.defaultSessionSettings.includeHookEvents)
-                HStack {
-                    Text("최대 비용 (USD)")
-                    Spacer()
+
+            Section {
+                Toggle(isOn: $preferences.defaultSessionSettings.includeHookEvents) {
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("Hook 이벤트 포함")
+                        Text("Claude의 lifecycle 이벤트(PreToolUse 등)를 받습니다.")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
+                }
+
+                LabeledContent("최대 비용 (USD)") {
                     TextField(
                         "제한 없음",
                         value: $preferences.defaultSessionSettings.maxBudgetUSD,
@@ -133,95 +194,160 @@ public struct SettingsView: View {
                     .textFieldStyle(.roundedBorder)
                     .frame(width: 120)
                 }
+            } header: {
+                Text("실행 옵션")
+            } footer: {
+                Text("이 설정은 새 워크스페이스의 기본값입니다. 채팅 toolbar에서 세션별로 즉시 바꿀 수 있어요.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
             }
-            Text("이 설정은 새 워크스페이스의 *기본값*입니다. 채팅 toolbar에서 세션별로 즉시 변경 가능.")
-                .font(.caption2)
-                .foregroundStyle(.secondary)
-                .padding(.top, Theme.Spacing.sm)
         }
+        .formStyle(.grouped)
+        .scrollContentBackground(.hidden)
     }
+
+    // MARK: - 편집
 
     private var editTab: some View {
         Form {
-            Section("편집 동작") {
-                Toggle("Edit/Write 후 자동 포맷터 실행", isOn: $preferences.editPreferences.autoFormat)
-                Toggle("변경 후 diff 미리보기 표시", isOn: $preferences.editPreferences.showDiffOnEdit)
-                Toggle("편집 자동 백업 (.harness/backups)", isOn: $preferences.editPreferences.autoBackup)
+            Section {
+                Toggle(isOn: $preferences.editPreferences.autoFormat) {
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("자동 포맷팅")
+                        Text("Edit/Write 후 프로젝트의 포맷터를 자동 실행합니다.")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
+                }
+                Toggle(isOn: $preferences.editPreferences.showDiffOnEdit) {
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("변경 후 diff 미리보기")
+                        Text("파일이 수정되면 변경 내용을 인라인으로 보여줘요.")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
+                }
+                Toggle(isOn: $preferences.editPreferences.autoBackup) {
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("편집 자동 백업")
+                        Text("`.harness/backups`에 변경 전 사본을 저장합니다.")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
+                }
+            } header: {
+                Text("편집 동작")
+            } footer: {
+                Text("실제 편집 정책은 Claude CLI의 권한 모드 + 워크스페이스 settings.json이 함께 결정합니다.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
             }
-            Text("실제 편집 정책은 Claude CLI의 권한 모드 + 워크스페이스 settings.json이 함께 결정합니다.")
-                .font(.caption)
-                .foregroundStyle(.secondary)
-                .padding(.top, Theme.Spacing.sm)
         }
+        .formStyle(.grouped)
+        .scrollContentBackground(.hidden)
     }
+
+    // MARK: - 텔레그램
 
     private var telegramTab: some View {
         Form {
-            Section("연결") {
-                Toggle("Telegram 통합 활성화", isOn: $preferences.telegramEnabled)
-                if preferences.telegramEnabled {
-                    SecretField(
-                        title: "Bot 토큰",
-                        status: telegramTokenStatus,
-                        onSave: onUpdateTelegramToken,
-                        onClear: onClearTelegramToken
-                    )
-                    TextField(
-                        "Chat ID (숫자)",
-                        text: Binding(
-                            get: { preferences.telegramChatId.map(String.init) ?? "" },
-                            set: { preferences.telegramChatId = Int64($0) }
-                        )
-                    )
-                    .textFieldStyle(.roundedBorder)
-                    TextField(
-                        "허용 사용자 ID들 (쉼표로 구분)",
-                        text: Binding(
-                            get: {
-                                preferences.telegramAllowedUserIds.map(String.init).joined(separator: ", ")
-                            },
-                            set: { newValue in
-                                preferences.telegramAllowedUserIds = newValue
-                                    .split(separator: ",")
-                                    .compactMap { Int64($0.trimmingCharacters(in: .whitespaces)) }
-                            }
-                        )
-                    )
-                    .textFieldStyle(.roundedBorder)
-                    Button("테스트 메시지 전송", action: onTestTelegramSend)
-                        .disabled(telegramTokenStatus != .set || preferences.telegramChatId == nil)
+            Section {
+                Toggle(isOn: $preferences.telegramEnabled) {
+                    Text("텔레그램 알림 켜기")
                 }
+                if preferences.telegramEnabled {
+                    LabeledContent("Bot 토큰") {
+                        SecretField(
+                            status: telegramTokenStatus,
+                            onSave: onUpdateTelegramToken,
+                            onClear: onClearTelegramToken
+                        )
+                    }
+                    LabeledContent("Chat ID") {
+                        TextField(
+                            "숫자",
+                            text: Binding(
+                                get: { preferences.telegramChatId.map(String.init) ?? "" },
+                                set: { preferences.telegramChatId = Int64($0) }
+                            )
+                        )
+                        .textFieldStyle(.roundedBorder)
+                        .frame(maxWidth: 200)
+                    }
+                    LabeledContent("허용 사용자 ID") {
+                        TextField(
+                            "쉼표로 구분",
+                            text: Binding(
+                                get: {
+                                    preferences.telegramAllowedUserIds.map(String.init).joined(separator: ", ")
+                                },
+                                set: { newValue in
+                                    preferences.telegramAllowedUserIds = newValue
+                                        .split(separator: ",")
+                                        .compactMap { Int64($0.trimmingCharacters(in: .whitespaces)) }
+                                }
+                            )
+                        )
+                        .textFieldStyle(.roundedBorder)
+                        .frame(maxWidth: 240)
+                    }
+                    LabeledContent("연결 확인") {
+                        Button("테스트 메시지 보내기", action: onTestTelegramSend)
+                            .disabled(telegramTokenStatus != .set || preferences.telegramChatId == nil)
+                    }
+                }
+            } header: {
+                Text("연결")
+            } footer: {
+                Text("BotFather에서 받은 토큰과, 본인 Telegram 계정의 user ID를 입력하세요.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
             }
+
             if preferences.telegramEnabled {
-                Section("알림 정책") {
+                Section {
                     Toggle("작업 완료 시", isOn: $preferences.telegramAlertPolicy.sendOnComplete)
-                    Toggle("에러 시", isOn: $preferences.telegramAlertPolicy.sendOnError)
+                    Toggle("에러 발생 시", isOn: $preferences.telegramAlertPolicy.sendOnError)
                     Toggle("의사결정 필요 시", isOn: $preferences.telegramAlertPolicy.sendOnDecisionRequired)
+                } header: {
+                    Text("알림 정책")
                 }
             }
         }
+        .formStyle(.grouped)
+        .scrollContentBackground(.hidden)
     }
+
+    // MARK: - Anthropic
 
     private var anthropicTab: some View {
         Form {
-            Section("Anthropic API Key (옵션)") {
-                Text("Claude CLI에서 이미 OAuth/로그인이 되어있으면 비워두세요.")
+            Section {
+                LabeledContent("API Key") {
+                    SecretField(
+                        status: anthropicKeyStatus,
+                        onSave: onUpdateAnthropicKey,
+                        onClear: onClearAnthropicKey
+                    )
+                }
+            } header: {
+                Text("Anthropic API Key")
+            } footer: {
+                Text("Claude CLI에서 이미 OAuth/로그인이 되어있으면 비워두세요. (대부분의 경우 이게 더 편해요)")
                     .font(.caption)
                     .foregroundStyle(.secondary)
-                SecretField(
-                    title: "API Key",
-                    status: anthropicKeyStatus,
-                    onSave: onUpdateAnthropicKey,
-                    onClear: onClearAnthropicKey
-                )
             }
         }
+        .formStyle(.grouped)
+        .scrollContentBackground(.hidden)
     }
+
+    // MARK: - Helpers
 
     private var modelHelp: String {
         let m = preferences.defaultSessionSettings.model
         return String(
-            format: "%@ — input $%.2f / 1M · output $%.2f / 1M · ctx %@",
+            format: "%@ — 입력 $%.2f / 1M · 출력 $%.2f / 1M · 컨텍스트 %@",
             m.subtitle,
             m.inputPricePerMillion,
             m.outputPricePerMillion,
@@ -230,9 +356,9 @@ public struct SettingsView: View {
     }
 }
 
-/// 시크릿 입력 필드. 값 자체를 표시하지 않고 상태만 보여준다.
+// MARK: - SecretField (LabeledContent 안의 컨트롤)
+
 struct SecretField: View {
-    let title: String
     let status: SecretStatus
     let onSave: (String) -> Void
     let onClear: () -> Void
@@ -241,17 +367,13 @@ struct SecretField: View {
     @State private var isEditing: Bool = false
 
     var body: some View {
-        VStack(alignment: .leading, spacing: Theme.Spacing.sm) {
-            HStack {
-                Text(title)
-                    .font(Theme.Typography.label)
-                Spacer()
+        VStack(alignment: .trailing, spacing: 6) {
+            HStack(spacing: 8) {
                 statusBadge
-            }
-            if isEditing {
-                HStack {
+                if isEditing {
                     SecureField("토큰 입력", text: $input)
                         .textFieldStyle(.roundedBorder)
+                        .frame(width: 240)
                     Button("저장") {
                         let trimmed = input.trimmingCharacters(in: .whitespacesAndNewlines)
                         guard !trimmed.isEmpty else { return }
@@ -264,14 +386,12 @@ struct SecretField: View {
                         input = ""
                         isEditing = false
                     }
-                }
-            } else {
-                HStack {
-                    Button(status == .set ? "변경…" : "설정…") {
+                } else {
+                    Button(status == .set ? "바꾸기…" : "넣기…") {
                         isEditing = true
                     }
                     if status == .set {
-                        Button("삭제", role: .destructive, action: onClear)
+                        Button("지우기", role: .destructive, action: onClear)
                     }
                 }
             }
@@ -282,19 +402,29 @@ struct SecretField: View {
     private var statusBadge: some View {
         switch status {
         case .notSet:
-            Text("미설정")
+            Text("아직 안 넣음")
                 .font(.caption)
                 .foregroundStyle(.secondary)
         case .set:
-            Text("설정됨")
-                .font(.caption)
-                .foregroundStyle(Theme.Color.success)
+            HStack(spacing: 4) {
+                Image(systemName: "checkmark.circle.fill")
+                    .font(.caption)
+                    .foregroundStyle(.green)
+                Text("준비 완료")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
         case .error(let msg):
-            Text(msg)
-                .font(.caption)
-                .foregroundStyle(Theme.Color.danger)
-                .lineLimit(1)
-                .truncationMode(.tail)
+            HStack(spacing: 4) {
+                Image(systemName: "exclamationmark.triangle.fill")
+                    .font(.caption)
+                    .foregroundStyle(.red)
+                Text(msg)
+                    .font(.caption)
+                    .foregroundStyle(.red)
+                    .lineLimit(1)
+                    .truncationMode(.tail)
+            }
         }
     }
 }

@@ -4,6 +4,37 @@
 
 ## [Unreleased] — 2026-05-01
 
+### Changed/Added — Settings macOS 네이티브 정렬 + 첨부 파일 기능 (ADR-020)
+
+사용자 보고: "설정 팝업 깨진 layout (라벨/컨트롤 우측 몰림, helper 잘림). 맥 네이티브 설정 메뉴 퀄리티로 정렬." + "첨부파일 업로드 동작화 + 안내 문구"
+
+처리:
+1. **SettingsView 전면 재구성**:
+   - `.formStyle(.grouped)` macOS 표준 — System Settings와 동일한 GroupBox 룩
+   - `LabeledContent` 사용 — 좌측 라벨 + 우측 컨트롤 자동 정렬
+   - 모든 Section은 `Section { } header: { } footer: { }` 명시적 형식 (macOS 26 SwiftUI ambiguity 회피)
+   - 윈도우 minWidth 640 → idealWidth 720 → maxWidth 880, height 480~760
+   - 라벨 일관 한글 ("Permission mode" → "권한 모드", "Effort" → "강도")
+   - Toggle에 helper 텍스트 inline VStack 패턴 (시스템 룩)
+   - Stepper에 `+2pt` 같은 monospaced digit 표시
+   - SecretField는 inline status badge (✓ 준비 완료 / ⚠ 에러 / 아직 안 넣음) + "바꾸기/넣기/지우기" 버튼
+
+2. **첨부 파일 기능 동작화**:
+   - `AppModel.attachedFiles: [URL]` state 추가
+   - `openAttachmentPicker()` — NSOpenPanel (파일+폴더, 다중 선택, "Claude가 함께 살펴볼 파일이나 폴더를 선택하세요" 안내)
+   - `removeAttachment(_:)` / `clearAttachments()`
+   - `sendMessage()` — 첨부 있으면 prompt 앞에 `다음 파일이 첨부됐어요:\n@<path>` 형식 prepend (Claude의 `@` mention 구문, 자동 Read 도구 호출)
+   - 송신 후 attachedFiles 자동 클리어
+   - **Composer**:
+     - `attachedFiles` + `onRemoveAttachment` + `onClearAttachments` parameter 추가
+     - 입력창 위에 horizontal scroll로 chips 표시
+     - 각 chip: 파일/폴더 icon (확장자 추정) + 이름 + ✕ 버튼 + hover 시 ✕가 danger 색
+     - chip hover bg 변화 + tooltip은 절대 경로
+     - 첨부 2개+ 시 "모두 지우기" 버튼
+     - attachment 버튼 tooltip: "파일이나 폴더를 첨부합니다. Claude가 자동으로 살펴봐요."
+
+ADR-020 채택. 검증: build 2.36s, test 52/52, run 정상.
+
 ### Changed — 브랜드 컬러 = AG2R 시안 + Picker 전면 재구성 (ADR-019)
 
 사용자 답변: ar2r → AG2R La Mondiale 자전거 팀 → 시그니처 시안. 추가 — "설정 버튼/모델 변경 스위치 인터랙션 작동 안 함, Claude Code 같은 dropdown 디자인"

@@ -42,7 +42,10 @@ public final class AppModel {
     // 사용량 (실시간 갱신)
     public var currentSessionUsage: UsageStats = .zero
     public var allTimeUsage: UsageStats = .zero
-    public var lastCostDelta: Double = 0  // status bar 강조 효과용
+    public var lastCostDelta: Double = 0
+
+    // 첨부파일 — sendMessage 시 prompt 앞에 `@<path>` 형식으로 prepend
+    public var attachedFiles: [URL] = []
 
     // MARK: 내부
     private var streamConsumeTask: Task<Void, Never>?
@@ -278,26 +281,65 @@ public final class AppModel {
 
     public func sendMessage() async {
         let trimmed = inputText.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !trimmed.isEmpty,
+        let hasAttachments = !attachedFiles.isEmpty
+        guard (!trimmed.isEmpty || hasAttachments),
               let session = currentSession,
               let claudeSession = currentClaudeSession,
               !isStreaming else { return }
 
-        let userMsg = Message(sessionId: session.id, role: .user, content: trimmed)
+        // 첨부 prepend — Claude Code의 @ mention 구문
+        let attachmentPreamble: String
+        if hasAttachments {
+            let mentions = attachedFiles.map { "@\($0.path)" }.joined(separator: "\n")
+            attachmentPreamble = "다음 파일이 첨부됐어요:\n\(mentions)\n\n"
+        } else {
+            attachmentPreamble = ""
+        }
+
+        let bodyForUser = trimmed.isEmpty
+            ? attachmentPreamble.trimmingCharacters(in: .whitespacesAndNewlines)
+            : attachmentPreamble + trimmed
+
+        let userMsg = Message(sessionId: session.id, role: .user, content: bodyForUser)
         messages.append(userMsg)
         try? await sessionStore.append(userMsg)
         currentSessionUsage.messageCount += 1
         allTimeUsage.messageCount += 1
 
         inputText = ""
+        attachedFiles = []  // 송신 후 자동 클리어
         isStreaming = true
 
         do {
-            try await claudeSession.send(trimmed)
+            try await claudeSession.send(bodyForUser)
         } catch {
             self.error = "전송 실패: \(error.localizedDescription)"
             isStreaming = false
         }
+    }
+
+    // MARK: - 첨부
+
+    public func openAttachmentPicker() {
+        let panel = NSOpenPanel()
+        panel.canChooseFiles = true
+        panel.canChooseDirectories = true
+        panel.allowsMultipleSelection = true
+        panel.message = "Claude가 함께 살펴볼 파일이나 폴더를 선택하세요. 여러 개 선택할 수 있어요."
+        panel.prompt = "첨부"
+        if panel.runModal() == .OK {
+            for url in panel.urls where !attachedFiles.contains(url) {
+                attachedFiles.append(url)
+            }
+        }
+    }
+
+    public func removeAttachment(_ url: URL) {
+        attachedFiles.removeAll { $0 == url }
+    }
+
+    public func clearAttachments() {
+        attachedFiles.removeAll()
     }
 
     public func cancelStream() {

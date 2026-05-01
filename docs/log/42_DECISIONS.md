@@ -158,6 +158,37 @@
 
 ---
 
+## ADR-020 — Settings는 macOS native Form + 첨부파일 = `@<path>` mention prepend
+
+- **날짜**: 2026-05-01
+- **상태**: Accepted
+- **결정**:
+  1. SettingsView는 시스템 룩 (`.formStyle(.grouped)` + `LabeledContent` + `Section { } header: { } footer: { }` 명시 형식). 자체 flat 컴포넌트 적용 안 함 (사용 빈도 낮음 + 시스템 정렬·접근성 보장)
+  2. 첨부파일은 prompt에 `@<path>` mention 형식으로 prepend → Claude가 자체 Read 도구로 처리
+- **컨텍스트**:
+  - 사용자 — "설정 팝업 깨진 layout. 맥 네이티브 설정 메뉴 퀄리티로 정렬"
+  - macOS Settings의 표준 룩 (System Settings)이 이미 잘 설계됨 — 우리가 다시 만들 필요 없음
+  - 첨부파일을 어떻게 Claude에 전달할지 두 가지 옵션:
+    - inline 파일 본문 (작은 파일만, 토큰 비용)
+    - mention 경로 (Claude가 Read로 자동 호출, 토큰 절약)
+- **이전 시도 실패 원인**:
+  - `Section("title") { ... } footer: { ... }` shortcut이 macOS 26 SwiftUI에서 ambiguous → 매번 명시적 `Section { } header: { Text(...) } footer: { Text(...) }` 사용
+  - Form/`Picker(.menu)` 기본 right alignment를 우리 토큰으로 override 시도하면서 깨짐
+- **결과**:
+  - SettingsView 5탭 (`일반/모델·모드/편집/텔레그램/Anthropic`) 모두 시스템 Form
+  - 윈도우 480~760 height, 640~880 width
+  - SecretField는 inline status badge + 버튼들 (시스템 button)
+  - AppModel.attachedFiles + openAttachmentPicker (NSOpenPanel) + sendMessage prompt 가공
+  - Composer attachedFiles chips (icon 확장자 추정 + ✕ + tooltip)
+- **알려진 한계**:
+  - SettingsView가 다른 view와 디자인 일관성 일부 깨짐 (시스템 룩 vs 자체 flat)
+  - 첨부 파일 다중 시 chips가 매우 길면 horizontal scroll
+  - 큰 폴더 첨부 시 Claude가 모두 Read 시도 — 토큰 폭발 가능 (사용자가 신중히 선택)
+  - drag-and-drop 미지원 (다음 라운드)
+- **재검토**: 사용자 사용 후
+
+---
+
 ## ADR-019 — Brand accent = AG2R 시안 + PickerMenu 자체 컴포넌트 (Claude Code 룩)
 
 - **날짜**: 2026-05-01

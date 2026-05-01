@@ -276,11 +276,15 @@ struct ChatPane: View {
                     permissionMode: $bindable.activeSettings.permissionMode,
                     effortLevel: $bindable.activeSettings.effortLevel,
                     isStreaming: appModel.isStreaming,
+                    attachedFiles: appModel.attachedFiles,
+                    onRemoveAttachment: { url in appModel.removeAttachment(url) },
+                    onClearAttachments: { appModel.clearAttachments() },
                     onSend: { Task { await appModel.sendMessage() } },
                     onStop: { appModel.cancelStream() },
                     onSettingsApply: { newSettings in
                         Task { await appModel.updateActiveSettings(newSettings) }
-                    }
+                    },
+                    onAttach: { appModel.openAttachmentPicker() }
                 )
             }
         }
