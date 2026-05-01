@@ -16,9 +16,11 @@ public struct ChatToolbar: View {
     public let activeAgent: AgentKind
     public let codexAvailable: Bool
     public let terminalVisible: Bool
+    public let previewVisible: Bool
     public let onToggleSidebar: () -> Void
     public let onToggleInspector: () -> Void
     public let onToggleTerminal: () -> Void
+    public let onTogglePreview: () -> Void
     public let onShowDashboard: () -> Void
     public let onShowShortcutHelp: () -> Void
     public let onSelectWorkspace: (UUID) -> Void
@@ -37,9 +39,11 @@ public struct ChatToolbar: View {
         activeAgent: AgentKind = .default,
         codexAvailable: Bool = false,
         terminalVisible: Bool = false,
+        previewVisible: Bool = false,
         onToggleSidebar: @escaping () -> Void,
         onToggleInspector: @escaping () -> Void,
         onToggleTerminal: @escaping () -> Void = {},
+        onTogglePreview: @escaping () -> Void = {},
         onShowDashboard: @escaping () -> Void,
         onShowShortcutHelp: @escaping () -> Void = {},
         onSelectWorkspace: @escaping (UUID) -> Void = { _ in },
@@ -57,9 +61,11 @@ public struct ChatToolbar: View {
         self.activeAgent = activeAgent
         self.codexAvailable = codexAvailable
         self.terminalVisible = terminalVisible
+        self.previewVisible = previewVisible
         self.onToggleSidebar = onToggleSidebar
         self.onToggleInspector = onToggleInspector
         self.onToggleTerminal = onToggleTerminal
+        self.onTogglePreview = onTogglePreview
         self.onShowDashboard = onShowDashboard
         self.onShowShortcutHelp = onShowShortcutHelp
         self.onSelectWorkspace = onSelectWorkspace
@@ -102,6 +108,13 @@ public struct ChatToolbar: View {
                 action: onToggleTerminal
             )
             .keyboardShortcut("t", modifiers: [.command, .option])
+
+            IconButton(
+                previewVisible ? "safari.fill" : "safari",
+                help: previewVisible ? "Preview 숨기기 (⌘⌥P)" : "Preview 열기 (⌘⌥P)",
+                action: onTogglePreview
+            )
+            .keyboardShortcut("p", modifiers: [.command, .option])
 
             IconButton("chart.bar", help: "사용량 대시보드 (⌘D)", action: onShowDashboard)
                 .keyboardShortcut("d", modifiers: .command)

@@ -51,6 +51,45 @@ public struct MentionParser: Sendable {
         return Mention(target: target, body: body, originalText: text)
     }
 
+    /// 자연어 안의 `@<agent>` mention 추출 (ADR-034 A2).
+    /// leading parse가 nil일 때 fallback으로 사용.
+    /// 첫 번째 발견된 `@<word>`만 — body는 전체 원문 (mention 위치 보존).
+    /// 예: "이거 @codex 검토해줘" → target=@codex, body=원문 그대로
+    public func parseInline(_ text: String) -> Mention? {
+        let scalars = Array(text)
+        var i = 0
+        while i < scalars.count {
+            let c = scalars[i]
+            // `@` 발견 — 이전 char가 공백/시작이면 mention 후보
+            if c == "@" {
+                let prev = i > 0 ? scalars[i - 1] : " "
+                if prev.isWhitespace || prev.isNewline || i == 0 {
+                    // word 추출
+                    var j = i + 1
+                    while j < scalars.count {
+                        let ch = scalars[j]
+                        if ch.isWhitespace || ch.isNewline || ch == "," || ch == "." || ch == "!" || ch == "?" {
+                            break
+                        }
+                        j += 1
+                    }
+                    let target = String(scalars[i..<j])
+                    if target.count > 1 {
+                        return Mention(target: target, body: text, originalText: text)
+                    }
+                }
+            }
+            i += 1
+        }
+        return nil
+    }
+
+    /// leading + inline 조합 — leading 우선, 없으면 inline.
+    public func parseAny(_ text: String) -> Mention? {
+        if let leading = parse(text) { return leading }
+        return parseInline(text)
+    }
+
     /// mention의 target에서 `@` 제거하고 normalize (lowercase).
     public static func normalizedTarget(_ target: String) -> String {
         var t = target

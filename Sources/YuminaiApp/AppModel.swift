@@ -97,6 +97,10 @@ public final class AppModel {
     // Terminal pane toggle (ADR-027 phase A)
     public var showTerminalPane: Bool = false
 
+    // Preview pane (ADR-034 A4)
+    public var showPreviewPane: Bool = false
+    public var previewURLText: String = ""
+
     // Delivery sheet (ADR-029 phase B)
     public var showDeliverySheet: Bool = false
     public var deliverySheetTargetWorkspaceId: UUID?
@@ -106,6 +110,14 @@ public final class AppModel {
 
     // Multi-pane split layout (ADR-032 U4)
     public var paneSplitMode: PaneSplitMode = .single
+
+    // Agent chain state (ADR-034 A1) — pane→pane 자동 답장 추적
+    /// 현재 chain hop count (0 = 사용자 입력 시점, 1+ = 자동 답장 hop)
+    public var agentChainHops: Int = 0
+    /// chain에 방문한 pane id (같은 pane 재방문 방지)
+    public var agentChainVisited: Set<UUID> = []
+    /// chain이 활성 중인지 (UI banner 표시용)
+    public var agentChainActive: Bool { agentChainHops > 0 }
 
     // Diff review state (ADR-027 phase A2/A3)
     public var pendingChanges: [ChangedFile] = []
@@ -882,9 +894,10 @@ public final class AppModel {
 
     /// 현재 inputText에서 mention 추출 후 적절한 pane에 dispatch.
     /// mention이 없거나 매칭 실패면 일반 sendMessage 흐름.
+    /// leading + inline 모두 인식 (ADR-034 A2).
     /// - Returns: dispatch 됐으면 true (호출자가 일반 send 흐름 skip)
     public func tryDispatchMention() async -> Bool {
-        guard let mention = mentionParser.parse(inputText) else { return false }
+        guard let mention = mentionParser.parseAny(inputText) else { return false }
         guard let target = resolveMentionTarget(mention.target) else {
             // 매칭 실패 — UX 안내
             self.error = "‘\(mention.target)’ 매칭되는 pane이 없어요. 사용 가능: \(agentPanes.map { "@\($0.agentKind.shortLabel)" }.joined(separator: ", "))"
@@ -895,8 +908,46 @@ public final class AppModel {
         if target.id != activePaneId {
             await setActivePane(target.id)
         }
+        // 사용자 시작 turn — chain 초기화
+        agentChainHops = 0
+        agentChainVisited.removeAll()
+        if let activeId = activePaneId { agentChainVisited.insert(activeId) }
         await sendMessage()
         return true
+    }
+
+    /// agent 응답 본문에 `@<other>` mention이 있고 chain이 enabled + max hops 미만이면 자동 dispatch.
+    /// `handle(.completed)` 후에 호출.
+    /// **안전 장치**: max hops / 같은 pane 재방문 / 자기 자신 mention 모두 차단.
+    func tryAutoChainDispatch() async {
+        guard preferences.agentChainEnabled,
+              preferences.agentChainMaxHops > 0,
+              agentChainHops < preferences.agentChainMaxHops
+        else { return }
+
+        // 마지막 assistant 메시지 본문 검사 (자연어 안의 mention도 인식)
+        guard let lastAssistant = messages.last(where: { $0.role == .assistant }),
+              let mention = mentionParser.parseAny(lastAssistant.content)
+        else { return }
+
+        guard let target = resolveMentionTarget(mention.target) else { return }
+        // 자기 자신 또는 이미 방문한 pane은 skip
+        if target.id == activePaneId { return }
+        if agentChainVisited.contains(target.id) {
+            logger.info("agent chain — \(target.displayName) 이미 방문, chain 종료")
+            return
+        }
+
+        agentChainHops += 1
+        agentChainVisited.insert(target.id)
+        logger.info("agent chain hop \(self.agentChainHops): → \(target.displayName)")
+
+        // 대상 pane 활성화 + body로 input + send (자동)
+        if target.id != activePaneId {
+            await setActivePane(target.id)
+        }
+        inputText = mention.body
+        await sendMessage()
     }
 
     /// 활성 세션 설정 변경. 활성 어댑터에 반영하고, 활성 워크스페이스가 있으면 새 세션을
@@ -1005,6 +1056,14 @@ public final class AppModel {
                     // Delivery auto-run only if exit==0 + autoRunOnTurnComplete
                     if exitCode == 0 {
                         await self.maybeRunDelivery(workspace: workspace, runner: runner)
+                    }
+                    // Agent chain (ADR-034 A1) — 응답에 @mention 있으면 자동 dispatch
+                    if exitCode == 0 {
+                        await self.tryAutoChainDispatch()
+                    } else {
+                        // 실패 시 chain 종료
+                        self.agentChainHops = 0
+                        self.agentChainVisited.removeAll()
                     }
                 }
             }

@@ -60,4 +60,57 @@ struct MentionParserTests {
         #expect(MentionParser.normalizedTarget("@Claude") == "claude")
         #expect(MentionParser.normalizedTarget("codex") == "codex")  // @ 없어도 OK
     }
+
+    // MARK: - parseInline (ADR-034 A2)
+
+    @Test("자연어 안의 @codex 인식")
+    func inlineMidSentence() {
+        let result = parser.parseInline("이거 @codex 검토해줘")
+        #expect(result?.target == "@codex")
+        // body는 원문 보존 (mention 위치 그대로)
+        #expect(result?.body.contains("@codex") == true)
+    }
+
+    @Test("inline은 leading 시 동일 동작 (parseAny가 leading 우선)")
+    func inlineLeadingFallback() {
+        let inline = parser.parseInline("@claude 안녕")
+        #expect(inline?.target == "@claude")
+    }
+
+    @Test("inline은 첫 mention만 인식")
+    func inlineFirstOnly() {
+        let result = parser.parseInline("우선 @codex 그리고 @claude")
+        #expect(result?.target == "@codex")
+    }
+
+    @Test("inline은 단어 경계 인식 — email-like는 무시")
+    func inlineEmailIgnored() {
+        // "test@example"은 mention 아님 (앞에 공백 없음)
+        let result = parser.parseInline("이메일 test@example.com 보냈어")
+        #expect(result == nil, "@ 앞이 공백/시작이 아니면 mention X")
+    }
+
+    @Test("inline은 punctuation 경계 인식")
+    func inlinePunctuationBoundary() {
+        let result = parser.parseInline("이거 @codex, 검토해줘")
+        #expect(result?.target == "@codex")
+    }
+
+    @Test("parseAny는 leading 우선, 없으면 inline")
+    func parseAnyPriority() {
+        // leading
+        let leading = parser.parseAny("@claude 안녕")
+        #expect(leading?.target == "@claude")
+        #expect(leading?.body == "안녕", "leading은 mention 제거된 body")
+
+        // inline
+        let inline = parser.parseAny("이거 @codex 검토")
+        #expect(inline?.target == "@codex")
+        #expect(inline?.body.contains("@codex") == true, "inline은 원문 보존")
+    }
+
+    @Test("parseAny는 mention 없으면 nil")
+    func parseAnyNone() {
+        #expect(parser.parseAny("일반 텍스트") == nil)
+    }
 }

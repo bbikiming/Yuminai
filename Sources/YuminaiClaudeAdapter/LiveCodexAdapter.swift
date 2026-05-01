@@ -1,5 +1,8 @@
 import Foundation
+import os
 import YuminaiCore
+
+private let codexParserLogger = Logger(subsystem: "com.yuminai", category: "CodexJSONL")
 
 /// 실제 `codex` CLI를 자식 프로세스로 spawn하는 어댑터 (ADR-026).
 ///
@@ -265,33 +268,39 @@ actor CodexJSONLParser {
 
         switch type {
         case "agent_message", "assistant_message", "message", "text",
-             "agent_message_delta", "agent_message_chunk", "delta", "stream_text":
+             "agent_message_delta", "agent_message_chunk", "delta", "stream_text",
+             "content_block_delta", "content_part", "completion_chunk":
             let text = extractText(from: dict) ?? ""
             return text.isEmpty ? nil : .text(text)
 
-        case "thinking", "reasoning", "chain_of_thought":
+        case "thinking", "reasoning", "chain_of_thought",
+             "thought", "internal_reasoning":
             // thinking은 Yuminai에서 별도 처리 X — 그냥 무시 (verbose mode 아니면 노이즈)
             return nil
 
         case "tool_call", "tool_use", "function_call",
-             "tool_call_delta", "tool_use_started":
+             "tool_call_delta", "tool_use_started",
+             "tool_invocation", "execute_tool":
             let name = (dict["name"] as? String) ?? (dict["tool_name"] as? String) ?? "?"
             let input = serializeInput(dict["arguments"] ?? dict["input"] ?? dict["args"])
             return .toolCall(name: name, input: input)
 
-        case "tool_result", "function_result", "tool_use_result", "tool_observation":
+        case "tool_result", "function_result", "tool_use_result",
+             "tool_observation", "tool_output", "execution_result":
             let output = extractText(from: dict) ?? ""
             let success: Bool
             if let isError = dict["is_error"] as? Bool {
                 success = !isError
             } else if let status = dict["status"] as? String {
                 success = (status == "ok" || status == "success" || status == "completed")
+            } else if let exitCode = dict["exit_code"] as? Int {
+                success = (exitCode == 0)
             } else {
                 success = true
             }
             return .toolResult(success: success, output: output)
 
-        case "usage", "token_usage", "usage_update":
+        case "usage", "token_usage", "usage_update", "metering":
             let inputTokens = intValue(dict["input_tokens"] ?? dict["prompt_tokens"]) ?? 0
             let outputTokens = intValue(dict["output_tokens"] ?? dict["completion_tokens"]) ?? 0
             let cacheCreate = intValue(dict["cache_creation_tokens"]) ?? 0
@@ -308,14 +317,18 @@ actor CodexJSONLParser {
             ))
 
         case "session_started", "session_created", "session_initialized",
-             "configured", "ready":
+             "configured", "ready", "session_metadata", "init":
             // session id만 추출, UI 이벤트는 emit X
             return nil
 
-        case "error", "agent_error":
+        case "error", "agent_error", "fatal_error", "warning":
             // 에러는 toolResult(success: false)로 forward (사용자 인지 필요)
             let msg = extractText(from: dict) ?? "Codex 에러"
             return .toolResult(success: false, output: "[\(type)] \(msg)")
+
+        case "completed", "session_ended", "done", "stop":
+            // 명시적 turn 종료 — process termination이 처리하므로 emit X
+            return nil
 
         case "":
             // type 없으면 text 추정
@@ -325,8 +338,9 @@ actor CodexJSONLParser {
             return nil
 
         default:
-            // 알 수 없는 type — 원본 line을 raw text로 forward (디버깅 가능)
-            // 사용자가 issue 보고 시 이 prefix가 단서가 됨
+            // 알 수 없는 type — logger로 기록 (사용자가 codex 사용 시 데이터 모임)
+            // 사용자/개발자가 PR로 매핑 추가 가능
+            codexParserLogger.warning("unknown codex JSONL type: \(type, privacy: .public)")
             return .text("[codex \(type)] \(line)")
         }
     }

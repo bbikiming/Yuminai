@@ -393,6 +393,35 @@ public struct SettingsView: View {
                     Text("알림 정책")
                 }
             }
+
+            // Agent chain (ADR-034 A1)
+            Section {
+                Toggle(isOn: $preferences.agentChainEnabled) {
+                    LabelWithHint(
+                        "agent → agent 자동 답장",
+                        hint: "응답 본문에 `@<other>` 멘션이 있으면 자동으로 다음 turn을 그 pane에서 시작합니다. 진정한 multi-agent 협업이 가능하지만 무한 루프 위험이 있어 hop 제한을 둡니다."
+                    )
+                }
+                if preferences.agentChainEnabled {
+                    HStack {
+                        LabelWithHint(
+                            "최대 hop",
+                            hint: "한 사용자 turn 후 자동 답장이 몇 번까지 chain할 수 있는지. 같은 pane 재방문은 자동 차단."
+                        )
+                        Spacer()
+                        Stepper(value: $preferences.agentChainMaxHops, in: 1...5) {
+                            Text("\(preferences.agentChainMaxHops) hop").font(Theme.Typography.monoSmall)
+                        }
+                        .frame(width: 140)
+                    }
+                }
+            } header: {
+                Text("Agent Chain")
+            } footer: {
+                Text("기본 OFF. 사용자 명시 입력만으로 작동하는 게 안전한 default. ON 시에도 hop 제한과 같은 pane 재방문 차단으로 무한 루프를 방지합니다.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
         }
         .formStyle(.grouped)
         .scrollContentBackground(.hidden)

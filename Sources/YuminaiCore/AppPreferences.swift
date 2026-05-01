@@ -22,6 +22,11 @@ public struct AppPreferences: Sendable, Codable, Hashable {
     public var telegramForwardAssistant: Bool
     /// 텔레그램으로 도구 호출 요약을 forward할지 여부.
     public var telegramForwardToolCalls: Bool
+    /// pane 응답에 `@<other>` mention이 있으면 자동으로 다음 turn dispatch (ADR-034 A1).
+    /// **default OFF** — 무한 루프 위험, 명시적 토글 필요.
+    public var agentChainEnabled: Bool
+    /// chain max hops — 0이면 비활성. default 1 (한 번만 자동 답장).
+    public var agentChainMaxHops: Int
     public var fontSizeOffset: Int
     public var showInspectorByDefault: Bool
 
@@ -39,6 +44,8 @@ public struct AppPreferences: Sendable, Codable, Hashable {
         telegramBoundWorkspaceId: UUID? = nil,
         telegramForwardAssistant: Bool = true,
         telegramForwardToolCalls: Bool = true,
+        agentChainEnabled: Bool = false,
+        agentChainMaxHops: Int = 1,
         fontSizeOffset: Int = 0,
         showInspectorByDefault: Bool = false
     ) {
@@ -55,6 +62,8 @@ public struct AppPreferences: Sendable, Codable, Hashable {
         self.telegramBoundWorkspaceId = telegramBoundWorkspaceId
         self.telegramForwardAssistant = telegramForwardAssistant
         self.telegramForwardToolCalls = telegramForwardToolCalls
+        self.agentChainEnabled = agentChainEnabled
+        self.agentChainMaxHops = agentChainMaxHops
         self.fontSizeOffset = fontSizeOffset
         self.showInspectorByDefault = showInspectorByDefault
     }

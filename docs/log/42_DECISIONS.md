@@ -1,6 +1,79 @@
 # Decisions Log (ADR-lite)
 
-> 최신: ADR-033 (v0.4 Phase F — GUI 사용성 polish + F1 안전 보류)
+> 최신: ADR-034 (v0.5 R1 — Agent chain + Inline mention + PreviewPane + Codex + Terminal reload + ACP doc)
+
+---
+
+## ADR-034 — v0.5 Round 1: Agent chain + Inline mention + PreviewPane + Codex schema + Terminal reload + ACP decision doc
+
+- **날짜**: 2026-05-02
+- **상태**: Accepted (v0.5 시작)
+- **결정**: 보류했던 v0.5 권고 항목 10개 평가 → 6개 진행 (A1~A6), 4개 명시 보류 (cost prohibitive 또는 가치 < 비용)
+- **컨텍스트**:
+  - 사용자 — "권고 항목 모두 진행해 줘"
+  - **냉정 평가** — 모두 진행은 비효율. cost-prohibitive 항목은 명시 보류
+- **각 결정**:
+  1. **A1 pane→pane 자동 답장** — default OFF (안전 우선) + max hops Stepper + 같은 pane 재방문 차단 + UI banner. 사용자가 명시적으로 켜야 동작
+  2. **A2 inline mention** — `parseInline(_:)` 추가. body는 원문 보존 (mention 위치 컨텍스트). email-like 무시 (단어 경계 검사)
+  3. **A3 Codex schema** — 12 alias + logger.warning (unknown type 누적 데이터)
+  4. **A4 PreviewPane** — WKWebView 단순 wrap + URL TextField. scheme 자동 추정 (http://default)
+  5. **A5 Terminal reload** — block 그룹화는 SwiftTerm 한계 → 단순화 (`id(trigger)` 패턴으로 새 view spawn). 풀 block UX는 v0.6+
+  6. **A6 ACP doc** — Spike summary만, 코드 변경 X. v0.6 결정 자료
+- **명시 보류 사유**:
+  - **Dual-Composer split** — 비용 매우 큼 (Composer state 분리, focus management). 가치 보통 → v0.6
+  - **Editable diff** — Cline SOTA지만 SwiftUI native diff editor 부재, 자체 구현 prohibitive (3-5인일). SwiftUI 솔루션 발견 시 재검토
+  - **인터랙티브 튜토리얼** — 가이드 카드(ADR-033 G3)로 충분 — 추가 비용 < 가치
+  - **T5 per-pane settings** — tab swap이 동일 효과, 가치 < 비용 (계속 보류)
+- **A1 안전 설계**:
+  - default OFF (사용자 명시 토글 필요)
+  - max hops Stepper 1~5 (default 1)
+  - 같은 pane 재방문 차단 (visited set)
+  - 자기 자신 mention skip
+  - 실패(exit≠0) 시 chain 즉시 종료
+  - UI banner (활성 시 표시) + "중단" 버튼
+- **A2 mention 정밀도**:
+  - leading parser는 그대로 (body = mention 제거)
+  - inline parser는 body = 원문 보존 (mention 위치 컨텍스트)
+  - email-like 무시 (`@` 앞 공백/시작 검사)
+  - 첫 mention만 인식 (multi-target은 v0.6)
+- **A4 PreviewPane 단순화 결정**:
+  - dev server auto-detect (예: package.json 보고 npm dev port 추정)는 v0.6
+  - 사용자가 직접 URL 입력하는 단순 패턴이 cost-effective + UX 명확
+- **A5 SwiftTerm 한계**:
+  - SwiftTerm은 line-based PTY emulator — 명령 경계 인식 X
+  - Warp-style block은 Yuminai가 자체 wrap (NSTask + 출력 grouping)으로 가능하지만 큰 작업
+  - **단순화 채택**: reload 버튼 + hint만. 풀 block UX는 v0.6
+- **격리**:
+  - Agent chain 로직은 AppModel (state + hook)
+  - MentionParser 확장은 Core (다른 모듈도 사용 가능)
+  - PreviewPane은 YuminaiUI (WebKit import)
+- **결과**:
+  - 신규 파일 2개: PreviewPane / 02_ACP_DECISION.md
+  - AppPreferences +2 (agentChainEnabled / agentChainMaxHops)
+  - AppModel +chain state (3) + chain logic (2 메서드) + preview state (2)
+  - MentionParser +parseInline + parseAny
+  - LiveCodexAdapter +12 type alias + logger
+  - SettingsView +Agent Chain section (toggle + Stepper)
+  - ChatToolbar +preview toggle (⌘⌥P)
+  - RootView +chain banner + preview HSplitView + chatColumnWithOptionalTerminal
+  - TerminalPane 헤더에 reload 버튼 + HelpHint
+  - 7 신규 테스트 (MentionParser inline)
+  - build 5.3s, test 191/191 (184→191, +7)
+- **알려진 한계 → v0.6**:
+  - Dual-Composer split (cost 큼)
+  - Editable diff (SwiftUI native 부재)
+  - Terminal block UX (SwiftTerm 한계 → 자체 wrap)
+  - Inline mention multi-target
+  - PreviewPane dev server auto-detect
+  - ACP Spike (2-3일) → 결정
+- **재검토**:
+  - 사용자 chain 사용 후 — max hops 적정성, banner UX, 안전 토글 default 유지 여부
+  - 사용자 codex 사용 후 — logger의 unknown type 데이터로 매핑 추가
+  - PreviewPane use case 명시 — dev server auto-detect 우선순위
+
+---
+
+## ADR-033 — v0.4 Phase F: GUI 사용성 polish (위임 버튼 + 더블클릭 rename + 가이드 카드) + pane→pane 자동 답장 명시 보류
 
 ---
 

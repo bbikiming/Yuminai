@@ -380,9 +380,11 @@ struct ChatPane: View {
                 activeAgent: currentAgentKind,
                 codexAvailable: appModel.codexAvailable,
                 terminalVisible: appModel.showTerminalPane,
+                previewVisible: appModel.showPreviewPane,
                 onToggleSidebar: onToggleSidebar,
                 onToggleInspector: onToggleInspector,
                 onToggleTerminal: { appModel.showTerminalPane.toggle() },
+                onTogglePreview: { appModel.showPreviewPane.toggle() },
                 onShowDashboard: { appModel.showUsageDashboard = true },
                 onShowShortcutHelp: { appModel.showShortcutHelp = true },
                 onSelectWorkspace: { id in appModel.selectedWorkspaceId = id },
@@ -395,6 +397,34 @@ struct ChatPane: View {
             if appModel.selectedWorkspaceId == nil {
                 EmptyWorkspaceView()
             } else {
+                if appModel.agentChainActive {
+                    HStack(spacing: 6) {
+                        Image(systemName: "link.circle.fill")
+                            .font(.system(size: 11))
+                            .foregroundStyle(Theme.Color.accent)
+                        Text("Agent chain 활성")
+                            .font(Theme.Typography.small.weight(.medium))
+                            .foregroundStyle(Theme.Color.text)
+                        Text("hop \(appModel.agentChainHops) / \(appModel.preferences.agentChainMaxHops)")
+                            .font(Theme.Typography.monoSmall)
+                            .foregroundStyle(Theme.Color.textSecondary)
+                        Spacer()
+                        Button {
+                            appModel.agentChainHops = 0
+                            appModel.agentChainVisited.removeAll()
+                            appModel.cancelStream()
+                        } label: {
+                            Text("중단")
+                                .font(Theme.Typography.small)
+                        }
+                        .buttonStyle(.plain)
+                        .help("chain 중단 + 현재 응답 cancel")
+                    }
+                    .padding(.horizontal, Theme.Spacing.md)
+                    .padding(.vertical, Theme.Spacing.xs)
+                    .background(Theme.Color.accentMuted)
+                    .overlay(alignment: .bottom) { FlatHDivider() }
+                }
                 if !appModel.agentPanes.isEmpty {
                     PaneTabBar(
                         panes: appModel.agentPanes,
@@ -408,16 +438,16 @@ struct ChatPane: View {
                         onPromoteToPrimary: { id in appModel.promotePaneToPrimary(id) }
                     )
                 }
-                if appModel.showTerminalPane, let path = currentWorkspacePath {
-                    VSplitView {
-                        chatArea
-                            .frame(minHeight: 200)
-                        terminalPaneSection(path: path)
-                            .frame(minHeight: 120, idealHeight: 220)
+                if appModel.showPreviewPane {
+                    HSplitView {
+                        chatColumnWithOptionalTerminal
+                            .frame(minWidth: 360)
+                        previewPaneSection
+                            .frame(minWidth: 280)
                     }
                     .frame(maxHeight: .infinity)
                 } else {
-                    chatArea
+                    chatColumnWithOptionalTerminal
                         .frame(maxHeight: .infinity)
                 }
 
@@ -555,6 +585,31 @@ struct ChatPane: View {
         return result
     }
 
+    @ViewBuilder
+    private var chatColumnWithOptionalTerminal: some View {
+        if appModel.showTerminalPane, let path = currentWorkspacePath {
+            VSplitView {
+                chatArea
+                    .frame(minHeight: 200)
+                terminalPaneSection(path: path)
+                    .frame(minHeight: 120, idealHeight: 220)
+            }
+        } else {
+            chatArea
+        }
+    }
+
+    @ViewBuilder
+    private var previewPaneSection: some View {
+        @Bindable var bindable = appModel
+        PreviewPane(
+            urlText: $bindable.previewURLText,
+            onClose: { appModel.showPreviewPane = false }
+        )
+    }
+
+    @State private var terminalReloadTrigger: UUID = UUID()
+
     private func terminalPaneSection(path: String) -> some View {
         VStack(spacing: 0) {
             HStack(spacing: 6) {
@@ -567,7 +622,21 @@ struct ChatPane: View {
                 Text(URL(fileURLWithPath: path).lastPathComponent)
                     .font(Theme.Typography.monoSmall)
                     .foregroundStyle(Theme.Color.textTertiary)
+                HelpHint(
+                    "워크스페이스 디렉토리에서 시작된 zsh 세션이에요. agent가 만든 변경을 git status로 확인하거나, 테스트를 직접 실행할 때 사용하세요. ‘새로 시작’으로 reset 가능해요.",
+                    title: "터미널 사용법",
+                    placement: .bottom
+                )
                 Spacer()
+                Button {
+                    terminalReloadTrigger = UUID()  // 새 SwiftTerm view spawn → 새 zsh
+                } label: {
+                    Image(systemName: "arrow.clockwise")
+                        .font(.system(size: 10, weight: .medium))
+                        .foregroundStyle(Theme.Color.textSecondary)
+                }
+                .buttonStyle(.plain)
+                .help("터미널 새로 시작 (새 zsh 세션)")
                 Button {
                     appModel.showTerminalPane = false
                 } label: {
@@ -584,6 +653,7 @@ struct ChatPane: View {
             .overlay(alignment: .bottom) { FlatHDivider() }
 
             TerminalPane(workingDirectory: path)
+                .id(terminalReloadTrigger)  // trigger 변경 시 view 재생성 → 새 zsh
         }
     }
 }
