@@ -1,0 +1,66 @@
+# macOS
+.DS_Store
+.AppleDouble
+.LSOverride
+Icon?
+._*
+
+# Xcode / SwiftPM
+build/
+DerivedData/
+*.xcodeproj/xcuserdata/
+*.xcworkspace/xcuserdata/
+*.xcuserdatad/
+*.xcuserstate
+*.swiftpm/
+.swiftpm/
+xcuserdata/
+.build/
+Packages/
+Package.pins
+Package.resolved
+*.xcodeproj/project.xcworkspace/xcshareddata/
+!Package.resolved
+
+# CocoaPods / Carthage (혹시)
+Pods/
+Carthage/Build/
+
+# Editor
+*.swp
+*.swo
+*~
+.idea/
+.vscode/
+*.iml
+
+# Local secrets / state
+.env
+.env.local
+*.pem
+secrets/
+local/
+tmp/
+
+# Yuminai runtime data (앱이 ~/Library/Application Support/Yuminai/에 저장하지만 혹시)
+workspaces.db
+workspaces.db-journal
+workspaces.db-wal
+workspaces.db-shm
+
+# Coverage / profiles
+*.profraw
+*.profdata
+coverage/
+
+# Logs
+*.log
+logs/
+
+# Claude Code worktrees / session
+.claude/worktrees/
+.claude/scheduled-tasks/
+.claude/hooks/output/
+
+# Notes auto-generated
+.obsidian/workspace*.json

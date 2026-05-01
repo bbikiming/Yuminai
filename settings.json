@@ -1,0 +1,34 @@
+{
+  "$schema": "https://json.schemastore.org/claude-code-settings.json",
+  "_comment": "Yuminai 프로젝트 settings — claude-forge 글로벌 settings를 상속하며 프로젝트 특화 항목만 명시",
+  "cleanupPeriodDays": 14,
+  "effortLevel": "max",
+  "permissions": {
+    "allow": [
+      "Bash(swift build*)",
+      "Bash(swift test*)",
+      "Bash(swift run*)",
+      "Bash(xcodebuild*)",
+      "Bash(xcrun*)",
+      "Bash(security find-generic-password*)",
+      "Bash(defaults read*)",
+      "Bash(plutil -p*)",
+      "Bash(ls*)",
+      "Bash(cat *.swift)",
+      "Bash(cat Package.swift)",
+      "Bash(git status)",
+      "Bash(git diff*)",
+      "Bash(git log*)",
+      "Bash(which*)"
+    ],
+    "deny": [
+      "Bash(security delete-generic-password*)",
+      "Bash(rm -rf /*)",
+      "Bash(sudo *)"
+    ]
+  },
+  "env": {
+    "YUMINAI_PROJECT_ROOT": "/Users/bbikiming/Documents/vibe_coding/Yuminai",
+    "YUMINAI_RUNTIME_DATA": "/Users/bbikiming/Library/Application Support/Yuminai"
+  }
+}

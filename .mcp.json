@@ -1,0 +1,15 @@
+{
+  "_comment": "Yuminai 개발용 MCP 서버. 런타임에 사용자가 자기 워크스페이스에 등록할 MCP는 별도(앱 내 .harness/.mcp.json)이며 Claude Code CLI가 처리한다.",
+  "mcpServers": {
+    "context7": {
+      "type": "stdio",
+      "command": "npx",
+      "args": ["-y", "@upstash/context7-mcp@2.1.8"]
+    },
+    "jina-reader": {
+      "type": "stdio",
+      "command": "npx",
+      "args": ["-y", "jina-mcp-tools@1.2.3"]
+    }
+  }
+}
