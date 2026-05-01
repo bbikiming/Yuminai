@@ -97,10 +97,20 @@ public final class AppModel {
     // Terminal pane toggle (ADR-027 phase A)
     public var showTerminalPane: Bool = false
 
+    // Delivery sheet (ADR-029 phase B)
+    public var showDeliverySheet: Bool = false
+    public var deliverySheetTargetWorkspaceId: UUID?
+
     // Diff review state (ADR-027 phase A2/A3)
     public var pendingChanges: [ChangedFile] = []
     public var pendingDiff: String = ""
     public var hasPendingChanges: Bool { !pendingChanges.isEmpty }
+
+    // Delivery loop state (ADR-029 phase B)
+    public var deliveryResults: [DeliveryResult] = []
+    public var isDeliveryRunning: Bool = false
+    /// 다음 sendMessage에서 prompt 앞에 prepend할 실패 컨텍스트.
+    public var pendingFailureFeedback: String = ""
 
     private var vaultWatcher: VaultWatcher?
     private var watcherTask: Task<Void, Never>?
@@ -114,6 +124,7 @@ public final class AppModel {
     private var commandPump: TelegramCommandPump?
     private var sessionBridge: TelegramSessionBridge?
     private let checkpointManager = CheckpointManager()
+    private let deliveryRunner = DeliveryRunner()
 
     private let logger = Logger(subsystem: "com.yuminai", category: "AppModel")
 
@@ -704,18 +715,55 @@ public final class AppModel {
             Task {
                 await dispatcher?.dispatch(category: category, message: summary)
             }
-            // Checkpoint 종료 + 변경 캡처 (Inspector "변경" 탭으로)
+            // Checkpoint 종료 + 변경 캡처 + Delivery loop 자동 실행 (ADR-029)
             if let workspace = currentWorkspace {
                 let cm = checkpointManager
+                let runner = deliveryRunner
                 Task { @MainActor in
                     if let snap = await cm.endTurn(workspace: workspace) {
                         self.pendingChanges = snap.changedFiles
                         self.pendingDiff = snap.diff
                     }
+                    // Delivery auto-run only if exit==0 + autoRunOnTurnComplete
+                    if exitCode == 0 {
+                        await self.maybeRunDelivery(workspace: workspace, runner: runner)
+                    }
                 }
             }
         }
         forwardToBridgeIfBound(event)
+    }
+
+    private func maybeRunDelivery(workspace: Workspace, runner: DeliveryRunner) async {
+        let cfg = workspace.deliveryConfig
+        guard cfg.autoRunOnTurnComplete, cfg.hasAnyCommand else { return }
+
+        isDeliveryRunning = true
+        let results = await runner.runIfConfigured(workspace: workspace, trigger: .turnComplete)
+        isDeliveryRunning = false
+
+        // 결과 누적 (최근 10개만)
+        deliveryResults.append(contentsOf: results)
+        if deliveryResults.count > 10 {
+            deliveryResults.removeFirst(deliveryResults.count - 10)
+        }
+
+        // 실패 + autoFeedFailureToAgent → 다음 turn에 prepend
+        if cfg.autoFeedFailureToAgent,
+           let firstFailure = results.first(where: { !$0.success }) {
+            pendingFailureFeedback = firstFailure.failurePromptPrefix()
+        }
+
+        // Telegram bridge에도 결과 알림
+        if let bridge = sessionBridge,
+           let bound = preferences.telegramBoundWorkspaceId,
+           workspace.id == bound {
+            for r in results {
+                let icon = r.success ? "✅" : "❌"
+                let msg = "\(icon) \(r.kind.label) — exit \(r.exitCode), \(r.durationMs)ms"
+                Task { await bridge.sendNotice(msg) }
+            }
+        }
     }
 
     // MARK: - Diff review actions (ADR-027 phase A2/A3)
@@ -745,6 +793,50 @@ public final class AppModel {
             pendingDiff = (await checkpointManager.snapshot)?.diff ?? ""
         } catch {
             self.error = "일부 변경 원복 실패: \(error.localizedDescription)"
+        }
+    }
+
+    // MARK: - Delivery actions (ADR-029 phase B)
+
+    /// 사용자가 수동으로 build/test/lint 실행.
+    public func runDelivery(kind: DeliveryResult.Kind) async {
+        guard let workspace = currentWorkspace else { return }
+        let cfg = workspace.deliveryConfig
+        let cmd: String?
+        switch kind {
+        case .build: cmd = cfg.buildCommand
+        case .test: cmd = cfg.testCommand
+        case .lint: cmd = cfg.lintCommand
+        }
+        guard let command = cmd?.trimmingCharacters(in: .whitespaces), !command.isEmpty else {
+            self.error = "\(kind.label) 명령이 설정되지 않았어요. 워크스페이스 설정에서 추가하세요."
+            return
+        }
+        isDeliveryRunning = true
+        let result = await deliveryRunner.runOnce(workspace: workspace, kind: kind, command: command)
+        isDeliveryRunning = false
+        deliveryResults.append(result)
+        if deliveryResults.count > 10 {
+            deliveryResults.removeFirst(deliveryResults.count - 10)
+        }
+    }
+
+    public func clearDeliveryResults() {
+        deliveryResults = []
+    }
+
+    /// Workspace의 deliveryConfig 갱신 + 영속.
+    public func updateDeliveryConfig(_ config: DeliveryConfig) async {
+        guard let workspace = currentWorkspace else { return }
+        let updated = workspace.with(deliveryConfig: config)
+        do {
+            try await workspaceStore.update(updated)
+            if let idx = workspaces.firstIndex(where: { $0.id == updated.id }) {
+                workspaces[idx] = updated
+            }
+            await deliveryRunner.resetAttempts(for: updated.id)
+        } catch {
+            self.error = "Delivery 설정 저장 실패: \(error.localizedDescription)"
         }
     }
 
@@ -795,9 +887,15 @@ public final class AppModel {
             attachmentPreamble = ""
         }
 
+        // Delivery 실패 feedback이 대기 중이면 user prompt 앞에 prepend (소극적 fix loop)
+        let failurePrefix = pendingFailureFeedback
+        if !failurePrefix.isEmpty {
+            pendingFailureFeedback = ""
+        }
+
         let bodyForUser = trimmed.isEmpty
-            ? attachmentPreamble.trimmingCharacters(in: .whitespacesAndNewlines)
-            : attachmentPreamble + trimmed
+            ? (failurePrefix + attachmentPreamble).trimmingCharacters(in: .whitespacesAndNewlines)
+            : failurePrefix + attachmentPreamble + trimmed
 
         let userMsg = Message(sessionId: session.id, role: .user, content: bodyForUser)
         messages.append(userMsg)

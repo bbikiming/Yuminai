@@ -17,6 +17,8 @@ public final class WorkspaceModel {
     public var isArchived: Bool
     /// AgentKind raw value. nil/unknown은 .default(claude)로 fallback (마이그레이션 호환).
     public var agentKindRaw: String?
+    /// DeliveryConfig JSON 직렬화. nil이면 .disabled로 fallback. ADR-029.
+    public var deliveryConfigJSON: Data?
 
     public init(
         id: UUID,
@@ -26,7 +28,8 @@ public final class WorkspaceModel {
         lastOpenedAt: Date? = nil,
         harnessTemplateRaw: String? = nil,
         isArchived: Bool = false,
-        agentKindRaw: String? = nil
+        agentKindRaw: String? = nil,
+        deliveryConfigJSON: Data? = nil
     ) {
         self.id = id
         self.name = name
@@ -36,6 +39,7 @@ public final class WorkspaceModel {
         self.harnessTemplateRaw = harnessTemplateRaw
         self.isArchived = isArchived
         self.agentKindRaw = agentKindRaw
+        self.deliveryConfigJSON = deliveryConfigJSON
     }
 
     public convenience init(from core: Workspace) {
@@ -47,12 +51,20 @@ public final class WorkspaceModel {
             lastOpenedAt: core.lastOpenedAt,
             harnessTemplateRaw: core.harnessTemplate?.rawValue,
             isArchived: core.isArchived,
-            agentKindRaw: core.agentKind.rawValue
+            agentKindRaw: core.agentKind.rawValue,
+            deliveryConfigJSON: try? JSONEncoder().encode(core.deliveryConfig)
         )
     }
 
     public var toCoreWorkspace: Workspace {
-        Workspace(
+        let delivery: DeliveryConfig
+        if let data = deliveryConfigJSON,
+           let decoded = try? JSONDecoder().decode(DeliveryConfig.self, from: data) {
+            delivery = decoded
+        } else {
+            delivery = .disabled
+        }
+        return Workspace(
             id: id,
             name: name,
             directoryPath: directoryPath,
@@ -60,7 +72,8 @@ public final class WorkspaceModel {
             lastOpenedAt: lastOpenedAt,
             harnessTemplate: harnessTemplateRaw.flatMap(HarnessTemplateName.init(rawValue:)),
             isArchived: isArchived,
-            agentKind: agentKindRaw.flatMap(AgentKind.init(rawValue:)) ?? .default
+            agentKind: agentKindRaw.flatMap(AgentKind.init(rawValue:)) ?? .default,
+            deliveryConfig: delivery
         )
     }
 }

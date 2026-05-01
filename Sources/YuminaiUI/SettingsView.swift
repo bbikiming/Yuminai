@@ -84,7 +84,14 @@ public struct SettingsView: View {
                     }
                 }
             } header: {
-                Text("Claude CLI")
+                HStack(spacing: 4) {
+                    Text("Claude CLI")
+                    HelpHint(
+                        "Yuminai가 채팅 전송 시 spawn하는 Claude Code CLI입니다. `which claude` 결과를 자동 감지합니다. Claude Code OAuth/로그인이 돼있으면 Anthropic API Key 입력은 비워둬도 됩니다.",
+                        title: "Claude CLI 경로",
+                        placement: .trailing
+                    )
+                }
             } footer: {
                 Text("`which claude` 결과 또는 직접 지정한 경로를 사용합니다.")
                     .font(.caption)
@@ -110,7 +117,14 @@ public struct SettingsView: View {
                     }
                 }
             } header: {
-                Text("Codex CLI")
+                HStack(spacing: 4) {
+                    Text("Codex CLI")
+                    HelpHint(
+                        "OpenAI Codex CLI입니다. 설치돼 있으면 워크스페이스마다 toolbar에서 Claude ↔ Codex 전환이 가능합니다. 두 에이전트는 같은 프로젝트 폴더를 공유하므로 한 쪽이 만든 파일을 다른 쪽이 즉시 봅니다.",
+                        title: "Codex CLI",
+                        placement: .trailing
+                    )
+                }
             } footer: {
                 Text("Codex가 설치돼 있으면 워크스페이스마다 ‘에이전트’를 Claude/Codex로 전환할 수 있어요. 같은 프로젝트 폴더 안에서 두 에이전트가 파일을 공유합니다.")
                     .font(.caption)

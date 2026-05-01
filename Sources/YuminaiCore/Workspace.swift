@@ -14,6 +14,8 @@ public struct Workspace: Sendable, Identifiable, Hashable {
     public let isArchived: Bool
     /// 이 워크스페이스에서 활성 코딩 에이전트. ADR-026.
     public let agentKind: AgentKind
+    /// 자동 build/test/lint 정책. ADR-029 (M4 delivery loop).
+    public let deliveryConfig: DeliveryConfig
 
     public init(
         id: UUID = UUID(),
@@ -23,7 +25,8 @@ public struct Workspace: Sendable, Identifiable, Hashable {
         lastOpenedAt: Date? = nil,
         harnessTemplate: HarnessTemplateName? = nil,
         isArchived: Bool = false,
-        agentKind: AgentKind = .default
+        agentKind: AgentKind = .default,
+        deliveryConfig: DeliveryConfig = .disabled
     ) {
         self.id = id
         self.name = name
@@ -33,6 +36,7 @@ public struct Workspace: Sendable, Identifiable, Hashable {
         self.harnessTemplate = harnessTemplate
         self.isArchived = isArchived
         self.agentKind = agentKind
+        self.deliveryConfig = deliveryConfig
     }
 
     /// agentKind만 다른 새 인스턴스 반환 (불변성 유지).
@@ -45,7 +49,22 @@ public struct Workspace: Sendable, Identifiable, Hashable {
             lastOpenedAt: lastOpenedAt,
             harnessTemplate: harnessTemplate,
             isArchived: isArchived,
-            agentKind: agentKind
+            agentKind: agentKind,
+            deliveryConfig: deliveryConfig
+        )
+    }
+
+    public func with(deliveryConfig: DeliveryConfig) -> Workspace {
+        Workspace(
+            id: id,
+            name: name,
+            directoryPath: directoryPath,
+            createdAt: createdAt,
+            lastOpenedAt: lastOpenedAt,
+            harnessTemplate: harnessTemplate,
+            isArchived: isArchived,
+            agentKind: agentKind,
+            deliveryConfig: deliveryConfig
         )
     }
 }

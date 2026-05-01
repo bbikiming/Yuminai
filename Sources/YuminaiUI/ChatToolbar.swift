@@ -71,8 +71,15 @@ public struct ChatToolbar: View {
             breadcrumb
                 .padding(.leading, Theme.Spacing.xs)
 
-            agentPicker
-                .padding(.leading, Theme.Spacing.sm)
+            HStack(spacing: 4) {
+                agentPicker
+                HelpHint(
+                    "이 워크스페이스에서 채팅을 처리할 에이전트입니다. 같은 폴더에서 Claude/Codex를 자유롭게 바꿔 가며 협업할 수 있어요. 각 에이전트는 자체 세션 ID로 컨텍스트를 따로 보존합니다.",
+                    title: "에이전트 전환",
+                    placement: .bottom
+                )
+            }
+            .padding(.leading, Theme.Spacing.sm)
 
             if isStreaming {
                 streamingBadge

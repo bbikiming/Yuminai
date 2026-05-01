@@ -13,6 +13,7 @@ public struct SidebarView: View {
     public let onSearch: () -> Void
     public let onOpenSettings: () -> Void
     public let onToggleTelegramBind: (Workspace) -> Void
+    public let onConfigureDelivery: (Workspace) -> Void
     public let userName: String
     public let updateAvailable: Bool
 
@@ -27,6 +28,7 @@ public struct SidebarView: View {
         onSearch: @escaping () -> Void = {},
         onOpenSettings: @escaping () -> Void = {},
         onToggleTelegramBind: @escaping (Workspace) -> Void = { _ in },
+        onConfigureDelivery: @escaping (Workspace) -> Void = { _ in },
         userName: String = "yuminai",
         updateAvailable: Bool = false
     ) {
@@ -40,6 +42,7 @@ public struct SidebarView: View {
         self.onSearch = onSearch
         self.onOpenSettings = onOpenSettings
         self.onToggleTelegramBind = onToggleTelegramBind
+        self.onConfigureDelivery = onConfigureDelivery
         self.userName = userName
         self.updateAvailable = updateAvailable
     }
@@ -110,7 +113,8 @@ public struct SidebarView: View {
                                 telegramAvailable: telegramAvailable,
                                 onSelect: { selectedId = workspace.id },
                                 onDelete: { onDelete(workspace) },
-                                onToggleTelegramBind: { onToggleTelegramBind(workspace) }
+                                onToggleTelegramBind: { onToggleTelegramBind(workspace) },
+                                onConfigureDelivery: { onConfigureDelivery(workspace) }
                             )
                         }
                     }
@@ -217,6 +221,7 @@ struct WorkspaceItemRow: View {
     let onSelect: () -> Void
     let onDelete: () -> Void
     let onToggleTelegramBind: () -> Void
+    let onConfigureDelivery: () -> Void
 
     @State private var hovering = false
 
@@ -284,6 +289,10 @@ struct WorkspaceItemRow: View {
                        systemImage: isTelegramBound ? "paperplane.slash" : "paperplane",
                        action: onToggleTelegramBind)
             }
+            Divider()
+            Button("Delivery 자동화 설정…",
+                   systemImage: "checkmark.shield",
+                   action: onConfigureDelivery)
             Divider()
             Button("지우기", role: .destructive, action: onDelete)
         }

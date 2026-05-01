@@ -55,6 +55,16 @@ public struct InspectorPanel: View {
     public let onRejectAllChanges: () -> Void
     public let onRejectChange: (ChangedFile) -> Void
 
+    // Delivery loop (ADR-029 phase B)
+    public let deliveryResults: [DeliveryResult]
+    public let isDeliveryRunning: Bool
+    public let deliveryConfig: DeliveryConfig
+    public let onRunBuild: () -> Void
+    public let onRunTest: () -> Void
+    public let onRunLint: () -> Void
+    public let onClearDelivery: () -> Void
+    public let onConfigureDelivery: () -> Void
+
     public init(
         tab: Binding<InspectorTab>,
         usage: UsageStats,
@@ -92,7 +102,15 @@ public struct InspectorPanel: View {
         pendingDiff: String = "",
         onAcceptAllChanges: @escaping () -> Void = {},
         onRejectAllChanges: @escaping () -> Void = {},
-        onRejectChange: @escaping (ChangedFile) -> Void = { _ in }
+        onRejectChange: @escaping (ChangedFile) -> Void = { _ in },
+        deliveryResults: [DeliveryResult] = [],
+        isDeliveryRunning: Bool = false,
+        deliveryConfig: DeliveryConfig = .disabled,
+        onRunBuild: @escaping () -> Void = {},
+        onRunTest: @escaping () -> Void = {},
+        onRunLint: @escaping () -> Void = {},
+        onClearDelivery: @escaping () -> Void = {},
+        onConfigureDelivery: @escaping () -> Void = {}
     ) {
         self._tab = tab
         self.usage = usage
@@ -131,6 +149,14 @@ public struct InspectorPanel: View {
         self.onAcceptAllChanges = onAcceptAllChanges
         self.onRejectAllChanges = onRejectAllChanges
         self.onRejectChange = onRejectChange
+        self.deliveryResults = deliveryResults
+        self.isDeliveryRunning = isDeliveryRunning
+        self.deliveryConfig = deliveryConfig
+        self.onRunBuild = onRunBuild
+        self.onRunTest = onRunTest
+        self.onRunLint = onRunLint
+        self.onClearDelivery = onClearDelivery
+        self.onConfigureDelivery = onConfigureDelivery
     }
 
     public var body: some View {
@@ -195,13 +221,28 @@ public struct InspectorPanel: View {
         case .notes:
             notesContent
         case .changes:
-            DiffReviewView(
-                changes: pendingChanges,
-                unifiedDiff: pendingDiff,
-                onAcceptAll: onAcceptAllChanges,
-                onRejectAll: onRejectAllChanges,
-                onRejectFile: onRejectChange
-            )
+            VSplitView {
+                DiffReviewView(
+                    changes: pendingChanges,
+                    unifiedDiff: pendingDiff,
+                    onAcceptAll: onAcceptAllChanges,
+                    onRejectAll: onRejectAllChanges,
+                    onRejectFile: onRejectChange
+                )
+                .frame(minHeight: 200)
+
+                DeliveryResultsView(
+                    results: deliveryResults,
+                    isRunning: isDeliveryRunning,
+                    config: deliveryConfig,
+                    onRunBuild: onRunBuild,
+                    onRunTest: onRunTest,
+                    onRunLint: onRunLint,
+                    onClear: onClearDelivery,
+                    onConfigure: onConfigureDelivery
+                )
+                .frame(minHeight: 160, idealHeight: 240)
+            }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
     }

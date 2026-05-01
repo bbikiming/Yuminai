@@ -86,6 +86,25 @@ struct RootView: View {
         .sheet(isPresented: $bindable.showShortcutHelp) {
             ShortcutHelpSheet(onClose: { appModel.showShortcutHelp = false })
         }
+        .sheet(isPresented: $bindable.showDeliverySheet) {
+            if let id = appModel.deliverySheetTargetWorkspaceId,
+               let ws = appModel.workspaces.first(where: { $0.id == id }) {
+                WorkspaceDeliverySheet(
+                    workspaceName: ws.name,
+                    draft: ws.deliveryConfig,
+                    onApply: { config in
+                        Task {
+                            await appModel.updateDeliveryConfig(config)
+                            appModel.showDeliverySheet = false
+                        }
+                    },
+                    onCancel: { appModel.showDeliverySheet = false }
+                )
+            } else {
+                Text("워크스페이스를 찾을 수 없어요")
+                    .padding()
+            }
+        }
         .alert(
             "잠깐, 문제가 생겼어요",
             isPresented: Binding(
@@ -168,7 +187,18 @@ struct RootView: View {
                     pendingDiff: appModel.pendingDiff,
                     onAcceptAllChanges: { Task { await appModel.acceptAllChanges() } },
                     onRejectAllChanges: { Task { await appModel.rejectAllChanges() } },
-                    onRejectChange: { file in Task { await appModel.rejectPaths([file.path]) } }
+                    onRejectChange: { file in Task { await appModel.rejectPaths([file.path]) } },
+                    deliveryResults: appModel.deliveryResults,
+                    isDeliveryRunning: appModel.isDeliveryRunning,
+                    deliveryConfig: appModel.currentWorkspace?.deliveryConfig ?? .disabled,
+                    onRunBuild: { Task { await appModel.runDelivery(kind: .build) } },
+                    onRunTest: { Task { await appModel.runDelivery(kind: .test) } },
+                    onRunLint: { Task { await appModel.runDelivery(kind: .lint) } },
+                    onClearDelivery: { appModel.clearDeliveryResults() },
+                    onConfigureDelivery: {
+                        appModel.deliverySheetTargetWorkspaceId = appModel.selectedWorkspaceId
+                        appModel.showDeliverySheet = true
+                    }
                 )
                 .transition(.move(edge: .trailing).combined(with: .opacity))
             }
@@ -199,6 +229,10 @@ struct RootView: View {
                     let isBound = appModel.preferences.telegramBoundWorkspaceId == ws.id
                     await appModel.bindTelegramWorkspace(isBound ? nil : ws.id)
                 }
+            },
+            onConfigureDelivery: { ws in
+                appModel.deliverySheetTargetWorkspaceId = ws.id
+                appModel.showDeliverySheet = true
             },
             userName: "yuminai",
             updateAvailable: false
@@ -460,7 +494,7 @@ struct EmptyWorkspaceView: View {
                 Text("어떤 작업으로 시작할까요?")
                     .font(Theme.Typography.title)
                     .foregroundStyle(Theme.Color.text)
-                Text("워크스페이스 하나를 만들면 Claude가 그 폴더에서 함께 일해요.")
+                Text("워크스페이스 하나를 만들면 Claude/Codex가 그 폴더에서 함께 일해요.")
                     .font(Theme.Typography.body)
                     .foregroundStyle(Theme.Color.textSecondary)
             }
@@ -471,9 +505,32 @@ struct EmptyWorkspaceView: View {
             Text("⌘N")
                 .font(Theme.Typography.micro)
                 .foregroundStyle(Theme.Color.textTertiary)
+
+            // 시작 가이드 — 주요 단축키 / 기능 한 눈에
+            VStack(alignment: .leading, spacing: 4) {
+                quickTipRow(icon: "command", text: "⌘1~9 워크스페이스 빠른 전환, ⌘/ 단축키 도움말")
+                quickTipRow(icon: "terminal", text: "⌘⌥T 터미널 패널, ⌘⌥I Inspector(컨텍스트·노트·변경)")
+                quickTipRow(icon: "paperplane", text: "Settings → 텔레그램에서 cokacdir 봇 가져오기 / 양방향 제어")
+            }
+            .padding(.top, Theme.Spacing.lg)
+            .frame(maxWidth: 460)
+
             Spacer()
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .background(Theme.Color.bg)
+    }
+
+    private func quickTipRow(icon: String, text: String) -> some View {
+        HStack(spacing: 8) {
+            Image(systemName: icon)
+                .font(.system(size: 11))
+                .foregroundStyle(Theme.Color.accent)
+                .frame(width: 16, alignment: .center)
+            Text(text)
+                .font(Theme.Typography.small)
+                .foregroundStyle(Theme.Color.textSecondary)
+            Spacer()
+        }
     }
 }

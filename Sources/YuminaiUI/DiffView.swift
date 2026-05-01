@@ -53,20 +53,19 @@ public struct DiffReviewView: View {
     // MARK: - Components
 
     private var emptyState: some View {
-        VStack(spacing: 8) {
-            Image(systemName: "checkmark.seal")
-                .font(.system(size: 24))
-                .foregroundStyle(Theme.Color.textTertiary)
-            Text("변경된 파일이 없어요")
-                .font(Theme.Typography.body)
-                .foregroundStyle(Theme.Color.textSecondary)
-            Text("에이전트가 코드를 수정하면 여기에 표시됩니다.")
-                .font(Theme.Typography.small)
-                .foregroundStyle(Theme.Color.textTertiary)
-                .multilineTextAlignment(.center)
+        VStack(spacing: 0) {
+            EmptyStateHint(
+                icon: "checkmark.seal",
+                title: "변경된 파일이 없어요",
+                message: "에이전트가 워크스페이스 파일을 수정하면 자동으로 git diff가 여기에 잡혀요. ⌘⌥T 터미널에서 git status로도 확인할 수 있어요."
+            )
+            InlineHint(
+                "git 저장소가 아닌 워크스페이스에서는 변경 추적이 동작하지 않아요. `git init` 후 다시 시도하세요.",
+                icon: "info.circle",
+                kind: .info
+            )
+            .padding(Theme.Spacing.md)
         }
-        .padding()
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
 
     private var summaryHeader: some View {
@@ -77,6 +76,11 @@ public struct DiffReviewView: View {
             Text("\(changes.count)개 파일 변경")
                 .font(Theme.Typography.small.weight(.semibold))
                 .foregroundStyle(Theme.Color.text)
+            HelpHint(
+                "에이전트 turn이 끝난 직후 git status로 잡힌 변경 파일이에요. ‘모두 적용’은 working tree 그대로 두는 것 (git add/commit은 별도), ‘모두 원복’은 git checkout으로 HEAD 상태로 되돌립니다. 파일 행에 호버하면 개별 원복 버튼이 보여요.",
+                title: "변경 검토",
+                placement: .bottom
+            )
             Spacer()
             FlatButton("모두 원복", variant: .secondary, size: .small, action: onRejectAll)
             FlatButton("모두 적용", variant: .primary, size: .small, action: onAcceptAll)

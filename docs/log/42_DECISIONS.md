@@ -1,6 +1,58 @@
 # Decisions Log (ADR-lite)
 
-> 최신: ADR-028 (v0.4 Phase A — Diff Review + Terminal 구현)
+> 최신: ADR-029 (v0.4 Phase B — Delivery Loop + 사용성 도움말 UI)
+
+---
+
+## ADR-029 — v0.4 Phase B: Delivery Loop (M4) + UI 도움말 일괄 적용
+
+- **날짜**: 2026-05-01
+- **상태**: Accepted (구현 완료, Phase B)
+- **결정**: M4 (Aider auto-test + Devin step budget) 채택 + UI 사용성 개선을 위한 HelpHint 컴포넌트 일괄 도입. M5.b (Warp block UX)는 Phase B 시간 제약으로 v0.4 후속에 보류
+- **컨텍스트**:
+  - 사용자 — "페이즈 b 시작하고 사용성에 대해 안내 도움말은 i 아이콘이나 간단한 건 상시로 보여지게"
+  - 두 요청 동시 — UI 도움말은 신규 UI에 활용되므로 Phase B 신규 컴포넌트(WorkspaceDeliverySheet, DeliveryResultsView)에 즉시 적용
+- **각 결정**:
+  1. **HelpHint 4종 컴포넌트** — `HelpHint`(i+popover) + `InlineHint`(상시) + `EmptyStateHint`(빈 영역) + `LabelWithHint`(LabeledContent inline). 사용처별 패턴 분리로 일관성 + 재사용
+  2. **Aider auto-test 패턴 채택** — test → lint 순서, 실패 시 lint skip. Aider 검증된 default
+  3. **Devin step budget hard cap** — maxAttempts (default 3), timeout (default 300초). 무한 루프 방지 정석. mini-SWE-agent 100 LoC 단순함 증거 (Princeton NeurIPS 2024)
+  4. **소극적 fix loop** — 실패 결과는 다음 사용자 메시지 앞에 prepend만. 즉시 새 turn 자동 spawn은 X (사용자 control 우선, v0.5에서 적극적 mode 검토)
+  5. **빌드는 수동만** — 빌드는 보통 오래 걸리므로 turn 완료 자동 trigger 부적합. test/lint만 자동
+  6. **`/bin/zsh -lc`로 실행** — 사용자 login shell config 그대로 (PATH, env). 의존성 안 깨짐
+  7. **JSON 직렬화로 SwiftData 저장** — DeliveryConfig를 nullable `Data?` 컬럼에 JSON. nil → .disabled fallback (기존 워크스페이스 호환)
+  8. **결과는 메모리 전용 (max 10개)** — 영속 X. 사용자가 누적 history 필요시 v0.5
+- **대안 분석**:
+  - **즉시 새 turn 자동 spawn** vs **소극적 prepend**: 자동 spawn은 sweep AI 패턴이지만 사용자 control 약함, agent를 무시할 수 없음. 소극적은 안전 + 사용자가 실패 결과 보고 결정 가능 → 후자 채택 (v0.5에서 적극적 mode 토글 추가 검토)
+  - **Docker runtime 격리** vs **NSTask shell**: Docker는 OpenHands급 격리 but 사용자 부담 ↑, Yuminai macOS native 정체성과 충돌 → NSTask + sandboxed dir
+  - **자체 ANSI parser + capture** vs **shell 그대로 + readability handler**: shell 그대로가 사용자 환경 일치. ANSI는 결과 표시에서만 처리 (현재는 raw text)
+- **격리**:
+  - DeliveryConfig는 `YuminaiCore` (모든 모듈 접근 가능)
+  - DeliveryRunner는 `YuminaiApp` (AppModel hook과 강결합)
+  - DeliveryResultsView는 `YuminaiUI` (도메인 모델만 의존)
+  - WorkspaceDeliverySheet은 `YuminaiApp` (AppModel + UI 둘 다 import)
+- **HelpHint 디자인 결정**:
+  - i 아이콘은 11pt, 대기 색은 textTertiary, 활성/호버는 accent
+  - InlineHint는 4 kind: info(accent) / success(green) / warning(orange) / tip(accent) — bg는 각 색 10~12%
+  - EmptyStateHint는 28pt icon + title body + optional action button. 모든 빈 상태 영역에 일관 적용
+  - LabelWithHint는 Settings의 LabeledContent와 자연스럽게 — Toggle/Stepper 라벨 옆에 inline
+- **결과**:
+  - 신규 파일 5개: HelpHint / DeliveryConfig / DeliveryRunner / DeliveryResultsView / WorkspaceDeliverySheet
+  - 신규 테스트 8건 (DeliveryConfig 3 + DeliveryResult prompt 5)
+  - InspectorPanel "변경" 탭이 VSplitView로 diff 위 / delivery results 아래 분할
+  - SidebarView 우클릭 메뉴 "Delivery 자동화 설정…" 추가
+  - SwiftData migration: deliveryConfigJSON nullable column (nil fallback)
+  - build 3.2s + 152/152 tests
+- **알려진 한계 → 후속**:
+  - test/lint 순서 고정 (커스텀 X) — v0.5
+  - 자동 fix loop는 소극적 (즉시 spawn X) — v0.5에서 적극적 mode 토글
+  - 결과 영속 X (메모리 max 10) — v0.5에서 SwiftData 저장 검토
+  - Block 그룹화 (Warp UX) — v0.4 후속 또는 v0.5
+  - Telegram에 delivery 결과는 단순 알림만 — 자동 fix 진행 알림은 v0.5
+- **재검토**: Phase C (multi-pane) 시작 전 사용자 검증 — auto-fix prepend가 자연스러운지, hard cap이 충분한지
+
+---
+
+## ADR-028 — v0.4 Phase A: Diff Review (M3) + Embedded Terminal (M5.a)
 
 ---
 

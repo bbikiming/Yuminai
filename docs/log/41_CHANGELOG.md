@@ -4,6 +4,79 @@
 
 ## [Unreleased] — 2026-05-01
 
+### Added — v0.4 Phase B: Delivery Loop (M4) + 사용성 도움말 UI (ADR-029)
+
+사용자: "페이즈 b 시작하고 사용성에 대해 안내 도움말은 i 아이콘이나 간단한 건 상시로 보여지게 ui 디자인해줘"
+
+두 가지 동시 진행:
+1. **HelpHint UI 일괄** — i 아이콘 (popover) + 상시 hint + 빈 상태 hint
+2. **Phase B Delivery Loop** — Aider auto-test + Devin step budget 패턴 (ADR-027 권고)
+
+**1. UI 도움말 컴포넌트 (재사용 가능)**:
+- `Sources/YuminaiUI/HelpHint.swift` (신규)
+  - `HelpHint` — i 아이콘 + 클릭/호버 popover (긴 안내)
+  - `InlineHint` — 항상 보이는 짧은 안내 (info/success/warning/tip 4종)
+  - `EmptyStateHint` — 빈 영역 friendly 안내 (icon + title + body + optional action)
+  - `LabelWithHint` — LabeledContent 라벨 옆 i 아이콘 inline
+- 일괄 적용:
+  - `EmptyWorkspaceView` — quick tip 3개 (단축키 / 패널 / 텔레그램) 상시
+  - SettingsView Claude/Codex CLI 헤더에 i 아이콘
+  - ChatToolbar agent picker 옆 i 아이콘
+  - DiffView 빈 상태 EmptyStateHint + git 미초기화 안내 InlineHint
+  - DiffView summary header HelpHint
+  - WorkspaceDeliverySheet 전체 (LabelWithHint + InlineHint)
+
+**2. M4 Delivery Loop (자동 build/test/fix)**:
+- `Sources/YuminaiCore/DeliveryConfig.swift` (신규)
+  - `DeliveryConfig { buildCommand?, testCommand?, lintCommand?, autoRunOnTurnComplete, autoFeedFailureToAgent, maxAttempts=3, timeoutSeconds=300 }`
+  - `DeliveryResult { id, kind, command, exitCode, stdout, stderr, durationMs, attempt, timedOut }` — `failurePromptPrefix()`로 다음 turn에 prepend할 텍스트 생성
+  - Aider 패턴: test 우선 → 성공 시 lint 추가, 실패 시 lint skip
+- `Sources/YuminaiApp/DeliveryRunner.swift` (신규) — actor
+  - `runIfConfigured(workspace:trigger:)` — autoRunOnTurnComplete 분기
+  - `runOnce(workspace:kind:command:)` — 사용자 수동
+  - `/bin/zsh -lc "<cmd>"` (login shell, 사용자 환경 상속)
+  - **Devin step budget** — maxAttempts hard cap, 초과 시 escalation 메시지
+  - **timeout watchdog** — SIGTERM → 0.5s → SIGKILL
+  - readability handler + ConcurrentStringBuffer (thread-safe stdout/stderr capture)
+  - 재진입 방지 (workspace.id mutex)
+- `Sources/YuminaiCore/Workspace.swift` 확장
+  - `deliveryConfig: DeliveryConfig` 필드 + `with(deliveryConfig:)` 불변 update
+- `Sources/YuminaiPersistence/WorkspaceModel.swift` 확장
+  - `deliveryConfigJSON: Data?` 컬럼 (JSON 직렬화, nil → .disabled fallback, 마이그레이션 호환)
+- `Sources/YuminaiApp/AppModel.swift`
+  - `deliveryResults: [DeliveryResult]` published (max 10개 누적)
+  - `isDeliveryRunning` / `pendingFailureFeedback`
+  - `handle(.completed)` hook — exit==0 + autoRunOnTurnComplete면 `maybeRunDelivery`
+  - `sendMessage()` hook — `pendingFailureFeedback`이 있으면 prompt 앞에 prepend (소극적 fix loop)
+  - `runDelivery(kind:)` / `clearDeliveryResults()` / `updateDeliveryConfig(_:)` 액션
+  - Telegram bridge에도 결과 알림 (✅ test — exit 0, 1.2s 형식)
+- `Sources/YuminaiApp/WorkspaceDeliverySheet.swift` (신규) — 580×540 모달
+  - 명령 3개 input + 정책 toggle + Stepper (max-attempts 1~10, timeout 30~1800초)
+  - 모든 라벨에 LabelWithHint
+  - 도움말 섹션에 InlineHint (tip + info)
+- `Sources/YuminaiUI/DeliveryResultsView.swift` (신규)
+  - Inspector "변경" 탭 하단 (VSplitView)
+  - run buttons (test/build/lint) — 명령 미설정 시 disabled
+  - 결과 row: status icon + kind + command + duration + attempt# + chevron
+  - 클릭 → expand → stdout/stderr (160pt 스크롤 + textSelection)
+  - timeout은 별도 InlineHint로 안내
+  - 빈 상태 EmptyStateHint (config 미설정 / 결과 없음 분기)
+  - 톱니 → WorkspaceDeliverySheet 호출
+- `Sources/YuminaiUI/SidebarView.swift` 확장
+  - 워크스페이스 우클릭 메뉴에 "Delivery 자동화 설정…" 추가
+
+**테스트 8 신규**:
+- DeliveryConfigTests (3): defaults / hasAnyCommand / Codable round-trip
+- DeliveryResultPromptTests (5): failure prompt / 타임아웃 / stdout fallback / 50줄 truncate / 짧은 텍스트 그대로
+
+**검증**: build 3.2s + clean rebuild OK, test 152/152 (144→152, +8 신규)
+
+알려진 한계:
+- Test → Lint 순서 고정 (커스텀 순서 X) — v0.5
+- 자동 fix는 다음 turn에 prepend만 — agent가 먼저 응답하고 사용자가 새 메시지를 보낼 때 작동 (즉시 새 turn spawn은 안 함)
+- 빌드는 자동 trigger 안 됨 (수동만) — 빌드는 보통 오래 걸려서 의도적 제외, v0.5에서 옵션 추가 검토
+- Block 그룹화 (Warp UX, M5.b) — 시간상 Phase B에서 보류, v0.4 후속에 추가
+
 ### Added — v0.4 Phase A: Diff Review + Embedded Terminal (ADR-028)
 
 사용자: "권고 사항 기준으로 구현 진행해 줘" — 83_NEXT_ROUND_PLAN의 권고 default 채택.
