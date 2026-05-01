@@ -1,6 +1,60 @@
 # Decisions Log (ADR-lite)
 
-> 최신: ADR-031 (v0.4 Phase D — Panes 영속 + 인터-에이전트 메시지)
+> 최신: ADR-032 (v0.4 Phase E — Mention picker + Source label + Rename + Split)
+
+---
+
+## ADR-032 — v0.4 Phase E: UX polish 4종 + Split layout
+
+- **날짜**: 2026-05-02
+- **상태**: Accepted
+- **결정**: 보류 항목 10개 평가 후 4개 진행 (Mention picker U1 / Assistant 라벨 U2 / Pane rename U3 / Split layout U4). 6개는 defer 사유 명시
+- **컨텍스트**:
+  - 사용자 — "나머지 라운드도 이어서 진행해 줘"
+  - 보류 항목 (ADR-031 doc 84): T5/T6/T8 + v0.5 권고 (mention picker / source 라벨 / pane→pane / ACP / editable diff)
+  - **냉정한 평가** — 모두 진행은 비효율. 가치 큰 것만 선별
+- **각 결정 핵심**:
+  1. **U1 Mention picker** — Composer `@`로 시작하면 자동 popover. customName + shortLabel 모두 후보. 사용성 임팩트 큼 (mention 학습 비용 ↓)
+  2. **U2 Assistant 라벨** — MessageBubble에 `assistantLabel` param. active pane의 displayName 표시. multi-pane에서 "어느 agent가 말하는지" 명확
+  3. **U3 Rename + promote** — context menu에서 rename / primary promote. 사용자가 "Claude (설계)" "Codex (구현)" 같은 의미 있는 이름 부여 가능. mention picker 후보로도 등장
+  4. **U4 Split layout (단순화)** — `PaneSplitMode { single, horizontal, vertical }`. secondary는 read-only (Composer 없음, 활성화 버튼). 진짜 dual-Composer는 v0.5 (사용성 검증 후)
+- **단순화 결정 (U4)**:
+  - 원안: 좌/우 동시 Composer + 각자 messages 입력
+  - 현실: SwiftUI focus management 복잡 + Composer 자체가 큰 컴포넌트 + per-side 설정 picker
+  - **단순화**: secondary는 read-only chat + 활성화 버튼. 사용자가 클릭하면 active 전환 (bounce). dual-Composer는 v0.5 사용성 검증 후
+- **defer 항목 사유**:
+  - T5 per-pane settings: tab swap이 동일 효과, 가치 < 비용
+  - T6 PreviewPane: use case 명시 (web 개발 등) 시 진행
+  - T8 Block UX (Warp): terminal 사용 빈도 데이터 필요
+  - pane→pane 자동 답장: 무한 루프 위험, v0.5 안전 토글로
+  - ACP Spike: Swift SDK 부재, 외부 생태계 성장 의존, v0.5 별도
+  - Editable diff (Cline SOTA): SwiftUI native diff editor 부재, 비용 prohibitive (~3-5인일)
+- **격리**:
+  - PaneSplitMode는 YuminaiCore (UI 모듈에서 binding)
+  - MentionSuggestion은 YuminaiUI (Composer만 의존)
+  - PaneRenameSheet/SecondaryPaneView는 YuminaiApp (AppModel + UI 모두 import)
+- **결과**:
+  - 신규 파일 3개: PaneSplitMode / PaneRenameSheet / SecondaryPaneView
+  - Composer +2 (MentionSuggestion + popover)
+  - MessageBubble/AssistantMessageBlock/ChatView +1 param
+  - PaneTabBar +context menu + split mode picker
+  - AppModel +promotePaneToPrimary + renameSheetPane + paneSplitMode
+  - RootView mentionSuggestions computed + chatArea split
+  - 3 신규 테스트 (PaneSplitMode)
+  - build 3.7s, test 184/184 (181→184, +3)
+- **알려진 한계 → 후속 (v0.5)**:
+  - Split secondary read-only (dual-Composer = v0.5)
+  - per-pane delivery config X
+  - Mention picker leading `@`만 (중간 mention X)
+  - Codex JSONL 실측 정밀화 (사용자 사용 후 데이터)
+  - pane→pane 자동 답장 (안전 토글)
+  - ACP Swift SDK Spike
+  - Editable diff (Cline SOTA)
+- **재검토**: 사용자 multi-pane + split 사용 후 — dual-Composer 필요성 / pane→pane 자동 답장 / per-pane settings 가치 재평가
+
+---
+
+## ADR-031 — v0.4 Phase D: Panes 영속 (T1) + 인터-에이전트 메시지 (T2) + Codex schema 정밀화 (T3)
 
 ---
 

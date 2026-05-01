@@ -4,9 +4,11 @@ import YuminaiCore
 /// 메시지 한 row. role에 따라 user는 박스 + 좌측 accent bar, assistant/tool은 박스 없는 본문.
 public struct MessageBubble: View {
     public let message: Message
+    public let assistantLabel: String
 
-    public init(message: Message) {
+    public init(message: Message, assistantLabel: String = "Claude") {
         self.message = message
+        self.assistantLabel = assistantLabel
     }
 
     public var body: some View {
@@ -14,7 +16,7 @@ public struct MessageBubble: View {
         case .user:
             UserMessageBlock(message: message)
         case .assistant:
-            AssistantMessageBlock(message: message)
+            AssistantMessageBlock(message: message, label: assistantLabel)
         case .tool:
             ToolMessageBlock(message: message)
         case .system:
@@ -60,11 +62,15 @@ public struct UserMessageBlock: View {
 
 public struct AssistantMessageBlock: View {
     public let message: Message
-    public init(message: Message) { self.message = message }
+    public let label: String
+    public init(message: Message, label: String = "Claude") {
+        self.message = message
+        self.label = label
+    }
 
     public var body: some View {
         VStack(alignment: .leading, spacing: 6) {
-            Text("Claude")
+            Text(label)
                 .font(Theme.Typography.micro)
                 .foregroundStyle(Theme.Color.textTertiary)
                 .textCase(.uppercase)

@@ -34,6 +34,9 @@ public struct Composer: View {
     public let onAttachNote: (() -> Void)?
     public let onCreatePR: (() -> Void)?
 
+    /// `@` 입력 시 자동완성 후보 (ADR-032). 빈 배열이면 picker 비활성.
+    public let mentionSuggestions: [MentionSuggestion]
+
     public init(
         text: Binding<String>,
         model: Binding<ClaudeModel>,
@@ -52,7 +55,8 @@ public struct Composer: View {
         onSettingsApply: @escaping (SessionSettings) -> Void,
         onAttach: @escaping () -> Void = {},
         onAttachNote: (() -> Void)? = nil,
-        onCreatePR: (() -> Void)? = nil
+        onCreatePR: (() -> Void)? = nil,
+        mentionSuggestions: [MentionSuggestion] = []
     ) {
         self._text = text
         self._model = model
@@ -72,9 +76,11 @@ public struct Composer: View {
         self.onAttach = onAttach
         self.onAttachNote = onAttachNote
         self.onCreatePR = onCreatePR
+        self.mentionSuggestions = mentionSuggestions
     }
 
     @FocusState private var inputFocused: Bool
+    @State private var showMentionPicker = false
 
     public var body: some View {
         VStack(spacing: 0) {
@@ -177,7 +183,52 @@ public struct Composer: View {
                 .padding(.vertical, Theme.Layout.composerPadding - 8)
                 .frame(minHeight: 80, maxHeight: Theme.Layout.composerMaxHeight - 80)
                 .focused($inputFocused)
+                .onChange(of: text) { _, newValue in
+                    let trimmed = newValue.trimmingCharacters(in: .whitespacesAndNewlines)
+                    let mentionInProgress = trimmed.hasPrefix("@") &&
+                        !trimmed.contains(" ") &&
+                        !trimmed.contains("\n")
+                    showMentionPicker = mentionInProgress && !mentionSuggestions.isEmpty
+                }
         }
+        .popover(isPresented: $showMentionPicker, arrowEdge: .top) {
+            mentionPickerContent
+        }
+    }
+
+    private var mentionPickerContent: some View {
+        let query = text.trimmingCharacters(in: .whitespacesAndNewlines)
+            .dropFirst()  // remove leading @
+            .lowercased()
+        let filtered = mentionSuggestions.filter { sug in
+            query.isEmpty ||
+                sug.handle.lowercased().hasPrefix(String(query)) ||
+                sug.displayName.lowercased().contains(String(query))
+        }
+        return VStack(alignment: .leading, spacing: 1) {
+            if filtered.isEmpty {
+                Text("매칭되는 pane이 없어요")
+                    .font(Theme.Typography.small)
+                    .foregroundStyle(Theme.Color.textTertiary)
+                    .padding(Theme.Spacing.md)
+            } else {
+                ForEach(filtered) { sug in
+                    MentionRow(suggestion: sug) {
+                        text = "@\(sug.handle) "
+                        showMentionPicker = false
+                        inputFocused = true
+                    }
+                }
+            }
+            Divider()
+            Text("선택하면 해당 pane으로 위임돼요")
+                .font(Theme.Typography.micro)
+                .foregroundStyle(Theme.Color.textTertiary)
+                .padding(.horizontal, Theme.Spacing.md)
+                .padding(.vertical, 4)
+        }
+        .frame(width: 280)
+        .padding(.vertical, 4)
     }
 
     // MARK: - Footer
@@ -349,5 +400,58 @@ public struct MessageMeta: View {
         }
         let h = Int(interval / 3600)
         return "\(h)h"
+    }
+}
+
+// MARK: - Mention picker (ADR-032 U1)
+
+/// `@` 입력 시 자동완성 후보. handle은 mention text (`@<handle>`).
+public struct MentionSuggestion: Sendable, Identifiable, Hashable {
+    public let id: String  // = handle (unique 가정)
+    public let handle: String
+    public let displayName: String
+    public let agentKindLabel: String
+    public let isPrimary: Bool
+
+    public init(handle: String, displayName: String, agentKindLabel: String, isPrimary: Bool = false) {
+        self.id = handle
+        self.handle = handle
+        self.displayName = displayName
+        self.agentKindLabel = agentKindLabel
+        self.isPrimary = isPrimary
+    }
+}
+
+private struct MentionRow: View {
+    let suggestion: MentionSuggestion
+    let onSelect: () -> Void
+    @State private var hovering = false
+
+    var body: some View {
+        Button(action: onSelect) {
+            HStack(spacing: 8) {
+                Text("@\(suggestion.handle)")
+                    .font(Theme.Typography.monoSmall)
+                    .foregroundStyle(Theme.Color.accent)
+                Text(suggestion.displayName)
+                    .font(Theme.Typography.small)
+                    .foregroundStyle(Theme.Color.text)
+                if suggestion.isPrimary {
+                    Image(systemName: "star.fill")
+                        .font(.system(size: 8))
+                        .foregroundStyle(Theme.Color.accent)
+                }
+                Spacer()
+                Text(suggestion.agentKindLabel)
+                    .font(Theme.Typography.micro)
+                    .foregroundStyle(Theme.Color.textTertiary)
+            }
+            .padding(.horizontal, Theme.Spacing.md)
+            .padding(.vertical, 5)
+            .background(hovering ? Theme.Color.surfaceHi : .clear)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .onHover { hovering = $0 }
     }
 }

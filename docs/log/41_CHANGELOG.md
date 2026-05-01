@@ -4,6 +4,86 @@
 
 ## [Unreleased] — 2026-05-02
 
+### Added — v0.4 Phase E: Mention picker + Source label + Pane rename + Split layout (ADR-032)
+
+사용자: "나머지 라운드도 이어서 진행해 줘" — 보류 항목 (T4-T8 + v0.5) 평가 후 가치/비용 매트릭스로 4개 진행, 6개 명시 보류.
+
+**평가 매트릭스** (이번 라운드):
+| 항목 | 가치 | 비용 | 결정 |
+|------|-----|------|------|
+| U1 Mention picker | 높음 | 보통 | ✅ |
+| U2 Assistant 라벨 | 높음 | 작음 | ✅ |
+| U3 Pane rename | 보통 | 작음 | ✅ |
+| U4 Split layout | 보통 | 큼→작음(단순화) | ✅ |
+| T5 per-pane settings | 낮음 | 보통 | ⏸ |
+| T6 PreviewPane | 보통 | 보통 | ⏸ (use case 명시 시) |
+| T8 Block UX | 보통 | 보통 | ⏸ (terminal 빈도 보고) |
+| pane→pane 자동답장 | 보통 | 작음 | ⏸ (안전 우선) |
+| ACP Spike | 모호 | 큼 | ⏸ (별도 라운드) |
+| Editable diff | 높음 | **매우 큼** | ⏸ (cost prohibitive) |
+
+**U1. Mention picker (Composer `@` 자동완성)**:
+- `Sources/YuminaiUI/Composer.swift` 확장
+  - `MentionSuggestion { handle, displayName, agentKindLabel, isPrimary }` 구조
+  - `mentionSuggestions: [MentionSuggestion]` param
+  - `text`가 `@`로 시작 + 공백 없음 시 popover 자동 표시
+  - 필터: handle prefix 또는 displayName contains (case-insensitive)
+  - 선택 시 `text = "@<handle> "` 자동 채움 + focus 유지
+  - 빈 결과 시 "매칭되는 pane이 없어요" 안내
+- `RootView.mentionSuggestions` computed — agentPanes에서 customName + shortLabel 모두 후보
+
+**U2. ChatView source label (assistant pane 표시)**:
+- `MessageBubble`/`AssistantMessageBlock`에 `assistantLabel: String` param 추가 (default "Claude")
+- `ChatView`가 prop으로 받아 forward
+- RootView가 `appModel.activePane?.displayName ?? "Claude"` 전달
+- 효과: Codex pane 활성 시 "CODEX"로 라벨 표시 (uppercase + tracking)
+
+**U3. Pane rename + promote**:
+- `Sources/YuminaiApp/PaneRenameSheet.swift` (신규) — 420pt 모달
+  - TextField + InlineHint ("비워두면 기본 이름")
+  - ⌘Return 저장 / ESC 취소
+- `PaneTabBar` `contextMenu` 추가:
+  - "이름 바꾸기…" (pencil)
+  - "기본 pane으로 설정" (star, primary 아닐 때)
+  - "닫기" (xmark, destructive, can close 시)
+- `AppModel.promotePaneToPrimary(_:)` — 다른 primary는 secondary로 demote
+- `AppModel.renameSheetPane: AgentPane?` (sheet item binding)
+- `RootView.sheet(item:)` — 모달 등록 + onApply/onCancel
+
+**U4. Split layout (단순화 — active + 첫 secondary)**:
+- `Sources/YuminaiCore/PaneSplitMode.swift` (신규)
+  - `enum { single, horizontal, vertical }` + 한국어 라벨 + icon
+- `AppModel.paneSplitMode: PaneSplitMode = .single`
+- `PaneTabBar`에 split mode picker (panes 2개+ 시만 표시) — Menu icon
+- `RootView.chatArea` computed:
+  - `.single` → 기존 동작 (active만)
+  - `.horizontal` → HSplitView(active 좌, secondary 우)
+  - `.vertical` → VSplitView(active 위, secondary 아래)
+- `Sources/YuminaiApp/SecondaryPaneView.swift` (신규)
+  - read-only chat (Composer 없음)
+  - 헤더: agent icon + 이름 + ★ + "보조" badge + 활성화 버튼
+  - 빈 상태: "이 pane은 아직 대화가 없어요"
+- 단순화 결정: 진짜 N-pane 동시 (각자 Composer)는 v0.5. 현재는 active 1 + secondary 보기만
+
+**테스트 3 신규** (PaneSplitMode):
+- 3개 case 한국어 라벨 + icon
+- Codable round-trip
+- raw value 확인
+
+**검증**: build 3.7s, test 184/184 (181→184, +3 신규)
+
+알려진 한계:
+- Split의 secondary는 read-only (입력 X) — 진짜 동시 dual-Composer는 v0.5
+- per-pane delivery config 여전히 X
+- Mention picker는 leading `@`만 — 중간 mention X
+- Codex JSONL schema 실측 정밀화는 사용자 사용 후 (idle 데이터 모임)
+
+**보류 명시 (defer doc 84)**:
+- T5/T6/T8 — 사용자 명시 트리거 시
+- pane→pane 자동 답장 — v0.5 안전 토글
+- ACP Spike — v0.5 별도 spike (Swift SDK 부재)
+- Editable diff — cost prohibitive (SwiftUI native diff editor 부재)
+
 ### Added — v0.4 Phase D: Panes 영속 + 인터-에이전트 메시지 + Codex schema 정밀화 (ADR-031)
 
 사용자: "남고 권고 순서 하나하나 상세하게 기획하고 냉정하게 사용성과 단위 기능 검토해 가면서 구현 이어서 진행해"

@@ -101,6 +101,12 @@ public final class AppModel {
     public var showDeliverySheet: Bool = false
     public var deliverySheetTargetWorkspaceId: UUID?
 
+    // Pane rename sheet (ADR-032 U3)
+    public var renameSheetPane: AgentPane?
+
+    // Multi-pane split layout (ADR-032 U4)
+    public var paneSplitMode: PaneSplitMode = .single
+
     // Diff review state (ADR-027 phase A2/A3)
     public var pendingChanges: [ChangedFile] = []
     public var pendingDiff: String = ""
@@ -822,6 +828,18 @@ public final class AppModel {
         guard let idx = agentPanes.firstIndex(where: { $0.id == paneId }) else { return }
         let trimmed = name?.trimmingCharacters(in: .whitespacesAndNewlines)
         agentPanes[idx] = agentPanes[idx].with(customName: (trimmed?.isEmpty ?? true) ? nil : trimmed)
+        persistCurrentPanes()
+    }
+
+    /// pane을 primary로 promote (다른 primary는 secondary로 demote).
+    public func promotePaneToPrimary(_ paneId: UUID) {
+        for idx in agentPanes.indices {
+            if agentPanes[idx].id == paneId {
+                agentPanes[idx] = agentPanes[idx].with(role: .primary)
+            } else if agentPanes[idx].role == .primary {
+                agentPanes[idx] = agentPanes[idx].with(role: .secondary)
+            }
+        }
         persistCurrentPanes()
     }
 

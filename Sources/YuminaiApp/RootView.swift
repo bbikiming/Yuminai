@@ -86,6 +86,16 @@ struct RootView: View {
         .sheet(isPresented: $bindable.showShortcutHelp) {
             ShortcutHelpSheet(onClose: { appModel.showShortcutHelp = false })
         }
+        .sheet(item: $bindable.renameSheetPane) { pane in
+            PaneRenameSheet(
+                pane: pane,
+                onApply: { newName in
+                    appModel.renamePane(pane.id, to: newName)
+                    appModel.renameSheetPane = nil
+                },
+                onCancel: { appModel.renameSheetPane = nil }
+            )
+        }
         .sheet(isPresented: $bindable.showDeliverySheet) {
             if let id = appModel.deliverySheetTargetWorkspaceId,
                let ws = appModel.workspaces.first(where: { $0.id == id }) {
@@ -389,21 +399,24 @@ struct ChatPane: View {
                         panes: appModel.agentPanes,
                         activePaneId: appModel.activePaneId,
                         codexAvailable: appModel.codexAvailable,
+                        splitMode: $bindable.paneSplitMode,
                         onSelect: { id in Task { await appModel.setActivePane(id) } },
                         onClose: { id in Task { await appModel.removePane(id) } },
-                        onAdd: { kind in Task { await appModel.addPane(agentKind: kind) } }
+                        onAdd: { kind in Task { await appModel.addPane(agentKind: kind) } },
+                        onRename: { pane in appModel.renameSheetPane = pane },
+                        onPromoteToPrimary: { id in appModel.promotePaneToPrimary(id) }
                     )
                 }
                 if appModel.showTerminalPane, let path = currentWorkspacePath {
                     VSplitView {
-                        ChatView(messages: appModel.messages)
+                        chatArea
                             .frame(minHeight: 200)
                         terminalPaneSection(path: path)
                             .frame(minHeight: 120, idealHeight: 220)
                     }
                     .frame(maxHeight: .infinity)
                 } else {
-                    ChatView(messages: appModel.messages)
+                    chatArea
                         .frame(maxHeight: .infinity)
                 }
 
@@ -438,7 +451,8 @@ struct ChatPane: View {
                     onAttach: { appModel.openAttachmentPicker() },
                     onAttachNote: appModel.isVaultConfigured
                         ? { appModel.showNotePicker.toggle() }
-                        : nil
+                        : nil,
+                    mentionSuggestions: mentionSuggestions
                 )
                 .popover(isPresented: $bindable.showNotePicker, arrowEdge: .top) {
                     NotePickerPopover(
@@ -464,6 +478,80 @@ struct ChatPane: View {
 
     private var currentAgentKind: AgentKind {
         appModel.workspaces.first { $0.id == appModel.selectedWorkspaceId }?.agentKind ?? .default
+    }
+
+    /// chat 영역 — split mode에 따라 1 pane (active) 또는 2 panes (active + secondary).
+    @ViewBuilder
+    private var chatArea: some View {
+        let activeView = ChatView(
+            messages: appModel.messages,
+            assistantLabel: appModel.activePane?.displayName ?? "Claude"
+        )
+
+        // secondary pane (active 외 첫 번째) 찾기
+        let secondary: AgentPane? = appModel.agentPanes.first { $0.id != appModel.activePaneId }
+
+        if appModel.paneSplitMode != .single, let secondary {
+            let secondaryMessages = appModel.paneMessages[secondary.id] ?? []
+            let secondaryView = SecondaryPaneView(
+                pane: secondary,
+                messages: secondaryMessages,
+                onActivate: { Task { await appModel.setActivePane(secondary.id) } }
+            )
+
+            switch appModel.paneSplitMode {
+            case .horizontal:
+                HSplitView {
+                    activeView
+                        .frame(minWidth: 280)
+                    secondaryView
+                        .frame(minWidth: 240)
+                }
+            case .vertical:
+                VSplitView {
+                    activeView
+                        .frame(minHeight: 200)
+                    secondaryView
+                        .frame(minHeight: 160)
+                }
+            case .single:
+                activeView
+            }
+        } else {
+            activeView
+        }
+    }
+
+    private var mentionSuggestions: [MentionSuggestion] {
+        // 같은 agent kind가 여러 개일 수 있어 customName 우선, 없으면 shortLabel
+        var seen = Set<String>()
+        var result: [MentionSuggestion] = []
+        for pane in appModel.agentPanes {
+            // 1) customName이 있으면 그것을 handle로
+            if let custom = pane.customName, !custom.isEmpty {
+                let handle = custom.lowercased()
+                    .replacingOccurrences(of: " ", with: "_")
+                if seen.insert(handle).inserted {
+                    result.append(MentionSuggestion(
+                        handle: handle,
+                        displayName: pane.displayName,
+                        agentKindLabel: pane.agentKind.displayName,
+                        isPrimary: pane.role == .primary
+                    ))
+                }
+            }
+            // 2) shortLabel은 항상 (첫 번째 agent kind만)
+            let kindHandle = pane.agentKind.shortLabel
+            if seen.insert(kindHandle).inserted {
+                result.append(MentionSuggestion(
+                    handle: kindHandle,
+                    displayName: pane.displayName,
+                    agentKindLabel: pane.agentKind.displayName,
+                    isPrimary: pane.role == .primary
+                ))
+            }
+        }
+        return result
     }
 
     private func terminalPaneSection(path: String) -> some View {

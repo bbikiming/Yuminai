@@ -5,13 +5,17 @@ import YuminaiCore
 public struct ChatView: View {
     public let messages: [Message]
     public let emptyStateText: String
+    /// 현재 active pane의 agent 이름 — assistant 메시지의 라벨로 사용 (ADR-032 U2).
+    public let assistantLabel: String
 
     public init(
         messages: [Message],
-        emptyStateText: String = "여기서 새 작업을 시작해보세요."
+        emptyStateText: String = "여기서 새 작업을 시작해보세요.",
+        assistantLabel: String = "Claude"
     ) {
         self.messages = messages
         self.emptyStateText = emptyStateText
+        self.assistantLabel = assistantLabel
     }
 
     public var body: some View {
@@ -22,7 +26,7 @@ public struct ChatView: View {
                 ScrollView {
                     LazyVStack(alignment: .leading, spacing: Theme.Spacing.xs) {
                         ForEach(messages) { message in
-                            MessageBubble(message: message)
+                            MessageBubble(message: message, assistantLabel: assistantLabel)
                                 .id(message.id)
                         }
                     }

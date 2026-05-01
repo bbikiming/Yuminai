@@ -12,21 +12,31 @@ public struct PaneTabBar: View {
     public let onSelect: (UUID) -> Void
     public let onClose: (UUID) -> Void
     public let onAdd: (AgentKind) -> Void
+    public let onRename: (AgentPane) -> Void
+    public let onPromoteToPrimary: (UUID) -> Void
+
+    @Binding public var splitMode: PaneSplitMode
 
     public init(
         panes: [AgentPane],
         activePaneId: UUID?,
         codexAvailable: Bool,
+        splitMode: Binding<PaneSplitMode> = .constant(.single),
         onSelect: @escaping (UUID) -> Void,
         onClose: @escaping (UUID) -> Void,
-        onAdd: @escaping (AgentKind) -> Void
+        onAdd: @escaping (AgentKind) -> Void,
+        onRename: @escaping (AgentPane) -> Void = { _ in },
+        onPromoteToPrimary: @escaping (UUID) -> Void = { _ in }
     ) {
         self.panes = panes
         self.activePaneId = activePaneId
         self.codexAvailable = codexAvailable
+        self._splitMode = splitMode
         self.onSelect = onSelect
         self.onClose = onClose
         self.onAdd = onAdd
+        self.onRename = onRename
+        self.onPromoteToPrimary = onPromoteToPrimary
     }
 
     public var body: some View {
@@ -39,7 +49,9 @@ public struct PaneTabBar: View {
                             isActive: pane.id == activePaneId,
                             canClose: panes.count > 1,
                             onSelect: { onSelect(pane.id) },
-                            onClose: { onClose(pane.id) }
+                            onClose: { onClose(pane.id) },
+                            onRename: { onRename(pane) },
+                            onPromote: { onPromoteToPrimary(pane.id) }
                         )
                     }
                 }
@@ -47,6 +59,10 @@ public struct PaneTabBar: View {
             }
 
             addPaneMenu
+
+            if panes.count > 1 {
+                splitModePicker
+            }
 
             HelpHint(
                 "한 워크스페이스에서 Claude와 Codex를 동시에 띄울 수 있어요. 각 pane은 자체 conversation을 가지고, 같은 프로젝트 폴더를 공유하므로 한 쪽이 만든 파일을 다른 쪽이 즉시 봅니다. 탭을 전환하면 messages도 swap돼요.",
@@ -58,6 +74,29 @@ public struct PaneTabBar: View {
         .frame(height: 28)
         .background(Theme.Color.bgSidebar)
         .overlay(alignment: .bottom) { FlatHDivider() }
+    }
+
+    @ViewBuilder
+    private var splitModePicker: some View {
+        Menu {
+            ForEach(PaneSplitMode.allCases, id: \.self) { mode in
+                Button {
+                    splitMode = mode
+                } label: {
+                    Label(mode.label, systemImage: mode.icon)
+                }
+            }
+        } label: {
+            Image(systemName: splitMode.icon)
+                .font(.system(size: 11, weight: .medium))
+                .foregroundStyle(splitMode == .single ? Theme.Color.textSecondary : Theme.Color.accent)
+                .frame(width: 24, height: 22)
+                .contentShape(Rectangle())
+        }
+        .menuStyle(.borderlessButton)
+        .menuIndicator(.hidden)
+        .fixedSize()
+        .help("패널 레이아웃 (단일/좌·우/위·아래)")
     }
 
     @ViewBuilder
@@ -94,6 +133,8 @@ private struct PaneTabButton: View {
     let canClose: Bool
     let onSelect: () -> Void
     let onClose: () -> Void
+    let onRename: () -> Void
+    let onPromote: () -> Void
     @State private var hovering = false
 
     var body: some View {
@@ -140,6 +181,16 @@ private struct PaneTabButton: View {
         }
         .buttonStyle(.plain)
         .onHover { hovering = $0 }
+        .contextMenu {
+            Button("이름 바꾸기…", systemImage: "pencil", action: onRename)
+            if pane.role != .primary {
+                Button("기본 pane으로 설정", systemImage: "star", action: onPromote)
+            }
+            if canClose {
+                Divider()
+                Button("닫기", systemImage: "xmark", role: .destructive, action: onClose)
+            }
+        }
     }
 
     private var rowBg: SwiftUI.Color {
