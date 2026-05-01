@@ -1,5 +1,7 @@
 # Decisions Log (ADR-lite)
 
+> 최신: ADR-022 (노트 기능 7종 일괄)
+
 > 큰 결정만 기록. 형식: 결정 / 컨텍스트 / 대안 / 근거 / 결과 / 재검토 시점.
 
 ---
@@ -155,6 +157,31 @@
   - inline keyboard / callback_query 없음 — 결정 요청 UI는 단순 텍스트
   - 앱 실행 중일 때만 polling (백그라운드 launchd agent 후순위)
 - **재검토**: 본인 1주일 사용 후 — 양방향이 실제로 가치 있는지 데이터로 확인
+
+---
+
+## ADR-022 — 노트 기능 7종 일괄 (frontmatter / watcher / 검색 / wiki / embed / 편집 / @note)
+
+- **날짜**: 2026-05-01
+- **상태**: Accepted
+- **결정**: 7개 노트 enhancement를 의존성 순서대로 한 라운드에 통합 구현 + 단위 테스트 + 실행 검증
+- **컨텍스트**: 사용자 — 모든 항목 한 번에 + 마지막 UI/UX·반응형·기능 테스트
+- **각 결정**:
+  1. frontmatter — UI에서만 표시 (편집 X), reserved 키 (title, tags) 외 알파벳순
+  2. file watcher — FSEventStream + 800ms debounce + AsyncStream<Set<String>>
+  3. 본문 검색 — lazy concurrent (50개 limit, 250ms debounce). SwiftData FTS 미지원 — 자체. 영속 인덱스 v0.3
+  4. Wiki link — preprocessing → swift-markdown-ui 일반 link → OpenURLAction이 yuminai-note scheme 인터셉트
+  5. 이미지 임베드 — preprocessing → file:// URL → NetworkImage. 노트 임베드 (`![[Note]]`)는 wiki link로 fallback
+  6. 편집 모드 — segmented toggle + ⌘S 저장 + 외부 변경 banner. 자동 저장 X
+  7. @note — Composer 첨부 메커니즘 재사용 (path mention)
+- **검증**: 72 tests (15 신규) + build 2.63s + run 정상
+- **알려진 한계**:
+  - Wiki link 동명 노트 시 첫 매칭만
+  - 노트 임베드 inline 표시 v0.3
+  - 편집 모드 raw markdown only
+  - 검색 50개 limit
+  - frontmatter 편집 UI 없음
+- **재검토**: 사용자 사용 후
 
 ---
 
