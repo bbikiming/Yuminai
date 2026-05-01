@@ -41,6 +41,7 @@ struct RootView: View {
                     overlaySidebar
                 }
                 quickSwitchHotkeys  // ⌘1~9 invisible buttons
+                helpHotkey  // ⌘? invisible
             }
             .onAppear {
                 windowSize = geo.size
@@ -65,6 +66,25 @@ struct RootView: View {
                 activeModel: appModel.activeSettings.model,
                 onClose: { appModel.showUsageDashboard = false }
             )
+        }
+        .sheet(isPresented: $bindable.showDisambigSheet) {
+            WikiDisambiguationSheet(
+                originalName: appModel.disambigOriginalName,
+                candidates: appModel.disambigCandidates,
+                onSelect: { path in Task { await appModel.selectDisambigCandidate(path) } },
+                onCancel: { appModel.showDisambigSheet = false }
+            )
+        }
+        .sheet(isPresented: $bindable.showCreateNoteSheet) {
+            CreateNoteSheet(
+                onCreate: { filename, title, folder in
+                    Task { await appModel.createNote(filename: filename, title: title, folder: folder) }
+                },
+                onCancel: { appModel.showCreateNoteSheet = false }
+            )
+        }
+        .sheet(isPresented: $bindable.showShortcutHelp) {
+            ShortcutHelpSheet(onClose: { appModel.showShortcutHelp = false })
         }
         .alert(
             "잠깐, 문제가 생겼어요",
@@ -126,6 +146,15 @@ struct RootView: View {
                     editingDraft: $bindable.editingDraft,
                     isDirty: appModel.noteIsDirty,
                     externalChangeDetected: appModel.externalChangeDetected,
+                    splitMode: $bindable.editorSplitMode,
+                    favoriteNotePaths: appModel.favoriteNotePaths,
+                    recentNotePaths: appModel.recentNotePaths,
+                    onToggleFavorite: { path in appModel.toggleFavorite(path) },
+                    onCreateNote: { appModel.showCreateNoteSheet = true },
+                    onDeleteNote: { path in Task { await appModel.deleteNote(at: path) } },
+                    noteResolver: { name in
+                        AppModel.notePreviewBody(name: name, vaultRoot: appModel.vaultRootURL)
+                    },
                     onSelectNote: { path in Task { await appModel.selectNote(at: path) } },
                     onClearSelectedNote: { appModel.clearSelectedNote() },
                     onOpenInObsidian: { appModel.openCurrentNoteInObsidian() },
@@ -177,6 +206,15 @@ struct RootView: View {
             .background(Theme.Color.bgSidebar)
             .shadow(color: .black.opacity(0.4), radius: 8, x: 4, y: 0)
             .transition(.move(edge: .leading))
+    }
+
+    /// ⌘? — 단축키 도움말 sheet.
+    private var helpHotkey: some View {
+        Button("") { appModel.showShortcutHelp = true }
+            .keyboardShortcut("/", modifiers: .command)
+            .opacity(0)
+            .frame(width: 0, height: 0)
+            .accessibilityHidden(true)
     }
 
     /// ⌘1~9: 워크스페이스 빠른 전환. invisible button을 layout에 두면 macOS가 단축키 처리.

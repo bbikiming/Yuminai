@@ -10,16 +10,12 @@ public enum MarkdownPreprocessor {
     public static func process(
         _ markdown: String,
         vaultRoot: URL? = nil,
-        imageExtensions: Set<String> = ["png", "jpg", "jpeg", "gif", "svg", "webp", "pdf"]
+        imageExtensions: Set<String> = ["png", "jpg", "jpeg", "gif", "svg", "webp", "pdf"],
+        noteResolver: ((String) -> String?)? = nil
     ) -> String {
         var output = markdown
-
-        // 1) 이미지 임베드 ![[file.ext]]
-        output = processEmbeds(output, vaultRoot: vaultRoot, imageExtensions: imageExtensions)
-
-        // 2) wiki link [[Page]] / [[Page|Display]]
+        output = processEmbeds(output, vaultRoot: vaultRoot, imageExtensions: imageExtensions, noteResolver: noteResolver)
         output = processWikiLinks(output)
-
         return output
     }
 
@@ -74,7 +70,12 @@ public enum MarkdownPreprocessor {
         )
     }()
 
-    static func processEmbeds(_ markdown: String, vaultRoot: URL?, imageExtensions: Set<String>) -> String {
+    static func processEmbeds(
+        _ markdown: String,
+        vaultRoot: URL?,
+        imageExtensions: Set<String>,
+        noteResolver: ((String) -> String?)? = nil
+    ) -> String {
         let ns = markdown as NSString
         let range = NSRange(location: 0, length: ns.length)
         let matches = embedRegex.matches(in: markdown, options: [], range: range)
@@ -96,13 +97,23 @@ public enum MarkdownPreprocessor {
                     let urlString = fileURL.absoluteString
                     result += "![\(inner)](\(urlString))"
                 } else {
-                    // vault root 없으면 그대로 보존
                     result += "![\(inner)](\(inner))"
                 }
             } else {
-                // 노트 임베드는 wiki link로 fallback
-                let encoded = inner.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) ?? inner
-                result += "[\(inner)](yuminai-note://\(encoded))"
+                // 노트 임베드 — resolver가 본문 head 제공하면 inline blockquote, 아니면 wiki link
+                if let resolver = noteResolver, let preview = resolver(inner) {
+                    let encoded = inner.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) ?? inner
+                    let header = "**📎 [\(inner)](yuminai-note://\(encoded))**"
+                    let body = preview
+                        .split(separator: "\n")
+                        .prefix(5)
+                        .map { "> \($0)" }
+                        .joined(separator: "\n")
+                    result += "\n\n> \(header)\n\(body)\n> [전체 보기 →](yuminai-note://\(encoded))\n\n"
+                } else {
+                    let encoded = inner.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) ?? inner
+                    result += "[\(inner)](yuminai-note://\(encoded))"
+                }
             }
 
             cursor = matchRange.location + matchRange.length

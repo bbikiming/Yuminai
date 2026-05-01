@@ -4,6 +4,51 @@
 
 ## [Unreleased] — 2026-05-01
 
+### Added — Parity Round: codex 10 gap 중 7개 + UX polish 3종 (ADR-023)
+
+사용자 요청: "다음 라운드도 전부 기획해서 구현해 줘 이 앱의 퀄리티가 클로드코드 이상의 사용성이 됐다고 자신할 때까지 래퍼런스 조사, 검증, 기획, 구현 반복해"
+
+명세 `docs/design/82_PARITY_ROUND.md` (codex 10 gap 분석 → 7 user feature B1~B7 + 3 polish C1~C3 + scope 외 `pane model`/`diff review`/`embedded preview`/`software delivery loop`/`execution env mobility` 차기 라운드 보존).
+
+구현 (B1~B7, C1~C3):
+
+1. **B1 Wiki link disambiguation** — `ObsidianVault.findNotesByName(_:)` (대소문자 무시 매칭) + `WikiDisambiguationSheet` (480pt 카드, 후보 리스트 + path subtitle + chevron + ESC 취소). AppModel에 `disambigCandidates`/`disambigOriginalName`/`showDisambigSheet` state + `selectDisambigCandidate(_:)`. `openNoteByName`이 다수 매칭 시 sheet 띄움
+2. **B2 검색 highlight** — `NoteTreeView.SearchHitRow.highlight(text:query:accent:)` static func — 매칭 substring을 accent color + `.bold` AttributedString으로 변환. 파일명/본문 라인 모두 highlight
+3. **B3 노트 임베드 inline preview** — `MarkdownPreprocessor.process(_:noteResolver:)` — embed 발견 + resolver가 본문 반환 시 inline blockquote (`> [Note](url)\n> 첫 5줄`) 생성. resolver nil이면 wiki link로 fallback. `MarkdownViewer`도 `noteResolver` 통과
+4. **B4 Split editor mode** — `EditorSplitMode` enum (editor/split/preview, 3-way) + InspectorPanel header에 segmented button. split 모드는 좌측 TextEditor + 우측 MarkdownViewer 동시 표시. AppModel `editorSplitMode` state
+5. **B5 노트 CRUD + 휴지통** — `ObsidianVault.createNote(at:title:body:)` (frontmatter 자동 생성, 부모 폴더 자동 mkdir) + `deleteNote(at:)` (vault root의 `.trash/<timestamp>-<filename>`로 이동, 영구 삭제 X). `VaultError.alreadyExists` 추가. `CreateNoteSheet` (filename + title 옵션 + 폴더 옵션, .md 확장자 자동) + InspectorPanel "새 노트" 버튼 + 휴지통 아이콘 (현재 노트 삭제)
+6. **B6 즐겨찾기 / 최근 노트** — AppModel `favoriteNotePaths: Set<String>` (UserDefaults 영속) + `recentNotePaths: [String]` (max 10) + `toggleFavorite(_:)` + `pushRecent(_:)`. InspectorPanel 노트 탭 상단에 quick access section (별 아이콘 toggle + 최근 라인). 별 표시 버튼이 노트 헤더에 inline
+7. **B7 In-memory body cache** — `ObsidianVault.bodyCache: [String: String]` 추가. `searchFullText`이 캐시 우선, 미스 시 fill. watcher 변경 path만 `invalidateCache(paths:)` (granular). `cachedBodyCount` / `clearCache` 노출. AppModel.handleVaultChanges가 watcher 콜백에 cache invalidation hook 연결
+
+UX polish (C1~C3):
+
+- **C1 ⌘/ 단축키 도움말 sheet** — `ShortcutHelpSheet` (글로벌/채팅/노트 카테고리 + ShortcutKeyBadge 키캡 시각화) + RootView `helpHotkey` (⌘/) + AppModel `showShortcutHelp`
+- **C2 InspectorPanel vault action bar** — "새 노트" primary button + 검색 placeholder 친화화
+- **C3 quick access section** — 즐겨찾기/최근 노트 row UI (`QuickNoteRow` + 빈 상태 안내)
+
+신규 파일:
+- `Sources/YuminaiUI/EditorSplitMode.swift` — split mode enum
+- `Sources/YuminaiUI/WikiDisambiguationSheet.swift` — 동명 노트 선택 sheet
+- `Sources/YuminaiUI/CreateNoteSheet.swift` — 노트 생성 form sheet
+- `Sources/YuminaiUI/ShortcutHelpSheet.swift` — ⌘/ 단축키 도움말
+- `Tests/YuminaiObsidianTests/ParityRoundTests.swift` — 14 신규 (B1 4건 + B5 4+2건 + B7 3건 + EditorSplitMode 1건)
+
+확장:
+- `ObsidianVault` — bodyCache + searchFullText 캐시 통합 + invalidateCache/clearCache/cachedBodyCount + createNote/deleteNote + findNotesByName + VaultError.alreadyExists + nonisolated rootURL
+- `MarkdownPreprocessor` — process(_:noteResolver:) (선택적 resolver) + processEmbeds inline blockquote 생성
+- `MarkdownViewer` — noteResolver 파라미터 통과
+- `NoteTreeView` — SearchHitRow query 받아 highlight, static highlight 헬퍼
+- `InspectorPanel` — 25+ params로 전면 재작성: vaultActionBar / quickAccessSection / splitEditor / splitToggle / favoriteToggle / deleteCurrentNote / createNote callback
+- `AppModel` — disambigCandidates / disambigOriginalName / showDisambigSheet / editorSplitMode / showCreateNoteSheet / favoriteNotePaths / recentNotePaths / showShortcutHelp + toggleFavorite/isFavorite/persistFavorites/loadFavorites + selectDisambigCandidate/createNote/deleteNote + static notePreviewBody(name:vaultRoot:) (nonisolated, actor isolation 회피)
+- `RootView` — 3 신규 sheet (WikiDisambiguationSheet/CreateNoteSheet/ShortcutHelpSheet) + helpHotkey + InspectorPanel 25+ args binding + noteResolver wiring
+
+Bugfix (수반):
+- `ObsidianVault.rootURL`을 `nonisolated let`으로 — MainActor에서 안전 접근 (immutable이라 race 무관)
+- `notePreviewBody`를 static + URL 파라미터로 — actor-isolated obsidianVault 접근 회피, MarkdownViewer resolver closure가 nonisolated context에서 호출 가능
+- `Color.adaptive(light:dark:)` static func로 rename — MarkdownUI Color(light:dark:) init과 ambiguity 해소
+
+ADR-023 채택. 검증: build 3.23s + test 86/86 (72→86, +14 신규), CRUD/cache/disambig 모두 unit 검증
+
 ### Added — 노트 기능 7종 일괄 (ADR-022)
 
 사용자 요청: "다음 라운드 항목들 하나하나 상세하게 논리적으로 기획해서 구현하고 전부 마친 후에 uiux와 반응형, 단위 기능 정상 작동 테스트까지"

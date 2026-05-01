@@ -1,8 +1,49 @@
 # Decisions Log (ADR-lite)
 
-> 최신: ADR-022 (노트 기능 7종 일괄)
+> 최신: ADR-023 (Parity Round — codex gap 7개 + UX polish 3개)
 
 > 큰 결정만 기록. 형식: 결정 / 컨텍스트 / 대안 / 근거 / 결과 / 재검토 시점.
+
+---
+
+## ADR-023 — Parity Round (B1~B7 + C1~C3)
+
+- **날짜**: 2026-05-01
+- **상태**: Accepted
+- **결정**: codex가 노트 모듈에 대해 식별한 10개 gap 중 사용성 임팩트가 즉각적인 7개(disambig / 검색 highlight / 임베드 preview / split editor / CRUD / 즐겨찾기·최근 / 캐시) + UX polish 3개(⌘/ 도움말 / vault action bar / quick access)를 한 라운드에 통합 구현. 나머지 5개(pane model / diff review / embedded terminal / software delivery loop / exec env mobility)는 다음 라운드로 명시 보존
+- **컨텍스트**:
+  - 사용자 — "이 앱의 퀄리티가 클로드코드 이상의 사용성이 됐다고 자신할 때까지 래퍼런스 조사, 검증, 기획, 구현 반복"
+  - codex CLI로 본인 자체 review 수행 → 10개 gap 도출 → 우선순위 분류
+  - 사용자 명시 7개 노트 기능과 codex 식별 항목이 70% 겹침 → 합집합 = parity round
+- **각 결정 핵심**:
+  1. **B1 Disambig** — 동명 노트 sheet, 첫 매칭만 잡던 v0.2 한계 해소. case-insensitive 비교
+  2. **B2 Highlight** — AttributedString으로 매칭 substring만 accent color + bold (라인 전체 색칠 X)
+  3. **B3 임베드 preview** — 본문 첫 5줄만 inline blockquote (full embed는 v0.4) — 가독성 + 토큰 비용 절충
+  4. **B4 Split** — 3-way (editor/split/preview), 단순 toggle보다 풍부. enum은 별도 file로 (AppModel에 의존 안 함)
+  5. **B5 CRUD + 휴지통** — `.trash/<timestamp>-<filename>`로 이동 (영구 삭제 X) — 실수 복구 가능. Obsidian과 동일한 패턴
+  6. **B6 즐겨찾기/최근** — Set<String> + 영속 (UserDefaults), 최근은 10개 LRU. quick access는 sidebar가 아닌 InspectorPanel 노트 탭 상단 (이미 사용자 시선이 있는 곳)
+  7. **B7 In-memory cache** — bodyCache(`[String: String]`), watcher 변경 path만 granular invalidate. 영속 인덱스(SQLite FTS / SwiftData FTS5)는 v0.4
+  8. **C1 ⌘/ 도움말** — sheet 형태, 카테고리(글로벌/채팅/노트) + ShortcutKeyBadge로 키캡 시각화. command palette는 v0.4
+  9. **C2 vault action bar** — 노트 탭 상단에 "+ 새 노트" primary button — discoverability ↑
+  10. **C3 quick access** — 빈 상태 메시지 한글 친화 ("아직 즐겨찾기한 노트가 없어요")
+- **Actor isolation 해결**:
+  - `ObsidianVault.rootURL`이 actor-isolated이면 `MarkdownViewer` (MainActor)에서 wiki link/embed 처리 불가 → `nonisolated let` (immutable이므로 race 무관)
+  - `notePreviewBody`는 actor 내부 메서드면 closure에서 `await` 필요 → static + URL 파라미터로 nonisolated 변경. resolver closure는 `{ name in AppModel.notePreviewBody(name: name, vaultRoot: appModel.vaultRootURL) }` — vault root를 외부에서 주입
+- **결과**:
+  - 신규 파일 5개 (EditorSplitMode/WikiDisambiguationSheet/CreateNoteSheet/ShortcutHelpSheet + ParityRoundTests)
+  - InspectorPanel 25+ params로 전면 재작성
+  - 86/86 tests (B1 disambig 4건 + B5 CRUD 6건 + B7 cache 3건 + EditorSplitMode 1건 = 14 신규)
+- **알려진 한계 (다음 라운드)**:
+  - Pane model (사이드 by 사이드 노트/다이얼로그) — codex gap #1
+  - Diff review UI (코드 변경 시각화) — codex gap #2
+  - Embedded preview/terminal pane — codex gap #3
+  - Software delivery loop (build/test/deploy 통합) — codex gap #4
+  - Execution env mobility (mobile↔desktop 작업 이전) — codex gap #5
+  - 영속 검색 인덱스 (SQLite FTS5) — B7 v0.4
+  - frontmatter 인라인 편집 — B4 v0.4 (현재 raw markdown만)
+  - 노트 이름 변경 / 폴더 이동 / drag-drop — B5 v0.4
+  - Wiki link autocomplete (`[[`치면 popup) — v0.4
+- **재검토**: 사용자 1주일 사용 후 feedback / 다음 라운드 시작 전
 
 ---
 

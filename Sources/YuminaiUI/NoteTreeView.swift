@@ -104,6 +104,7 @@ public struct NoteTreeView: View {
                     ForEach(fullTextHits) { hit in
                         SearchHitRow(
                             hit: hit,
+                            query: searchQuery,
                             isSelected: hit.path == selectedPath,
                             onSelect: { onSelect(hit.path) }
                         )
@@ -240,9 +241,10 @@ struct VaultNodeRow: View {
     }
 }
 
-/// 본문 검색 결과 row — 매칭 컨텍스트 함께 표시.
+/// 본문 검색 결과 row — 매칭 단어 highlight (B2).
 struct SearchHitRow: View {
     let hit: SearchHit
+    let query: String
     let isSelected: Bool
     let onSelect: () -> Void
 
@@ -255,7 +257,7 @@ struct SearchHitRow: View {
                     Image(systemName: hit.matchSource == .filename ? "doc.text" : "text.magnifyingglass")
                         .font(.system(size: 11))
                         .foregroundStyle(isSelected ? Theme.Color.accent : Theme.Color.textSecondary)
-                    Text(hit.title)
+                    Text(highlightedTitle)
                         .font(Theme.Typography.label)
                         .foregroundStyle(isSelected ? Theme.Color.text : Theme.Color.textSecondary)
                         .lineLimit(1)
@@ -263,7 +265,7 @@ struct SearchHitRow: View {
                     Spacer()
                 }
                 if let line = hit.matchedLine {
-                    Text(line)
+                    Text(highlightedLine(line))
                         .font(Theme.Typography.micro)
                         .foregroundStyle(Theme.Color.textTertiary)
                         .lineLimit(2)
@@ -284,6 +286,35 @@ struct SearchHitRow: View {
         if isSelected { return Theme.Color.elevated }
         if hovering { return Theme.Color.surfaceHi }
         return .clear
+    }
+
+    private var highlightedTitle: AttributedString {
+        Self.highlight(text: hit.title, query: query, accent: Theme.Color.accent)
+    }
+
+    private func highlightedLine(_ line: String) -> AttributedString {
+        Self.highlight(text: line, query: query, accent: Theme.Color.accent)
+    }
+
+    /// matched substring을 accent 색 + bold로 강조.
+    static func highlight(text: String, query: String, accent: SwiftUI.Color) -> AttributedString {
+        var attr = AttributedString(text)
+        let q = query.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !q.isEmpty else { return attr }
+        let lowered = text.lowercased()
+        let qLower = q.lowercased()
+        var searchStart = lowered.startIndex
+        while let foundRange = lowered.range(of: qLower, range: searchStart..<lowered.endIndex) {
+            let nsLower = lowered.distance(from: lowered.startIndex, to: foundRange.lowerBound)
+            let nsUpper = lowered.distance(from: lowered.startIndex, to: foundRange.upperBound)
+            if let attrLower = AttributedString.Index(text.index(text.startIndex, offsetBy: nsLower), within: attr),
+               let attrUpper = AttributedString.Index(text.index(text.startIndex, offsetBy: nsUpper), within: attr) {
+                attr[attrLower..<attrUpper].foregroundColor = accent
+                attr[attrLower..<attrUpper].font = .system(size: 11, weight: .bold)
+            }
+            searchStart = foundRange.upperBound
+        }
+        return attr
     }
 }
 

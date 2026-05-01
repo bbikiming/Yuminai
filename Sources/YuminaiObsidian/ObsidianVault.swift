@@ -9,6 +9,9 @@ import YuminaiCore
 public actor ObsidianVault {
     public nonisolated let rootURL: URL
 
+    /// 본문 in-memory 캐시 (B7 영속 인덱스 1차). watcher가 변경 path만 invalidate.
+    private var bodyCache: [String: String] = [:]
+
     public init(rootURL: URL) {
         self.rootURL = rootURL
     }
@@ -79,9 +82,16 @@ public actor ObsidianVault {
                 continue
             }
 
-            // 본문 매칭
-            let url = rootURL.appending(path: path)
-            guard let body = try? String(contentsOf: url, encoding: .utf8) else { continue }
+            // 본문 매칭 — 캐시 우선
+            let body: String
+            if let cached = bodyCache[path] {
+                body = cached
+            } else {
+                let url = rootURL.appending(path: path)
+                guard let read = try? String(contentsOf: url, encoding: .utf8) else { continue }
+                bodyCache[path] = read
+                body = read
+            }
             let bodyLower = body.lowercased()
             if let range = bodyLower.range(of: q) {
                 let line = Self.contextSnippet(body: body, around: range, padding: 30)
@@ -90,6 +100,67 @@ public actor ObsidianVault {
         }
 
         return hits
+    }
+
+    /// watcher가 호출 — 변경된 path 캐시만 무효화 (B7).
+    public func invalidateCache(paths: Set<String>) {
+        for path in paths {
+            bodyCache.removeValue(forKey: path)
+        }
+    }
+
+    public func clearCache() {
+        bodyCache.removeAll()
+    }
+
+    public var cachedBodyCount: Int {
+        bodyCache.count
+    }
+
+    // MARK: - CRUD (B5)
+
+    public func createNote(at relativePath: String, title: String?, body: String = "") async throws -> Note {
+        let url = rootURL.appending(path: relativePath)
+        if FileManager.default.fileExists(atPath: url.path) {
+            throw VaultError.alreadyExists(path: relativePath)
+        }
+        let parent = url.deletingLastPathComponent()
+        try FileManager.default.createDirectory(at: parent, withIntermediateDirectories: true)
+
+        let frontmatter = title.map { "---\ntitle: \($0)\n---\n\n" } ?? ""
+        let content = frontmatter + body
+        try content.write(to: url, atomically: true, encoding: .utf8)
+        bodyCache.removeValue(forKey: relativePath)
+
+        return try await read(relativePath)
+    }
+
+    /// 노트를 vault root의 `.trash/` 폴더로 이동 (휴지통 패턴).
+    public func deleteNote(at relativePath: String) async throws {
+        let url = rootURL.appending(path: relativePath)
+        guard FileManager.default.fileExists(atPath: url.path) else {
+            throw VaultError.noteNotFound(path: relativePath)
+        }
+        let trashRoot = rootURL.appending(path: ".trash")
+        try FileManager.default.createDirectory(at: trashRoot, withIntermediateDirectories: true)
+
+        let timestamp = Int(Date().timeIntervalSince1970)
+        let filename = url.lastPathComponent
+        let trashURL = trashRoot.appending(path: "\(timestamp)-\(filename)")
+        try FileManager.default.moveItem(at: url, to: trashURL)
+        bodyCache.removeValue(forKey: relativePath)
+    }
+
+    /// 동명 노트 모두 찾기 — disambiguation에 사용 (B1).
+    public func findNotesByName(_ name: String) async throws -> [VaultNode] {
+        let q = name.lowercased()
+        let allNotes = try collectNotes(at: rootURL, relativeTo: rootURL)
+        return allNotes.compactMap { node in
+            if case .note(let nname, _, _) = node, nname.lowercased() == q {
+                return node
+            }
+            return nil
+        }
     }
 
     /// 매칭된 위치 주변 컨텍스트 추출.
@@ -272,6 +343,7 @@ public struct Note: Sendable, Equatable {
 public enum VaultError: Error, LocalizedError, Sendable {
     case notFound(path: String)
     case noteNotFound(path: String)
+    case alreadyExists(path: String)
 
     public var errorDescription: String? {
         switch self {
@@ -279,6 +351,8 @@ public enum VaultError: Error, LocalizedError, Sendable {
             return "Vault 폴더를 찾을 수 없어요: \(path)"
         case .noteNotFound(let path):
             return "노트를 찾을 수 없어요: \(path)"
+        case .alreadyExists(let path):
+            return "같은 이름의 노트가 이미 있어요: \(path)"
         }
     }
 }

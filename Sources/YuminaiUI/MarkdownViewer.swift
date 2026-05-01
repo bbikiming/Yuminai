@@ -9,20 +9,27 @@ import YuminaiObsidian
 public struct MarkdownViewer: View {
     public let markdown: String
     public let vaultRoot: URL?
+    public let noteResolver: ((String) -> String?)?
     public let onWikiLink: ((String) -> Void)?
 
     public init(
         markdown: String,
         vaultRoot: URL? = nil,
+        noteResolver: ((String) -> String?)? = nil,
         onWikiLink: ((String) -> Void)? = nil
     ) {
         self.markdown = markdown
         self.vaultRoot = vaultRoot
+        self.noteResolver = noteResolver
         self.onWikiLink = onWikiLink
     }
 
     public var body: some View {
-        let processed = MarkdownPreprocessor.process(markdown, vaultRoot: vaultRoot)
+        let processed = MarkdownPreprocessor.process(
+            markdown,
+            vaultRoot: vaultRoot,
+            noteResolver: noteResolver
+        )
         ScrollView {
             Markdown(processed)
                 .markdownTheme(.yuminai)

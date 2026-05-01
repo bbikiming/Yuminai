@@ -67,6 +67,26 @@ public final class AppModel {
     public var showNotePicker: Bool = false
     public var notePickerQuery: String = ""
 
+    // Wiki disambig (B1)
+    public var disambigCandidates: [VaultNode] = []
+    public var disambigOriginalName: String = ""
+    public var showDisambigSheet: Bool = false
+
+    // Editor split mode (B4)
+    public var editorSplitMode: EditorSplitMode = .editor
+
+    // 노트 생성 (B5)
+    public var showCreateNoteSheet: Bool = false
+
+    // Favorites (C2)
+    public var favoriteNotePaths: Set<String> = []
+
+    // Recents (C3) — LRU 10개
+    public var recentNotePaths: [String] = []
+
+    // 도움말 sheet (C1)
+    public var showShortcutHelp: Bool = false
+
     private var vaultWatcher: VaultWatcher?
     private var watcherTask: Task<Void, Never>?
     private var fullTextSearchTask: Task<Void, Never>?
@@ -121,12 +141,15 @@ public final class AppModel {
             obsidianVault = nil
             vaultTree = []
             selectedNote = nil
+            favoriteNotePaths = []
+            recentNotePaths = []
             return
         }
         let expanded = NSString(string: path).expandingTildeInPath
         let url = URL(fileURLWithPath: expanded)
         let vault = ObsidianVault(rootURL: url)
         obsidianVault = vault
+        loadFavorites()
         await loadVaultTree()
 
         // file watcher 시작
@@ -143,6 +166,10 @@ public final class AppModel {
     }
 
     private func handleVaultChanges(_ changes: Set<String>) async {
+        // B7: 변경 path 캐시 무효화
+        if let vault = obsidianVault {
+            await vault.invalidateCache(paths: changes)
+        }
         await loadVaultTree()
         // 현재 보고 있는 노트가 변경됐다면
         if let current = selectedNote, changes.contains(current.path) {
@@ -179,8 +206,46 @@ public final class AppModel {
             editingDraft = note.body
             externalChangeDetected = false
             isEditingNote = false
+            pushRecent(path)
         } catch {
             self.error = error.localizedDescription
+        }
+    }
+
+    // MARK: - Recents (C3)
+
+    private func pushRecent(_ path: String) {
+        recentNotePaths.removeAll { $0 == path }
+        recentNotePaths.insert(path, at: 0)
+        if recentNotePaths.count > 10 {
+            recentNotePaths = Array(recentNotePaths.prefix(10))
+        }
+    }
+
+    // MARK: - Favorites (C2)
+
+    public func toggleFavorite(_ path: String) {
+        if favoriteNotePaths.contains(path) {
+            favoriteNotePaths.remove(path)
+        } else {
+            favoriteNotePaths.insert(path)
+        }
+        persistFavorites()
+    }
+
+    public func isFavorite(_ path: String) -> Bool {
+        favoriteNotePaths.contains(path)
+    }
+
+    private func persistFavorites() {
+        let key = "yuminai.favorites.\(preferences.obsidianVaultPath ?? "")"
+        UserDefaults.standard.set(Array(favoriteNotePaths), forKey: key)
+    }
+
+    private func loadFavorites() {
+        let key = "yuminai.favorites.\(preferences.obsidianVaultPath ?? "")"
+        if let arr = UserDefaults.standard.array(forKey: key) as? [String] {
+            favoriteNotePaths = Set(arr)
         }
     }
 
@@ -191,24 +256,48 @@ public final class AppModel {
         externalChangeDetected = false
     }
 
-    /// Wiki link 클릭 시 page 이름으로 노트 검색.
+    /// Wiki link 클릭 시 page 이름으로 노트 검색. 다수 매칭 시 disambig sheet.
     public func openNoteByName(_ name: String) async {
         guard let vault = obsidianVault else { return }
-        let q = name.lowercased()
-        let allNotes = try? await vault.tree()
-        let path = (allNotes ?? []).flatMap { Self.flattenForSearch($0) }
-            .first { node in
-                if case .note(let nname, _, _) = node {
-                    return nname.lowercased() == q
+        do {
+            let candidates = try await vault.findNotesByName(name)
+            switch candidates.count {
+            case 0:
+                self.error = "‘\(name)’ 노트를 찾을 수 없어요"
+            case 1:
+                if case .note(_, let path, _) = candidates[0] {
+                    inspectorTab = .notes
+                    await selectNote(at: path)
                 }
-                return false
-            }?.path
-        if let path {
-            inspectorTab = .notes
-            await selectNote(at: path)
-        } else {
-            self.error = "‘\(name)’ 노트를 찾을 수 없어요"
+            default:
+                disambigCandidates = candidates
+                disambigOriginalName = name
+                showDisambigSheet = true
+            }
+        } catch {
+            self.error = error.localizedDescription
         }
+    }
+
+    public func selectDisambigCandidate(_ path: String) async {
+        showDisambigSheet = false
+        inspectorTab = .notes
+        await selectNote(at: path)
+    }
+
+    /// MarkdownViewer가 호출 — 노트 임베드 미리보기 본문 head 반환.
+    /// vaultRoot를 명시적으로 받음 (nonisolated, sync 호출 가능).
+    public static func notePreviewBody(name: String, vaultRoot: URL?) -> String? {
+        guard let root = vaultRoot else { return nil }
+        let allFiles = (try? FileManager.default.contentsOfDirectory(at: root, includingPropertiesForKeys: nil)) ?? []
+        let q = name.lowercased()
+        for url in allFiles where url.pathExtension.lowercased() == "md" {
+            let n = url.deletingPathExtension().lastPathComponent.lowercased()
+            if n == q {
+                return try? String(contentsOf: url, encoding: .utf8)
+            }
+        }
+        return nil
     }
 
     private static func flattenForSearch(_ node: VaultNode) -> [VaultNode] {
@@ -305,6 +394,43 @@ public final class AppModel {
         let url = root.appending(path: relativePath)
         if !attachedFiles.contains(url) {
             attachedFiles.append(url)
+        }
+    }
+
+    // MARK: - 노트 CRUD (B5)
+
+    public func createNote(filename: String, title: String?, folder: String) async {
+        guard let vault = obsidianVault else { return }
+        let safeName = filename.hasSuffix(".md") ? filename : "\(filename).md"
+        let folderPath = folder.trimmingCharacters(in: .init(charactersIn: "/ "))
+        let relPath = folderPath.isEmpty ? safeName : "\(folderPath)/\(safeName)"
+        do {
+            let note = try await vault.createNote(at: relPath, title: title)
+            await loadVaultTree()
+            inspectorTab = .notes
+            selectedNote = note
+            editingDraft = note.body
+            isEditingNote = true  // 즉시 편집 모드
+            showCreateNoteSheet = false
+            pushRecent(relPath)
+        } catch {
+            self.error = error.localizedDescription
+        }
+    }
+
+    public func deleteNote(at path: String) async {
+        guard let vault = obsidianVault else { return }
+        do {
+            try await vault.deleteNote(at: path)
+            await loadVaultTree()
+            if selectedNote?.path == path {
+                clearSelectedNote()
+            }
+            recentNotePaths.removeAll { $0 == path }
+            favoriteNotePaths.remove(path)
+            persistFavorites()
+        } catch {
+            self.error = error.localizedDescription
         }
     }
 

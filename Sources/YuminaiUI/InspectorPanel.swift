@@ -2,7 +2,7 @@ import SwiftUI
 import YuminaiCore
 import YuminaiObsidian
 
-/// 우측 inspector — Tab (컨텍스트 | 노트) + 콘텐츠.
+/// 우측 inspector — Tab (컨텍스트 | 노트) + 콘텐츠 + 편집 + favorites + recents.
 public struct InspectorPanel: View {
     @Binding public var tab: InspectorTab
     public let usage: UsageStats
@@ -10,7 +10,7 @@ public struct InspectorPanel: View {
     public let workspacePath: String?
     public let recentTools: [String]
 
-    // Notes tab
+    // Notes
     public let vaultConfigured: Bool
     public let vaultRoot: URL?
     public let vaultTree: [VaultNode]
@@ -24,6 +24,19 @@ public struct InspectorPanel: View {
     @Binding public var editingDraft: String
     public let isDirty: Bool
     public let externalChangeDetected: Bool
+    @Binding public var splitMode: EditorSplitMode
+
+    // C2/C3
+    public let favoriteNotePaths: Set<String>
+    public let recentNotePaths: [String]
+    public let onToggleFavorite: (String) -> Void
+
+    // B5
+    public let onCreateNote: () -> Void
+    public let onDeleteNote: (String) -> Void
+
+    // wiki resolver (B3)
+    public let noteResolver: ((String) -> String?)?
 
     public let onSelectNote: (String) -> Void
     public let onClearSelectedNote: () -> Void
@@ -52,6 +65,13 @@ public struct InspectorPanel: View {
         editingDraft: Binding<String>,
         isDirty: Bool,
         externalChangeDetected: Bool,
+        splitMode: Binding<EditorSplitMode> = .constant(.editor),
+        favoriteNotePaths: Set<String> = [],
+        recentNotePaths: [String] = [],
+        onToggleFavorite: @escaping (String) -> Void = { _ in },
+        onCreateNote: @escaping () -> Void = {},
+        onDeleteNote: @escaping (String) -> Void = { _ in },
+        noteResolver: ((String) -> String?)? = nil,
         onSelectNote: @escaping (String) -> Void,
         onClearSelectedNote: @escaping () -> Void,
         onOpenInObsidian: @escaping () -> Void,
@@ -78,6 +98,13 @@ public struct InspectorPanel: View {
         self._editingDraft = editingDraft
         self.isDirty = isDirty
         self.externalChangeDetected = externalChangeDetected
+        self._splitMode = splitMode
+        self.favoriteNotePaths = favoriteNotePaths
+        self.recentNotePaths = recentNotePaths
+        self.onToggleFavorite = onToggleFavorite
+        self.onCreateNote = onCreateNote
+        self.onDeleteNote = onDeleteNote
+        self.noteResolver = noteResolver
         self.onSelectNote = onSelectNote
         self.onClearSelectedNote = onClearSelectedNote
         self.onOpenInObsidian = onOpenInObsidian
@@ -97,9 +124,7 @@ public struct InspectorPanel: View {
         }
         .frame(width: Theme.Layout.inspectorWidth)
         .background(Theme.Color.bg)
-        .overlay(alignment: .leading) {
-            FlatVDivider()
-        }
+        .overlay(alignment: .leading) { FlatVDivider() }
     }
 
     private var tabBar: some View {
@@ -167,7 +192,7 @@ public struct InspectorPanel: View {
                     externalChangeBanner
                 }
                 if isEditing {
-                    editor
+                    splitEditor(note: note)
                 } else {
                     ScrollView {
                         VStack(alignment: .leading, spacing: 0) {
@@ -175,6 +200,7 @@ public struct InspectorPanel: View {
                             MarkdownViewer(
                                 markdown: note.body,
                                 vaultRoot: vaultRoot,
+                                noteResolver: noteResolver,
                                 onWikiLink: onWikiLink
                             )
                         }
@@ -182,15 +208,125 @@ public struct InspectorPanel: View {
                 }
             }
         } else {
-            NoteTreeView(
-                nodes: vaultTree,
-                searchQuery: $noteSearchQuery,
-                fullTextEnabled: $fullTextEnabled,
-                fullTextHits: fullTextHits,
-                selectedPath: nil,
-                onSelect: onSelectNote
-            )
+            VStack(spacing: 0) {
+                vaultActionBar
+                FlatHDivider().opacity(0.5)
+                if !recentNotePaths.isEmpty || !favoriteNotePaths.isEmpty {
+                    quickAccessSection
+                    FlatHDivider().opacity(0.5)
+                }
+                NoteTreeView(
+                    nodes: vaultTree,
+                    searchQuery: $noteSearchQuery,
+                    fullTextEnabled: $fullTextEnabled,
+                    fullTextHits: fullTextHits,
+                    selectedPath: nil,
+                    onSelect: onSelectNote
+                )
+            }
         }
+    }
+
+    private var vaultActionBar: some View {
+        HStack {
+            Text("Vault")
+                .font(Theme.Typography.micro)
+                .foregroundStyle(Theme.Color.textTertiary)
+                .textCase(.uppercase)
+                .tracking(0.6)
+            Spacer()
+            FlatButton("새 노트", icon: "plus", variant: .ghost, size: .small, action: onCreateNote)
+                .help("새 마크다운 파일을 Vault에 만들기")
+        }
+        .padding(.horizontal, Theme.Spacing.md)
+        .padding(.vertical, Theme.Spacing.xs)
+    }
+
+    @ViewBuilder
+    private var quickAccessSection: some View {
+        VStack(alignment: .leading, spacing: 4) {
+            if !favoriteNotePaths.isEmpty {
+                quickAccessGroup(title: "즐겨찾기", icon: "star.fill", paths: Array(favoriteNotePaths).sorted())
+            }
+            if !recentNotePaths.isEmpty {
+                quickAccessGroup(title: "최근", icon: "clock", paths: Array(recentNotePaths.prefix(5)))
+            }
+        }
+        .padding(.horizontal, Theme.Spacing.sm)
+        .padding(.vertical, Theme.Spacing.sm)
+    }
+
+    private func quickAccessGroup(title: String, icon: String, paths: [String]) -> some View {
+        VStack(alignment: .leading, spacing: 2) {
+            HStack(spacing: 4) {
+                Image(systemName: icon)
+                    .font(.system(size: 9))
+                    .foregroundStyle(Theme.Color.textTertiary)
+                Text(title)
+                    .font(Theme.Typography.micro)
+                    .foregroundStyle(Theme.Color.textTertiary)
+                    .textCase(.uppercase)
+                    .tracking(0.6)
+            }
+            .padding(.leading, 4)
+            VStack(spacing: 1) {
+                ForEach(paths, id: \.self) { path in
+                    QuickNoteRow(path: path, onSelect: { onSelectNote(path) })
+                }
+            }
+        }
+    }
+
+    @ViewBuilder
+    private func splitEditor(note: Note) -> some View {
+        HStack(spacing: 0) {
+            if splitMode != .preview {
+                editorPane
+            }
+            if splitMode == .split {
+                FlatVDivider()
+            }
+            if splitMode != .editor {
+                ScrollView {
+                    VStack(alignment: .leading, spacing: 0) {
+                        MarkdownViewer(
+                            markdown: editingDraft,
+                            vaultRoot: vaultRoot,
+                            noteResolver: noteResolver,
+                            onWikiLink: onWikiLink
+                        )
+                    }
+                }
+                .frame(maxWidth: .infinity)
+                .background(Theme.Color.bg)
+            }
+        }
+    }
+
+    private var editorPane: some View {
+        VStack(spacing: 0) {
+            TextEditor(text: $editingDraft)
+                .font(Theme.Typography.codeBlock)
+                .scrollContentBackground(.hidden)
+                .padding(Theme.Spacing.md)
+                .background(Theme.Color.bg)
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+
+            HStack {
+                Text(isDirty ? "저장 안 됨 — ⌘S로 저장" : "저장됨")
+                    .font(Theme.Typography.small)
+                    .foregroundStyle(isDirty ? Theme.Color.accent : Theme.Color.textTertiary)
+                Spacer()
+                Button("저장 (⌘S)", action: onSave)
+                    .keyboardShortcut("s", modifiers: .command)
+                    .disabled(!isDirty)
+            }
+            .padding(.horizontal, Theme.Spacing.md)
+            .padding(.vertical, Theme.Spacing.sm)
+            .background(Theme.Color.surface)
+            .overlay(alignment: .top) { FlatHDivider() }
+        }
+        .frame(maxWidth: .infinity)
     }
 
     private func noteHeader(_ note: Note) -> some View {
@@ -224,7 +360,27 @@ public struct InspectorPanel: View {
 
             Spacer()
 
-            modeToggle
+            Button(action: { onToggleFavorite(note.path) }) {
+                Image(systemName: favoriteNotePaths.contains(note.path) ? "star.fill" : "star")
+                    .font(.system(size: 12))
+                    .foregroundStyle(favoriteNotePaths.contains(note.path) ? Theme.Color.accent : Theme.Color.textSecondary)
+            }
+            .buttonStyle(.plain)
+            .help("즐겨찾기")
+
+            if isEditing {
+                splitToggle
+            } else {
+                modeToggle
+            }
+
+            Button(action: { onDeleteNote(note.path) }) {
+                Image(systemName: "trash")
+                    .font(.system(size: 11))
+                    .foregroundStyle(Theme.Color.textSecondary)
+            }
+            .buttonStyle(.plain)
+            .help("이 노트를 휴지통으로 이동")
 
             Button(action: onOpenInObsidian) {
                 Image(systemName: "arrow.up.right.square")
@@ -262,6 +418,26 @@ public struct InspectorPanel: View {
         .buttonStyle(.plain)
     }
 
+    private var splitToggle: some View {
+        HStack(spacing: 0) {
+            ForEach(EditorSplitMode.allCases, id: \.self) { mode in
+                Button(action: { splitMode = mode }) {
+                    Image(systemName: mode.icon)
+                        .font(.system(size: 11, weight: .medium))
+                        .foregroundStyle(splitMode == mode ? Theme.Color.text : Theme.Color.textSecondary)
+                        .padding(.horizontal, 6)
+                        .padding(.vertical, 3)
+                        .background(splitMode == mode ? Theme.Color.elevated : .clear)
+                        .clipShape(RoundedRectangle(cornerRadius: 3))
+                        .help(mode.label)
+                }
+                .buttonStyle(.plain)
+            }
+        }
+        .background(Theme.Color.surfaceHi)
+        .clipShape(RoundedRectangle(cornerRadius: Theme.Radius.sm))
+    }
+
     private var externalChangeBanner: some View {
         HStack(spacing: 8) {
             Image(systemName: "exclamationmark.triangle.fill")
@@ -280,32 +456,6 @@ public struct InspectorPanel: View {
         .background(Theme.Color.warning.opacity(0.10))
     }
 
-    @ViewBuilder
-    private var editor: some View {
-        VStack(spacing: 0) {
-            TextEditor(text: $editingDraft)
-                .font(Theme.Typography.codeBlock)
-                .scrollContentBackground(.hidden)
-                .padding(Theme.Spacing.md)
-                .background(Theme.Color.bg)
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
-
-            HStack {
-                Text(isDirty ? "저장 안 됨 — ⌘S로 저장" : "저장됨")
-                    .font(Theme.Typography.small)
-                    .foregroundStyle(isDirty ? Theme.Color.accent : Theme.Color.textTertiary)
-                Spacer()
-                Button("저장 (⌘S)", action: onSave)
-                    .keyboardShortcut("s", modifiers: .command)
-                    .disabled(!isDirty)
-            }
-            .padding(.horizontal, Theme.Spacing.md)
-            .padding(.vertical, Theme.Spacing.sm)
-            .background(Theme.Color.surface)
-            .overlay(alignment: .top) { FlatHDivider() }
-        }
-    }
-
     private func handleBack() {
         if isEditing && isDirty {
             onDiscardEdits()
@@ -314,7 +464,6 @@ public struct InspectorPanel: View {
     }
 }
 
-/// Inspector 탭 enum.
 public enum InspectorTab: String, CaseIterable, Sendable, Equatable {
     case context, notes
 
@@ -333,7 +482,35 @@ public enum InspectorTab: String, CaseIterable, Sendable, Equatable {
     }
 }
 
-/// Vault 미설정 안내.
+struct QuickNoteRow: View {
+    let path: String
+    let onSelect: () -> Void
+    @State private var hovering = false
+
+    var body: some View {
+        Button(action: onSelect) {
+            HStack(spacing: 6) {
+                Image(systemName: "doc.text")
+                    .font(.system(size: 10))
+                    .foregroundStyle(Theme.Color.textTertiary)
+                Text((path as NSString).lastPathComponent.replacingOccurrences(of: ".md", with: ""))
+                    .font(Theme.Typography.small)
+                    .foregroundStyle(Theme.Color.text)
+                    .lineLimit(1)
+                    .truncationMode(.middle)
+                Spacer()
+            }
+            .padding(.horizontal, 8)
+            .padding(.vertical, 4)
+            .background(hovering ? Theme.Color.surfaceHi : .clear)
+            .clipShape(RoundedRectangle(cornerRadius: 4))
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .onHover { hovering = $0 }
+    }
+}
+
 struct EmptyVaultView: View {
     let onOpenSettings: () -> Void
 
