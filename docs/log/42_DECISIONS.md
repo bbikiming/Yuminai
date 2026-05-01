@@ -158,6 +158,48 @@
 
 ---
 
+## ADR-021 — Obsidian Vault 직접 접근 + swift-markdown-ui (외부 의존성 정책 변경)
+
+- **날짜**: 2026-05-01
+- **상태**: Accepted
+- **결정**:
+  1. Obsidian CLI 별도 의존성 없이 Vault `.md` 파일 직접 접근 (FileManager)
+  2. **첫 외부 SPM 의존성 도입** — swift-markdown-ui (gonzalezreal). 이전 정책 "외부 의존성 0" 변경
+  3. Inspector를 tab 구조로 — 컨텍스트 / 노트 두 탭
+  4. 마크다운 렌더링은 `MarkdownViewer` wrapping으로 라이브러리 lock-in 완화
+- **컨텍스트**:
+  - 사용자 — "옵시디언 cli 연동, Notion/Obsidian급 마크다운 뷰어"
+  - Notion급 = 헤더/코드/테이블/task list/blockquote/이미지/링크 모두 — 자체 구현 비현실 (100시간+)
+  - Obsidian CLI는 공식 X (npm `obsidian-cli` 비공식). Vault는 단순 `.md` 파일 → 파일 시스템 접근으로 충분
+- **라이브러리 비교**:
+  | 옵션 | 평가 |
+  |---|---|
+  | `AttributedString(markdown:)` Apple 네이티브 | basic만, 코드블록/테이블/task X |
+  | `swift-markdown` (Apple) | 파싱만, 렌더러 자체 작성 |
+  | **`swift-markdown-ui`** (채택) | Notion급 + Apple swift-markdown 기반 + theme 시스템, 1.5k stars, MIT |
+  | 자체 구현 | 100시간+, 비현실 |
+- **외부 의존성 정책 변경 근거**:
+  - 자체 작성 ROI 낮음 (마크다운 렌더링은 standard task)
+  - 라이브러리 검증 — 1.5k stars, Apple swift-markdown 의존, 활발한 maintenance
+  - lock-in 완화 — `MarkdownViewer` wrapping → 교체 시 한 곳만 수정
+- **결과**:
+  - `Sources/YuminaiObsidian/` 신규 모듈 (ObsidianVault actor + Note + VaultNode)
+  - `MarkdownViewer` + Yuminai theme (h1~h4 + paragraph + 인용 + 코드블록 + task list + 테이블 + 링크)
+  - `NoteTreeView` (검색 + 트리/flat 모드)
+  - `InspectorPanel` (tab 구조 + Vault 미설정 안내)
+  - `AppModel` Vault state + lifecycle
+  - 새 의존성: swift-markdown-ui 2.4.1, NetworkImage 6.0.1, swift-cmark 0.7.1 (transitive)
+- **알려진 한계 (다음 라운드)**:
+  - 채팅 @note 인라인 주입 미구현 (메시지에 노트 본문 첨부)
+  - Wiki 링크 [[Page]] 미렌더 (swift-markdown-ui standard 외)
+  - 임베드 ![[file]] 미렌더
+  - frontmatter 파싱은 됐지만 표시 안 함
+  - file watcher (Vault 변경 자동 갱신) 미구현
+  - 노트 편집 read-only (편집 모드 v0.3)
+- **재검토**: 사용자 사용 후 / 라이브러리 v3 출시 시
+
+---
+
 ## ADR-020 — Settings는 macOS native Form + 첨부파일 = `@<path>` mention prepend
 
 - **날짜**: 2026-05-01

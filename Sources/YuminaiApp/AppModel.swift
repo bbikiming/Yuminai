@@ -5,6 +5,7 @@ import YuminaiCore
 import YuminaiClaudeAdapter
 import YuminaiPersistence
 import YuminaiTelegram
+import YuminaiObsidian
 import YuminaiUI
 
 /// 앱 전역 상태 + DI 컨테이너. SwiftUI Environment로 주입된다.
@@ -47,6 +48,13 @@ public final class AppModel {
     // 첨부파일 — sendMessage 시 prompt 앞에 `@<path>` 형식으로 prepend
     public var attachedFiles: [URL] = []
 
+    // Obsidian Vault
+    public var inspectorTab: InspectorTab = .context
+    public var obsidianVault: ObsidianVault?
+    public var vaultTree: [VaultNode] = []
+    public var selectedNote: Note?
+    public var noteSearchQuery: String = ""
+
     // MARK: 내부
     private var streamConsumeTask: Task<Void, Never>?
     private var currentClaudeSession: (any ClaudeStreamSession)?
@@ -81,6 +89,58 @@ public final class AppModel {
         await refreshWorkspaces()
         await refreshSecretStatuses()
         await activateTelegramIfReady()
+        await setupObsidianVault()
+    }
+
+    // MARK: - Obsidian Vault
+
+    public func setupObsidianVault() async {
+        guard let path = preferences.obsidianVaultPath, !path.isEmpty else {
+            obsidianVault = nil
+            vaultTree = []
+            selectedNote = nil
+            return
+        }
+        let expanded = NSString(string: path).expandingTildeInPath
+        let url = URL(fileURLWithPath: expanded)
+        let vault = ObsidianVault(rootURL: url)
+        obsidianVault = vault
+        await loadVaultTree()
+    }
+
+    public func loadVaultTree() async {
+        guard let vault = obsidianVault else {
+            vaultTree = []
+            return
+        }
+        do {
+            vaultTree = try await vault.tree()
+        } catch {
+            self.error = error.localizedDescription
+            vaultTree = []
+        }
+    }
+
+    public func selectNote(at path: String) async {
+        guard let vault = obsidianVault else { return }
+        do {
+            selectedNote = try await vault.read(path)
+        } catch {
+            self.error = error.localizedDescription
+        }
+    }
+
+    public func clearSelectedNote() {
+        selectedNote = nil
+    }
+
+    public func openCurrentNoteInObsidian() {
+        guard let vault = obsidianVault, let note = selectedNote else { return }
+        vault.openInObsidian(relativePath: note.path)
+    }
+
+    public var isVaultConfigured: Bool {
+        obsidianVault != nil
     }
 
     public func refreshWorkspaces() async {
@@ -390,6 +450,7 @@ public final class AppModel {
             self.error = "Preferences 저장 실패: \(error.localizedDescription)"
         }
         await activateTelegramIfReady()
+        await setupObsidianVault()
     }
 
     public func selectClaudeBinary() {

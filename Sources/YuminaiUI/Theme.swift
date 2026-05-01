@@ -22,7 +22,7 @@ public enum Theme {
         /// Bright Cyan/Sky — CTA, active state, link, streaming, selected
         public static let accent = SwiftUI.Color(rgb: 0x22C8E0)
         public static let accentDeep = SwiftUI.Color(rgb: 0x0FA8C0)
-        public static let accentMuted = SwiftUI.Color(light: SwiftUI.Color(rgb: 0xD4F2F8), dark: SwiftUI.Color(rgb: 0x0A2128))
+        public static let accentMuted = SwiftUI.Color.adaptive(light: SwiftUI.Color(rgb: 0xD4F2F8), dark: SwiftUI.Color(rgb: 0x0A2128))
         public static let accentBorder = SwiftUI.Color(rgb: 0x22C8E0).opacity(0.45)
 
         /// White — 본문/대비
@@ -77,7 +77,7 @@ public enum Theme {
 
         // Helper: dark/light hex
         private static func hex(dark: UInt32, light: UInt32) -> SwiftUI.Color {
-            SwiftUI.Color(
+            SwiftUI.Color.adaptive(
                 light: SwiftUI.Color(rgb: light),
                 dark: SwiftUI.Color(rgb: dark)
             )
@@ -222,9 +222,9 @@ public enum LayoutMode: Sendable, Equatable {
 // MARK: - Color helpers
 
 public extension Color {
-    /// 다크/라이트 자동 전환.
-    init(light: Color, dark: Color) {
-        self.init(NSColor(name: nil) { appearance in
+    /// 다크/라이트 자동 전환. (우리 namespace — MarkdownUI의 동명 init과 충돌 회피)
+    static func adaptive(light: Color, dark: Color) -> Color {
+        Color(NSColor(name: nil) { appearance in
             switch appearance.bestMatch(from: [.aqua, .darkAqua]) {
             case .darkAqua: return NSColor(dark)
             default: return NSColor(light)

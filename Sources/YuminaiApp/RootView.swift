@@ -86,7 +86,9 @@ struct RootView: View {
     // MARK: - Layers
 
     private var mainLayer: some View {
-        HStack(spacing: 0) {
+        @Bindable var bindable = appModel
+
+        return HStack(spacing: 0) {
             if sidebarInlineVisible {
                 sidebar
                     .transition(.move(edge: .leading).combined(with: .opacity))
@@ -101,11 +103,20 @@ struct RootView: View {
             )
 
             if inspectorVisible {
-                ContextInspector(
+                InspectorPanel(
+                    tab: $bindable.inspectorTab,
                     usage: appModel.currentSessionUsage,
                     activeSettings: appModel.activeSettings,
                     workspacePath: currentWorkspacePath,
-                    recentTools: recentToolNames
+                    recentTools: recentToolNames,
+                    vaultConfigured: appModel.isVaultConfigured,
+                    vaultTree: appModel.vaultTree,
+                    noteSearchQuery: $bindable.noteSearchQuery,
+                    selectedNote: appModel.selectedNote,
+                    onSelectNote: { path in Task { await appModel.selectNote(at: path) } },
+                    onClearSelectedNote: { appModel.clearSelectedNote() },
+                    onOpenInObsidian: { appModel.openCurrentNoteInObsidian() },
+                    onOpenSettings: openAppSettings
                 )
                 .transition(.move(edge: .trailing).combined(with: .opacity))
             }

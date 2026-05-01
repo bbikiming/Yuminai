@@ -4,6 +4,53 @@
 
 ## [Unreleased] — 2026-05-01
 
+### Added — Obsidian Vault 통합 + Notion급 마크다운 뷰어 (ADR-021)
+
+사용자 요청: "옵시디언 cli를 연동해서 마크다운 파일을 노션, 옵시디언급 퀄리티로 볼 수 있는 뷰어"
+
+처리:
+1. **명세서 docs/design/80_OBSIDIAN_VIEWER.md** 작성 — Vault 접근, 라이브러리 선정 근거, UI 통합
+2. **swift-markdown-ui 외부 의존성 도입 (ADR-021)**:
+   - 첫 외부 SPM 의존성. 자체 작성 비현실 (100시간+) vs 라이브러리 (잘 검증, MIT)
+   - swift-markdown-ui 2.4.1 + NetworkImage 6.0.1 + swift-cmark 0.7.1
+   - `MarkdownViewer` wrapping으로 lock-in 완화 (라이브러리 교체 시 한 곳만)
+3. **YuminaiObsidian 신규 모듈** (`Sources/YuminaiObsidian/`):
+   - `ObsidianVault` actor — 파일 시스템 직접 접근
+     - `tree()` — `.md` + 폴더 트리 인덱싱 (`.obsidian`/`.trash` 자동 제외)
+     - `read(_:)` — 노트 본문 + frontmatter 파싱
+     - `search(_:)` — 파일명 매칭 (본문 검색은 v0.3)
+     - `openInObsidian(_:)` — `obsidian://` URL scheme로 Obsidian 앱에서 열기
+   - `Note` / `VaultNode` (folder/note) Sendable 모델
+   - `splitFrontmatter` — `---\nyaml\n---` 분리
+4. **MarkdownViewer (YuminaiUI)** — Notion급 룩:
+   - h1 (24, bold + 하단 divider) / h2 (20) / h3 (17) / h4 (15)
+   - 본문 14, lineSpacing 4
+   - 인라인 code: `inlineCode` bg + mono 13
+   - 코드 블록: surface bg + horizontal scroll + 우상단 language 라벨
+   - 인용: 좌측 3px accent bar + surface bg + 둥근 모서리
+   - task list: 체크박스 (accent 색)
+   - 테이블: 교차 행 색 + border
+   - 링크: accent 색 + underline
+5. **NoteTreeView (YuminaiUI)**:
+   - 검색창 (실시간 필터)
+   - 트리 모드 (folder expand/collapse) + 검색 모드 (flat)
+   - 친화 안내 ("‘query’와 매칭되는 노트가 없어요" / "이 Vault에 .md 노트가 없네요")
+   - hover/selected 색
+6. **InspectorPanel (YuminaiUI)** — Tab 구조:
+   - 좌상단 segmented tab (`컨텍스트 | 노트`) + 활성 시 하단 2px accent border
+   - 컨텍스트 탭: 기존 ContextInspector
+   - 노트 탭: Vault 미설정 시 안내 + "설정 열기" 버튼 / 트리 / 노트 본문 (선택 시)
+   - 노트 본문 위 헤더: 좌측 ← 트리 / 우측 Obsidian 앱에서 열기 (↗)
+7. **AppModel + RootView 통합**:
+   - `inspectorTab`, `obsidianVault`, `vaultTree`, `selectedNote`, `noteSearchQuery` state
+   - `setupObsidianVault()` — preferences 변경 시 vault 재구성 (자동 호출)
+   - `loadVaultTree() / selectNote(at:) / clearSelectedNote() / openCurrentNoteInObsidian()`
+   - `bootstrap()` 끝에 setupObsidianVault 호출
+   - RootView에서 ContextInspector → InspectorPanel 교체
+8. 테스트 5건 신규 (frontmatter 파싱 / nonexistent vault / 임시 vault 인덱싱 / 숨김 폴더 제외)
+
+ADR-021 채택. 검증: build 2.31s, test 57/57 (52→57), run 정상.
+
 ### Changed/Added — Settings macOS 네이티브 정렬 + 첨부 파일 기능 (ADR-020)
 
 사용자 보고: "설정 팝업 깨진 layout (라벨/컨트롤 우측 몰림, helper 잘림). 맥 네이티브 설정 메뉴 퀄리티로 정렬." + "첨부파일 업로드 동작화 + 안내 문구"

@@ -23,9 +23,14 @@ let package = Package(
         .library(name: "YuminaiUI", targets: ["YuminaiUI"]),
         .library(name: "YuminaiHarness", targets: ["YuminaiHarness"]),
         .library(name: "YuminaiTelegram", targets: ["YuminaiTelegram"]),
+        .library(name: "YuminaiObsidian", targets: ["YuminaiObsidian"]),
         .executable(name: "YuminaiApp", targets: ["YuminaiApp"])
     ],
-    dependencies: [],
+    dependencies: [
+        // Notion급 마크다운 렌더링 — Apple swift-markdown 기반, MIT
+        // ADR-021: 외부 의존성 정책 변경 — wrapping으로 lock-in 완화
+        .package(url: "https://github.com/gonzalezreal/swift-markdown-ui", from: "2.4.0")
+    ],
     targets: [
         .target(name: "YuminaiCore", path: "Sources/YuminaiCore", swiftSettings: strict),
         .target(
@@ -42,7 +47,10 @@ let package = Package(
         ),
         .target(
             name: "YuminaiUI",
-            dependencies: ["YuminaiCore"],
+            dependencies: [
+                "YuminaiCore",
+                .product(name: "MarkdownUI", package: "swift-markdown-ui")
+            ],
             path: "Sources/YuminaiUI",
             swiftSettings: strict
         ),
@@ -58,6 +66,12 @@ let package = Package(
             path: "Sources/YuminaiTelegram",
             swiftSettings: strict
         ),
+        .target(
+            name: "YuminaiObsidian",
+            dependencies: ["YuminaiCore"],
+            path: "Sources/YuminaiObsidian",
+            swiftSettings: strict
+        ),
         .executableTarget(
             name: "YuminaiApp",
             dependencies: [
@@ -66,7 +80,8 @@ let package = Package(
                 "YuminaiPersistence",
                 "YuminaiUI",
                 "YuminaiHarness",
-                "YuminaiTelegram"
+                "YuminaiTelegram",
+                "YuminaiObsidian"
             ],
             path: "Sources/YuminaiApp",
             swiftSettings: strict
@@ -76,6 +91,7 @@ let package = Package(
         .testTarget(name: "YuminaiPersistenceTests", dependencies: ["YuminaiPersistence"], path: "Tests/YuminaiPersistenceTests"),
         .testTarget(name: "YuminaiUITests", dependencies: ["YuminaiUI"], path: "Tests/YuminaiUITests"),
         .testTarget(name: "YuminaiHarnessTests", dependencies: ["YuminaiHarness"], path: "Tests/YuminaiHarnessTests"),
-        .testTarget(name: "YuminaiTelegramTests", dependencies: ["YuminaiTelegram"], path: "Tests/YuminaiTelegramTests")
+        .testTarget(name: "YuminaiTelegramTests", dependencies: ["YuminaiTelegram"], path: "Tests/YuminaiTelegramTests"),
+        .testTarget(name: "YuminaiObsidianTests", dependencies: ["YuminaiObsidian"], path: "Tests/YuminaiObsidianTests")
     ]
 )
