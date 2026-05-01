@@ -422,7 +422,15 @@ struct ChatPane: View {
                     attachedFiles: appModel.attachedFiles,
                     onRemoveAttachment: { url in appModel.removeAttachment(url) },
                     onClearAttachments: { appModel.clearAttachments() },
-                    onSend: { Task { await appModel.sendMessage() } },
+                    onSend: {
+                        Task {
+                            // mention dispatch 시도 — 매칭되면 sendMessage가 그 안에서 호출됨
+                            let dispatched = await appModel.tryDispatchMention()
+                            if !dispatched {
+                                await appModel.sendMessage()
+                            }
+                        }
+                    },
                     onStop: { appModel.cancelStream() },
                     onSettingsApply: { newSettings in
                         Task { await appModel.updateActiveSettings(newSettings) }

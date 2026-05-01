@@ -643,23 +643,64 @@ public final class AppModel {
 
     // MARK: - Multi-pane (ADR-030, M1 phase C)
 
-    /// workspace 선택 시 호출 — 기존 panes 정리 후 primary pane 1개 자동 등록.
-    /// 기존에 spawn한 session/messages를 primary pane state로 wrap.
+    /// workspace 선택 시 호출 — savedPanes가 있으면 복원, 없으면 default primary 1개 자동 등록.
+    /// 기존에 spawn한 session/messages를 primary(또는 첫 saved) pane state로 wrap.
+    /// **session/messages는 영속 X** — pane 메타만 복원, conversation은 fresh.
     private func ensurePrimaryPane(for workspace: Workspace, session: any ClaudeStreamSession) {
-        // 기존 panes 정리 (workspace 전환 시 이전 panes는 폐기)
         clearPaneState()
 
-        let primary = AgentPane(
-            agentKind: workspace.agentKind,
-            settings: activeSettings,
-            role: .primary
-        )
-        agentPanes = [primary]
-        activePaneId = primary.id
-        paneSessions[primary.id] = session
-        paneMessages[primary.id] = []
-        paneSettings[primary.id] = activeSettings
-        paneUsage[primary.id] = .zero
+        if !workspace.savedPanes.isEmpty {
+            // 영속된 panes 복원
+            agentPanes = workspace.savedPanes
+            // primary가 없으면 첫 pane을 promote
+            if !agentPanes.contains(where: { $0.role == .primary }), let first = agentPanes.first {
+                agentPanes[0] = first.with(role: .primary)
+            }
+            // active = 첫 primary (또는 첫 pane)
+            let primary = agentPanes.first(where: { $0.role == .primary }) ?? agentPanes[0]
+            activePaneId = primary.id
+            paneSessions[primary.id] = session
+            paneMessages[primary.id] = []
+            paneSettings[primary.id] = primary.settings
+            paneUsage[primary.id] = .zero
+            // 다른 panes는 lazy spawn (setActivePane이 처리)
+            for pane in agentPanes where pane.id != primary.id {
+                paneMessages[pane.id] = []
+                paneSettings[pane.id] = pane.settings
+                paneUsage[pane.id] = .zero
+            }
+            // active pane의 settings를 activeSettings에 반영 (toolbar picker가 보여줘야 함)
+            activeSettings = primary.settings
+        } else {
+            // 신규 워크스페이스 — default primary 1개
+            let primary = AgentPane(
+                agentKind: workspace.agentKind,
+                settings: activeSettings,
+                role: .primary
+            )
+            agentPanes = [primary]
+            activePaneId = primary.id
+            paneSessions[primary.id] = session
+            paneMessages[primary.id] = []
+            paneSettings[primary.id] = activeSettings
+            paneUsage[primary.id] = .zero
+            persistCurrentPanes()
+        }
+    }
+
+    /// 현재 agentPanes를 workspace.savedPanes로 영속 (자동 호출).
+    private func persistCurrentPanes() {
+        guard let workspace = currentWorkspace else { return }
+        let updated = workspace.with(savedPanes: agentPanes)
+        // local cache 업데이트
+        if let idx = workspaces.firstIndex(where: { $0.id == workspace.id }) {
+            workspaces[idx] = updated
+        }
+        // SwiftData 영속 (silent — 실패해도 UX 유지)
+        let store = workspaceStore
+        Task {
+            try? await store.update(updated)
+        }
     }
 
     private func clearPaneState() {
@@ -734,6 +775,7 @@ public final class AppModel {
         paneMessages[newPane.id] = []
         paneSettings[newPane.id] = activeSettings
         paneUsage[newPane.id] = .zero
+        persistCurrentPanes()
         // session은 setActivePane에서 lazy spawn
         await setActivePane(newPane.id)
     }
@@ -772,6 +814,7 @@ public final class AppModel {
                 agentPanes[idx] = first.with(role: .primary)
             }
         }
+        persistCurrentPanes()
     }
 
     /// pane custom 이름 변경.
@@ -779,6 +822,63 @@ public final class AppModel {
         guard let idx = agentPanes.firstIndex(where: { $0.id == paneId }) else { return }
         let trimmed = name?.trimmingCharacters(in: .whitespacesAndNewlines)
         agentPanes[idx] = agentPanes[idx].with(customName: (trimmed?.isEmpty ?? true) ? nil : trimmed)
+        persistCurrentPanes()
+    }
+
+    // MARK: - Inter-agent message dispatch (ADR-031, T2)
+
+    private let mentionParser = MentionParser()
+
+    /// `@<agent>` mention 매칭 — pane을 찾아서 반환. 없으면 nil.
+    /// 우선순위: customName 정확/부분 매칭 → agentKind ("@claude"/"@codex") → 매칭 실패
+    public func resolveMentionTarget(_ rawTarget: String) -> AgentPane? {
+        let normalized = MentionParser.normalizedTarget(rawTarget)
+        guard !normalized.isEmpty else { return nil }
+
+        // 1) customName 정확 매칭 (case-insensitive)
+        if let exact = agentPanes.first(where: { ($0.customName?.lowercased() ?? "") == normalized }) {
+            return exact
+        }
+        // 2) customName 부분 매칭
+        if let partial = agentPanes.first(where: {
+            ($0.customName?.lowercased() ?? "").contains(normalized)
+        }) {
+            return partial
+        }
+        // 3) agentKind shortLabel ("claude"/"codex")
+        if let kindMatch = agentPanes.first(where: { $0.agentKind.shortLabel == normalized }) {
+            return kindMatch
+        }
+        // 4) agentKind displayName 부분 매칭 ("Claude" → "claude")
+        if let displayMatch = agentPanes.first(where: {
+            $0.agentKind.displayName.lowercased().contains(normalized)
+        }) {
+            return displayMatch
+        }
+        // 5) "me" → active pane (no-op, 그냥 자기 자신)
+        if normalized == "me", let activeId = activePaneId {
+            return agentPanes.first { $0.id == activeId }
+        }
+        return nil
+    }
+
+    /// 현재 inputText에서 mention 추출 후 적절한 pane에 dispatch.
+    /// mention이 없거나 매칭 실패면 일반 sendMessage 흐름.
+    /// - Returns: dispatch 됐으면 true (호출자가 일반 send 흐름 skip)
+    public func tryDispatchMention() async -> Bool {
+        guard let mention = mentionParser.parse(inputText) else { return false }
+        guard let target = resolveMentionTarget(mention.target) else {
+            // 매칭 실패 — UX 안내
+            self.error = "‘\(mention.target)’ 매칭되는 pane이 없어요. 사용 가능: \(agentPanes.map { "@\($0.agentKind.shortLabel)" }.joined(separator: ", "))"
+            return false
+        }
+        // body로 inputText 교체 + 대상 pane 활성화 + send
+        inputText = mention.body
+        if target.id != activePaneId {
+            await setActivePane(target.id)
+        }
+        await sendMessage()
+        return true
     }
 
     /// 활성 세션 설정 변경. 활성 어댑터에 반영하고, 활성 워크스페이스가 있으면 새 세션을

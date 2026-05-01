@@ -264,33 +264,41 @@ actor CodexJSONLParser {
         let type = (dict["type"] as? String) ?? (dict["event"] as? String) ?? ""
 
         switch type {
-        case "agent_message", "assistant_message", "message", "text", "agent_message_delta":
+        case "agent_message", "assistant_message", "message", "text",
+             "agent_message_delta", "agent_message_chunk", "delta", "stream_text":
             let text = extractText(from: dict) ?? ""
             return text.isEmpty ? nil : .text(text)
 
-        case "tool_call", "tool_use", "function_call":
+        case "thinking", "reasoning", "chain_of_thought":
+            // thinking은 Yuminai에서 별도 처리 X — 그냥 무시 (verbose mode 아니면 노이즈)
+            return nil
+
+        case "tool_call", "tool_use", "function_call",
+             "tool_call_delta", "tool_use_started":
             let name = (dict["name"] as? String) ?? (dict["tool_name"] as? String) ?? "?"
             let input = serializeInput(dict["arguments"] ?? dict["input"] ?? dict["args"])
             return .toolCall(name: name, input: input)
 
-        case "tool_result", "function_result":
+        case "tool_result", "function_result", "tool_use_result", "tool_observation":
             let output = extractText(from: dict) ?? ""
             let success: Bool
             if let isError = dict["is_error"] as? Bool {
                 success = !isError
             } else if let status = dict["status"] as? String {
-                success = (status == "ok" || status == "success")
+                success = (status == "ok" || status == "success" || status == "completed")
             } else {
                 success = true
             }
             return .toolResult(success: success, output: output)
 
-        case "usage", "token_usage":
+        case "usage", "token_usage", "usage_update":
             let inputTokens = intValue(dict["input_tokens"] ?? dict["prompt_tokens"]) ?? 0
             let outputTokens = intValue(dict["output_tokens"] ?? dict["completion_tokens"]) ?? 0
             let cacheCreate = intValue(dict["cache_creation_tokens"]) ?? 0
-            let cacheRead = intValue(dict["cache_read_tokens"]) ?? 0
-            let cost = dict["cost_usd"] as? Double ?? dict["total_cost_usd"] as? Double
+            let cacheRead = intValue(dict["cache_read_tokens"] ?? dict["cached_tokens"]) ?? 0
+            let cost = dict["cost_usd"] as? Double
+                ?? dict["total_cost_usd"] as? Double
+                ?? dict["cost"] as? Double
             return .usage(.init(
                 inputTokens: inputTokens,
                 outputTokens: outputTokens,
@@ -299,9 +307,15 @@ actor CodexJSONLParser {
                 costUSD: cost
             ))
 
-        case "session_started", "session_created":
+        case "session_started", "session_created", "session_initialized",
+             "configured", "ready":
             // session id만 추출, UI 이벤트는 emit X
             return nil
+
+        case "error", "agent_error":
+            // 에러는 toolResult(success: false)로 forward (사용자 인지 필요)
+            let msg = extractText(from: dict) ?? "Codex 에러"
+            return .toolResult(success: false, output: "[\(type)] \(msg)")
 
         case "":
             // type 없으면 text 추정
@@ -312,6 +326,7 @@ actor CodexJSONLParser {
 
         default:
             // 알 수 없는 type — 원본 line을 raw text로 forward (디버깅 가능)
+            // 사용자가 issue 보고 시 이 prefix가 단서가 됨
             return .text("[codex \(type)] \(line)")
         }
     }

@@ -40,7 +40,7 @@ public struct Composer: View {
         permissionMode: Binding<PermissionMode>,
         effortLevel: Binding<EffortLevel>,
         isStreaming: Bool,
-        placeholder: String = "무엇을 도와드릴까요?  `/` 로 명령, `@` 로 노트",
+        placeholder: String = "무엇을 도와드릴까요?  `@codex` 또는 `@claude`로 다른 pane에 위임",
         attachedFiles: [URL] = [],
         onRemoveAttachment: @escaping (URL) -> Void = { _ in },
         onClearAttachments: @escaping () -> Void = {},

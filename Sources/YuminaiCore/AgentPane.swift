@@ -12,7 +12,7 @@ import Foundation
 ///
 /// 같은 워크스페이스 디렉토리를 공유하므로 file system이 협업 매개체가 된다.
 /// `role: .primary` 패널 1개가 Telegram bridge의 forward 대상.
-public struct AgentPane: Sendable, Identifiable, Equatable, Hashable {
+public struct AgentPane: Sendable, Identifiable, Equatable, Hashable, Codable {
     public let id: UUID
     public var agentKind: AgentKind
     public var settings: SessionSettings

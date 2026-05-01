@@ -19,6 +19,9 @@ public final class WorkspaceModel {
     public var agentKindRaw: String?
     /// DeliveryConfig JSON 직렬화. nil이면 .disabled로 fallback. ADR-029.
     public var deliveryConfigJSON: Data?
+    /// `[AgentPane]` JSON 직렬화 — workspace 재진입 시 panes 복원 (ADR-031, T1).
+    /// nil/decode 실패 시 빈 배열 → AppModel이 default primary 1개 자동 생성.
+    public var panesJSON: Data?
 
     public init(
         id: UUID,
@@ -29,7 +32,8 @@ public final class WorkspaceModel {
         harnessTemplateRaw: String? = nil,
         isArchived: Bool = false,
         agentKindRaw: String? = nil,
-        deliveryConfigJSON: Data? = nil
+        deliveryConfigJSON: Data? = nil,
+        panesJSON: Data? = nil
     ) {
         self.id = id
         self.name = name
@@ -40,6 +44,7 @@ public final class WorkspaceModel {
         self.isArchived = isArchived
         self.agentKindRaw = agentKindRaw
         self.deliveryConfigJSON = deliveryConfigJSON
+        self.panesJSON = panesJSON
     }
 
     public convenience init(from core: Workspace) {
@@ -52,7 +57,8 @@ public final class WorkspaceModel {
             harnessTemplateRaw: core.harnessTemplate?.rawValue,
             isArchived: core.isArchived,
             agentKindRaw: core.agentKind.rawValue,
-            deliveryConfigJSON: try? JSONEncoder().encode(core.deliveryConfig)
+            deliveryConfigJSON: try? JSONEncoder().encode(core.deliveryConfig),
+            panesJSON: try? JSONEncoder().encode(core.savedPanes)
         )
     }
 
@@ -64,6 +70,13 @@ public final class WorkspaceModel {
         } else {
             delivery = .disabled
         }
+        let panes: [AgentPane]
+        if let data = panesJSON,
+           let decoded = try? JSONDecoder().decode([AgentPane].self, from: data) {
+            panes = decoded
+        } else {
+            panes = []
+        }
         return Workspace(
             id: id,
             name: name,
@@ -73,7 +86,8 @@ public final class WorkspaceModel {
             harnessTemplate: harnessTemplateRaw.flatMap(HarnessTemplateName.init(rawValue:)),
             isArchived: isArchived,
             agentKind: agentKindRaw.flatMap(AgentKind.init(rawValue:)) ?? .default,
-            deliveryConfig: delivery
+            deliveryConfig: delivery,
+            savedPanes: panes
         )
     }
 }

@@ -16,6 +16,9 @@ public struct Workspace: Sendable, Identifiable, Hashable {
     public let agentKind: AgentKind
     /// 자동 build/test/lint 정책. ADR-029 (M4 delivery loop).
     public let deliveryConfig: DeliveryConfig
+    /// 영속된 panes 메타. workspace 재진입 시 복원 (ADR-031, T1).
+    /// 빈 배열이면 AppModel이 default primary 1개 자동 생성. session/messages는 복원 X (메타만).
+    public let savedPanes: [AgentPane]
 
     public init(
         id: UUID = UUID(),
@@ -26,7 +29,8 @@ public struct Workspace: Sendable, Identifiable, Hashable {
         harnessTemplate: HarnessTemplateName? = nil,
         isArchived: Bool = false,
         agentKind: AgentKind = .default,
-        deliveryConfig: DeliveryConfig = .disabled
+        deliveryConfig: DeliveryConfig = .disabled,
+        savedPanes: [AgentPane] = []
     ) {
         self.id = id
         self.name = name
@@ -37,6 +41,7 @@ public struct Workspace: Sendable, Identifiable, Hashable {
         self.isArchived = isArchived
         self.agentKind = agentKind
         self.deliveryConfig = deliveryConfig
+        self.savedPanes = savedPanes
     }
 
     /// agentKind만 다른 새 인스턴스 반환 (불변성 유지).
@@ -50,7 +55,8 @@ public struct Workspace: Sendable, Identifiable, Hashable {
             harnessTemplate: harnessTemplate,
             isArchived: isArchived,
             agentKind: agentKind,
-            deliveryConfig: deliveryConfig
+            deliveryConfig: deliveryConfig,
+            savedPanes: savedPanes
         )
     }
 
@@ -64,7 +70,23 @@ public struct Workspace: Sendable, Identifiable, Hashable {
             harnessTemplate: harnessTemplate,
             isArchived: isArchived,
             agentKind: agentKind,
-            deliveryConfig: deliveryConfig
+            deliveryConfig: deliveryConfig,
+            savedPanes: savedPanes
+        )
+    }
+
+    public func with(savedPanes: [AgentPane]) -> Workspace {
+        Workspace(
+            id: id,
+            name: name,
+            directoryPath: directoryPath,
+            createdAt: createdAt,
+            lastOpenedAt: lastOpenedAt,
+            harnessTemplate: harnessTemplate,
+            isArchived: isArchived,
+            agentKind: agentKind,
+            deliveryConfig: deliveryConfig,
+            savedPanes: savedPanes
         )
     }
 }

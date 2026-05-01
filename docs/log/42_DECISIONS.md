@@ -1,6 +1,68 @@
 # Decisions Log (ADR-lite)
 
-> 최신: ADR-030 (v0.4 Phase C — Multi-pane Foundation)
+> 최신: ADR-031 (v0.4 Phase D — Panes 영속 + 인터-에이전트 메시지)
+
+---
+
+## ADR-031 — v0.4 Phase D: Panes 영속 (T1) + 인터-에이전트 메시지 (T2) + Codex schema 정밀화 (T3)
+
+- **날짜**: 2026-05-02
+- **상태**: Accepted
+- **결정**: ADR-027 권고 5개 phase 중 가치/비용 평가 후 가치 큰 3개 선별 — Panes 영속 + `@codex` mention dispatch + Codex schema 안전 추가. 나머지 5개(T4-T8)는 사용자 트리거 시 진행
+- **컨텍스트**:
+  - 사용자 — "남은 권고 순서 하나하나 상세하게 기획하고 냉정하게 사용성과 단위 기능 검토해 가면서 구현"
+  - Phase A/B/C 완료 후 권고는 split layout / per-pane 설정 / PreviewPane / 인터-에이전트 / Codex 정밀화 등
+  - **냉정한 평가** — 권고 모두 진행은 비효율. 가치 큰 것만 선별
+- **평가 매트릭스** (`docs/design/84_REMAINING_PHASES_EVALUATION.md`):
+  | 항목 | 가치 | 비용 | 사용성 | 결정 |
+  |------|-----|------|------|------|
+  | T1 panes 영속 | 높음 | 작음 | 높음 | ✅ |
+  | T2 mention dispatch | 높음 | 보통 | 높음 | ✅ |
+  | T3 codex schema | 보통 | 작음 | 보통 | ✅ |
+  | T4 split layout | 보통 | 큼 | 모호 | ⏸ |
+  | T5 per-pane settings | 낮음 | 보통 | 낮음 | ⏸ |
+  | T6 PreviewPane | 보통 | 보통 | 모호 | ⏸ |
+  | T7 reorder/rename | 낮음 | 작음 | 낮음 | ⏸ |
+  | T8 Block UX | 보통 | 보통 | 보통 | ⏸ |
+- **각 결정**:
+  1. **T1: Workspace.savedPanes 영속** — SwiftData JSON column (deliveryConfigJSON 패턴 재사용). session/messages는 영속 X (메타만). claude session resume으로 컨텍스트 자동 복원
+  2. **T2 mention syntax `@<agent>`** — Telegram 표준 친숙. 우선순위 매칭 (customName 정확 → 부분 → agentKind → @me). 매칭 실패 시 안내, 일반 send fallback X (의도 보존)
+  3. **T2 dispatch는 "사용자 응답"** — pane → pane 답장 자동 새 turn은 무한 루프 위험. v0.5 검토. 현재는 pane 활성화 + 사용자 메시지 전송
+  4. **T3 명시적 무시 type 추가** — thinking/reasoning은 노이즈 (verbose 모드 토글 v0.5)
+  5. **T3 error 이벤트 forward** — silent drop 위험, toolResult로 표시
+  6. **T4-T8 보류** — defer 사유 명시 (사용자 트리거 조건 포함). plan에 보존, 잊지 않게
+- **대안 분석**:
+  - **panes 영속 vs ephemeral**: 영속 채택. 사용자가 만든 panes 잃는 것 X (워크스페이스 단위 의도 명시)
+  - **mention auto-complete picker** vs **manual syntax**: picker는 v0.5. manual은 학습 비용 있지만 Telegram 표준이라 자연스러움. placeholder + i 도움말로 보조
+  - **dispatch가 자동 새 turn 트리거** vs **사용자 응답만**: 전자는 자동 협업이지만 무한 루프. 후자는 안전. v0.5에서 명시적 토글 추가 검토
+- **격리**:
+  - MentionParser는 YuminaiCore (모든 모듈 사용 가능)
+  - panesJSON은 WorkspaceModel (SwiftData column)
+  - dispatch 로직은 AppModel (pane state + sendMessage 호출)
+- **결과**:
+  - 신규 파일 1개: MentionParser.swift
+  - Workspace +1 필드 (savedPanes) + with(savedPanes:)
+  - WorkspaceModel +1 column (panesJSON, nullable, 호환)
+  - AppModel +3 메서드 (resolveMentionTarget / tryDispatchMention / persistCurrentPanes)
+  - AppModel persist 자동: addPane / removePane / renamePane / ensurePrimaryPane
+  - Composer placeholder + Composer onSend (mention 우선) + Telegram router (mention pass-through)
+  - LiveCodexAdapter +12 type alias + thinking 무시 + error forward
+  - 20 신규 테스트
+  - build 3.5s, test 181/181 (161→181, +20)
+- **알려진 한계**:
+  - panes 영속하지만 messages는 fresh (claude resume에 의존)
+  - mention picker (자동완성) X
+  - pane → pane 답장 자동 새 turn X (안전 우선)
+  - ChatView에 source/target 시각 표시 X (tab으로만 구분)
+  - per-pane delivery config X (workspace 단위)
+- **재검토**:
+  - T4-T8 사용자 트리거 조건 (split, PreviewPane, Block UX, reorder)
+  - mention picker 필요성 (사용 빈도 보고)
+  - Codex JSONL 실제 사용 데이터로 unknown type 추가 매핑
+
+---
+
+## ADR-030 — v0.4 Phase C: Multi-pane Foundation (M1)
 
 ---
 

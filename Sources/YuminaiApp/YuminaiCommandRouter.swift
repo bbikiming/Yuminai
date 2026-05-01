@@ -143,7 +143,11 @@ public final class YuminaiCommandRouter: TelegramCommandRouter, @unchecked Senda
                 await model.selectWorkspace(boundId)
             }
             await MainActor.run { model.inputText = text }
-            await model.sendMessage()
+            // mention 우선 — `@codex` 같은 텍스트면 다른 pane으로 dispatch (ADR-031 T2)
+            let dispatched = await model.tryDispatchMention()
+            if !dispatched {
+                await model.sendMessage()
+            }
             // bridge가 응답 forwarding하므로 여기서는 nil
             return nil
         }

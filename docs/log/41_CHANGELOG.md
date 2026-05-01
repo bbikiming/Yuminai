@@ -4,6 +4,70 @@
 
 ## [Unreleased] — 2026-05-02
 
+### Added — v0.4 Phase D: Panes 영속 + 인터-에이전트 메시지 + Codex schema 정밀화 (ADR-031)
+
+사용자: "남고 권고 순서 하나하나 상세하게 기획하고 냉정하게 사용성과 단위 기능 검토해 가면서 구현 이어서 진행해"
+
+먼저 평가 doc 작성 → 가치/비용 매트릭스로 우선순위 재조정 → T1+T2+T3 진행, T4-T8 보류 (defer 사유 명시).
+
+**평가 결과** (`docs/design/84_REMAINING_PHASES_EVALUATION.md`):
+- 가치 큰 것 우선: Panes 영속 (T1) → 인터-에이전트 메시지 (T2) → Codex schema 정밀화 (T3)
+- 보류: split layout (T4, tab 충분), per-pane 설정 (T5, swap 동일), PreviewPane (T6, use case 모호), pane reorder (T7, 사용 빈도 낮음), Block 그룹화 (T8, terminal 사용 빈도 보고)
+
+**T1. Panes 영속 (workspace 재진입 시 보존)**:
+- `Workspace.savedPanes: [AgentPane]` 필드 추가 + `with(savedPanes:)` immutable
+- `AgentPane: Codable` 추가 (SessionSettings/AgentKind/PaneRole 모두 이미 Codable)
+- `WorkspaceModel.panesJSON: Data?` SwiftData column (nullable, 마이그레이션 호환)
+- `AppModel.ensurePrimaryPane`이 `savedPanes`가 있으면 복원 (primary 없으면 첫 pane promote)
+- `addPane`/`removePane`/`renamePane`이 `persistCurrentPanes()` 자동 호출
+- session/messages는 영속 X (메타만 — conversation은 fresh, claude resume으로 컨텍스트 복원)
+
+**T2. 인터-에이전트 메시지 (`@codex` mention)**:
+- 1순위 reference: MetaGPT 메시지 환경 + AutoGen GroupChat speaker selection (manual hint)
+- `Sources/YuminaiCore/MentionParser.swift` (신규)
+  - `parse(_:) -> Mention?` — leading `@<word> <body>` 추출
+  - `Mention { target, body, originalText }`
+  - `normalizedTarget(_)` static — `@` 제거 + lowercase
+  - 단순한 패턴 (mention만 있고 body 없으면 nil, `@` 한 글자 무시)
+- `AppModel.resolveMentionTarget(_:) -> AgentPane?` — 우선순위:
+  1. customName 정확 매칭 (case-insensitive)
+  2. customName 부분 매칭
+  3. agentKind shortLabel (`@claude`, `@codex`)
+  4. agentKind displayName 부분 매칭
+  5. `@me` → active pane (no-op)
+- `AppModel.tryDispatchMention() async -> Bool` — inputText에서 mention 발견 시 대상 pane 활성화 + body로 inputText 교체 + sendMessage. 매칭 실패 시 사용자 안내
+- Composer onSend 수정: tryDispatchMention 우선, 매칭 안 되면 일반 sendMessage
+- Telegram router도 동일 흐름 (텔레그램에서도 `@codex` 사용 가능)
+- Composer placeholder 변경: "@codex 또는 @claude로 다른 pane에 위임"
+
+**T3. Codex JSONL schema 안전 type 추가**:
+- 알려진 type alias 추가: `agent_message_chunk` / `agent_message_delta` / `delta` / `stream_text` / `tool_use_started` / `tool_call_delta` / `tool_use_result` / `tool_observation` / `usage_update` / `session_initialized` / `configured` / `ready` / `cached_tokens` 키 / `cost` 키
+- `thinking` / `reasoning` / `chain_of_thought` 명시적 무시 (verbose 노이즈 회피)
+- `error` / `agent_error` → `toolResult(success: false)` forward (사용자 인지)
+- `status: "completed"`도 success로 인식
+- 알 수 없는 type fallback은 그대로 (`[codex <type>] raw`로 forward)
+
+**테스트 20 신규**:
+- MentionParserTests (8): basic / leading whitespace / newline separator / no prefix / bare @ / no body / multiline / normalize
+- WorkspaceSavedPanesTests (5): defaults empty / 1개 / immutable / Codable round-trip / 다른 with() 보존
+- CodexSchemaExtraTests (7): chunk/thinking 무시/tool_use_started/completed status/usage_update/error→toolResult/session_initialized
+
+**검증**: build 3.5s, test 181/181 (161→181, +20 신규)
+
+**보류된 항목** (defer 사유 doc 84 참조):
+- T4 좌/우 split layout — 사용자 명시 요청 시
+- T5 per-pane Composer 설정 — swap이 동일 효과
+- T6 PreviewPane (WKWebView) — use case 명시 시
+- T7 pane drag-reorder / rename sheet — panes 5개+ 시
+- T8 Block 그룹화 (Warp UX) — terminal 사용 빈도 보고
+
+알려진 한계 (다음 라운드):
+- mention dispatch는 "사용자 응답"만 (pane → pane 답장 X, 무한 루프 위험)
+- mention 자동완성 picker X (Composer에 `@` 입력 시 추천 — v0.5)
+- panes 영속하지만 messages는 fresh — claude session resume으로 컨텍스트만 복원
+- ChatView에 어떤 pane이 보낸/받은 메시지인지 시각적 구분 X (tab 자체로 구분)
+- per-pane 별도 deliveryConfig X (workspace 단위)
+
 ### Added — v0.4 Phase C: Multi-pane Foundation (M1) (ADR-030)
 
 사용자: "다음 권고 사항 이어서 진행해 줘"
