@@ -2,25 +2,33 @@ import SwiftUI
 import YuminaiCore
 import YuminaiUI
 
-/// 앱 메인 윈도우의 루트 view. NavigationSplitView로 sidebar + chat detail.
+/// 앱 메인 윈도우의 루트 view. NavigationSplitView를 안 쓰고 직접 HStack layout.
 struct RootView: View {
     @Environment(AppModel.self) private var appModel
+    @State private var sidebarVisible: Bool = true
 
     var body: some View {
         @Bindable var bindable = appModel
 
-        NavigationSplitView {
-            SidebarView(
-                workspaces: appModel.workspaces,
-                selectedId: $bindable.selectedWorkspaceId,
-                onCreate: { appModel.showCreateWorkspaceSheet = true },
-                onDelete: { ws in
-                    Task { await appModel.deleteWorkspace(ws) }
+        HStack(spacing: 0) {
+            if sidebarVisible {
+                SidebarView(
+                    workspaces: appModel.workspaces,
+                    selectedId: $bindable.selectedWorkspaceId,
+                    onCreate: { appModel.showCreateWorkspaceSheet = true },
+                    onDelete: { ws in Task { await appModel.deleteWorkspace(ws) } }
+                )
+                .transition(.move(edge: .leading))
+            }
+
+            ChatContainer(onToggleSidebar: {
+                withAnimation(.easeInOut(duration: 0.16)) {
+                    sidebarVisible.toggle()
                 }
-            )
-        } detail: {
-            ChatContainer()
+            })
         }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .background(Theme.Color.bg)
         .onChange(of: appModel.selectedWorkspaceId) { _, newValue in
             Task { await appModel.selectWorkspace(newValue) }
         }
@@ -55,12 +63,16 @@ struct RootView: View {
 
 struct ChatContainer: View {
     @Environment(AppModel.self) private var appModel
+    let onToggleSidebar: () -> Void
 
     var body: some View {
         @Bindable var bindable = appModel
 
         if appModel.selectedWorkspaceId == nil {
-            EmptyChatPlaceholder()
+            VStack(spacing: 0) {
+                topToolbarStub
+                EmptyChatPlaceholder()
+            }
         } else {
             VStack(spacing: 0) {
                 ChatToolbar(
@@ -74,11 +86,12 @@ struct ChatContainer: View {
                         Task { await appModel.updateActiveSettings(newSettings) }
                     },
                     onToggleInspector: {
-                        withAnimation(.easeInOut(duration: 0.18)) {
+                        withAnimation(.easeInOut(duration: 0.16)) {
                             appModel.showInspector.toggle()
                         }
                     },
-                    onShowDashboard: { appModel.showUsageDashboard = true }
+                    onShowDashboard: { appModel.showUsageDashboard = true },
+                    onToggleSidebar: onToggleSidebar
                 )
 
                 HStack(spacing: 0) {
@@ -87,7 +100,7 @@ struct ChatContainer: View {
                             messages: appModel.messages,
                             inputText: $bindable.inputText,
                             isStreaming: appModel.isStreaming,
-                            emptyStateText: "Claude에 메시지를 보내 시작하세요. ⌘+Return으로 전송.",
+                            emptyStateText: "메시지를 입력해 시작하세요. ⌘+Return으로 전송.",
                             onSend: { Task { await appModel.sendMessage() } },
                             onCancel: { appModel.cancelStream() }
                         )
@@ -106,16 +119,31 @@ struct ChatContainer: View {
                             workspacePath: currentWorkspacePath,
                             recentTools: recentToolNames
                         )
-                        .transition(.move(edge: .trailing).combined(with: .opacity))
+                        .transition(.move(edge: .trailing))
                     }
                 }
             }
-            .navigationTitle(currentWorkspaceName)
         }
     }
 
+    private var topToolbarStub: some View {
+        HStack {
+            FlatButton("", icon: "sidebar.left", variant: .ghost, size: .small, action: onToggleSidebar)
+                .help("사이드바")
+            Text("yuminai")
+                .font(Theme.Typography.label)
+                .foregroundStyle(Theme.Color.textTertiary)
+                .textCase(.uppercase)
+                .tracking(0.5)
+            Spacer()
+        }
+        .padding(.horizontal, Theme.Spacing.md)
+        .frame(height: Theme.Layout.toolbarHeight)
+        .flatChrome(borders: [.bottom])
+    }
+
     private var currentWorkspaceName: String {
-        appModel.workspaces.first { $0.id == appModel.selectedWorkspaceId }?.name ?? "Yuminai"
+        appModel.workspaces.first { $0.id == appModel.selectedWorkspaceId }?.name ?? "yuminai"
     }
 
     private var currentWorkspacePath: String? {
@@ -134,20 +162,17 @@ struct EmptyChatPlaceholder: View {
     @Environment(AppModel.self) private var appModel
 
     var body: some View {
-        VStack(spacing: Theme.Spacing.lg) {
+        VStack(spacing: Theme.Spacing.xl) {
             Spacer()
-            Image(systemName: "terminal")
-                .font(.system(size: 48))
-                .foregroundStyle(Theme.Color.labelSecondary)
-            Text("워크스페이스를 선택하거나 새로 만드세요")
-                .font(.title3)
-                .foregroundStyle(.secondary)
-            Button("새 워크스페이스 만들기") {
+            Text("─ no active workspace ─")
+                .font(Theme.Typography.body)
+                .foregroundStyle(Theme.Color.textTertiary)
+            FlatButton("+ 새 워크스페이스", variant: .accent) {
                 appModel.showCreateWorkspaceSheet = true
             }
-            .controlSize(.large)
             Spacer()
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .background(Theme.Color.bg)
     }
 }

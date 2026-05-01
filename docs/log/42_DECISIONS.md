@@ -158,6 +158,34 @@
 
 ---
 
+## ADR-015 — macOS 네이티브 컴포넌트 우회 + 자체 Flat 토큰 시스템
+
+- **날짜**: 2026-05-01
+- **상태**: Accepted
+- **결정**: Yuminai UI는 macOS 네이티브 컴포넌트(NavigationSplitView, Form, Picker dropdown 룩, `.regularMaterial` 등)를 의도적으로 우회하고, 자체 Theme 토큰 + 자체 Flat 컴포넌트(FlatButton, FlatTextField, FlatSection 등)로 구성한다.
+- **컨텍스트**: 사용자 피드백 — "macOS 네이티브감이 너무 강함, Claude Code의 플랫하고 사용성 있는 룩 원함". 디자인 MD 라이브러리(shadcn/Tailwind 등)는 SwiftUI에 직접 import 불가하지만, 토큰 + 자체 컴포넌트로 등가 재현 가능.
+- **대안**:
+  - macOS 네이티브 룩 그대로 + 색만 조정 → 사용자 의도 미흡
+  - WebView 임베드 + HTML/Tailwind → 무겁고 SwiftUI 의도 어긋남
+  - **자체 Flat 토큰 + 자체 컴포넌트 (채택)** → 가장 깨끗
+- **근거**:
+  - SwiftUI에서 macOS 네이티브 룩은 시스템 색/material/standard 컴포넌트로부터 옴. 이걸 우회하면 임의 디자인 가능.
+  - Theme.Color는 명시적 light/dark hex 정의, Color(light:dark:) helper로 자동 전환.
+  - Layout은 NavigationSplitView 대신 직접 HStack — sidebar는 자체 toggle.
+- **결과**:
+  - `Theme.swift` 전면 재작성 (Color/Typography/Spacing/Radius/Stroke/Layout)
+  - `FlatComponents.swift` 신규 (FlatButton/Text/Section/Row/Divider/Toggle)
+  - 모든 view 파일에서 시스템 색 참조 → 새 토큰
+  - `flatChrome(borders:)` modifier로 chrome 단순화
+  - MessageBubble 박스 제거 → CLI 스타일 prefix 마커 + role 라벨
+  - InlinePicker monospace + 1px border 형식
+- **알려진 한계**:
+  - `SettingsView`는 SwiftUI Form/Section/Picker 그대로 (시스템 룩 잔존) — 사용 빈도 낮아 후순위
+  - 사이드바 collapse animation이 NavigationSplitView보다 단순
+- **재검토**: SettingsView도 자체 flat 컴포넌트로 마이그레이션 필요 시점
+
+---
+
 ## ADR-014 — Toolbar inline picker + 즉시 재spawn
 
 - **날짜**: 2026-05-01

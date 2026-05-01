@@ -4,6 +4,22 @@
 
 ## [Unreleased] — 2026-05-01
 
+### Redesigned (CLI-flat 룩으로 전면 재구성, 2026-05-01 늦은밤)
+- **macOS 네이티브 컴포넌트 우회** — NavigationSplitView 제거 (직접 HStack), Form/Picker/.regularMaterial 모두 chrome에서 제거
+- **Theme 전면 재정의** — 시스템 색 (`Color(NSColor.windowBackgroundColor)` 등) 모두 제거 → 명시적 light/dark 적응형 hex 토큰. 모든 폰트 monospace 기본
+- **자체 Flat 컴포넌트** (`FlatComponents.swift`): FlatButton (5 variants × 2 sizes), FlatTextField, FlatSection, FlatRow, FlatHDivider/FlatVDivider, FlatToggle
+- **flatChrome modifier** — `.regularMaterial` 대신 단색 + 옵션 1px border (top/bottom/leading/trailing 선택)
+- **MessageBubble 완전 재작성** — 박스/배경 제거, prefix 마커 (`>`, `·`, `○`, `—`) + lowercase role 라벨 + 본문만 (Claude Code CLI 룩)
+- **InlinePicker** — `model · sonnet ▾` 형식의 monospace 1px-border 픽커
+- **ChatToolbar** — `[ws-name] | model·sonnet▾ mode·default▾ effort·medium▾ │ ●streaming` flat 룩
+- **ChatStatusBar** — `ctx ▓▓░ 23.4% │ msg 8 in 12.3k out 4.5k cache 890 │ $0.0451`
+- **ContextInspector** — 박스 없는 섹션 (uppercase 라벨 + key/value)
+- **SidebarView** — flat row, `>` 선택 마커, hover/select 단색 배경
+- **MessageInputView** — `>` prompt + flat textarea + send/cancel
+- **SidebarToggle 버튼** — Toolbar 좌측, 사이드바 hide/show
+- **CreateWorkspaceSheet, UsageDashboard** — 자체 flat 컴포넌트 사용
+- 정수 spacing (2/4/8/12/16/24)으로 정보 밀도 ↑
+
 ### Added (UI/UX 대폭 개선, 2026-05-01 후반)
 - **모델·모드·효과 picker (인라인)** — ChatToolbar에서 즉시 변경. 변경 시 Claude CLI 자동 재spawn (현재 메시지 보존)
 - **ChatToolbar** — Claude orange 액센트, monospace 라벨, 워크스페이스명 + model/mode/effort + 스트리밍 뱃지 + dashboard/inspector 버튼

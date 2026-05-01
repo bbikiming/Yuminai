@@ -29,7 +29,8 @@ public struct ChatView: View {
     public var body: some View {
         VStack(spacing: 0) {
             messageList
-            Divider()
+                .background(Theme.Color.bg)
+            FlatHDivider()
             MessageInputView(
                 text: $inputText,
                 isStreaming: isStreaming,
@@ -44,16 +45,19 @@ public struct ChatView: View {
         if messages.isEmpty {
             VStack(spacing: Theme.Spacing.md) {
                 Spacer()
-                Text(emptyStateText)
+                Text("─ empty session ─")
                     .font(Theme.Typography.body)
-                    .foregroundStyle(Theme.Color.labelSecondary)
+                    .foregroundStyle(Theme.Color.textTertiary)
+                Text(emptyStateText)
+                    .font(Theme.Typography.small)
+                    .foregroundStyle(Theme.Color.textTertiary)
                 Spacer()
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
         } else {
             ScrollViewReader { proxy in
                 ScrollView {
-                    LazyVStack(spacing: Theme.Spacing.md) {
+                    LazyVStack(spacing: 0) {
                         ForEach(messages) { message in
                             MessageBubble(message: message)
                                 .id(message.id)
@@ -63,7 +67,7 @@ public struct ChatView: View {
                 }
                 .onChange(of: messages.last?.id) { _, _ in
                     guard let last = messages.last else { return }
-                    withAnimation(.easeOut(duration: 0.15)) {
+                    withAnimation(.easeOut(duration: 0.12)) {
                         proxy.scrollTo(last.id, anchor: .bottom)
                     }
                 }

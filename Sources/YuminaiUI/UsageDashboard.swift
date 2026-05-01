@@ -1,7 +1,7 @@
 import SwiftUI
 import YuminaiCore
 
-/// 사용량 대시보드 — 현재 세션 + 누적. ⌘D로 호출.
+/// 사용량 대시보드 — flat 그리드, 박스 + 1px border.
 public struct UsageDashboard: View {
     public let currentSessionUsage: UsageStats
     public let allTimeUsage: UsageStats
@@ -21,78 +21,67 @@ public struct UsageDashboard: View {
     }
 
     public var body: some View {
-        VStack(alignment: .leading, spacing: Theme.Spacing.lg) {
+        VStack(alignment: .leading, spacing: Theme.Spacing.xl) {
             header
 
-            UsageSection(
-                title: "현재 세션",
-                usage: currentSessionUsage,
-                model: activeModel
-            )
+            FlatSection("current session") {
+                UsageGrid(usage: currentSessionUsage, model: activeModel)
+            }
 
-            Divider()
+            FlatSection("all time (since launch)") {
+                UsageGrid(usage: allTimeUsage, model: activeModel)
+            }
 
-            UsageSection(
-                title: "앱 시작 후 누적",
-                usage: allTimeUsage,
-                model: activeModel
-            )
+            FlatSection("model pricing", footer: "Anthropic 공식 가격 기준 (대략값)") {
+                PricingGrid(model: activeModel)
+            }
 
-            Divider()
-
-            ModelPricingFooter(model: activeModel)
-
-            Spacer(minLength: Theme.Spacing.lg)
+            Spacer(minLength: Theme.Spacing.md)
 
             HStack {
                 Spacer()
-                Button("닫기", action: onClose)
+                FlatButton("close", variant: .secondary, action: onClose)
                     .keyboardShortcut(.escape, modifiers: [])
             }
         }
-        .padding(Theme.Spacing.xl)
-        .frame(width: 640, height: 540)
+        .padding(Theme.Spacing.xxl)
+        .frame(width: 660, height: 580)
+        .background(Theme.Color.bg)
     }
 
     private var header: some View {
         HStack {
-            Image(systemName: "chart.bar.xaxis")
-                .font(.title2)
-                .foregroundStyle(Theme.Color.accent)
-            Text("사용량 대시보드")
-                .font(.title2).bold()
+            Text("usage dashboard")
+                .font(Theme.Typography.title)
+                .foregroundStyle(Theme.Color.text)
             Spacer()
-            Text("model · \(activeModel.displayName)")
-                .font(Theme.Typography.label)
-                .foregroundStyle(Theme.Color.labelSecondary)
+            HStack(spacing: 4) {
+                Text("model")
+                    .foregroundStyle(Theme.Color.textTertiary)
+                Text("·")
+                    .foregroundStyle(Theme.Color.textTertiary)
+                Text(activeModel.rawValue)
+                    .foregroundStyle(Theme.Color.text)
+            }
+            .font(Theme.Typography.label)
         }
     }
 }
 
-struct UsageSection: View {
-    let title: String
+struct UsageGrid: View {
     let usage: UsageStats
     let model: ClaudeModel
 
     var body: some View {
-        VStack(alignment: .leading, spacing: Theme.Spacing.md) {
-            Text(title)
-                .font(Theme.Typography.label)
-                .foregroundStyle(Theme.Color.labelSecondary)
-
-            HStack(spacing: Theme.Spacing.lg) {
-                StatBox(label: "메시지", value: "\(usage.messageCount)")
-                StatBox(label: "Input", value: usage.inputTokens.formattedShort)
-                StatBox(label: "Output", value: usage.outputTokens.formattedShort)
-                StatBox(label: "Cache R", value: usage.cacheReadTokens.formattedShort, color: Theme.Color.success)
-                StatBox(label: "Cache W", value: usage.cacheCreationTokens.formattedShort, color: Theme.Color.warning)
-                StatBox(
-                    label: "비용",
-                    value: String(format: "$%.4f", usage.costUSD),
-                    color: Theme.Color.accent
-                )
+        VStack(alignment: .leading, spacing: Theme.Spacing.lg) {
+            HStack(spacing: Theme.Spacing.xl) {
+                StatBox(label: "messages", value: "\(usage.messageCount)")
+                StatBox(label: "input", value: usage.inputTokens.formattedShort)
+                StatBox(label: "output", value: usage.outputTokens.formattedShort)
+                StatBox(label: "cache R", value: usage.cacheReadTokens.formattedShort, color: Theme.Color.success)
+                StatBox(label: "cache W", value: usage.cacheCreationTokens.formattedShort, color: Theme.Color.warning)
+                StatBox(label: "cost", value: String(format: "$%.4f", usage.costUSD), color: Theme.Color.accent)
             }
-
             ContextRow(usage: usage, model: model)
         }
     }
@@ -101,18 +90,20 @@ struct UsageSection: View {
 struct StatBox: View {
     let label: String
     let value: String
-    var color: SwiftUI.Color = Theme.Color.label
+    var color: SwiftUI.Color = Theme.Color.text
 
     var body: some View {
         VStack(alignment: .leading, spacing: 2) {
             Text(label)
-                .font(Theme.Typography.statLabel)
-                .foregroundStyle(Theme.Color.labelTertiary)
+                .font(Theme.Typography.micro)
+                .foregroundStyle(Theme.Color.textTertiary)
+                .textCase(.uppercase)
+                .tracking(0.5)
             Text(value)
                 .font(Theme.Typography.statBig)
                 .foregroundStyle(color)
         }
-        .frame(minWidth: 70, alignment: .leading)
+        .frame(minWidth: 64, alignment: .leading)
     }
 }
 
@@ -124,26 +115,25 @@ struct ContextRow: View {
         let ratio = usage.contextUsage(maxTokens: model.contextWindowTokens)
         VStack(alignment: .leading, spacing: 4) {
             HStack {
-                Text("컨텍스트 사용률")
-                    .font(Theme.Typography.statLabel)
-                    .foregroundStyle(Theme.Color.labelTertiary)
+                Text("context")
+                    .font(Theme.Typography.micro)
+                    .foregroundStyle(Theme.Color.textTertiary)
+                    .textCase(.uppercase)
+                    .tracking(0.5)
                 Spacer()
-                Text(String(format: "%.1f%% / %@",
-                            ratio * 100,
-                            model.contextWindowTokens.formattedShort))
-                    .font(Theme.Typography.toolbarLabel.monospacedDigit())
-                    .foregroundStyle(Theme.Color.label)
+                Text(String(format: "%.1f%% / %@", ratio * 100, model.contextWindowTokens.formattedShort))
+                    .font(Theme.Typography.label.monospacedDigit())
+                    .foregroundStyle(Theme.Color.text)
             }
             GeometryReader { geo in
                 ZStack(alignment: .leading) {
-                    RoundedRectangle(cornerRadius: 3)
-                        .fill(Theme.Color.dividerSubtle)
-                    RoundedRectangle(cornerRadius: 3)
+                    Rectangle().fill(Theme.Color.borderSubtle)
+                    Rectangle()
                         .fill(barColor(ratio))
                         .frame(width: max(2, geo.size.width * ratio))
                 }
             }
-            .frame(height: 8)
+            .frame(height: 6)
         }
     }
 
@@ -156,29 +146,28 @@ struct ContextRow: View {
     }
 }
 
-struct ModelPricingFooter: View {
+struct PricingGrid: View {
     let model: ClaudeModel
 
     var body: some View {
-        HStack(spacing: Theme.Spacing.lg) {
+        HStack(spacing: Theme.Spacing.xxl) {
             label("input", String(format: "$%.2f / 1M", model.inputPricePerMillion))
             label("output", String(format: "$%.2f / 1M", model.outputPricePerMillion))
             label("context", model.contextWindowTokens.formattedShort)
             Spacer()
-            Text("실제 가격은 Anthropic 공식 가격 기준")
-                .font(.caption2)
-                .foregroundStyle(Theme.Color.labelTertiary)
         }
     }
 
     private func label(_ key: String, _ value: String) -> some View {
         VStack(alignment: .leading, spacing: 2) {
             Text(key)
-                .font(Theme.Typography.statLabel)
-                .foregroundStyle(Theme.Color.labelTertiary)
+                .font(Theme.Typography.micro)
+                .foregroundStyle(Theme.Color.textTertiary)
+                .textCase(.uppercase)
+                .tracking(0.5)
             Text(value)
-                .font(Theme.Typography.toolbarLabel.monospacedDigit())
-                .foregroundStyle(Theme.Color.label)
+                .font(Theme.Typography.label.monospacedDigit())
+                .foregroundStyle(Theme.Color.text)
         }
     }
 }

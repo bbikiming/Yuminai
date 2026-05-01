@@ -1,11 +1,7 @@
 import SwiftUI
 import YuminaiCore
 
-/// 채팅 영역 상단에 항상 표시되는 toolbar. Claude Code 데스크탑 룩.
-///
-/// 좌측: 워크스페이스 메타 (이름)
-/// 가운데: 모델/모드/효과 picker (inline)
-/// 우측: 사용량 dashboard 버튼, inspector toggle
+/// 채팅 영역 상단 toolbar. 좌측 워크스페이스 메타, 가운데 picker, 우측 액션.
 public struct ChatToolbar: View {
     public let workspaceName: String
     @Binding public var model: ClaudeModel
@@ -16,6 +12,7 @@ public struct ChatToolbar: View {
     public let onSettingsApply: (SessionSettings) -> Void
     public let onToggleInspector: () -> Void
     public let onShowDashboard: () -> Void
+    public let onToggleSidebar: () -> Void
 
     public init(
         workspaceName: String,
@@ -26,7 +23,8 @@ public struct ChatToolbar: View {
         inspectorVisible: Bool,
         onSettingsApply: @escaping (SessionSettings) -> Void,
         onToggleInspector: @escaping () -> Void,
-        onShowDashboard: @escaping () -> Void
+        onShowDashboard: @escaping () -> Void,
+        onToggleSidebar: @escaping () -> Void = {}
     ) {
         self.workspaceName = workspaceName
         self._model = model
@@ -37,15 +35,29 @@ public struct ChatToolbar: View {
         self.onSettingsApply = onSettingsApply
         self.onToggleInspector = onToggleInspector
         self.onShowDashboard = onShowDashboard
+        self.onToggleSidebar = onToggleSidebar
     }
 
     public var body: some View {
         HStack(spacing: Theme.Spacing.md) {
-            workspaceLabel
-            Divider().frame(height: 16)
-            ModelPicker(selection: $model, onChange: { _ in apply() })
-            ModePicker(selection: $permissionMode, onChange: { _ in apply() })
-            EffortPicker(selection: $effortLevel, onChange: { _ in apply() })
+            FlatButton("", icon: "sidebar.left", variant: .ghost, size: .small, action: onToggleSidebar)
+                .help("사이드바 (⌘⌥1)")
+
+            HStack(spacing: Theme.Spacing.xs) {
+                Text("[")
+                    .foregroundStyle(Theme.Color.textTertiary)
+                Text(workspaceName)
+                    .foregroundStyle(Theme.Color.text)
+                Text("]")
+                    .foregroundStyle(Theme.Color.textTertiary)
+            }
+            .font(Theme.Typography.label)
+
+            FlatVDivider().frame(height: 14)
+
+            ModelPicker(selection: $model) { _ in apply() }
+            ModePicker(selection: $permissionMode) { _ in apply() }
+            EffortPicker(selection: $effortLevel) { _ in apply() }
 
             if isStreaming {
                 streamingBadge
@@ -53,53 +65,38 @@ public struct ChatToolbar: View {
 
             Spacer()
 
-            Button(action: onShowDashboard) {
-                Image(systemName: "chart.bar.xaxis")
-            }
-            .buttonStyle(.plain)
-            .help("사용량 대시보드 (⌘D)")
-            .keyboardShortcut("d", modifiers: .command)
+            FlatButton("", icon: "chart.bar", variant: .ghost, size: .small, action: onShowDashboard)
+                .help("사용량 (⌘D)")
+                .keyboardShortcut("d", modifiers: .command)
 
-            Button(action: onToggleInspector) {
-                Image(systemName: inspectorVisible ? "sidebar.right" : "sidebar.right")
-                    .symbolVariant(inspectorVisible ? .fill : .none)
-            }
-            .buttonStyle(.plain)
-            .help("Inspector 토글 (⌘⌥I)")
-            .keyboardShortcut("i", modifiers: [.command, .option])
+            FlatButton("",
+                       icon: inspectorVisible ? "sidebar.right.fill" : "sidebar.right",
+                       variant: .ghost, size: .small, action: onToggleInspector)
+                .help("Inspector (⌘⌥I)")
+                .keyboardShortcut("i", modifiers: [.command, .option])
         }
         .padding(.horizontal, Theme.Spacing.md)
-        .padding(.vertical, Theme.Spacing.sm)
-        .chromeBackground()
-        .overlay(alignment: .bottom) {
-            Rectangle()
-                .fill(Theme.Color.dividerSubtle)
-                .frame(height: 1)
-        }
-    }
-
-    private var workspaceLabel: some View {
-        HStack(spacing: 6) {
-            Image(systemName: "folder")
-                .foregroundStyle(Theme.Color.labelSecondary)
-                .font(.caption)
-            Text(workspaceName)
-                .font(Theme.Typography.toolbarLabel)
-                .foregroundStyle(Theme.Color.label)
-        }
+        .frame(height: Theme.Layout.toolbarHeight)
+        .flatChrome(borders: [.bottom])
     }
 
     private var streamingBadge: some View {
         HStack(spacing: 4) {
-            ProgressView()
-                .controlSize(.mini)
-            Text("스트리밍 중")
-                .font(Theme.Typography.toolbarLabel)
+            Circle()
+                .fill(Theme.Color.accent)
+                .frame(width: 6, height: 6)
+            Text("streaming")
+                .font(Theme.Typography.label)
                 .foregroundStyle(Theme.Color.accent)
         }
-        .padding(.horizontal, Theme.Spacing.sm)
-        .padding(.vertical, 3)
-        .background(Theme.Color.accentMuted, in: Capsule())
+        .padding(.horizontal, Theme.Spacing.md)
+        .padding(.vertical, 2)
+        .background(Theme.Color.accentMuted)
+        .overlay(
+            RoundedRectangle(cornerRadius: Theme.Radius.sm)
+                .stroke(Theme.Color.accentBorder, lineWidth: Theme.Stroke.hairline)
+        )
+        .clipShape(RoundedRectangle(cornerRadius: Theme.Radius.sm))
     }
 
     private func apply() {

@@ -1,6 +1,6 @@
 import SwiftUI
 
-/// 채팅 입력창. ⌘+Return 전송, Esc cancel.
+/// 채팅 입력창. CLI 룩 — `>` prompt + 평평한 입력.
 public struct MessageInputView: View {
     @Binding public var text: String
     public let isStreaming: Bool
@@ -11,7 +11,7 @@ public struct MessageInputView: View {
     public init(
         text: Binding<String>,
         isStreaming: Bool,
-        placeholder: String = "메시지 입력 (⌘+Return)",
+        placeholder: String = "메시지 입력 — ⌘+Return 전송",
         onSend: @escaping () -> Void,
         onCancel: @escaping () -> Void
     ) {
@@ -23,50 +23,56 @@ public struct MessageInputView: View {
     }
 
     public var body: some View {
-        VStack(spacing: Theme.Spacing.sm) {
+        HStack(alignment: .top, spacing: Theme.Spacing.md) {
+            Text(">")
+                .font(Theme.Typography.bodyEmphasis)
+                .foregroundStyle(Theme.Color.accent)
+                .padding(.top, 8)
+
             ZStack(alignment: .topLeading) {
                 if text.isEmpty {
                     Text(placeholder)
-                        .font(Theme.Typography.chatInput)
-                        .foregroundStyle(Theme.Color.labelSecondary)
-                        .padding(.horizontal, Theme.Spacing.sm + 4)
-                        .padding(.vertical, Theme.Spacing.sm + 4)
+                        .font(Theme.Typography.body)
+                        .foregroundStyle(Theme.Color.textTertiary)
+                        .padding(.horizontal, 6)
+                        .padding(.vertical, 8)
                         .allowsHitTesting(false)
                 }
                 TextEditor(text: $text)
-                    .font(Theme.Typography.chatInput)
+                    .font(Theme.Typography.body)
                     .scrollContentBackground(.hidden)
-                    .padding(Theme.Spacing.xs)
+                    .padding(2)
                     .frame(minHeight: 60, maxHeight: 200)
             }
-            .background(Color(NSColor.textBackgroundColor))
-            .clipShape(RoundedRectangle(cornerRadius: Theme.Radius.sm))
+            .background(Theme.Color.bgInput)
             .overlay(
                 RoundedRectangle(cornerRadius: Theme.Radius.sm)
-                    .stroke(Color.gray.opacity(0.2), lineWidth: 1)
+                    .stroke(Theme.Color.border, lineWidth: Theme.Stroke.hairline)
             )
+            .clipShape(RoundedRectangle(cornerRadius: Theme.Radius.sm))
 
-            HStack {
-                Text(hintText)
-                    .font(.caption)
-                    .foregroundStyle(Theme.Color.labelSecondary)
-                Spacer()
+            VStack(spacing: 4) {
                 if isStreaming {
-                    Button("Cancel", action: onCancel)
-                        .keyboardShortcut(.escape, modifiers: [])
-                        .controlSize(.small)
+                    FlatButton("cancel", variant: .destructive, size: .small) {
+                        onCancel()
+                    }
+                    .keyboardShortcut(.escape, modifiers: [])
                 }
-                Button("Send", action: triggerSend)
-                    .keyboardShortcut(.return, modifiers: .command)
-                    .controlSize(.small)
-                    .disabled(isStreaming || text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                FlatButton(isStreaming ? "..." : "send",
+                           variant: isStreaming ? .ghost : .primary,
+                           size: .small) {
+                    triggerSend()
+                }
+                .keyboardShortcut(.return, modifiers: .command)
+                .disabled(isStreaming || text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+
+                Text("⌘↵")
+                    .font(Theme.Typography.micro)
+                    .foregroundStyle(Theme.Color.textTertiary)
             }
         }
-        .padding(Theme.Spacing.md)
-    }
-
-    private var hintText: String {
-        isStreaming ? "스트리밍 중… Esc로 취소" : "⌘+Return 전송"
+        .padding(Theme.Spacing.lg)
+        .background(Theme.Color.bg)
     }
 
     private func triggerSend() {

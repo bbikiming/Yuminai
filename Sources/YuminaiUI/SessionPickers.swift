@@ -1,9 +1,7 @@
 import SwiftUI
 import YuminaiCore
 
-/// 모델/모드/효과 picker 공통 룩&필.
-///
-/// CLI 스타일 — 작은 라벨 + 현재 값 + chevron. 누르면 menu가 펼쳐짐.
+/// 모델/모드/효과 picker 공통 룩 — Claude Code CLI 인스피레이션, 플랫 + monospace.
 struct InlinePicker<Value: Hashable>: View {
     let label: String
     let value: Value
@@ -28,18 +26,25 @@ struct InlinePicker<Value: Hashable>: View {
         } label: {
             HStack(spacing: 4) {
                 Text(label)
-                    .font(Theme.Typography.toolbarLabel)
-                    .foregroundStyle(Theme.Color.labelTertiary)
+                    .foregroundStyle(Theme.Color.textTertiary)
+                Text("·")
+                    .foregroundStyle(Theme.Color.textTertiary)
                 Text(valueLabel)
-                    .font(Theme.Typography.toolbarLabel)
-                    .foregroundStyle(Theme.Color.label)
+                    .foregroundStyle(Theme.Color.text)
                 Image(systemName: "chevron.down")
-                    .font(.caption2)
-                    .foregroundStyle(Theme.Color.labelSecondary)
+                    .font(.system(size: 7))
+                    .foregroundStyle(Theme.Color.textSecondary)
+                    .padding(.leading, 2)
             }
-            .padding(.horizontal, Theme.Spacing.sm)
-            .padding(.vertical, Theme.Spacing.xs)
-            .background(Theme.Color.surface, in: RoundedRectangle(cornerRadius: Theme.Radius.sm))
+            .font(Theme.Typography.label)
+            .padding(.horizontal, Theme.Spacing.md)
+            .padding(.vertical, Theme.Spacing.sm)
+            .background(Theme.Color.bgPanel)
+            .overlay(
+                RoundedRectangle(cornerRadius: Theme.Radius.sm)
+                    .stroke(Theme.Color.border, lineWidth: Theme.Stroke.hairline)
+            )
+            .clipShape(RoundedRectangle(cornerRadius: Theme.Radius.sm))
         }
         .menuStyle(.borderlessButton)
         .menuIndicator(.hidden)
@@ -57,11 +62,7 @@ public struct ModelPicker: View {
     }
 
     public var body: some View {
-        InlinePicker(
-            label: "model",
-            value: selection,
-            valueLabel: selection.displayName
-        ) {
+        InlinePicker(label: "model", value: selection, valueLabel: selection.rawValue) {
             ForEach(ClaudeModel.allCases, id: \.self) { model in
                 Button {
                     selection = model
@@ -87,11 +88,7 @@ public struct ModePicker: View {
     }
 
     public var body: some View {
-        InlinePicker(
-            label: "mode",
-            value: selection,
-            valueLabel: selection.displayName
-        ) {
+        InlinePicker(label: "mode", value: selection, valueLabel: selection.rawValue) {
             ForEach(PermissionMode.allCases, id: \.self) { mode in
                 Button {
                     selection = mode
@@ -117,11 +114,7 @@ public struct EffortPicker: View {
     }
 
     public var body: some View {
-        InlinePicker(
-            label: "effort",
-            value: selection,
-            valueLabel: selection.displayName
-        ) {
+        InlinePicker(label: "effort", value: selection, valueLabel: selection.rawValue) {
             ForEach(EffortLevel.allCases, id: \.self) { level in
                 Button {
                     selection = level

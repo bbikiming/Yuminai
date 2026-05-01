@@ -1,7 +1,7 @@
 import SwiftUI
 import YuminaiCore
 
-/// 입력창 바로 위 status bar. 컨텍스트 사용량, 메시지 수, 비용을 inline 표시.
+/// 입력창 위 1줄 status — Claude Code의 status line 스타일.
 public struct ChatStatusBar: View {
     public let usage: UsageStats
     public let contextWindow: Int
@@ -16,71 +16,48 @@ public struct ChatStatusBar: View {
     public var body: some View {
         HStack(spacing: Theme.Spacing.lg) {
             ContextGauge(usage: usage, contextWindow: contextWindow)
+            FlatVDivider().frame(height: 12)
 
-            statItem(
-                label: "msg",
-                value: "\(usage.messageCount)"
-            )
-            statItem(
-                label: "in",
-                value: usage.inputTokens.formattedShort
-            )
-            statItem(
-                label: "out",
-                value: usage.outputTokens.formattedShort
-            )
+            statItem(label: "msg", value: "\(usage.messageCount)")
+            statItem(label: "in", value: usage.inputTokens.formattedShort)
+            statItem(label: "out", value: usage.outputTokens.formattedShort)
             if usage.cacheReadTokens > 0 {
-                statItem(
-                    label: "cache",
-                    value: usage.cacheReadTokens.formattedShort,
-                    color: Theme.Color.success
-                )
+                statItem(label: "cache", value: usage.cacheReadTokens.formattedShort, color: Theme.Color.success)
             }
 
             Spacer()
 
-            costBadge
+            costLabel
         }
         .padding(.horizontal, Theme.Spacing.md)
-        .padding(.vertical, 6)
-        .chromeBackground()
-        .overlay(alignment: .top) {
-            Rectangle()
-                .fill(Theme.Color.dividerSubtle)
-                .frame(height: 1)
-        }
+        .frame(height: Theme.Layout.statusBarHeight)
+        .flatChrome(borders: [.top])
     }
 
-    private func statItem(label: String, value: String, color: SwiftUI.Color = Theme.Color.label) -> some View {
+    private func statItem(label: String, value: String, color: SwiftUI.Color = Theme.Color.text) -> some View {
         HStack(spacing: 4) {
             Text(label)
-                .font(Theme.Typography.statLabel)
-                .foregroundStyle(Theme.Color.labelTertiary)
+                .font(Theme.Typography.micro)
+                .foregroundStyle(Theme.Color.textTertiary)
             Text(value)
-                .font(Theme.Typography.toolbarLabel)
+                .font(Theme.Typography.label.monospacedDigit())
                 .foregroundStyle(color)
         }
     }
 
-    private var costBadge: some View {
+    private var costLabel: some View {
         HStack(spacing: 4) {
             Text("$")
-                .font(Theme.Typography.statLabel)
-                .foregroundStyle(Theme.Color.labelTertiary)
+                .font(Theme.Typography.micro)
+                .foregroundStyle(Theme.Color.textTertiary)
             Text(String(format: "%.4f", usage.costUSD))
-                .font(Theme.Typography.toolbarLabel.monospacedDigit())
-                .foregroundStyle(usage.costUSD > 0 ? Theme.Color.accent : Theme.Color.labelSecondary)
+                .font(Theme.Typography.label.monospacedDigit())
+                .foregroundStyle(usage.costUSD > 0 ? Theme.Color.accent : Theme.Color.textSecondary)
         }
-        .padding(.horizontal, Theme.Spacing.sm)
-        .padding(.vertical, 3)
-        .background(
-            usage.costUSD > 0 ? Theme.Color.accentMuted : Theme.Color.surface,
-            in: Capsule()
-        )
     }
 }
 
-/// 컨텍스트 사용 게이지. 색상은 사용률에 따라 변화.
+/// 컨텍스트 게이지 — 단순 진행 막대 + 퍼센트.
 struct ContextGauge: View {
     let usage: UsageStats
     let contextWindow: Int
@@ -91,23 +68,21 @@ struct ContextGauge: View {
 
         HStack(spacing: 6) {
             Text("ctx")
-                .font(Theme.Typography.statLabel)
-                .foregroundStyle(Theme.Color.labelTertiary)
+                .font(Theme.Typography.micro)
+                .foregroundStyle(Theme.Color.textTertiary)
 
-            // 진행 막대
             GeometryReader { geo in
                 ZStack(alignment: .leading) {
-                    RoundedRectangle(cornerRadius: 2)
-                        .fill(Theme.Color.dividerSubtle)
-                    RoundedRectangle(cornerRadius: 2)
+                    Rectangle().fill(Theme.Color.borderSubtle)
+                    Rectangle()
                         .fill(gaugeColor(ratio))
                         .frame(width: max(2, geo.size.width * ratio))
                 }
             }
-            .frame(width: 90, height: 6)
+            .frame(width: 80, height: 4)
 
             Text(percentText)
-                .font(Theme.Typography.toolbarLabel.monospacedDigit())
+                .font(Theme.Typography.label.monospacedDigit())
                 .foregroundStyle(gaugeColor(ratio))
         }
     }
@@ -122,14 +97,11 @@ struct ContextGauge: View {
 }
 
 extension Int {
-    /// 토큰 수를 짧게 표기 (1234 → "1.2k", 1_234_567 → "1.2M").
     var formattedShort: String {
         if self < 1_000 { return "\(self)" }
         if self < 1_000_000 {
-            let k = Double(self) / 1_000
-            return String(format: "%.1fk", k)
+            return String(format: "%.1fk", Double(self) / 1_000)
         }
-        let m = Double(self) / 1_000_000
-        return String(format: "%.2fM", m)
+        return String(format: "%.2fM", Double(self) / 1_000_000)
     }
 }
