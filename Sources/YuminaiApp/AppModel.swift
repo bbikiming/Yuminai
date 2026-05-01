@@ -100,6 +100,7 @@ public final class AppModel {
     private var telegramBot: (any TelegramClient)?
     private var alertDispatcher: TelegramAlertDispatcher?
     private var commandPump: TelegramCommandPump?
+    private var sessionBridge: TelegramSessionBridge?
 
     private let logger = Logger(subsystem: "com.yuminai", category: "AppModel")
 
@@ -618,6 +619,15 @@ public final class AppModel {
                 await dispatcher?.dispatch(category: category, message: summary)
             }
         }
+        forwardToBridgeIfBound(event)
+    }
+
+    private func forwardToBridgeIfBound(_ event: ClaudeEvent) {
+        guard let bridge = sessionBridge,
+              let bound = preferences.telegramBoundWorkspaceId,
+              selectedWorkspaceId == bound
+        else { return }
+        Task { await bridge.consume(event: event) }
     }
 
     private func appendMessage(role: Message.Role, content: String) {
@@ -672,6 +682,14 @@ public final class AppModel {
         inputText = ""
         attachedFiles = []  // 송신 후 자동 클리어
         isStreaming = true
+
+        // bound 워크스페이스에서 보낸 turn이면 bridge에게 시작 알림
+        if let bridge = sessionBridge,
+           let bound = preferences.telegramBoundWorkspaceId,
+           selectedWorkspaceId == bound {
+            let preview = bodyForUser
+            Task { await bridge.notifyTurnStart(userText: preview) }
+        }
 
         do {
             try await claudeSession.send(bodyForUser)
@@ -806,6 +824,7 @@ public final class AppModel {
             policy: preferences.telegramAlertPolicy,
             chatId: chatId
         )
+        sessionBridge = makeSessionBridge(client: bot, chatId: chatId)
         let router = YuminaiCommandRouter(appModel: self)
         let pump = TelegramCommandPump(client: bot, router: router)
         commandPump = pump
@@ -815,6 +834,20 @@ public final class AppModel {
         } catch {
             logger.error("Telegram pump 시작 실패: \(error.localizedDescription)")
         }
+    }
+
+    /// bound workspace가 있을 때만 bridge 생성. 없으면 nil.
+    private func makeSessionBridge(client: any TelegramClient, chatId: Int64) -> TelegramSessionBridge? {
+        guard let boundId = preferences.telegramBoundWorkspaceId,
+              let workspace = workspaces.first(where: { $0.id == boundId })
+        else { return nil }
+        let config = TelegramSessionBridge.Configuration(
+            chatId: chatId,
+            workspaceName: workspace.name,
+            forwardAssistant: preferences.telegramForwardAssistant,
+            forwardToolCalls: preferences.telegramForwardToolCalls
+        )
+        return TelegramSessionBridge(client: client, configuration: config)
     }
 
     // MARK: - cokacdir bot import (ADR-024)
@@ -857,8 +890,69 @@ public final class AppModel {
         if let pump = commandPump {
             await pump.stop()
         }
+        if let bridge = sessionBridge {
+            await bridge.reset()
+        }
         commandPump = nil
         alertDispatcher = nil
+        sessionBridge = nil
         telegramBot = nil
+    }
+
+    // MARK: - Telegram session control (ADR-025)
+
+    /// bound 워크스페이스 이름 (UI/Router에서 사용).
+    public var boundWorkspaceName: String? {
+        guard let id = preferences.telegramBoundWorkspaceId else { return nil }
+        return workspaces.first { $0.id == id }?.name
+    }
+
+    /// 워크스페이스를 텔레그램 제어 대상으로 설정. nil이면 해제.
+    /// Telegram 봇이 활성화돼 있으면 bridge를 즉시 갱신.
+    public func bindTelegramWorkspace(_ id: UUID?) async {
+        preferences.telegramBoundWorkspaceId = id
+        await savePreferences()
+
+        // bridge 재구성
+        if let bot = telegramBot, let chatId = preferences.telegramChatId {
+            if let bridge = sessionBridge {
+                await bridge.reset()
+            }
+            sessionBridge = makeSessionBridge(client: bot, chatId: chatId)
+            if let bridge = sessionBridge, let name = boundWorkspaceName {
+                await bridge.sendNotice("✓ 텔레그램 연결됨 — 워크스페이스 ‘\(name)’")
+            } else if id == nil {
+                await sessionBridge?.sendNotice("연결 해제됨")
+            }
+        }
+    }
+
+    /// /status 명령에 응답할 텍스트 생성.
+    public func telegramStatusSnapshot() -> String {
+        let bound = boundWorkspaceName ?? "없음"
+        let active = workspaces.first { $0.id == selectedWorkspaceId }?.name ?? "없음"
+        let streamingTag = isStreaming ? "응답 중" : "대기 중"
+        let lines = [
+            "현재 상태:",
+            "  · 연결된 워크스페이스: \(bound)",
+            "  · 활성 워크스페이스: \(active)",
+            "  · Claude: \(streamingTag)",
+            "  · 모델: \(activeSettings.model.displayName)",
+            "  · 컨텍스트: \(Int(currentContextUsage * 100))%"
+        ]
+        return lines.joined(separator: "\n")
+    }
+
+    /// bound 세션의 진행 중 turn 중단. 중단됐으면 true.
+    public func cancelBoundTurn() async -> Bool {
+        guard isStreaming,
+              let bound = preferences.telegramBoundWorkspaceId,
+              selectedWorkspaceId == bound
+        else { return false }
+        cancelStream()
+        if let bridge = sessionBridge {
+            await bridge.notifyCancelled()
+        }
+        return true
     }
 }

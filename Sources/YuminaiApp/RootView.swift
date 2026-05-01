@@ -177,6 +177,10 @@ struct RootView: View {
                 get: { appModel.selectedWorkspaceId },
                 set: { appModel.selectedWorkspaceId = $0 }
             ),
+            telegramBoundId: appModel.preferences.telegramBoundWorkspaceId,
+            telegramAvailable: appModel.preferences.telegramEnabled
+                && appModel.telegramTokenStatus == .set
+                && appModel.preferences.telegramChatId != nil,
             onCreate: {
                 appModel.showCreateWorkspaceSheet = true
                 if layoutMode.sidebarIsOverlay { sidebarOverlayShown = false }
@@ -185,6 +189,12 @@ struct RootView: View {
             onCollapse: toggleSidebar,
             onSearch: { /* ⌘P palette — v0.2 */ },
             onOpenSettings: openAppSettings,
+            onToggleTelegramBind: { ws in
+                Task {
+                    let isBound = appModel.preferences.telegramBoundWorkspaceId == ws.id
+                    await appModel.bindTelegramWorkspace(isBound ? nil : ws.id)
+                }
+            },
             userName: "yuminai",
             updateAvailable: false
         )

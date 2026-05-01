@@ -4,6 +4,70 @@
 
 ## [Unreleased] — 2026-05-01
 
+### Added — 텔레그램 단일 세션 양방향 제어 (ADR-025)
+
+사용자 요청: "하나의 세션을 탤래그램에서 제어할 수 있도록 설계해 줘"
+
+워크스페이스 1개를 텔레그램 챗에 bind해서 양방향 제어 — 텔레그램에서 메시지 보내면 bound 세션의 Claude로 전달, Claude 응답은 chunk 단위로 텔레그램에 forwarding.
+
+**명령어** (Telegram chat에서):
+- `/bind <이름>` — 워크스페이스 연결 (이름 부분 매칭)
+- `/unbind` — 연결 해제
+- `/status` — 현재 상태 (bound/active/streaming/모델/컨텍스트%)
+- `/cancel` 또는 `/stop` — 진행 중 turn 중단
+- `/list` — 워크스페이스 목록 (✈ = bound)
+- `/help` — 도움말
+- prefix 없는 텍스트 → bound 세션 입력으로 전송
+
+**구현**:
+1. **`TelegramSessionBridge` actor (YuminaiTelegram)** — event → chunked 메시지 변환
+   - `notifyTurnStart(userText:)` → "▶ 시작 — workspace\n> preview"
+   - `consume(event:)` — ClaudeEvent 분기:
+     - `.text` → assistantBuffer에 누적, debounce(800ms) 또는 chunk 크기(3500) 초과 시 flush
+     - `.toolCall` → "🔧 name — input 첫 줄 (80자 cap)"
+     - `.toolResult(success:false)` → "⚠ 도구 실패"
+     - `.completed(exitCode:)` → "✅ 완료 (Ns, M tools)" 또는 "❌ 실패 — exit N"
+   - `notifyCancelled()` → "🛑 진행 중 turn 중단됨"
+   - `sendNotice(_:)` — 임의 안내 (bind/unbind 알림 등)
+   - `chunked(text:maxSize:)` — 줄바꿈 우선 → 공백 우선 분할 (Telegram 4096자 한도 안전 마진)
+2. **`YuminaiCommandRouter` 전면 재작성** — `/` prefix 분기 + plain text 라우팅
+   - bindCommand: 이름 정확 매칭 → 부분 매칭 폴백
+   - statusCommand: AppModel.telegramStatusSnapshot() 호출
+   - listCommand: 워크스페이스 목록 + ✈ 표시
+   - plain text: bound 워크스페이스 자동 전환 → inputText → sendMessage
+3. **`AppPreferences` +3 필드**
+   - `telegramBoundWorkspaceId: UUID?`
+   - `telegramForwardAssistant: Bool` (기본 true)
+   - `telegramForwardToolCalls: Bool` (기본 true)
+4. **`AppModel`**
+   - `sessionBridge: TelegramSessionBridge?` 라이프사이클 (activate/deactivateTelegram에 통합)
+   - `bindTelegramWorkspace(_:)` — preference 영속 + bridge 재구성 + 알림
+   - `boundWorkspaceName` computed
+   - `telegramStatusSnapshot()` — /status 응답 텍스트
+   - `cancelBoundTurn()` — bound 세션 한정 cancelStream + bridge.notifyCancelled
+   - `handle(_ event:)`에 `forwardToBridgeIfBound` hook — 활성 워크스페이스가 bound와 일치할 때만 forwarding
+   - `sendMessage()`에 turnStart hook
+5. **`SidebarView`** — bound 워크스페이스에 ✈ paperplane 아이콘 + 우클릭 "텔레그램에 연결" / "연결 해제"
+   - `telegramBoundId: UUID?` + `telegramAvailable: Bool` (token + chatId + enabled 모두 OK일 때) + `onToggleTelegramBind` 콜백
+6. **`RootView`** — SidebarView에 새 binding 전달
+
+**격리**: `TelegramSessionBridge`는 `(any TelegramClient)` + `Configuration`만 의존. AppModel이 ClaudeEvent를 forwarding하는 형태로 — bridge가 AppModel 내부를 알 필요 없음.
+
+**테스트**: 14 신규 (chunking 4 + tool summary 3 + event forwarding 7)
+- chunking: 단일/줄바꿈 경계/공백 경계/round-trip 보존
+- summary: 빈 input/긴 input cap/멀티라인 첫 줄
+- forwarding: text flush + ✅완료 / forwardAssistant=false 무시 / toolCall 🔧 prefix / forwardToolCalls=false 무시 / notifyTurnStart ▶ 시작 / notifyCancelled 🛑 / completed exit≠0 ❌
+
+**검증**: build 2.77s, test 108/108 (94→108, +14 신규)
+
+알려진 한계:
+- bind는 단 1개 워크스페이스 1개 텔레그램 챗 (멀티 매핑 X)
+- Bridge는 raw text를 그대로 보냄 (Markdown은 LiveTelegramBot이 parse_mode=Markdown으로 송신 — 응답이 Markdown 문법 어긋나면 silent drop)
+- 도구 결과 본문은 forwarding 안 함 (성공/실패만) — 토큰 비용 폭증 회피
+- Telegram 4초 rate limit은 안 다룸 (bridge가 빠르게 flush하면 throttle 가능)
+- thinking 이벤트 forwarding 옵션 없음 (필요 시 새 preference 플래그)
+- bridge가 message edit 미사용 (chunk마다 새 메시지) — 진행 중 응답 단일 메시지 갱신은 차기
+
 ### Changed — cokacdir 봇 import로 통합 방식 교체 (ADR-024 개정)
 
 사용자 정정: "🟢 cokacdir started (v0.4.63) ... 이걸로 확인해서 적용해 줘"

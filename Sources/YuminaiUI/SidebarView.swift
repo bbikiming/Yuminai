@@ -5,32 +5,41 @@ import YuminaiCore
 public struct SidebarView: View {
     public let workspaces: [Workspace]
     @Binding public var selectedId: UUID?
+    public let telegramBoundId: UUID?
+    public let telegramAvailable: Bool
     public let onCreate: () -> Void
     public let onDelete: (Workspace) -> Void
     public let onCollapse: () -> Void
     public let onSearch: () -> Void
     public let onOpenSettings: () -> Void
+    public let onToggleTelegramBind: (Workspace) -> Void
     public let userName: String
     public let updateAvailable: Bool
 
     public init(
         workspaces: [Workspace],
         selectedId: Binding<UUID?>,
+        telegramBoundId: UUID? = nil,
+        telegramAvailable: Bool = false,
         onCreate: @escaping () -> Void,
         onDelete: @escaping (Workspace) -> Void,
         onCollapse: @escaping () -> Void = {},
         onSearch: @escaping () -> Void = {},
         onOpenSettings: @escaping () -> Void = {},
+        onToggleTelegramBind: @escaping (Workspace) -> Void = { _ in },
         userName: String = "yuminai",
         updateAvailable: Bool = false
     ) {
         self.workspaces = workspaces
         self._selectedId = selectedId
+        self.telegramBoundId = telegramBoundId
+        self.telegramAvailable = telegramAvailable
         self.onCreate = onCreate
         self.onDelete = onDelete
         self.onCollapse = onCollapse
         self.onSearch = onSearch
         self.onOpenSettings = onOpenSettings
+        self.onToggleTelegramBind = onToggleTelegramBind
         self.userName = userName
         self.updateAvailable = updateAvailable
     }
@@ -97,8 +106,11 @@ public struct SidebarView: View {
                                 workspace: workspace,
                                 index: index,
                                 isSelected: workspace.id == selectedId,
+                                isTelegramBound: workspace.id == telegramBoundId,
+                                telegramAvailable: telegramAvailable,
                                 onSelect: { selectedId = workspace.id },
-                                onDelete: { onDelete(workspace) }
+                                onDelete: { onDelete(workspace) },
+                                onToggleTelegramBind: { onToggleTelegramBind(workspace) }
                             )
                         }
                     }
@@ -200,8 +212,11 @@ struct WorkspaceItemRow: View {
     let workspace: Workspace
     let index: Int
     let isSelected: Bool
+    let isTelegramBound: Bool
+    let telegramAvailable: Bool
     let onSelect: () -> Void
     let onDelete: () -> Void
+    let onToggleTelegramBind: () -> Void
 
     @State private var hovering = false
 
@@ -229,6 +244,14 @@ struct WorkspaceItemRow: View {
                     .lineLimit(1)
                     .truncationMode(.tail)
 
+                if isTelegramBound {
+                    Image(systemName: "paperplane.fill")
+                        .font(.system(size: 9))
+                        .foregroundStyle(Theme.Color.accent)
+                        .help("텔레그램에서 제어 중인 세션")
+                        .transition(.scale.combined(with: .opacity))
+                }
+
                 Spacer()
 
                 if index < 9 && hovering && !isSelected {
@@ -246,6 +269,7 @@ struct WorkspaceItemRow: View {
             .selectedBar(isSelected)
             .contentShape(Rectangle())
             .animation(.easeOut(duration: 0.10), value: hovering)
+            .animation(.easeOut(duration: 0.15), value: isTelegramBound)
         }
         .buttonStyle(PressedScaleStyle(scale: 0.98))
         .onHover { hovering = $0 }
@@ -254,10 +278,16 @@ struct WorkspaceItemRow: View {
                 NSPasteboard.general.clearContents()
                 NSPasteboard.general.setString(workspace.name, forType: .string)
             }
+            if telegramAvailable {
+                Divider()
+                Button(isTelegramBound ? "텔레그램 연결 해제" : "텔레그램에 연결",
+                       systemImage: isTelegramBound ? "paperplane.slash" : "paperplane",
+                       action: onToggleTelegramBind)
+            }
             Divider()
             Button("지우기", role: .destructive, action: onDelete)
         }
-        .accessibilityLabel("\(workspace.name)\(isSelected ? ", 선택됨" : "")")
+        .accessibilityLabel("\(workspace.name)\(isSelected ? ", 선택됨" : "")\(isTelegramBound ? ", 텔레그램 연결됨" : "")")
         .accessibilityHint("이중 클릭으로 활성화")
     }
 

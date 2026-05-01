@@ -1,8 +1,55 @@
 # Decisions Log (ADR-lite)
 
-> 최신: ADR-024 (openclaw CLI 위임 Telegram 통합)
+> 최신: ADR-025 (텔레그램 단일 세션 양방향 제어)
 
 > 큰 결정만 기록. 형식: 결정 / 컨텍스트 / 대안 / 근거 / 결과 / 재검토 시점.
+
+---
+
+## ADR-025 — 텔레그램 단일 세션 bind + ClaudeEvent forwarding bridge
+
+- **날짜**: 2026-05-01
+- **상태**: Accepted
+- **결정**: 워크스페이스 1개를 텔레그램 챗에 1:1 bind. `TelegramSessionBridge` actor가 ClaudeEvent를 chunked Telegram 메시지로 변환해 forwarding. 명령(`/bind`, `/unbind`, `/status`, `/cancel`, `/list`, `/help`)은 `YuminaiCommandRouter`가 처리, 일반 텍스트는 bound 세션의 input으로 전송
+- **컨텍스트**:
+  - 사용자 — "하나의 세션을 탤래그램에서 제어할 수 있도록 설계해 줘"
+  - 기존 인프라: `TelegramAlertDispatcher`(outgoing 정책 알림) + `TelegramCommandPump`(incoming pump) + `YuminaiCommandRouter`(현재 활성 워크스페이스로 단순 라우팅)
+  - 부족: bound 세션 개념 X, Claude 응답이 텔레그램으로 안 돌아감, 명령 X
+- **대안**:
+  - 활성 워크스페이스로 라우팅 (현재 동작) → 사용자가 UI에서 워크스페이스 바꾸면 텔레그램 동작도 따라 바뀜 — 의도 안 맞음
+  - 멀티 bind (n 워크스페이스 ↔ n 챗) → 복잡도 ↑, 사용자 1명 본인 사용 시 단일 chat이 자연스러움
+  - **단일 bind (채택)** — preference에 `telegramBoundWorkspaceId: UUID?` 1개. UI 활성 워크스페이스와 분리. ✈ 아이콘으로 표시
+- **Bridge 설계**:
+  - 별도 actor — AppModel(MainActor)에서 분리해 telegram I/O를 background로
+  - ClaudeEvent를 받아서 Telegram-친화 텍스트로 변환 (forwarding policy는 Bridge 내부)
+  - text event는 buffer에 누적 → debounce(800ms) 또는 chunk size(3500) 초과 시 flush — Telegram rate limit + 4096자 한도 회피
+  - tool call은 즉시 + 한 줄 요약 (`🔧 name — input 첫 줄 (80자 cap)`) — 본문 전체는 토큰 폭증
+  - completed에서 elapsed + tool count로 한 줄 요약
+- **AppModel hook**:
+  - `handle(_ event:)`에 `forwardToBridgeIfBound(event)` 한 줄 추가 — 활성 워크스페이스 == bound일 때만 forwarding (UI에서 다른 워크스페이스 선택 시 텔레그램에 가면 혼란)
+  - `sendMessage()`가 bound 워크스페이스에서 호출되면 `notifyTurnStart(userText:)` — 텔레그램이 누가 어떤 명령을 보냈는지 추적 가능
+  - `bindTelegramWorkspace(_:)`이 bridge를 reset + 재구성 + 알림 — preference 변경 시 즉시 반영
+- **명령 vs plain text 분기**: prefix `/`가 명령. 그 외는 bound 세션 입력. 이유:
+  - 명령은 슬래시 — Telegram 표준 (BotFather, 다른 봇과 일관)
+  - plain text가 일반 prompt가 되어야 자연스러움 (모바일에서 빠른 명령)
+  - bound 안 됐을 때 plain text → 안내 메시지 ("먼저 /bind 하세요")
+- **자동 워크스페이스 전환**: bound 세션과 활성 워크스페이스가 다를 때 plain text가 오면 자동으로 bound로 전환. 사용자 UI 작업과 충돌하면 텔레그램 우선 — bound는 사용자가 명시적으로 한 결정이므로
+- **격리**: `TelegramSessionBridge`는 `TelegramClient` 프로토콜과 `ClaudeEvent` enum만 의존. AppModel 내부 X — 테스트 가능 (MockTelegramBot 사용)
+- **결과**:
+  - `Sources/YuminaiTelegram/TelegramSessionBridge.swift` (actor + Configuration + chunking + tool summarize)
+  - `Sources/YuminaiApp/YuminaiCommandRouter.swift` 전면 재작성 (명령 분기)
+  - `AppPreferences +3` 필드 (boundWorkspaceId / forwardAssistant / forwardToolCalls)
+  - `AppModel` bridge 라이프사이클 + bind 메서드 + status snapshot + cancel
+  - `SidebarView` ✈ 아이콘 + 우클릭 메뉴
+  - 14 신규 테스트
+- **알려진 한계**:
+  - 단일 bind (멀티 워크스페이스 ↔ 멀티 챗 X)
+  - bridge는 message edit 미사용 — chunk마다 새 메시지 (편집 흐름은 차기 라운드)
+  - 도구 결과 본문 forwarding 안 함 (성공/실패만) — Read 결과 같은 거 보고 싶으면 사용자가 Yuminai UI 봐야 함
+  - thinking 이벤트 forwarding X
+  - Telegram 4초 rate limit 처리 X (debounce가 어느 정도 완화하지만 보장은 X)
+  - bound 워크스페이스 삭제 시 자동 unbind 없음 (router가 boundMissing 안내)
+- **재검토**: 사용자 모바일 사용 후 — 응답 chunk 빈도, edit 사용으로 진행 중 응답 단일 메시지 갱신 필요성, thinking 표시 여부
 
 ---
 

@@ -15,6 +15,12 @@ public struct AppPreferences: Sendable, Codable, Hashable {
     /// cokacdir bot import 시 어떤 봇에서 가져왔는지 표시 (display_name).
     /// nil이면 직접 입력 모드.
     public var telegramSourceLabel: String?
+    /// 텔레그램에서 직접 제어할 워크스페이스 (1개). nil이면 미연결.
+    public var telegramBoundWorkspaceId: UUID?
+    /// 텔레그램으로 어시스턴트 응답을 forward할지 여부.
+    public var telegramForwardAssistant: Bool
+    /// 텔레그램으로 도구 호출 요약을 forward할지 여부.
+    public var telegramForwardToolCalls: Bool
     public var fontSizeOffset: Int
     public var showInspectorByDefault: Bool
 
@@ -28,6 +34,9 @@ public struct AppPreferences: Sendable, Codable, Hashable {
         telegramChatId: Int64? = nil,
         telegramAlertPolicy: TelegramAlertPolicy = .default,
         telegramSourceLabel: String? = nil,
+        telegramBoundWorkspaceId: UUID? = nil,
+        telegramForwardAssistant: Bool = true,
+        telegramForwardToolCalls: Bool = true,
         fontSizeOffset: Int = 0,
         showInspectorByDefault: Bool = false
     ) {
@@ -40,6 +49,9 @@ public struct AppPreferences: Sendable, Codable, Hashable {
         self.telegramChatId = telegramChatId
         self.telegramAlertPolicy = telegramAlertPolicy
         self.telegramSourceLabel = telegramSourceLabel
+        self.telegramBoundWorkspaceId = telegramBoundWorkspaceId
+        self.telegramForwardAssistant = telegramForwardAssistant
+        self.telegramForwardToolCalls = telegramForwardToolCalls
         self.fontSizeOffset = fontSizeOffset
         self.showInspectorByDefault = showInspectorByDefault
     }
