@@ -12,6 +12,8 @@ public struct Workspace: Sendable, Identifiable, Hashable {
     public let lastOpenedAt: Date?
     public let harnessTemplate: HarnessTemplateName?
     public let isArchived: Bool
+    /// 이 워크스페이스에서 활성 코딩 에이전트. ADR-026.
+    public let agentKind: AgentKind
 
     public init(
         id: UUID = UUID(),
@@ -20,7 +22,8 @@ public struct Workspace: Sendable, Identifiable, Hashable {
         createdAt: Date = Date(),
         lastOpenedAt: Date? = nil,
         harnessTemplate: HarnessTemplateName? = nil,
-        isArchived: Bool = false
+        isArchived: Bool = false,
+        agentKind: AgentKind = .default
     ) {
         self.id = id
         self.name = name
@@ -29,6 +32,21 @@ public struct Workspace: Sendable, Identifiable, Hashable {
         self.lastOpenedAt = lastOpenedAt
         self.harnessTemplate = harnessTemplate
         self.isArchived = isArchived
+        self.agentKind = agentKind
+    }
+
+    /// agentKind만 다른 새 인스턴스 반환 (불변성 유지).
+    public func with(agentKind: AgentKind) -> Workspace {
+        Workspace(
+            id: id,
+            name: name,
+            directoryPath: directoryPath,
+            createdAt: createdAt,
+            lastOpenedAt: lastOpenedAt,
+            harnessTemplate: harnessTemplate,
+            isArchived: isArchived,
+            agentKind: agentKind
+        )
     }
 }
 

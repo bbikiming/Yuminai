@@ -111,6 +111,109 @@ public struct CokacdirBot: Sendable, Equatable, Identifiable, Hashable {
     }
 }
 
+/// 텔레그램 chat의 사람-친화 라벨. CokacdirChatInspector가 group_chat 로그에서 추출.
+public struct CokacdirChatLabel: Sendable, Equatable, Hashable {
+    public let chatId: Int64
+    public let kind: Kind
+    public let title: String
+    public let participantNames: [String]
+
+    public enum Kind: String, Sendable {
+        case directWithOwner    // 1:1 (positive id == owner_user_id)
+        case directOther        // 1:1 (positive id, 다른 사람)
+        case group              // negative id, 그룹
+        case unknown
+    }
+
+    public init(chatId: Int64, kind: Kind, title: String, participantNames: [String] = []) {
+        self.chatId = chatId
+        self.kind = kind
+        self.title = title
+        self.participantNames = participantNames
+    }
+}
+
+/// `~/.cokacdir/group_chat/<chat_id>.jsonl` 로그를 읽어 사람/봇 이름을 추출.
+/// CokacdirImportSheet에서 chat chip에 친화적 라벨 표시.
+public struct CokacdirChatInspector: Sendable {
+    public let groupChatDir: String
+
+    public init(groupChatDir: String = CokacdirChatInspector.defaultDir()) {
+        self.groupChatDir = groupChatDir
+    }
+
+    public static func defaultDir() -> String {
+        NSString(string: "~/.cokacdir/group_chat").expandingTildeInPath
+    }
+
+    public func label(for chatId: Int64, ownerUserId: Int64) async -> CokacdirChatLabel {
+        let kind: CokacdirChatLabel.Kind
+        if chatId > 0 {
+            kind = (chatId == ownerUserId) ? .directWithOwner : .directOther
+        } else {
+            kind = .group
+        }
+
+        let logPath = "\(groupChatDir)/\(chatId).jsonl"
+        let participants = Self.extractParticipants(from: logPath, limit: 200)
+
+        let title: String
+        switch kind {
+        case .directWithOwner:
+            title = "내 1:1 채팅"
+        case .directOther:
+            let other = participants.first(where: { !$0.contains(String(ownerUserId)) }) ?? "다른 사람"
+            title = "1:1 — \(other)"
+        case .group:
+            let bots = participants.filter { $0.hasPrefix("🤖 ") }
+            let humans = participants.filter { !$0.hasPrefix("🤖 ") && $0 != "system" }
+            if !bots.isEmpty && !humans.isEmpty {
+                let names = (bots + humans).prefix(3).joined(separator: ", ")
+                title = "그룹 — \(names)"
+            } else if !bots.isEmpty {
+                title = "그룹 (봇 \(bots.count)개)"
+            } else {
+                title = "그룹 채팅"
+            }
+        case .unknown:
+            title = "알 수 없음"
+        }
+
+        return CokacdirChatLabel(
+            chatId: chatId,
+            kind: kind,
+            title: title,
+            participantNames: participants
+        )
+    }
+
+    /// jsonl을 line-by-line 파싱해 from/bot_display_name 추출 (중복 제거 + max limit).
+    static func extractParticipants(from path: String, limit: Int) -> [String] {
+        guard let data = try? String(contentsOfFile: path, encoding: .utf8) else {
+            return []
+        }
+        var seen = Set<String>()
+        var ordered: [String] = []
+        for line in data.split(separator: "\n", omittingEmptySubsequences: true) {
+            if ordered.count >= limit { break }
+            guard let lineData = line.data(using: .utf8),
+                  let json = try? JSONSerialization.jsonObject(with: lineData) as? [String: Any]
+            else { continue }
+
+            // bot_display_name → "🤖 <name>"
+            if let botName = json["bot_display_name"] as? String, !botName.isEmpty {
+                let label = "🤖 \(botName)"
+                if seen.insert(label).inserted { ordered.append(label) }
+            }
+            // from → "김유석(123)" 또는 "bot:other_bot" 또는 nil
+            if let from = json["from"] as? String, !from.isEmpty, !from.hasPrefix("bot:") {
+                if seen.insert(from).inserted { ordered.append(from) }
+            }
+        }
+        return ordered
+    }
+}
+
 public enum CokacdirImportError: Error, LocalizedError, Sendable {
     case notFound(path: String)
     case readFailed(String)

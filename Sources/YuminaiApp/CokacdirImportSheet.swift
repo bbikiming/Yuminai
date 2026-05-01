@@ -5,6 +5,7 @@ import YuminaiUI
 /// cokacdir bot_settings.json에서 봇을 골라 토큰/chat id를 import.
 struct CokacdirImportSheet: View {
     let bots: [CokacdirBot]
+    let chatLabels: [Int64: CokacdirChatLabel]
     let error: String?
     let onSelect: (CokacdirBot, Int64) -> Void
     let onCancel: () -> Void
@@ -122,15 +123,16 @@ struct CokacdirImportSheet: View {
     @ViewBuilder
     private func chatPicker(for bot: CokacdirBot) -> some View {
         VStack(alignment: .leading, spacing: 6) {
-            Text("Chat ID 선택")
+            Text("Chat 선택")
                 .font(Theme.Typography.small.weight(.semibold))
                 .foregroundStyle(Theme.Color.textSecondary)
 
             if !bot.suggestedChatIds.isEmpty {
-                LazyVGrid(columns: [GridItem(.adaptive(minimum: 140), spacing: 6)], spacing: 6) {
+                VStack(spacing: 4) {
                     ForEach(bot.suggestedChatIds, id: \.self) { id in
-                        ChatChip(
+                        ChatRow(
                             id: id,
+                            label: chatLabels[id],
                             isOwner: id == bot.ownerUserId,
                             selected: manualChatIdText == String(id),
                             onTap: { manualChatIdText = String(id) }
@@ -215,8 +217,9 @@ private struct BotRow: View {
     }
 }
 
-private struct ChatChip: View {
+private struct ChatRow: View {
     let id: Int64
+    let label: CokacdirChatLabel?
     let isOwner: Bool
     let selected: Bool
     let onTap: () -> Void
@@ -224,25 +227,78 @@ private struct ChatChip: View {
 
     var body: some View {
         Button(action: onTap) {
-            HStack(spacing: 4) {
-                Image(systemName: isOwner ? "person.fill" : (id < 0 ? "person.3.fill" : "person.fill"))
-                    .font(.system(size: 10))
-                    .foregroundStyle(selected ? Theme.Color.accent : Theme.Color.textSecondary)
-                Text(String(id))
-                    .font(Theme.Typography.monoSmall)
-                    .foregroundStyle(selected ? Theme.Color.text : Theme.Color.textSecondary)
+            HStack(spacing: 10) {
+                Image(systemName: iconName)
+                    .font(.system(size: 12))
+                    .foregroundStyle(selected ? Theme.Color.accent : iconTint)
+                    .frame(width: 16)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(displayTitle)
+                        .font(Theme.Typography.body)
+                        .foregroundStyle(selected ? Theme.Color.text : Theme.Color.text)
+                        .lineLimit(1)
+                    HStack(spacing: 6) {
+                        Text(String(id))
+                            .font(Theme.Typography.monoSmall)
+                            .foregroundStyle(Theme.Color.textTertiary)
+                        if let label, !label.participantNames.isEmpty, label.kind == .group {
+                            Text("·")
+                                .foregroundStyle(Theme.Color.textTertiary)
+                            Text("\(label.participantNames.count)명 활동")
+                                .font(Theme.Typography.small)
+                                .foregroundStyle(Theme.Color.textTertiary)
+                        }
+                    }
+                }
+                Spacer()
+                if selected {
+                    Image(systemName: "checkmark.circle.fill")
+                        .font(.system(size: 12))
+                        .foregroundStyle(Theme.Color.accent)
+                }
             }
-            .padding(.horizontal, 8)
-            .padding(.vertical, 4)
+            .padding(.horizontal, Theme.Spacing.md)
+            .padding(.vertical, Theme.Spacing.sm)
             .background(selected ? Theme.Color.accentMuted : (hovering ? Theme.Color.surfaceHi : Theme.Color.surface))
             .overlay(
-                RoundedRectangle(cornerRadius: Theme.Radius.sm)
+                RoundedRectangle(cornerRadius: Theme.Radius.md)
                     .stroke(selected ? Theme.Color.accent : Theme.Color.borderSubtle, lineWidth: 1)
             )
-            .clipShape(RoundedRectangle(cornerRadius: Theme.Radius.sm))
+            .clipShape(RoundedRectangle(cornerRadius: Theme.Radius.md))
+            .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
         .onHover { hovering = $0 }
-        .help(isOwner ? "내 1:1 채팅" : (id < 0 ? "그룹/채널" : "1:1 채팅"))
+    }
+
+    private var iconName: String {
+        guard let kind = label?.kind else {
+            return id < 0 ? "person.3.fill" : "person.fill"
+        }
+        switch kind {
+        case .directWithOwner: return "person.crop.circle.fill"
+        case .directOther: return "person.crop.circle"
+        case .group: return "person.3.fill"
+        case .unknown: return "questionmark.circle"
+        }
+    }
+
+    private var iconTint: SwiftUI.Color {
+        guard let kind = label?.kind else {
+            return Theme.Color.textSecondary
+        }
+        switch kind {
+        case .directWithOwner: return Theme.Color.accent
+        case .group: return .orange
+        default: return Theme.Color.textSecondary
+        }
+    }
+
+    private var displayTitle: String {
+        if let label {
+            return label.title
+        }
+        if isOwner { return "내 1:1 채팅" }
+        return id < 0 ? "그룹 채팅" : "1:1 채팅"
     }
 }

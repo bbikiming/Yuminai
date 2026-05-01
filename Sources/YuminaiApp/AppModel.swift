@@ -19,6 +19,9 @@ public final class AppModel {
     let keychainStore: any KeychainStore
     let preferencesStore: any AppPreferencesStore
     let claudeAdapter: any ClaudeAdapter
+    /// codex CLI 어댑터 — workspace.agentKind == .codex일 때 사용 (ADR-026).
+    /// nil이면 codex 미설치/미설정 — UI에서 선택 disabled.
+    let codexAdapter: (any ClaudeAdapter)?
 
     // MARK: 상태
     public var preferences: AppPreferences
@@ -33,6 +36,7 @@ public final class AppModel {
     public var anthropicKeyStatus: SecretStatus = .notSet
     public var telegramTokenStatus: SecretStatus = .notSet
     public var cokacdirBots: [CokacdirBot] = []
+    public var cokacdirChatLabels: [Int64: CokacdirChatLabel] = [:]
     public var cokacdirImportError: String?
     public var showCokacdirImportSheet: Bool = false
 
@@ -110,6 +114,7 @@ public final class AppModel {
         keychainStore: any KeychainStore,
         preferencesStore: any AppPreferencesStore,
         claudeAdapter: any ClaudeAdapter,
+        codexAdapter: (any ClaudeAdapter)? = nil,
         preferences: AppPreferences
     ) {
         self.workspaceStore = workspaceStore
@@ -117,9 +122,75 @@ public final class AppModel {
         self.keychainStore = keychainStore
         self.preferencesStore = preferencesStore
         self.claudeAdapter = claudeAdapter
+        self.codexAdapter = codexAdapter
         self.preferences = preferences
         self.activeSettings = preferences.defaultSessionSettings
         self.showInspector = preferences.showInspectorByDefault
+    }
+
+    /// 워크스페이스의 agentKind에 맞는 어댑터 선택. codex 어댑터가 nil이면 claude로 fallback.
+    public func adapter(for workspace: Workspace) -> any ClaudeAdapter {
+        switch workspace.agentKind {
+        case .claude: return claudeAdapter
+        case .codex:  return codexAdapter ?? claudeAdapter
+        }
+    }
+
+    /// 활성 워크스페이스의 어댑터.
+    public var activeAdapter: any ClaudeAdapter {
+        if let id = selectedWorkspaceId, let ws = workspaces.first(where: { $0.id == id }) {
+            return adapter(for: ws)
+        }
+        return claudeAdapter
+    }
+
+    /// codex 어댑터 설정 + 워크스페이스에 codex 디렉토리 존재 여부.
+    public var codexAvailable: Bool {
+        codexAdapter != nil
+            && FileManager.default.isExecutableFile(atPath: preferences.codexBinaryPath)
+    }
+
+    /// 활성 워크스페이스의 agent kind 변경 + 즉시 세션 재spawn.
+    public func setActiveAgentKind(_ kind: AgentKind) async {
+        guard let id = selectedWorkspaceId,
+              let workspace = workspaces.first(where: { $0.id == id }),
+              workspace.agentKind != kind
+        else { return }
+
+        // store에 영속
+        let updated = workspace.with(agentKind: kind)
+        do {
+            try await workspaceStore.update(updated)
+            if let idx = workspaces.firstIndex(where: { $0.id == id }) {
+                workspaces[idx] = updated
+            }
+        } catch {
+            self.error = "에이전트 변경 저장 실패: \(error.localizedDescription)"
+            return
+        }
+
+        // 현재 세션 종료 후 재spawn
+        let prev = currentClaudeSession
+        let prevAdapter = activeAdapter  // 변경 전 어댑터로 terminate
+        streamConsumeTask?.cancel()
+        streamConsumeTask = nil
+        if let prev {
+            await prevAdapter.terminate(prev)
+        }
+        currentClaudeSession = nil
+        isStreaming = false
+
+        do {
+            let newAdapter = adapter(for: updated)
+            let newSession = try await newAdapter.spawn(in: updated)
+            currentClaudeSession = newSession
+            let captured = newSession
+            streamConsumeTask = Task { [weak self] in
+                await self?.consumeStream(captured)
+            }
+        } catch {
+            self.error = "에이전트 시작 실패: \(error.localizedDescription)"
+        }
     }
 
     // MARK: - bootstrap
@@ -517,7 +588,8 @@ public final class AppModel {
             messages = []
             currentSessionUsage = .zero
 
-            let claudeSession = try await claudeAdapter.spawn(in: workspace)
+            let agentAdapter = adapter(for: workspace)
+            let claudeSession = try await agentAdapter.spawn(in: workspace)
             currentClaudeSession = claudeSession
 
             let captured = claudeSession
@@ -529,27 +601,32 @@ public final class AppModel {
         }
     }
 
-    /// 활성 세션 설정 변경. claudeAdapter에 반영하고, 활성 워크스페이스가 있으면 새 ClaudeStreamSession을
+    /// 활성 세션 설정 변경. 활성 어댑터에 반영하고, 활성 워크스페이스가 있으면 새 세션을
     /// 즉시 시작 (메시지 로그는 UI에 보존, 다음 사용자 입력부터 새 설정 적용).
     public func updateActiveSettings(_ newSettings: SessionSettings) async {
         activeSettings = newSettings
+        // 양 어댑터 모두에 적용 — agent 전환해도 일관
         await claudeAdapter.updateSettings(newSettings)
+        if let codex = codexAdapter {
+            await codex.updateSettings(newSettings)
+        }
 
         guard let id = selectedWorkspaceId,
               let workspace = workspaces.first(where: { $0.id == id }) else {
             return
         }
 
+        let activeAd = adapter(for: workspace)
         streamConsumeTask?.cancel()
         streamConsumeTask = nil
         if let claudeSession = currentClaudeSession {
-            await claudeAdapter.terminate(claudeSession)
+            await activeAd.terminate(claudeSession)
         }
         currentClaudeSession = nil
         isStreaming = false
 
         do {
-            let claudeSession = try await claudeAdapter.spawn(in: workspace)
+            let claudeSession = try await activeAd.spawn(in: workspace)
             currentClaudeSession = claudeSession
             let captured = claudeSession
             streamConsumeTask = Task { [weak self] in
@@ -642,7 +719,7 @@ public final class AppModel {
         streamConsumeTask?.cancel()
         streamConsumeTask = nil
         if let claudeSession = currentClaudeSession {
-            await claudeAdapter.terminate(claudeSession)
+            await activeAdapter.terminate(claudeSession)
         }
         currentClaudeSession = nil
         currentSession = nil
@@ -726,7 +803,7 @@ public final class AppModel {
     public func cancelStream() {
         streamConsumeTask?.cancel()
         if let claudeSession = currentClaudeSession {
-            let adapter = claudeAdapter
+            let adapter = activeAdapter
             Task { await adapter.terminate(claudeSession) }
         }
         isStreaming = false
@@ -782,6 +859,18 @@ public final class AppModel {
         panel.message = "Claude CLI 실행 파일을 선택하세요"
         if panel.runModal() == .OK, let url = panel.url {
             preferences.claudeBinaryPath = url.path
+            Task { await savePreferences() }
+        }
+    }
+
+    public func selectCodexBinary() {
+        let panel = NSOpenPanel()
+        panel.canChooseFiles = true
+        panel.canChooseDirectories = false
+        panel.allowsMultipleSelection = false
+        panel.message = "Codex CLI 실행 파일을 선택하세요"
+        if panel.runModal() == .OK, let url = panel.url {
+            preferences.codexBinaryPath = url.path
             Task { await savePreferences() }
         }
     }
@@ -852,14 +941,25 @@ public final class AppModel {
 
     // MARK: - cokacdir bot import (ADR-024)
 
-    /// cokacdir의 ~/.cokacdir/workspace/bot_settings.json을 읽어 봇 목록을 로드.
+    /// cokacdir bot_settings.json + group_chat 로그를 읽어 봇 목록 + chat label을 로드.
     /// SettingsView "cokacdir에서 가져오기" 버튼이 호출.
     public func loadCokacdirBots() async {
         cokacdirImportError = nil
+        cokacdirChatLabels = [:]
         let path = AppPreferences.defaultCokacdirBotSettingsPath()
         let importer = CokacdirImporter(botSettingsPath: path)
         do {
-            cokacdirBots = try await importer.loadBots()
+            let bots = try await importer.loadBots()
+            cokacdirBots = bots
+            // chat label은 봇 목록 로드 후 background로 enrich
+            let inspector = CokacdirChatInspector()
+            var labels: [Int64: CokacdirChatLabel] = [:]
+            for bot in bots {
+                for chatId in bot.suggestedChatIds where labels[chatId] == nil {
+                    labels[chatId] = await inspector.label(for: chatId, ownerUserId: bot.ownerUserId)
+                }
+            }
+            cokacdirChatLabels = labels
             showCokacdirImportSheet = true
         } catch {
             cokacdirImportError = error.localizedDescription

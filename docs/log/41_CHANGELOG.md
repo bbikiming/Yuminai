@@ -4,6 +4,70 @@
 
 ## [Unreleased] — 2026-05-01
 
+### Added — 멀티 에이전트 기반 + Codex CLI 통합 + cokacdir chat label (ADR-026)
+
+사용자 요청 (3가지):
+1. "탤래그램의 그룹챗인지 개인챗인지 어떤 거랑 연결할지 숫자여서 알기 어려워"
+2. "코덱스 cli도 연결해주고"
+3. "안티그래비티처럼 하나의 컨택스트와 프로젝트 폴더 안에서 다양한 에이전트들이 유기적으로 협업할 수 있는 시스템"
+
+**1. cokacdir chat label 친화 표시**
+- `CokacdirChatInspector` (YuminaiTelegram) — `~/.cokacdir/group_chat/<chat_id>.jsonl` 파싱
+- chat 종류 추정:
+  - positive id == ownerUserId → "내 1:1 채팅"
+  - positive id ≠ owner → "1:1 — <이름>"
+  - negative id → "그룹 — <봇/사람 N개>" (jsonl에서 bot_display_name + from 추출)
+- `CokacdirChatLabel { chatId, kind, title, participantNames }`
+- `CokacdirImportSheet`의 chat chip → row UI로 교체 (icon + 친화 title + chat_id mono small + "N명 활동" hint + 선택 ✓)
+
+**2. Codex CLI 통합**
+- `Sources/YuminaiClaudeAdapter/LiveCodexAdapter.swift` (신규)
+  - `codex exec --json -C <dir>` (initial) / `codex exec resume <session-id> --json -C <dir>` (subsequent)
+  - **Claude와 다른 모델**: turn마다 새 프로세스 (Claude는 long-lived stdin/stdout)
+  - `LiveCodexStreamSession` actor — events 스트림은 워크스페이스 lifetime 동안 유지, turn마다 spawn → completed
+  - session_id 자동 추출 + 다음 send에서 resume
+  - prompt는 stdin으로 전달 (codex 기본 stdin 입력 모드)
+- `CodexJSONLParser` actor — defensive JSONL 파싱
+  - 알려진 type: agent_message / tool_call / tool_result / usage / session_started
+  - 알 수 없는 type: `[codex <type>]` prefix로 raw forward (디버깅 가능)
+  - non-JSON: raw text fallback
+- `AppPreferences.codexBinaryPath` + `detectCodexBinaryPath()` 자동 감지
+- SettingsView 일반 탭에 Codex CLI section (경로 + 찾아보기 + 감지 상태)
+
+**3. 멀티 에이전트 시스템 기반 (Antigravity-style 1단계)**
+- `AgentKind` enum (claude/codex) — `displayName`/`shortLabel`/`icon`/`hint`
+- `Workspace.agentKind: AgentKind` — 워크스페이스 단위 에이전트 + `with(agentKind:)` 불변 갱신
+- `WorkspaceModel.agentKindRaw: String?` — SwiftData 컬럼 추가, nil → .default(claude) fallback (마이그레이션 호환)
+- `AppModel`:
+  - `codexAdapter: (any ClaudeAdapter)?` — codex 미설치면 nil
+  - `adapter(for: workspace)` — agentKind 기반 dispatch (codex nil이면 claude로 fallback)
+  - `activeAdapter` / `codexAvailable` computed
+  - `setActiveAgentKind(_ kind:)` — workspace 갱신 + 영속 + 즉시 세션 재spawn
+  - `selectCodexBinary()` — NSOpenPanel
+  - `spawn`/`teardownCurrentSession`/`updateActiveSettings`/`cancelStream` 모두 `activeAdapter`/`adapter(for:)` 사용
+- `ChatToolbar` — agent picker (PickerMenu) Breadcrumb 옆 inline
+  - 현재 에이전트 icon + name + chevron, accentMuted bg
+  - Menu: Claude/Codex 선택, 비설치 항목은 disabled + "codex CLI 미감지" hint
+- `RootView` — `currentAgentKind` computed + Toolbar/AppModel 연결
+
+**같은 프로젝트 폴더, 다른 에이전트** — 두 에이전트 모두 `workspace.directoryPath`를 working dir로 사용. 파일 시스템이 자연스러운 공유 컨텍스트. 사용자가 toolbar에서 빠르게 전환 (각 에이전트는 자체 session id로 컨텍스트 유지). 멀티 패널 동시 표시 + 인터-에이전트 메시지 패싱은 v0.4.
+
+**테스트** (18 신규):
+- AgentKindTests (3): metadata / Codable / default
+- WorkspaceWithAgentKindTests (2): with()의 immutability / default
+- CodexJSONLParserTests (8): agent_message / tool_call / tool_result / session_id / usage / non-JSON / unknown type / partial chunk buffering
+- CokacdirChatInspectorTests (5): owner direct / negative=group / 봇+사람 추출 / 로그 없음 fallback / dedupe + order
+
+**검증**: build 3.56s, test 127/127 (109→127, +18 신규)
+
+알려진 한계:
+- Codex JSONL 출력 schema는 실제 codex CLI에서 검증 필요 (defensive 파싱이지만 unknown type은 raw text로만 forward)
+- Codex의 model alias가 Claude와 다름 → Codex는 자체 default 모델 사용 (`~/.codex/config.toml` 우선)
+- 워크스페이스에 1 에이전트 활성 — 멀티 패널 (Claude + Codex 동시) 미구현 (v0.4)
+- 인터-에이전트 메시지 패싱 미구현 (v0.4) — 현재는 파일 시스템 공유로만 협업
+- ChatBox UI에 어떤 에이전트가 응답했는지 표시 X (메시지 메타데이터 추가는 v0.4)
+- Codex의 stdin prompt 형식이 Claude와 다를 수 있음 (예: 종료 처리 타이밍)
+
 ### Added — 텔레그램 단일 세션 양방향 제어 (ADR-025)
 
 사용자 요청: "하나의 세션을 탤래그램에서 제어할 수 있도록 설계해 줘"

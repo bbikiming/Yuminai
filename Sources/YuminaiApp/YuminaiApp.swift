@@ -42,12 +42,23 @@ struct YuminaiAppMain: App {
                 claudePath: URL(fileURLWithPath: prefs.claudeBinaryPath)
             )
 
+            // codex CLI가 실행 가능하면 어댑터 활성화 (없으면 nil — UI에서 disabled)
+            let codexAdapter: (any ClaudeAdapter)?
+            if FileManager.default.isExecutableFile(atPath: prefs.codexBinaryPath) {
+                codexAdapter = LiveCodexAdapter(
+                    codexPath: URL(fileURLWithPath: prefs.codexBinaryPath)
+                )
+            } else {
+                codexAdapter = nil
+            }
+
             let model = AppModel(
                 workspaceStore: workspaceStore,
                 sessionStore: sessionStore,
                 keychainStore: keychainStore,
                 preferencesStore: preferencesStore,
                 claudeAdapter: claudeAdapter,
+                codexAdapter: codexAdapter,
                 preferences: prefs
             )
             self._appModel = State(wrappedValue: model)
@@ -126,6 +137,9 @@ struct SettingsContainer: View {
             onSelectClaudeBinary: {
                 appModel.selectClaudeBinary()
             },
+            onSelectCodexBinary: {
+                appModel.selectCodexBinary()
+            },
             onImportFromCokacdir: {
                 Task { await appModel.loadCokacdirBots() }
             }
@@ -136,6 +150,7 @@ struct SettingsContainer: View {
         .sheet(isPresented: $bindable.showCokacdirImportSheet) {
             CokacdirImportSheet(
                 bots: appModel.cokacdirBots,
+                chatLabels: appModel.cokacdirChatLabels,
                 error: appModel.cokacdirImportError,
                 onSelect: { bot, chatId in
                     Task { await appModel.applyCokacdirBot(bot, chatId: chatId) }

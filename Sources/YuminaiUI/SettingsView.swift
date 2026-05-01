@@ -24,6 +24,7 @@ public struct SettingsView: View {
     public let onClearTelegramToken: () -> Void
     public let onTestTelegramSend: () -> Void
     public let onSelectClaudeBinary: () -> Void
+    public let onSelectCodexBinary: () -> Void
     public let onImportFromCokacdir: () -> Void
 
     public init(
@@ -36,6 +37,7 @@ public struct SettingsView: View {
         onClearTelegramToken: @escaping () -> Void,
         onTestTelegramSend: @escaping () -> Void,
         onSelectClaudeBinary: @escaping () -> Void,
+        onSelectCodexBinary: @escaping () -> Void = {},
         onImportFromCokacdir: @escaping () -> Void = {}
     ) {
         self._preferences = preferences
@@ -47,6 +49,7 @@ public struct SettingsView: View {
         self.onClearTelegramToken = onClearTelegramToken
         self.onTestTelegramSend = onTestTelegramSend
         self.onSelectClaudeBinary = onSelectClaudeBinary
+        self.onSelectCodexBinary = onSelectCodexBinary
         self.onImportFromCokacdir = onImportFromCokacdir
     }
 
@@ -84,6 +87,32 @@ public struct SettingsView: View {
                 Text("Claude CLI")
             } footer: {
                 Text("`which claude` 결과 또는 직접 지정한 경로를 사용합니다.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+
+            Section {
+                LabeledContent("실행 경로") {
+                    HStack(spacing: 8) {
+                        TextField("", text: $preferences.codexBinaryPath)
+                            .textFieldStyle(.roundedBorder)
+                            .frame(maxWidth: .infinity)
+                        Button("찾아보기…", action: onSelectCodexBinary)
+                    }
+                }
+                LabeledContent("상태") {
+                    HStack(spacing: 6) {
+                        Image(systemName: codexInstalled ? "checkmark.circle.fill" : "questionmark.circle")
+                            .foregroundStyle(codexInstalled ? .green : .secondary)
+                        Text(codexInstalled ? "감지됨" : "미감지")
+                            .font(.callout)
+                            .foregroundStyle(.secondary)
+                    }
+                }
+            } header: {
+                Text("Codex CLI")
+            } footer: {
+                Text("Codex가 설치돼 있으면 워크스페이스마다 ‘에이전트’를 Claude/Codex로 전환할 수 있어요. 같은 프로젝트 폴더 안에서 두 에이전트가 파일을 공유합니다.")
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }
@@ -380,6 +409,10 @@ public struct SettingsView: View {
     }
 
     // MARK: - Helpers
+
+    private var codexInstalled: Bool {
+        FileManager.default.isExecutableFile(atPath: preferences.codexBinaryPath)
+    }
 
     private var modelHelp: String {
         let m = preferences.defaultSessionSettings.model

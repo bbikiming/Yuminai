@@ -328,11 +328,16 @@ struct ChatPane: View {
                 inspectorVisible: inspectorVisible,
                 inspectorAllowed: inspectorAllowed,
                 layoutBadge: layoutModeBadge,
+                activeAgent: currentAgentKind,
+                codexAvailable: appModel.codexAvailable,
                 onToggleSidebar: onToggleSidebar,
                 onToggleInspector: onToggleInspector,
                 onShowDashboard: { appModel.showUsageDashboard = true },
                 onSelectWorkspace: { id in appModel.selectedWorkspaceId = id },
-                onCreateWorkspace: { appModel.showCreateWorkspaceSheet = true }
+                onCreateWorkspace: { appModel.showCreateWorkspaceSheet = true },
+                onSelectAgent: { kind in
+                    Task { await appModel.setActiveAgentKind(kind) }
+                }
             )
 
             if appModel.selectedWorkspaceId == nil {
@@ -386,6 +391,10 @@ struct ChatPane: View {
 
     private var currentWorkspacePath: String? {
         appModel.workspaces.first { $0.id == appModel.selectedWorkspaceId }?.directoryPath
+    }
+
+    private var currentAgentKind: AgentKind {
+        appModel.workspaces.first { $0.id == appModel.selectedWorkspaceId }?.agentKind ?? .default
     }
 }
 

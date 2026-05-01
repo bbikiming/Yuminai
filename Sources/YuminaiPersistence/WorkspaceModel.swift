@@ -15,6 +15,8 @@ public final class WorkspaceModel {
     public var lastOpenedAt: Date?
     public var harnessTemplateRaw: String?
     public var isArchived: Bool
+    /// AgentKind raw value. nil/unknown은 .default(claude)로 fallback (마이그레이션 호환).
+    public var agentKindRaw: String?
 
     public init(
         id: UUID,
@@ -23,7 +25,8 @@ public final class WorkspaceModel {
         createdAt: Date,
         lastOpenedAt: Date? = nil,
         harnessTemplateRaw: String? = nil,
-        isArchived: Bool = false
+        isArchived: Bool = false,
+        agentKindRaw: String? = nil
     ) {
         self.id = id
         self.name = name
@@ -32,6 +35,7 @@ public final class WorkspaceModel {
         self.lastOpenedAt = lastOpenedAt
         self.harnessTemplateRaw = harnessTemplateRaw
         self.isArchived = isArchived
+        self.agentKindRaw = agentKindRaw
     }
 
     public convenience init(from core: Workspace) {
@@ -42,7 +46,8 @@ public final class WorkspaceModel {
             createdAt: core.createdAt,
             lastOpenedAt: core.lastOpenedAt,
             harnessTemplateRaw: core.harnessTemplate?.rawValue,
-            isArchived: core.isArchived
+            isArchived: core.isArchived,
+            agentKindRaw: core.agentKind.rawValue
         )
     }
 
@@ -54,7 +59,8 @@ public final class WorkspaceModel {
             createdAt: createdAt,
             lastOpenedAt: lastOpenedAt,
             harnessTemplate: harnessTemplateRaw.flatMap(HarnessTemplateName.init(rawValue:)),
-            isArchived: isArchived
+            isArchived: isArchived,
+            agentKind: agentKindRaw.flatMap(AgentKind.init(rawValue:)) ?? .default
         )
     }
 }

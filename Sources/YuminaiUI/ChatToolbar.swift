@@ -13,11 +13,14 @@ public struct ChatToolbar: View {
     public let inspectorVisible: Bool
     public let inspectorAllowed: Bool
     public let layoutBadge: String?
+    public let activeAgent: AgentKind
+    public let codexAvailable: Bool
     public let onToggleSidebar: () -> Void
     public let onToggleInspector: () -> Void
     public let onShowDashboard: () -> Void
     public let onSelectWorkspace: (UUID) -> Void
     public let onCreateWorkspace: () -> Void
+    public let onSelectAgent: (AgentKind) -> Void
 
     public init(
         workspaceName: String,
@@ -28,11 +31,14 @@ public struct ChatToolbar: View {
         inspectorVisible: Bool,
         inspectorAllowed: Bool = true,
         layoutBadge: String? = nil,
+        activeAgent: AgentKind = .default,
+        codexAvailable: Bool = false,
         onToggleSidebar: @escaping () -> Void,
         onToggleInspector: @escaping () -> Void,
         onShowDashboard: @escaping () -> Void,
         onSelectWorkspace: @escaping (UUID) -> Void = { _ in },
-        onCreateWorkspace: @escaping () -> Void = {}
+        onCreateWorkspace: @escaping () -> Void = {},
+        onSelectAgent: @escaping (AgentKind) -> Void = { _ in }
     ) {
         self.workspaceName = workspaceName
         self.workspacePath = workspacePath
@@ -42,11 +48,14 @@ public struct ChatToolbar: View {
         self.inspectorVisible = inspectorVisible
         self.inspectorAllowed = inspectorAllowed
         self.layoutBadge = layoutBadge
+        self.activeAgent = activeAgent
+        self.codexAvailable = codexAvailable
         self.onToggleSidebar = onToggleSidebar
         self.onToggleInspector = onToggleInspector
         self.onShowDashboard = onShowDashboard
         self.onSelectWorkspace = onSelectWorkspace
         self.onCreateWorkspace = onCreateWorkspace
+        self.onSelectAgent = onSelectAgent
     }
 
     public var body: some View {
@@ -55,6 +64,9 @@ public struct ChatToolbar: View {
 
             breadcrumb
                 .padding(.leading, Theme.Spacing.xs)
+
+            agentPicker
+                .padding(.leading, Theme.Spacing.sm)
 
             if isStreaming {
                 streamingBadge
@@ -161,6 +173,69 @@ public struct ChatToolbar: View {
         .fixedSize()
         .onHover { breadcrumbHovering = $0 }
         .help(workspacePath ?? workspaceName)
+    }
+
+    @State private var agentHovering = false
+
+    private var agentPicker: some View {
+        Menu {
+            Button {
+                onSelectAgent(.claude)
+            } label: {
+                Label {
+                    VStack(alignment: .leading) {
+                        Text(AgentKind.claude.displayName)
+                        Text(AgentKind.claude.hint).font(.caption)
+                    }
+                } icon: {
+                    if activeAgent == .claude {
+                        Image(systemName: "checkmark")
+                    } else {
+                        Image(systemName: AgentKind.claude.icon)
+                    }
+                }
+            }
+            Button {
+                onSelectAgent(.codex)
+            } label: {
+                Label {
+                    VStack(alignment: .leading) {
+                        Text(AgentKind.codex.displayName)
+                        Text(codexAvailable ? AgentKind.codex.hint : "codex CLI 미감지 — 설정에서 경로 확인").font(.caption)
+                    }
+                } icon: {
+                    if activeAgent == .codex {
+                        Image(systemName: "checkmark")
+                    } else {
+                        Image(systemName: AgentKind.codex.icon)
+                    }
+                }
+            }
+            .disabled(!codexAvailable)
+        } label: {
+            HStack(spacing: 6) {
+                Image(systemName: activeAgent.icon)
+                    .font(.system(size: 11, weight: .medium))
+                    .foregroundStyle(Theme.Color.accent)
+                Text(activeAgent.displayName)
+                    .font(Theme.Typography.mono)
+                    .foregroundStyle(Theme.Color.text)
+                Image(systemName: "chevron.down")
+                    .font(.system(size: 9, weight: .medium))
+                    .foregroundStyle(agentHovering ? Theme.Color.accent : Theme.Color.textTertiary)
+            }
+            .padding(.horizontal, Theme.Spacing.sm)
+            .padding(.vertical, 4)
+            .background(agentHovering ? Theme.Color.surfaceHi : Theme.Color.accentMuted)
+            .clipShape(RoundedRectangle(cornerRadius: Theme.Radius.sm))
+            .animation(.easeOut(duration: 0.10), value: agentHovering)
+            .contentShape(Rectangle())
+        }
+        .menuStyle(.borderlessButton)
+        .menuIndicator(.hidden)
+        .fixedSize()
+        .onHover { agentHovering = $0 }
+        .help("이 워크스페이스에서 사용할 에이전트")
     }
 
     private var streamingBadge: some View {

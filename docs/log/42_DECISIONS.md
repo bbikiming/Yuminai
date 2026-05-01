@@ -1,6 +1,54 @@
 # Decisions Log (ADR-lite)
 
-> 최신: ADR-025 (텔레그램 단일 세션 양방향 제어)
+> 최신: ADR-026 (멀티 에이전트 기반 + Codex CLI + cokacdir chat label)
+
+---
+
+## ADR-026 — 멀티 에이전트 기반 + Codex CLI 통합 + cokacdir chat 라벨
+
+- **날짜**: 2026-05-01
+- **상태**: Accepted (1단계)
+- **결정**: AgentKind enum (claude/codex) 도입 + workspace 단위 에이전트 전환 + Codex CLI 어댑터 추가 + cokacdir chat label 친화 표시. Antigravity-style 멀티 에이전트 협업의 1단계 — 같은 프로젝트 폴더에서 두 에이전트가 file system 공유로 협업 가능. 멀티 패널 + 인터-에이전트 메시지 패싱은 v0.4
+- **컨텍스트**:
+  - 사용자 3가지 동시 요청 — 각각 독립 ADR로 분리할 수도 있지만 핵심이 "1 워크스페이스 多 에이전트"라는 한 흐름이라 통합
+  - 1: chat id가 숫자여서 그룹/개인 구분 어려움 (UX)
+  - 2: codex CLI 연결
+  - 3: 안티그래비티처럼 한 컨텍스트·폴더에서 여러 에이전트 협업
+- **각 결정**:
+  1. **chat label**: cokacdir 자체가 `~/.cokacdir/group_chat/<chat_id>.jsonl`에 메시지 로그 저장. 거기서 bot_display_name + from 추출 → "그룹 — 🤖 Bot Alpha, 🤖 Bot Beta, 홍길동" 같은 친화 라벨 생성. Telegram getChat API 호출 회피 (토큰 사용 X, network X, 이미 있는 데이터 활용)
+  2. **Codex 어댑터**: `codex exec --json` + `codex exec resume <id>` 모델 — Claude와 달리 turn마다 새 프로세스. session id 자동 추출 + 다음 send에서 resume으로 컨텍스트 유지
+  3. **AgentKind 단계적 도입**: 워크스페이스 단위 1 에이전트 (1단계) → 멀티 패널 (2단계) → 인터-에이전트 메시지 (3단계). 1단계에서도 같은 workspace 폴더 공유로 "유기적 협업" 가능 (사용자가 빠르게 전환하면서 두 에이전트 능력 결합)
+- **대안 분석**:
+  - Codex CLI 위임 X → Anthropic SDK처럼 OpenAI SDK 직접 호출: ROI 낮음, 학습 곡선, codex가 이미 잘 만들어진 도구
+  - 멀티 패널 즉시 구현 → 큰 작업 (UI 분할, 동시 streaming, focus 관리), 1단계로 분리해 사용자 검증 후 진행
+  - chat label에 Telegram getChat API 호출 → 토큰 필요 + network IO + 새 의존성. 이미 가진 cokacdir 로그가 더 풍부 (참여자 + 봇 정보)
+- **AgentAdapter 설계**:
+  - `ClaudeAdapter` protocol을 그대로 재사용 — Codex도 같은 시그니처 (spawn/terminate/updateSettings/currentSettings) 구현
+  - 이름은 `ClaudeAdapter`로 유지 (역사적 이유 + 변경 비용) — 사실상 "AgentAdapter" 의미
+  - `LiveCodexStreamSession`이 `ClaudeStreamSession` 프로토콜 구현 — events 스트림 + send
+  - 차이점은 내부에서 흡수: events 스트림은 multi-turn 동안 유지, send마다 새 프로세스 spawn
+- **Codex JSONL 파싱**:
+  - schema가 향후 변경될 수 있어 defensive — 알려진 type만 정확히 매핑, 알 수 없는 type은 raw text로 forward (silent drop X — 사용자가 디버깅 가능)
+  - JSON parse 실패 시 raw line을 .text로 emit
+  - session_id 추출은 여러 key 후보 시도 (session_id / sessionId / id, nested session.id 등)
+- **격리**:
+  - `AgentKind`는 YuminaiCore — 모든 모듈이 의존 가능
+  - `LiveCodexAdapter`는 YuminaiClaudeAdapter 모듈 (이름은 ClaudeAdapter지만 역할은 모든 agent CLI 어댑터)
+  - SettingsView는 codex 경로 input + 감지 상태만 — UI는 Telegram 모듈 의존 없음
+- **결과**:
+  - 신규: AgentKind.swift / LiveCodexAdapter.swift / CokacdirChatInspector + Label / 18 신규 테스트
+  - 확장: Workspace.agentKind / WorkspaceModel.agentKindRaw / AppPreferences.codexBinaryPath / AppModel multi-adapter dispatch / ChatToolbar agent picker / SettingsView Codex CLI section / CokacdirImportSheet ChatRow UI
+- **알려진 한계 / v0.4 작업**:
+  - 워크스페이스당 1 에이전트만 활성 (멀티 패널 X)
+  - 인터-에이전트 메시지 패싱 X (cokacdir의 `--message --to <bot>` 같은)
+  - Codex 출력 schema 검증 안 됨 (실제 codex 사용해서 unknown type 정확한 매핑 필요)
+  - Codex model alias가 Claude와 달라 SessionSettings.model을 codex에 그대로 넘기지 않음 — codex는 자체 default
+  - ChatView에 어떤 agent의 응답인지 메타데이터 표시 안 함
+  - Workspace SwiftData 마이그레이션은 nil fallback으로 처리 — 명시적 versioned migration 안 함
+- **재검토**: 사용자 codex 테스트 후 — JSONL schema 정확도, 전환 UX, multi-pane 필요성
+
+---
+
 
 > 큰 결정만 기록. 형식: 결정 / 컨텍스트 / 대안 / 근거 / 결과 / 재검토 시점.
 

@@ -5,6 +5,7 @@ import Foundation
 /// `UserDefaults` 등에 저장되며 SettingsView에서 편집된다.
 public struct AppPreferences: Sendable, Codable, Hashable {
     public var claudeBinaryPath: String
+    public var codexBinaryPath: String
     public var defaultSessionSettings: SessionSettings
     public var editPreferences: EditPreferences
     public var obsidianVaultPath: String?
@@ -26,6 +27,7 @@ public struct AppPreferences: Sendable, Codable, Hashable {
 
     public init(
         claudeBinaryPath: String = AppPreferences.detectClaudeBinaryPath(),
+        codexBinaryPath: String = AppPreferences.detectCodexBinaryPath(),
         defaultSessionSettings: SessionSettings = .default,
         editPreferences: EditPreferences = .default,
         obsidianVaultPath: String? = nil,
@@ -41,6 +43,7 @@ public struct AppPreferences: Sendable, Codable, Hashable {
         showInspectorByDefault: Bool = false
     ) {
         self.claudeBinaryPath = claudeBinaryPath
+        self.codexBinaryPath = codexBinaryPath
         self.defaultSessionSettings = defaultSessionSettings
         self.editPreferences = editPreferences
         self.obsidianVaultPath = obsidianVaultPath
@@ -63,6 +66,20 @@ public struct AppPreferences: Sendable, Codable, Hashable {
             NSString(string: "~/.local/bin/claude").expandingTildeInPath,
             "/opt/homebrew/bin/claude",
             "/usr/local/bin/claude"
+        ]
+        let fm = FileManager.default
+        for path in candidates where fm.isExecutableFile(atPath: path) {
+            return path
+        }
+        return candidates[0]
+    }
+
+    /// `codex` CLI 자동 감지. 모두 실패 시 brew 경로를 잠정 기본값으로.
+    public static func detectCodexBinaryPath() -> String {
+        let candidates = [
+            "/opt/homebrew/bin/codex",
+            "/usr/local/bin/codex",
+            NSString(string: "~/.local/bin/codex").expandingTildeInPath
         ]
         let fm = FileManager.default
         for path in candidates where fm.isExecutableFile(atPath: path) {
