@@ -34,7 +34,12 @@ let package = Package(
         // SwiftTerm — Miguel de Icaza의 native Swift terminal emulator
         // ADR-027: v0.4 phase A의 embedded terminal pane, MIT
         // wrapping으로 lock-in 완화 — TerminalPane이 SwiftTerm을 직접 노출하지 않음
-        .package(url: "https://github.com/migueldeicaza/SwiftTerm", from: "1.2.0")
+        .package(url: "https://github.com/migueldeicaza/SwiftTerm", from: "1.2.0"),
+
+        // Highlightr — Highlight.js (100+ 언어) Swift wrap, NSAttributedString 반환, MIT
+        // ADR-038 E1: viewer syntax highlight (editor는 raw TextEditor 유지)
+        // wrapping으로 lock-in 완화 — CodeViewer가 Highlightr 직접 노출 X
+        .package(url: "https://github.com/raspu/Highlightr", from: "2.1.0")
     ],
     targets: [
         .target(name: "YuminaiCore", path: "Sources/YuminaiCore", swiftSettings: strict),
@@ -55,7 +60,8 @@ let package = Package(
             dependencies: [
                 "YuminaiCore",
                 .product(name: "MarkdownUI", package: "swift-markdown-ui"),
-                .product(name: "SwiftTerm", package: "SwiftTerm")
+                .product(name: "SwiftTerm", package: "SwiftTerm"),
+                .product(name: "Highlightr", package: "Highlightr")
             ],
             path: "Sources/YuminaiUI",
             swiftSettings: strict

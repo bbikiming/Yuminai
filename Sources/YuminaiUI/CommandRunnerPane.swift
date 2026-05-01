@@ -199,8 +199,13 @@ public struct QuickCommand: Sendable, Identifiable, Hashable {
         self.icon = icon
     }
 
-    /// workspace의 deliveryConfig + 일반적 명령들.
-    public static func defaults(test: String?, build: String?, lint: String?) -> [QuickCommand] {
+    /// workspace의 deliveryConfig + 일반적 명령들 + 사용자 정의 (ADR-038 E4).
+    public static func defaults(
+        test: String?,
+        build: String?,
+        lint: String?,
+        custom: [CustomQuickCommand] = []
+    ) -> [QuickCommand] {
         var result: [QuickCommand] = []
         if let test, !test.isEmpty {
             result.append(.init(label: "테스트", command: test, icon: "checkmark.shield"))
@@ -210,6 +215,10 @@ public struct QuickCommand: Sendable, Identifiable, Hashable {
         }
         if let lint, !lint.isEmpty {
             result.append(.init(label: "린트", command: lint, icon: "magnifyingglass"))
+        }
+        // 사용자 정의 (앞쪽에)
+        for custom in custom {
+            result.append(.init(label: custom.label, command: custom.command, icon: "sparkles"))
         }
         // 일반적인 git 명령
         result.append(contentsOf: [

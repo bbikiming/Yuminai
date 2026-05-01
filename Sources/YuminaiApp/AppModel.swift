@@ -110,16 +110,34 @@ public final class AppModel {
     public var isCommandRunning: Bool = false
     private let commandRunner = CommandRunner()
 
-    // Workspace Files (ADR-037 D1+D2)
+    // Workspace Files (ADR-037 D1+D2 + ADR-038 E2 multi-tab)
     public var workspaceFileTree: [FileNode] = []
-    public var selectedFilePath: String?
-    public var selectedFileContents: String?
-    public var isEditingWorkspaceFile: Bool = false
-    public var workspaceFileDraft: String = ""
-    public var isWorkspaceFileDirty: Bool {
-        isEditingWorkspaceFile && workspaceFileDraft != (selectedFileContents ?? "")
-    }
+    /// 열린 파일 tab들. 각 tab은 자체 draft + isEditing.
+    public var openFileTabs: [FileTab] = []
+    /// 활성 tab id (nil = 아무 tab도 없음).
+    public var activeFileTabId: UUID?
+    /// File search (Cmd+P, ADR-038 E3) 표시 여부
+    public var showFileSearchSheet: Bool = false
     private var workspaceFileTreeActor: WorkspaceFileTree?
+
+    /// 활성 tab — UI에 표시되는 파일.
+    public var activeFileTab: FileTab? {
+        openFileTabs.first { $0.id == activeFileTabId }
+    }
+
+    /// 활성 tab의 path (legacy alias for FilesPanel)
+    public var selectedFilePath: String? { activeFileTab?.path }
+    public var selectedFileContents: String? { activeFileTab?.savedContents }
+    public var isEditingWorkspaceFile: Bool { activeFileTab?.isEditing ?? false }
+    public var workspaceFileDraft: String {
+        get { activeFileTab?.draft ?? "" }
+        set {
+            guard let id = activeFileTabId,
+                  let idx = openFileTabs.firstIndex(where: { $0.id == id }) else { return }
+            openFileTabs[idx].draft = newValue
+        }
+    }
+    public var isWorkspaceFileDirty: Bool { activeFileTab?.isDirty ?? false }
 
     // Delivery sheet (ADR-029 phase B)
     public var showDeliverySheet: Bool = false
@@ -1173,46 +1191,76 @@ public final class AppModel {
         }
     }
 
-    /// Workspace 파일 선택 — 본문 read.
+    /// Workspace 파일 선택 — 새 tab 추가 (이미 있으면 활성화). ADR-038 E2.
     public func selectWorkspaceFile(_ relativePath: String) async {
         guard let actor = workspaceFileTreeActor else { return }
-        // 편집 중이면 dirty check
-        if isEditingWorkspaceFile && isWorkspaceFileDirty {
-            // 단순화 — 사용자가 명시 저장/취소 안 했으면 reload 거부
-            self.error = "저장 안 된 변경이 있어요. 저장 또는 취소 후 다른 파일을 여세요."
+        // 이미 열린 tab이면 활성화
+        if let existing = openFileTabs.first(where: { $0.path == relativePath }) {
+            activeFileTabId = existing.id
             return
         }
+        // 새 tab 추가 — read
         do {
             let contents = try await actor.read(relativePath)
-            selectedFilePath = relativePath
-            selectedFileContents = contents
-            workspaceFileDraft = contents
-            isEditingWorkspaceFile = false
+            let tab = FileTab(path: relativePath, savedContents: contents)
+            openFileTabs.append(tab)
+            activeFileTabId = tab.id
+            // max 10 tabs 유지 (FIFO — 가장 오래된 dirty 아닌 tab 제거)
+            if openFileTabs.count > 10 {
+                if let firstClean = openFileTabs.firstIndex(where: { !$0.isDirty && $0.id != tab.id }) {
+                    openFileTabs.remove(at: firstClean)
+                }
+            }
         } catch {
             self.error = error.localizedDescription
         }
     }
 
+    /// Tab 활성화.
+    public func setActiveFileTab(_ tabId: UUID) {
+        guard openFileTabs.contains(where: { $0.id == tabId }) else { return }
+        activeFileTabId = tabId
+    }
+
+    /// Tab 닫기 — dirty면 reject (단순 안전).
+    public func closeFileTab(_ tabId: UUID) {
+        guard let idx = openFileTabs.firstIndex(where: { $0.id == tabId }) else { return }
+        if openFileTabs[idx].isDirty {
+            self.error = "저장 안 된 변경이 있어요: \(openFileTabs[idx].displayName). 저장 또는 취소 후 닫으세요."
+            return
+        }
+        openFileTabs.remove(at: idx)
+        if activeFileTabId == tabId {
+            activeFileTabId = openFileTabs.last?.id
+        }
+    }
+
     public func startEditingWorkspaceFile() {
-        guard selectedFileContents != nil else { return }
-        workspaceFileDraft = selectedFileContents ?? ""
-        isEditingWorkspaceFile = true
+        guard let id = activeFileTabId,
+              let idx = openFileTabs.firstIndex(where: { $0.id == id }) else { return }
+        openFileTabs[idx].draft = openFileTabs[idx].savedContents
+        openFileTabs[idx].isEditing = true
     }
 
     public func saveWorkspaceFile() async {
-        guard let path = selectedFilePath, let actor = workspaceFileTreeActor else { return }
+        guard let id = activeFileTabId,
+              let idx = openFileTabs.firstIndex(where: { $0.id == id }),
+              let actor = workspaceFileTreeActor else { return }
+        let tab = openFileTabs[idx]
         do {
-            try await actor.write(path, contents: workspaceFileDraft)
-            selectedFileContents = workspaceFileDraft
-            isEditingWorkspaceFile = false
+            try await actor.write(tab.path, contents: tab.draft)
+            openFileTabs[idx].savedContents = tab.draft
+            openFileTabs[idx].isEditing = false
         } catch {
             self.error = "파일 저장 실패: \(error.localizedDescription)"
         }
     }
 
     public func discardWorkspaceFileEdits() {
-        workspaceFileDraft = selectedFileContents ?? ""
-        isEditingWorkspaceFile = false
+        guard let id = activeFileTabId,
+              let idx = openFileTabs.firstIndex(where: { $0.id == id }) else { return }
+        openFileTabs[idx].draft = openFileTabs[idx].savedContents
+        openFileTabs[idx].isEditing = false
     }
 
     /// Command Runner — workspace dir에서 명령 실행 + block 누적 (ADR-036 C4).

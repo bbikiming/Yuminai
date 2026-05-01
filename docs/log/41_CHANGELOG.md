@@ -4,6 +4,74 @@
 
 ## [Unreleased] — 2026-05-02
 
+### Added — v0.9+ R1: Syntax highlight + Multi-tab + Cmd+P 파일 검색 + Quick command 사용자 정의 (ADR-038)
+
+사용자: "v0.9+ 항목들 전부 논리적으로 기획해 가면서 구현해 줘"
+
+ADR-037 v0.9+ deferred 항목들 4/6 구현:
+✅ E1 Syntax highlight (Highlightr) / E2 Multi-tab 파일 편집 / E3 File search (Cmd+P) / E4 Quick command 사용자 정의
+⏸ E5 Command block 강화 (search/share/replay) — ROI 약함, 사용자 신호 후 / E6 ACP Spike — 외부 의존 변동 큼
+
+**E1. Syntax highlight (Highlightr 외부 의존성 추가)**:
+- `Package.swift` — Highlightr 2.1.0 (raspu/Highlightr, MIT) 추가, YuminaiUI에 dep
+- `Sources/YuminaiUI/CodeViewer.swift` (신규)
+  - 100+ 언어 자동 highlight (Highlight.js wrap)
+  - `languageHint(for ext:)` — 40+ 확장자 → highlight.js id 매핑 (swift/ts/tsx/js/py/rs/go/...)
+  - `highlightedAttributedString(code:language:)` — NSAttributedString → AttributedString (`\.appKit`)
+  - 100KB 초과 파일은 plain text fallback (성능 보호)
+  - atom-one-dark theme (Yuminai dark-first)
+  - **lock-in 완화**: CodeViewer wrapper만 Highlightr 의존, 외부 API는 SwiftUI View
+- FilesPanel viewer가 raw mono → CodeViewer로 (편집 모드는 raw TextEditor 유지)
+
+**E2. Multi-tab 파일 편집**:
+- `Sources/YuminaiCore/FileTab.swift` (신규)
+  - `FileTab { id, path, savedContents, draft, isEditing }` Sendable Identifiable Hashable
+  - `isDirty = isEditing && draft != savedContents` (preview-only navigation은 dirty 아님)
+  - `displayName` (path의 마지막 component)
+- `AppModel`:
+  - `openFileTabs: [FileTab]` + `activeFileTabId: UUID?`
+  - 기존 single-file API (`selectedFilePath`, `workspaceFileDraft` 등)는 active tab projection으로 유지 — 호출자 변경 없음
+  - `selectWorkspaceFile`: 같은 path tab 있으면 activate, 없으면 새 tab (max 10, FIFO non-dirty)
+  - `setActiveFileTab(id:)` / `closeFileTab(id:)` (dirty면 reject)
+- `FilesPanel`:
+  - 상단 가로 ScrollView 탭 바 (`FileTabButton` — hover/dirty dot/close ✕/active border)
+  - 트리에서 파일 클릭 → 새 tab 또는 기존 tab 활성화
+- `InspectorPanel`: +9 params (multi-tab forwarding)
+
+**E3. File search sheet (Cmd+P)**:
+- `Sources/YuminaiCore/FuzzyFileFilter.swift` (신규)
+  - `FuzzyFileFilter.flatten([FileNode])` — 트리 평탄화 + binary 제외
+  - `FuzzyFileFilter.filter(query:candidates:)` — 점수 기반 정렬
+    - prefix match: 100점 / name contains: 50점 / path contains: 20점
+    - 짧은 이름 가산점: max(0, 50 - name.count)
+    - 빈 query → 전체 (path 알파벳 정렬)
+  - `Match { path, name, score }` Sendable
+- `Sources/YuminaiApp/FileSearchSheet.swift` (신규)
+  - 540×400 sheet, 검색 input + 결과 리스트 (max 50)
+  - Esc → cancel / Enter → 선택 + sheet 닫기
+  - `FileMatchRow` — name/path 2-line, hover/selected highlight
+  - 빈 결과 + 빈 query 상태별 EmptyStateHint
+- `RootView`: 보이지 않는 ⌘P button (`fileSearchHotkey`) + sheet registration
+
+**E4. Quick command 사용자 정의**:
+- `Sources/YuminaiCore/DeliveryConfig.swift`
+  - `customQuickCommands: [CustomQuickCommand]` 필드 추가 (default `[]`)
+  - `CustomQuickCommand { id, label, command }` Sendable Codable Identifiable
+- `WorkspaceDeliverySheet`:
+  - `customQuickSection` 추가 — 이름/명령 TextField + 추가/제거 버튼
+  - 빈 상태 InlineHint
+- `CommandRunnerPane.QuickCommand.defaults(test:build:lint:custom:)`:
+  - custom 추가 (sparkles icon, default와 git 사이 위치)
+- `RootView`: deliveryConfig.customQuickCommands → QuickCommand.defaults에 전달
+
+**테스트 31개 신규**:
+- `FileTabTests` (7) — defaults / dirty 판정 / displayName / Equatable / Hashable / 편집 revert
+- `CustomQuickCommandTests` (4) — UUID 신규 / id 보존 / Codable / DeliveryConfig 통합 round-trip
+- `FuzzyFileFilterTests` (11) — 빈 query / prefix vs contains / name vs path / 대소문자 / 짧은 이름 가산 / flatten 재귀 / binary 제외 / 정렬
+- `CodeViewerTests` (9) — 주요 언어 / 대소문자 / C++ family / config / shell variants / markdown / plist→xml / 미지원 nil / 함수형 언어 / vue/svelte
+
+빌드 7.05s, v0.9+ 신규 31/31 통과.
+
 ### Added — v0.8 R1: IDE-like 파일 뷰어/편집기 + Quick command 버튼 (ADR-037)
 
 사용자: "0.8 진행해주고 터미널 실행 기능, ide처럼 코드 뷰어 및 편집 기능도 추가해 줘"

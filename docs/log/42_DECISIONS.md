@@ -1,6 +1,74 @@
 # Decisions Log (ADR-lite)
 
-> 최신: ADR-037 (v0.8 R1 — IDE-like 파일 뷰어/편집기 + Quick command)
+> 최신: ADR-038 (v0.9+ R1 — Syntax highlight + Multi-tab + Cmd+P 파일 검색 + Quick command 사용자 정의)
+
+---
+
+## ADR-038 — v0.9+ R1: Syntax highlight + Multi-tab + Cmd+P 파일 검색 + Quick command 사용자 정의
+
+- **날짜**: 2026-05-02
+- **상태**: Accepted
+- **결정**: ADR-037 v0.9+ deferred 항목 4개 일괄 — E1 syntax highlight (Highlightr) + E2 multi-tab 편집 + E3 file search sheet + E4 quick command 사용자 정의. E5/E6 (block 강화 / ACP Spike) 보류
+- **컨텍스트**:
+  - 사용자 — "v0.9+ 항목들 전부 논리적으로 기획해 가면서 구현해 줘"
+  - ADR-037 v0.8 R1에서 단순화 보류된 IDE 인접 기능들 — 사용자 평가 후 가치 검증된 항목 우선
+  - v0.8 사용으로 raw mono viewer가 가독성 한계 + 다중 파일 동시 검토 needs 확인
+- **각 결정**:
+  1. **E1 Syntax highlight = Highlightr 채택**:
+     - 대안 평가: SwiftUI native code editor (없음) / Sourceful (오래됨) / Highlightr (Highlight.js wrap, MIT, 활성)
+     - **선택 이유**: 100+ 언어 즉시 + AppKit NSAttributedString → AttributedString 변환 가능 + 단일 의존성 / lock-in 완화 (CodeViewer가 Highlightr 직접 노출 X — 외부에는 SwiftUI View)
+     - **단순화**: read-only viewer만 highlight (editor는 raw TextEditor 유지 — editable highlight = NSTextView wrap이 큰 작업, v1.0+)
+     - **fallback**: > 100KB 파일은 plain text (highlight 비용 회피, 일반 코드는 < 50KB)
+     - **theme**: atom-one-dark 고정 (Yuminai dark-first — light theme switch는 v1.0+)
+  2. **E2 Multi-tab 편집**:
+     - **상태 모델**: `FileTab` struct (id/path/savedContents/draft/isEditing) + `[FileTab]` in AppModel + `activeFileTabId`
+     - **legacy 유지**: 기존 `selectedFilePath`, `workspaceFileDraft` 등 single-file API는 active tab의 computed projection으로 retained — 호출자 리팩터링 없이 multi-tab 동작
+     - **dirty tracking**: `isDirty = isEditing && draft != savedContents` — preview-only navigation은 dirty 아님
+     - **tab 한도**: 10개 (FIFO non-dirty 제거 — dirty tab은 사용자 명시 close 필요)
+     - **close protection**: dirty tab close는 reject (저장 또는 discard 필수) — VSCode 패턴
+  3. **E3 File search (Cmd+P)**:
+     - **알고리즘**: prefix(100) > name contains(50) > path contains(20) + 짧은 이름 가산점 — full fuzzy matcher (Sublime/VSCode식 char-by-char) 보류 ROI 약함
+     - **격리**: `FuzzyFileFilter` enum을 Core에 추출 (테스트 가능) / FileSearchSheet (App)는 UI binding만
+     - **결과 cap**: 50개 (성능 + 인지 부하) — 뮈 매칭 더 좁은 query 유도
+     - **binary 자동 제외**: WorkspaceFileTree의 isBinary flag 활용
+  4. **E4 Quick command 사용자 정의**:
+     - `CustomQuickCommand` struct (id/label/command) → `DeliveryConfig.customQuickCommands` 영속
+     - **UI**: WorkspaceDeliverySheet에 customQuickSection 추가 (이름 + 명령 TextField + 추가/제거 버튼)
+     - **chip icon**: sparkles (default 명령들과 시각 구분)
+     - **순서**: test/build/lint default → custom → git 명령 (사용자 자주 쓰는 것이 default와 git 사이)
+  5. **E5/E6 보류**: CommandRunner block 강화 (search/replay/share 등) + ACP Spike — ROI 약하거나 외부 의존 변동 큼. v1.0+ 사용자 신호 후
+- **단순화 ROI 분석**:
+  - **Syntax highlight**: 가치 90 (코드 가독성 핵심), 비용 0.5인일 (Highlightr 단일 의존성, viewer-only) — ROI 압도
+  - **Multi-tab**: 가치 75 (multi-file workflow 표준), 비용 1인일 (dirty tracking + close protection) — ROI 양호
+  - **Cmd+P**: 가치 70 (대형 프로젝트에서 트리 navigation 한계), 비용 0.3인일 (단순 fuzzy + sheet) — ROI 압도
+  - **Custom quick**: 가치 50 (사용자 워크플로 특화), 비용 0.2인일 (DeliveryConfig 필드 + sheet UI) — ROI 양호
+- **격리**:
+  - **Highlightr**: YuminaiUI 의존성. CodeViewer가 wrap (외부에 Highlightr API 노출 X)
+  - **FileTab**: YuminaiCore (UI 의존 X)
+  - **FuzzyFileFilter**: YuminaiCore (FileNode 의존, 테스트 가능)
+  - **FileSearchSheet**: YuminaiApp (FuzzyFileFilter 사용, UI binding)
+  - **CustomQuickCommand**: YuminaiCore (DeliveryConfig와 함께 영속)
+- **외부 의존성 정책 변경**:
+  - Highlightr 추가 (raspu/Highlightr, MIT) — ADR-021 (swift-markdown-ui 추가) 패턴 동일 검토
+  - **lock-in 완화**: CodeViewer가 wrap하므로 향후 dropping 가능 (Highlightr 미사용 시 plain text fallback 동작)
+- **결과**:
+  - 신규 파일 5개: CodeViewer.swift / FileTab.swift / FuzzyFileFilter.swift / FileSearchSheet.swift / FileTabTests.swift / FuzzyFileFilterTests.swift / CodeViewerTests.swift (4 src + 3 test)
+  - 수정 7개: Package.swift (Highlightr) / DeliveryConfig.swift (customQuickCommands) / AppModel.swift (multi-tab) / FilesPanel.swift (tab bar + search btn + CodeViewer) / InspectorPanel.swift (forwarding) / RootView.swift (sheet + ⌘P hotkey + custom quick) / CommandRunnerPane.swift (custom param) / WorkspaceDeliverySheet.swift (custom section)
+  - 신규 테스트 31개 — FileTab(7) + CustomQuickCommand(4) + FuzzyFileFilter(11) + CodeViewer(9)
+  - build 7.05s clean, 31/31 v0.9+ tests 통과
+- **알려진 한계 / v1.0+**:
+  - Editable highlight (현재 read-only viewer만)
+  - Light theme support (현재 atom-one-dark 고정)
+  - File rename / new file / delete UX
+  - Tree fuzzy filter inline (현재 Cmd+P sheet만)
+  - Custom quick command 위치 reorder
+  - Command block search/share/replay (E5)
+  - ACP 진짜 양방향 (E6)
+- **재검토**:
+  - Highlightr 성능 — 1MB 코드에서 500ms 이상이면 worker thread offload 검토
+  - Multi-tab 한도 10이 너무 작은지 (사용자 사용 데이터로)
+  - Cmd+P 결과 50 cap이 missed match 야기하는지
+  - Custom quick command가 deliveryConfig.customQuickCommands가 아닌 별도 영속이 필요한지
 
 ---
 

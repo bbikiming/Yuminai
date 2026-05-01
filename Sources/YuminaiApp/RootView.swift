@@ -42,6 +42,7 @@ struct RootView: View {
                 }
                 quickSwitchHotkeys  // ⌘1~9 invisible buttons
                 helpHotkey  // ⌘? invisible
+                fileSearchHotkey  // ⌘P invisible
             }
             .onAppear {
                 windowSize = geo.size
@@ -85,6 +86,18 @@ struct RootView: View {
         }
         .sheet(isPresented: $bindable.showShortcutHelp) {
             ShortcutHelpSheet(onClose: { appModel.showShortcutHelp = false })
+        }
+        .sheet(isPresented: $bindable.showFileSearchSheet) {
+            FileSearchSheet(
+                allFiles: appModel.workspaceFileTree,
+                onSelect: { path in
+                    Task {
+                        await appModel.selectWorkspaceFile(path)
+                        appModel.showFileSearchSheet = false
+                    }
+                },
+                onCancel: { appModel.showFileSearchSheet = false }
+            )
         }
         .sheet(item: $bindable.renameSheetPane) { pane in
             PaneRenameSheet(
@@ -213,17 +226,25 @@ struct RootView: View {
                         appModel.showDeliverySheet = true
                     },
                     workspaceFileTree: appModel.workspaceFileTree,
+                    openFileTabs: appModel.openFileTabs,
+                    activeFileTabId: appModel.activeFileTabId,
                     selectedFilePath: appModel.selectedFilePath,
                     selectedFileContents: appModel.selectedFileContents,
                     isEditingFile: appModel.isEditingWorkspaceFile,
-                    fileDraft: $bindable.workspaceFileDraft,
+                    fileDraft: Binding(
+                        get: { appModel.workspaceFileDraft },
+                        set: { appModel.workspaceFileDraft = $0 }
+                    ),
                     isFileDirty: appModel.isWorkspaceFileDirty,
                     onSelectFile: { path in Task { await appModel.selectWorkspaceFile(path) } },
+                    onSelectFileTab: { id in appModel.setActiveFileTab(id) },
+                    onCloseFileTab: { id in appModel.closeFileTab(id) },
                     onStartEditingFile: { appModel.startEditingWorkspaceFile() },
                     onSaveFile: { Task { await appModel.saveWorkspaceFile() } },
                     onDiscardFileEdits: { appModel.discardWorkspaceFileEdits() },
                     onRefreshFileTree: { Task { await appModel.refreshWorkspaceFileTree() } },
-                    onOpenFileInExternalEditor: { path in appModel.openFileInExternalEditor(path) }
+                    onOpenFileInExternalEditor: { path in appModel.openFileInExternalEditor(path) },
+                    onShowFileSearch: { appModel.showFileSearchSheet = true }
                 )
                 .task(id: appModel.selectedWorkspaceId) {
                     await appModel.refreshWorkspaceFileTree()
@@ -286,6 +307,15 @@ struct RootView: View {
     }
 
     /// ⌘? — 단축키 도움말 sheet.
+    private var fileSearchHotkey: some View {
+        Button {
+            appModel.showFileSearchSheet = true
+        } label: { EmptyView() }
+            .keyboardShortcut("p", modifiers: .command)
+            .opacity(0)
+            .frame(width: 0, height: 0)
+    }
+
     private var helpHotkey: some View {
         Button("") { appModel.showShortcutHelp = true }
             .keyboardShortcut("/", modifiers: .command)
@@ -637,7 +667,8 @@ struct ChatPane: View {
         let quick = QuickCommand.defaults(
             test: cfg.testCommand,
             build: cfg.buildCommand,
-            lint: cfg.lintCommand
+            lint: cfg.lintCommand,
+            custom: cfg.customQuickCommands
         )
         return CommandRunnerPane(
             workingDirectory: path,

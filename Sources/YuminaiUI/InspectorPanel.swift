@@ -48,19 +48,24 @@ public struct InspectorPanel: View {
     public let onDiscardEdits: () -> Void
     public let onReloadNote: () -> Void
 
-    // Files panel (ADR-037 D1+D2)
+    // Files panel (ADR-037 D1+D2 + ADR-038 E2 multi-tab)
     public let workspaceFileTree: [FileNode]
+    public let openFileTabs: [FileTab]
+    public let activeFileTabId: UUID?
     public let selectedFilePath: String?
     public let selectedFileContents: String?
     public let isEditingFile: Bool
     @Binding public var fileDraft: String
     public let isFileDirty: Bool
     public let onSelectFile: (String) -> Void
+    public let onSelectFileTab: (UUID) -> Void
+    public let onCloseFileTab: (UUID) -> Void
     public let onStartEditingFile: () -> Void
     public let onSaveFile: () -> Void
     public let onDiscardFileEdits: () -> Void
     public let onRefreshFileTree: () -> Void
     public let onOpenFileInExternalEditor: (String) -> Void
+    public let onShowFileSearch: () -> Void
 
     // Diff review (ADR-027 phase A3)
     public let pendingChanges: [ChangedFile]
@@ -132,17 +137,22 @@ public struct InspectorPanel: View {
         onClearDelivery: @escaping () -> Void = {},
         onConfigureDelivery: @escaping () -> Void = {},
         workspaceFileTree: [FileNode] = [],
+        openFileTabs: [FileTab] = [],
+        activeFileTabId: UUID? = nil,
         selectedFilePath: String? = nil,
         selectedFileContents: String? = nil,
         isEditingFile: Bool = false,
         fileDraft: Binding<String> = .constant(""),
         isFileDirty: Bool = false,
         onSelectFile: @escaping (String) -> Void = { _ in },
+        onSelectFileTab: @escaping (UUID) -> Void = { _ in },
+        onCloseFileTab: @escaping (UUID) -> Void = { _ in },
         onStartEditingFile: @escaping () -> Void = {},
         onSaveFile: @escaping () -> Void = {},
         onDiscardFileEdits: @escaping () -> Void = {},
         onRefreshFileTree: @escaping () -> Void = {},
-        onOpenFileInExternalEditor: @escaping (String) -> Void = { _ in }
+        onOpenFileInExternalEditor: @escaping (String) -> Void = { _ in },
+        onShowFileSearch: @escaping () -> Void = {}
     ) {
         self._tab = tab
         self.usage = usage
@@ -193,17 +203,22 @@ public struct InspectorPanel: View {
         self.onClearDelivery = onClearDelivery
         self.onConfigureDelivery = onConfigureDelivery
         self.workspaceFileTree = workspaceFileTree
+        self.openFileTabs = openFileTabs
+        self.activeFileTabId = activeFileTabId
         self.selectedFilePath = selectedFilePath
         self.selectedFileContents = selectedFileContents
         self.isEditingFile = isEditingFile
         self._fileDraft = fileDraft
         self.isFileDirty = isFileDirty
         self.onSelectFile = onSelectFile
+        self.onSelectFileTab = onSelectFileTab
+        self.onCloseFileTab = onCloseFileTab
         self.onStartEditingFile = onStartEditingFile
         self.onSaveFile = onSaveFile
         self.onDiscardFileEdits = onDiscardFileEdits
         self.onRefreshFileTree = onRefreshFileTree
         self.onOpenFileInExternalEditor = onOpenFileInExternalEditor
+        self.onShowFileSearch = onShowFileSearch
     }
 
     public var body: some View {
@@ -270,17 +285,22 @@ public struct InspectorPanel: View {
         case .files:
             FilesPanel(
                 tree: workspaceFileTree,
+                openTabs: openFileTabs,
+                activeTabId: activeFileTabId,
                 selectedPath: selectedFilePath,
                 fileContents: selectedFileContents,
                 isEditing: isEditingFile,
                 draft: $fileDraft,
                 isDirty: isFileDirty,
                 onSelect: onSelectFile,
+                onSelectTab: onSelectFileTab,
+                onCloseTab: onCloseFileTab,
                 onStartEditing: onStartEditingFile,
                 onSave: onSaveFile,
                 onDiscardEdits: onDiscardFileEdits,
                 onRefreshTree: onRefreshFileTree,
-                onOpenInExternalEditor: onOpenFileInExternalEditor
+                onOpenInExternalEditor: onOpenFileInExternalEditor,
+                onShowSearch: onShowFileSearch
             )
             .frame(maxWidth: .infinity, maxHeight: .infinity)
         case .changes:

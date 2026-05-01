@@ -10,53 +10,93 @@ import YuminaiCore
 /// - binary 파일은 트리에 표시는 되지만 viewer에 안 열림 (안내만)
 public struct FilesPanel: View {
     public let tree: [FileNode]
+    public let openTabs: [FileTab]
+    public let activeTabId: UUID?
     public let selectedPath: String?
     public let fileContents: String?
     public let isEditing: Bool
     @Binding public var draft: String
     public let isDirty: Bool
     public let onSelect: (String) -> Void
+    public let onSelectTab: (UUID) -> Void
+    public let onCloseTab: (UUID) -> Void
     public let onStartEditing: () -> Void
     public let onSave: () -> Void
     public let onDiscardEdits: () -> Void
     public let onRefreshTree: () -> Void
     public let onOpenInExternalEditor: (String) -> Void
+    public let onShowSearch: () -> Void
 
     public init(
         tree: [FileNode],
+        openTabs: [FileTab] = [],
+        activeTabId: UUID? = nil,
         selectedPath: String?,
         fileContents: String?,
         isEditing: Bool,
         draft: Binding<String>,
         isDirty: Bool,
         onSelect: @escaping (String) -> Void,
+        onSelectTab: @escaping (UUID) -> Void = { _ in },
+        onCloseTab: @escaping (UUID) -> Void = { _ in },
         onStartEditing: @escaping () -> Void,
         onSave: @escaping () -> Void,
         onDiscardEdits: @escaping () -> Void,
         onRefreshTree: @escaping () -> Void,
-        onOpenInExternalEditor: @escaping (String) -> Void
+        onOpenInExternalEditor: @escaping (String) -> Void,
+        onShowSearch: @escaping () -> Void = {}
     ) {
         self.tree = tree
+        self.openTabs = openTabs
+        self.activeTabId = activeTabId
         self.selectedPath = selectedPath
         self.fileContents = fileContents
         self.isEditing = isEditing
         self._draft = draft
         self.isDirty = isDirty
         self.onSelect = onSelect
+        self.onSelectTab = onSelectTab
+        self.onCloseTab = onCloseTab
         self.onStartEditing = onStartEditing
         self.onSave = onSave
         self.onDiscardEdits = onDiscardEdits
         self.onRefreshTree = onRefreshTree
         self.onOpenInExternalEditor = onOpenInExternalEditor
+        self.onShowSearch = onShowSearch
     }
 
     public var body: some View {
         VSplitView {
             treeSection
                 .frame(minHeight: 160, idealHeight: 240)
-            viewerSection
-                .frame(minHeight: 200)
+            VStack(spacing: 0) {
+                if !openTabs.isEmpty {
+                    fileTabBar
+                    FlatHDivider()
+                }
+                viewerSection
+            }
+            .frame(minHeight: 200)
         }
+    }
+
+    @ViewBuilder
+    private var fileTabBar: some View {
+        ScrollView(.horizontal, showsIndicators: false) {
+            HStack(spacing: 1) {
+                ForEach(openTabs) { tab in
+                    FileTabButton(
+                        tab: tab,
+                        isActive: tab.id == activeTabId,
+                        onSelect: { onSelectTab(tab.id) },
+                        onClose: { onCloseTab(tab.id) }
+                    )
+                }
+            }
+            .padding(.horizontal, Theme.Spacing.sm)
+            .padding(.vertical, 2)
+        }
+        .background(Theme.Color.surface)
     }
 
     // MARK: - Tree section
@@ -71,11 +111,18 @@ public struct FilesPanel: View {
                     .font(Theme.Typography.small.weight(.medium))
                     .foregroundStyle(Theme.Color.text)
                 HelpHint(
-                    "워크스페이스 디렉토리의 파일 트리예요. .git/.build/node_modules 같은 자동 제외 폴더는 안 보여요. 파일 클릭 → 우측에 본문 표시. 더블클릭 또는 ‘편집’ 버튼으로 inline 편집 가능 (⌘S 저장).",
+                    "워크스페이스 디렉토리의 파일 트리예요. .git/.build/node_modules 같은 자동 제외 폴더는 안 보여요. 파일 클릭 → 새 tab으로 열림. 여러 파일 동시 열기 가능 (max 10), ⌘P로 빠른 검색.",
                     title: "파일 트리",
                     placement: .bottom
                 )
                 Spacer()
+                Button(action: onShowSearch) {
+                    Image(systemName: "magnifyingglass")
+                        .font(.system(size: 10))
+                        .foregroundStyle(Theme.Color.textSecondary)
+                }
+                .buttonStyle(.plain)
+                .help("파일 검색 (⌘P)")
                 Button(action: onRefreshTree) {
                     Image(systemName: "arrow.clockwise")
                         .font(.system(size: 10))
@@ -198,15 +245,12 @@ public struct FilesPanel: View {
     }
 
     private var fileViewer: some View {
-        ScrollView([.horizontal, .vertical]) {
-            Text(fileContents ?? "(읽는 중...)")
-                .font(Theme.Typography.mono)
-                .foregroundStyle(Theme.Color.text)
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .textSelection(.enabled)
-                .padding(Theme.Spacing.md)
-        }
-        .background(Theme.Color.bg)
+        let ext = (selectedPath as NSString?)?.pathExtension ?? ""
+        let lang = CodeViewer.languageHint(for: ext)
+        return CodeViewer(
+            code: fileContents ?? "(읽는 중...)",
+            language: lang
+        )
     }
 
     private var inlineEditor: some View {
@@ -243,6 +287,62 @@ public struct FilesPanel: View {
 }
 
 // MARK: - Tree row (recursive)
+
+// MARK: - File tab button (multi-tab, ADR-038 E2)
+
+private struct FileTabButton: View {
+    let tab: FileTab
+    let isActive: Bool
+    let onSelect: () -> Void
+    let onClose: () -> Void
+    @State private var hovering = false
+
+    var body: some View {
+        Button(action: onSelect) {
+            HStack(spacing: 4) {
+                Text(tab.displayName)
+                    .font(Theme.Typography.small)
+                    .foregroundStyle(isActive ? Theme.Color.text : Theme.Color.textSecondary)
+                    .lineLimit(1)
+                if tab.isDirty {
+                    Circle()
+                        .fill(Theme.Color.accent)
+                        .frame(width: 5, height: 5)
+                }
+                if hovering || isActive {
+                    Button(action: onClose) {
+                        Image(systemName: "xmark")
+                            .font(.system(size: 7, weight: .bold))
+                            .foregroundStyle(Theme.Color.textSecondary)
+                            .frame(width: 12, height: 12)
+                            .background(Theme.Color.surfaceHi)
+                            .clipShape(Circle())
+                    }
+                    .buttonStyle(.plain)
+                }
+            }
+            .padding(.horizontal, Theme.Spacing.sm)
+            .padding(.vertical, 3)
+            .background(rowBg)
+            .overlay(alignment: .bottom) {
+                if isActive {
+                    Rectangle().fill(Theme.Color.accent).frame(height: 2)
+                }
+            }
+            .clipShape(RoundedRectangle(cornerRadius: Theme.Radius.sm))
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .onHover { hovering = $0 }
+        .help(tab.path)
+    }
+
+    private var rowBg: SwiftUI.Color {
+        if isActive { return Theme.Color.bg }
+        if hovering { return Theme.Color.surfaceHi }
+        return .clear
+    }
+}
 
 private struct FileNodeRow: View {
     let node: FileNode

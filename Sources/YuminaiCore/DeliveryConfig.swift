@@ -23,6 +23,8 @@ public struct DeliveryConfig: Sendable, Codable, Hashable {
     public var maxAttempts: Int
     /// 단일 명령 실행 타임아웃 (초).
     public var timeoutSeconds: Int
+    /// 사용자 정의 quick command (CommandRunnerPane chip로 표시) — ADR-038 E4.
+    public var customQuickCommands: [CustomQuickCommand]
 
     public init(
         buildCommand: String? = nil,
@@ -31,7 +33,8 @@ public struct DeliveryConfig: Sendable, Codable, Hashable {
         autoRunOnTurnComplete: Bool = false,
         autoFeedFailureToAgent: Bool = true,
         maxAttempts: Int = 3,
-        timeoutSeconds: Int = 300
+        timeoutSeconds: Int = 300,
+        customQuickCommands: [CustomQuickCommand] = []
     ) {
         self.buildCommand = buildCommand
         self.testCommand = testCommand
@@ -40,15 +43,29 @@ public struct DeliveryConfig: Sendable, Codable, Hashable {
         self.autoFeedFailureToAgent = autoFeedFailureToAgent
         self.maxAttempts = maxAttempts
         self.timeoutSeconds = timeoutSeconds
+        self.customQuickCommands = customQuickCommands
     }
-
-    public static let disabled = DeliveryConfig()
 
     /// 어느 명령이라도 정의돼 있으면 활성 가능.
     public var hasAnyCommand: Bool {
         !(testCommand?.isEmpty ?? true)
             || !(buildCommand?.isEmpty ?? true)
             || !(lintCommand?.isEmpty ?? true)
+    }
+
+    public static let disabled = DeliveryConfig()
+}
+
+/// 사용자 정의 quick command (CommandRunnerPane chip).
+public struct CustomQuickCommand: Sendable, Codable, Hashable, Identifiable {
+    public let id: UUID
+    public var label: String
+    public var command: String
+
+    public init(id: UUID = UUID(), label: String, command: String) {
+        self.id = id
+        self.label = label
+        self.command = command
     }
 }
 

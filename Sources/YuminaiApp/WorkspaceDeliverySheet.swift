@@ -17,6 +17,7 @@ struct WorkspaceDeliverySheet: View {
                 Form {
                     commandsSection
                     policySection
+                    customQuickSection
                     helpSection
                 }
                 .formStyle(.grouped)
@@ -133,6 +134,60 @@ struct WorkspaceDeliverySheet: View {
                 .font(.caption)
                 .foregroundStyle(.secondary)
         }
+    }
+
+    private var customQuickSection: some View {
+        Section {
+            if draft.customQuickCommands.isEmpty {
+                InlineHint(
+                    "사용자 정의 quick command가 없어요. 자주 쓰는 명령을 추가하면 CommandRunner(⌘⌥R) chip로 표시됩니다.",
+                    icon: "sparkles",
+                    kind: .tip
+                )
+            }
+            ForEach($draft.customQuickCommands) { $quick in
+                HStack(spacing: 6) {
+                    TextField("이름", text: $quick.label)
+                        .textFieldStyle(.roundedBorder)
+                        .frame(maxWidth: 120)
+                    TextField("명령", text: $quick.command)
+                        .textFieldStyle(.roundedBorder)
+                        .font(Theme.Typography.monoSmall)
+                    Button(action: { removeCustom(id: quick.id) }) {
+                        Image(systemName: "minus.circle")
+                            .foregroundStyle(.red.opacity(0.7))
+                    }
+                    .buttonStyle(.plain)
+                }
+            }
+            HStack {
+                Spacer()
+                Button {
+                    draft.customQuickCommands.append(
+                        CustomQuickCommand(label: "새 명령", command: "")
+                    )
+                } label: {
+                    Label("추가", systemImage: "plus")
+                }
+            }
+        } header: {
+            HStack(spacing: 4) {
+                Text("Quick Command")
+                HelpHint(
+                    "CommandRunner(⌘⌥R) chip 행에 표시되는 사용자 정의 명령입니다. ‘이름’은 chip 라벨, ‘명령’은 zsh로 실행할 텍스트.",
+                    title: "Quick Command",
+                    placement: .trailing
+                )
+            }
+        } footer: {
+            Text("예: 이름 ‘서버 시작’ + 명령 ‘npm run dev’")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+        }
+    }
+
+    private func removeCustom(id: UUID) {
+        draft.customQuickCommands.removeAll { $0.id == id }
     }
 
     private var helpSection: some View {
