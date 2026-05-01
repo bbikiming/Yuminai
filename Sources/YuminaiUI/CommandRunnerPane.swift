@@ -13,6 +13,7 @@ public struct CommandRunnerPane: View {
     public let workingDirectory: String
     public let blocks: [CommandRunner.CommandResult]
     public let isRunning: Bool
+    public let quickCommands: [QuickCommand]
     public let onRun: (String) -> Void
     public let onClear: () -> Void
     public let onClose: () -> Void
@@ -23,6 +24,7 @@ public struct CommandRunnerPane: View {
         workingDirectory: String,
         blocks: [CommandRunner.CommandResult],
         isRunning: Bool,
+        quickCommands: [QuickCommand] = [],
         onRun: @escaping (String) -> Void,
         onClear: @escaping () -> Void,
         onClose: @escaping () -> Void
@@ -30,6 +32,7 @@ public struct CommandRunnerPane: View {
         self.workingDirectory = workingDirectory
         self.blocks = blocks
         self.isRunning = isRunning
+        self.quickCommands = quickCommands
         self.onRun = onRun
         self.onClear = onClear
         self.onClose = onClose
@@ -38,12 +41,32 @@ public struct CommandRunnerPane: View {
     public var body: some View {
         VStack(spacing: 0) {
             header
+            if !quickCommands.isEmpty {
+                quickCommandRow
+            }
             FlatHDivider()
             blockList
             FlatHDivider()
             inputBar
         }
         .background(Theme.Color.bg)
+    }
+
+    @ViewBuilder
+    private var quickCommandRow: some View {
+        ScrollView(.horizontal, showsIndicators: false) {
+            HStack(spacing: 4) {
+                Text("Quick:")
+                    .font(Theme.Typography.micro)
+                    .foregroundStyle(Theme.Color.textTertiary)
+                ForEach(quickCommands) { qc in
+                    QuickCommandChip(quick: qc) { onRun(qc.command) }
+                }
+            }
+            .padding(.horizontal, Theme.Spacing.md)
+            .padding(.vertical, 4)
+        }
+        .background(Theme.Color.surface.opacity(0.4))
     }
 
     private var header: some View {
@@ -159,6 +182,72 @@ public struct CommandRunnerPane: View {
         guard !trimmed.isEmpty else { return }
         onRun(trimmed)
         draft = ""
+    }
+}
+
+/// Quick command 정의 (ADR-037 D6).
+public struct QuickCommand: Sendable, Identifiable, Hashable {
+    public let id: String
+    public let label: String
+    public let command: String
+    public let icon: String
+
+    public init(label: String, command: String, icon: String = "terminal") {
+        self.id = command
+        self.label = label
+        self.command = command
+        self.icon = icon
+    }
+
+    /// workspace의 deliveryConfig + 일반적 명령들.
+    public static func defaults(test: String?, build: String?, lint: String?) -> [QuickCommand] {
+        var result: [QuickCommand] = []
+        if let test, !test.isEmpty {
+            result.append(.init(label: "테스트", command: test, icon: "checkmark.shield"))
+        }
+        if let build, !build.isEmpty {
+            result.append(.init(label: "빌드", command: build, icon: "hammer"))
+        }
+        if let lint, !lint.isEmpty {
+            result.append(.init(label: "린트", command: lint, icon: "magnifyingglass"))
+        }
+        // 일반적인 git 명령
+        result.append(contentsOf: [
+            .init(label: "git status", command: "git status", icon: "arrow.triangle.branch"),
+            .init(label: "git diff", command: "git diff", icon: "doc.plaintext"),
+            .init(label: "git log -5", command: "git log -5 --oneline", icon: "list.bullet")
+        ])
+        return result
+    }
+}
+
+private struct QuickCommandChip: View {
+    let quick: QuickCommand
+    let onTap: () -> Void
+    @State private var hovering = false
+
+    var body: some View {
+        Button(action: onTap) {
+            HStack(spacing: 3) {
+                Image(systemName: quick.icon)
+                    .font(.system(size: 9))
+                    .foregroundStyle(Theme.Color.accent)
+                Text(quick.label)
+                    .font(Theme.Typography.micro)
+                    .foregroundStyle(Theme.Color.text)
+            }
+            .padding(.horizontal, 6)
+            .padding(.vertical, 2)
+            .background(hovering ? Theme.Color.surfaceHi : Theme.Color.surface)
+            .overlay(
+                RoundedRectangle(cornerRadius: 3)
+                    .stroke(Theme.Color.borderSubtle, lineWidth: 1)
+            )
+            .clipShape(RoundedRectangle(cornerRadius: 3))
+        }
+        .buttonStyle(.plain)
+        .onHover { hovering = $0 }
+        .help("실행: \(quick.command)")
     }
 }
 

@@ -211,8 +211,23 @@ struct RootView: View {
                     onConfigureDelivery: {
                         appModel.deliverySheetTargetWorkspaceId = appModel.selectedWorkspaceId
                         appModel.showDeliverySheet = true
-                    }
+                    },
+                    workspaceFileTree: appModel.workspaceFileTree,
+                    selectedFilePath: appModel.selectedFilePath,
+                    selectedFileContents: appModel.selectedFileContents,
+                    isEditingFile: appModel.isEditingWorkspaceFile,
+                    fileDraft: $bindable.workspaceFileDraft,
+                    isFileDirty: appModel.isWorkspaceFileDirty,
+                    onSelectFile: { path in Task { await appModel.selectWorkspaceFile(path) } },
+                    onStartEditingFile: { appModel.startEditingWorkspaceFile() },
+                    onSaveFile: { Task { await appModel.saveWorkspaceFile() } },
+                    onDiscardFileEdits: { appModel.discardWorkspaceFileEdits() },
+                    onRefreshFileTree: { Task { await appModel.refreshWorkspaceFileTree() } },
+                    onOpenFileInExternalEditor: { path in appModel.openFileInExternalEditor(path) }
                 )
+                .task(id: appModel.selectedWorkspaceId) {
+                    await appModel.refreshWorkspaceFileTree()
+                }
                 .transition(.move(edge: .trailing).combined(with: .opacity))
             }
         }
@@ -618,10 +633,17 @@ struct ChatPane: View {
     }
 
     private func commandRunnerSection(path: String) -> some View {
-        CommandRunnerPane(
+        let cfg = appModel.currentWorkspace?.deliveryConfig ?? .disabled
+        let quick = QuickCommand.defaults(
+            test: cfg.testCommand,
+            build: cfg.buildCommand,
+            lint: cfg.lintCommand
+        )
+        return CommandRunnerPane(
             workingDirectory: path,
             blocks: appModel.commandBlocks,
             isRunning: appModel.isCommandRunning,
+            quickCommands: quick,
             onRun: { cmd in Task { await appModel.runCommand(cmd) } },
             onClear: { appModel.clearCommandBlocks() },
             onClose: { appModel.showCommandRunnerPane = false }

@@ -110,6 +110,17 @@ public final class AppModel {
     public var isCommandRunning: Bool = false
     private let commandRunner = CommandRunner()
 
+    // Workspace Files (ADR-037 D1+D2)
+    public var workspaceFileTree: [FileNode] = []
+    public var selectedFilePath: String?
+    public var selectedFileContents: String?
+    public var isEditingWorkspaceFile: Bool = false
+    public var workspaceFileDraft: String = ""
+    public var isWorkspaceFileDirty: Bool {
+        isEditingWorkspaceFile && workspaceFileDraft != (selectedFileContents ?? "")
+    }
+    private var workspaceFileTreeActor: WorkspaceFileTree?
+
     // Delivery sheet (ADR-029 phase B)
     public var showDeliverySheet: Bool = false
     public var deliverySheetTargetWorkspaceId: UUID?
@@ -1140,6 +1151,68 @@ public final class AppModel {
         } catch {
             self.error = "일부 변경 원복 실패: \(error.localizedDescription)"
         }
+    }
+
+    /// Workspace 파일 트리 새로고침 (ADR-037 D1+D2).
+    public func refreshWorkspaceFileTree() async {
+        guard let workspace = currentWorkspace else {
+            workspaceFileTree = []
+            return
+        }
+        let actor: WorkspaceFileTree
+        if let existing = workspaceFileTreeActor, existing.rootURL.path == workspace.directoryPath {
+            actor = existing
+        } else {
+            actor = WorkspaceFileTree(rootURL: URL(fileURLWithPath: workspace.directoryPath))
+            workspaceFileTreeActor = actor
+        }
+        do {
+            workspaceFileTree = try await actor.tree()
+        } catch {
+            self.error = "파일 트리 로드 실패: \(error.localizedDescription)"
+        }
+    }
+
+    /// Workspace 파일 선택 — 본문 read.
+    public func selectWorkspaceFile(_ relativePath: String) async {
+        guard let actor = workspaceFileTreeActor else { return }
+        // 편집 중이면 dirty check
+        if isEditingWorkspaceFile && isWorkspaceFileDirty {
+            // 단순화 — 사용자가 명시 저장/취소 안 했으면 reload 거부
+            self.error = "저장 안 된 변경이 있어요. 저장 또는 취소 후 다른 파일을 여세요."
+            return
+        }
+        do {
+            let contents = try await actor.read(relativePath)
+            selectedFilePath = relativePath
+            selectedFileContents = contents
+            workspaceFileDraft = contents
+            isEditingWorkspaceFile = false
+        } catch {
+            self.error = error.localizedDescription
+        }
+    }
+
+    public func startEditingWorkspaceFile() {
+        guard selectedFileContents != nil else { return }
+        workspaceFileDraft = selectedFileContents ?? ""
+        isEditingWorkspaceFile = true
+    }
+
+    public func saveWorkspaceFile() async {
+        guard let path = selectedFilePath, let actor = workspaceFileTreeActor else { return }
+        do {
+            try await actor.write(path, contents: workspaceFileDraft)
+            selectedFileContents = workspaceFileDraft
+            isEditingWorkspaceFile = false
+        } catch {
+            self.error = "파일 저장 실패: \(error.localizedDescription)"
+        }
+    }
+
+    public func discardWorkspaceFileEdits() {
+        workspaceFileDraft = selectedFileContents ?? ""
+        isEditingWorkspaceFile = false
     }
 
     /// Command Runner — workspace dir에서 명령 실행 + block 누적 (ADR-036 C4).

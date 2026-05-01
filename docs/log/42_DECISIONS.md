@@ -1,6 +1,67 @@
 # Decisions Log (ADR-lite)
 
-> 최신: ADR-036 (v0.5 R3 — Dev server ping + Editable diff inline + CommandRunner block + chain hint)
+> 최신: ADR-037 (v0.8 R1 — IDE-like 파일 뷰어/편집기 + Quick command)
+
+---
+
+## ADR-037 — v0.8 R1: 워크스페이스 파일 트리 + 뷰어/편집기 + Quick command 버튼
+
+- **날짜**: 2026-05-02
+- **상태**: Accepted
+- **결정**: 사용자 요청 IDE-like 기능을 단순화 패턴으로 — 워크스페이스 파일 트리 + viewer/editor (Inspector "파일" 탭) + CommandRunnerPane에 quick command 버튼
+- **컨텍스트**:
+  - 사용자 — "0.8 진행해주고 터미널 실행 기능, ide처럼 코드 뷰어 및 편집 기능도 추가해 줘"
+  - 터미널: 이미 SwiftTerm + CommandRunnerPane 있음 → 강화 (quick command + history 유지)
+  - IDE-like: 파일 트리 + 뷰어/편집기 (단순화: 1-file, no syntax highlight)
+- **각 결정**:
+  1. **D1+D2 IDE-like (단순화)**: VSCode-class 풀 IDE는 cost prohibitive. 단순화 — 트리 + 1-file viewer/editor, Inspector 탭. Obsidian Vault NoteTreeView/MarkdownViewer 패턴 차용
+  2. **D3 Multi-tab 보류**: tab state + dirty tracking 큰 작업. 현재 디자인 (편집 중이면 다른 파일 reject)이 안전하고 단순
+  3. **D4 Syntax highlight 보류**: SwiftUI native code editor 부재. NSViewRepresentable wrap이 가능하지만 (Highlightr 등) 외부 의존성 추가 + 유지보수 비용. raw mono로 시작, v0.9+ 라이브러리 발견 시
+  4. **D5 Command history**: 이미 메모리 max 50 — 충분 (single session 내). SwiftData 영속은 cost 작지만 user value 모호 → v0.9
+  5. **D6 Quick command**: workspace.deliveryConfig 활용 + git 기본 명령. 사용자 정의는 v0.9
+- **단순화 ROI 분석**:
+  - VSCode IDE: 가치 100, 비용 50인일 (LSP + multi-tab + syntax + folding + ...)
+  - **단순 트리+뷰어**: 가치 70 (read/edit), 비용 0.5인일 — ROI 압도적
+- **WorkspaceFileTree 설계 결정**:
+  - actor (Vault 패턴 동일)
+  - 자동 제외 list — gitignore parsing은 큰 작업 vs 알려진 폴더 hardcode가 80% 케이스 cover
+  - max depth 6 — 무한 재귀 방지 (typical project 깊이)
+  - file size 1MB limit — UI 무거움 회피
+  - binary 자동 감지 — viewer/editor에 안 좋은 파일 hide
+- **편집 안전 결정**:
+  - dirty 상태에서 다른 파일 선택 reject (data loss 방지)
+  - 자동 prompt save dialog는 추가 UI 비용 → v0.9
+  - 사용자가 "저장 또는 취소" 명시적 액션 필요
+- **격리**:
+  - WorkspaceFileTree는 Core (UI 의존 X)
+  - FilesPanel은 UI (FileNode 의존)
+  - QuickCommand는 UI (private 단순 struct)
+  - AppModel은 file state owner (single source of truth)
+- **결과**:
+  - 신규 파일 2개: WorkspaceFileTree.swift / FilesPanel.swift
+  - InspectorTab .files 추가 (4 탭)
+  - InspectorPanel +14 params (file tree state + callbacks)
+  - AppModel +6 file state + 5 file methods
+  - CommandRunnerPane +QuickCommand + quickCommandRow + Chip view
+  - RootView InspectorPanel 호출 + workspace 변경 .task hook
+  - 7 신규 테스트 (WorkspaceFileTree)
+  - build 5.9s, test 216/216 (209→216, +7)
+- **알려진 한계 / v0.9+**:
+  - Multi-tab 편집 (현재 1 file)
+  - Syntax highlight (Highlightr 등 외부 의존성 평가)
+  - File rename / new file / delete UX (현재는 외부 IDE 사용)
+  - File search (Cmd+P)
+  - Command history 영속 (SwiftData)
+  - Quick command 사용자 정의
+- **재검토**:
+  - 사용자 inline 편집 사용 빈도 vs 외부 IDE
+  - syntax highlight 진짜 필요한지 (raw mono로 충분?)
+  - Multi-tab 필요성 (1 file이 충분한지)
+  - Quick command 사용자 정의 요구 빈도
+
+---
+
+## ADR-036 — v0.5 R3: Live ping + Editable diff (inline) + Terminal block (별개 pane) + chain hint 강화
 
 ---
 

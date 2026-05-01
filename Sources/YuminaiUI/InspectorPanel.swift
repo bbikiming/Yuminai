@@ -48,6 +48,20 @@ public struct InspectorPanel: View {
     public let onDiscardEdits: () -> Void
     public let onReloadNote: () -> Void
 
+    // Files panel (ADR-037 D1+D2)
+    public let workspaceFileTree: [FileNode]
+    public let selectedFilePath: String?
+    public let selectedFileContents: String?
+    public let isEditingFile: Bool
+    @Binding public var fileDraft: String
+    public let isFileDirty: Bool
+    public let onSelectFile: (String) -> Void
+    public let onStartEditingFile: () -> Void
+    public let onSaveFile: () -> Void
+    public let onDiscardFileEdits: () -> Void
+    public let onRefreshFileTree: () -> Void
+    public let onOpenFileInExternalEditor: (String) -> Void
+
     // Diff review (ADR-027 phase A3)
     public let pendingChanges: [ChangedFile]
     public let pendingDiff: String
@@ -116,7 +130,19 @@ public struct InspectorPanel: View {
         onRunTest: @escaping () -> Void = {},
         onRunLint: @escaping () -> Void = {},
         onClearDelivery: @escaping () -> Void = {},
-        onConfigureDelivery: @escaping () -> Void = {}
+        onConfigureDelivery: @escaping () -> Void = {},
+        workspaceFileTree: [FileNode] = [],
+        selectedFilePath: String? = nil,
+        selectedFileContents: String? = nil,
+        isEditingFile: Bool = false,
+        fileDraft: Binding<String> = .constant(""),
+        isFileDirty: Bool = false,
+        onSelectFile: @escaping (String) -> Void = { _ in },
+        onStartEditingFile: @escaping () -> Void = {},
+        onSaveFile: @escaping () -> Void = {},
+        onDiscardFileEdits: @escaping () -> Void = {},
+        onRefreshFileTree: @escaping () -> Void = {},
+        onOpenFileInExternalEditor: @escaping (String) -> Void = { _ in }
     ) {
         self._tab = tab
         self.usage = usage
@@ -166,6 +192,18 @@ public struct InspectorPanel: View {
         self.onRunLint = onRunLint
         self.onClearDelivery = onClearDelivery
         self.onConfigureDelivery = onConfigureDelivery
+        self.workspaceFileTree = workspaceFileTree
+        self.selectedFilePath = selectedFilePath
+        self.selectedFileContents = selectedFileContents
+        self.isEditingFile = isEditingFile
+        self._fileDraft = fileDraft
+        self.isFileDirty = isFileDirty
+        self.onSelectFile = onSelectFile
+        self.onStartEditingFile = onStartEditingFile
+        self.onSaveFile = onSaveFile
+        self.onDiscardFileEdits = onDiscardFileEdits
+        self.onRefreshFileTree = onRefreshFileTree
+        self.onOpenFileInExternalEditor = onOpenFileInExternalEditor
     }
 
     public var body: some View {
@@ -229,6 +267,22 @@ public struct InspectorPanel: View {
             .frame(maxWidth: .infinity, maxHeight: .infinity)
         case .notes:
             notesContent
+        case .files:
+            FilesPanel(
+                tree: workspaceFileTree,
+                selectedPath: selectedFilePath,
+                fileContents: selectedFileContents,
+                isEditing: isEditingFile,
+                draft: $fileDraft,
+                isDirty: isFileDirty,
+                onSelect: onSelectFile,
+                onStartEditing: onStartEditingFile,
+                onSave: onSaveFile,
+                onDiscardEdits: onDiscardFileEdits,
+                onRefreshTree: onRefreshFileTree,
+                onOpenInExternalEditor: onOpenFileInExternalEditor
+            )
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
         case .changes:
             VSplitView {
                 DiffReviewView(
@@ -544,12 +598,13 @@ public struct InspectorPanel: View {
 }
 
 public enum InspectorTab: String, CaseIterable, Sendable, Equatable {
-    case context, notes, changes
+    case context, notes, files, changes
 
     public var label: String {
         switch self {
         case .context: return "컨텍스트"
         case .notes: return "노트"
+        case .files: return "파일"
         case .changes: return "변경"
         }
     }
@@ -558,6 +613,7 @@ public enum InspectorTab: String, CaseIterable, Sendable, Equatable {
         switch self {
         case .context: return "info.circle"
         case .notes: return "doc.text"
+        case .files: return "folder"
         case .changes: return "arrow.triangle.2.circlepath"
         }
     }

@@ -4,6 +4,79 @@
 
 ## [Unreleased] — 2026-05-02
 
+### Added — v0.8 R1: IDE-like 파일 뷰어/편집기 + Quick command 버튼 (ADR-037)
+
+사용자: "0.8 진행해주고 터미널 실행 기능, ide처럼 코드 뷰어 및 편집 기능도 추가해 줘"
+
+UX 평가 후 4/8 진행 (D1+D2+D5+D6), 4 보류 명시:
+✅ D1+D2 워크스페이스 파일 트리 + viewer/editor (Inspector "파일" 탭) /
+   D5 Command history (메모리 max 50 유지) / D6 Quick command 버튼
+⏸ D3 Multi-tab 파일 편집 — 1 file at a time 단순화 / D4 Syntax highlight — SwiftUI 라이브러리 부재
+⏸ ACP Spike / 진짜 Warp PTY-aware block — 매우 큼
+
+**D1+D2. IDE-like 파일 뷰어/편집기**:
+- `Sources/YuminaiCore/WorkspaceFileTree.swift` (신규)
+  - actor — 워크스페이스 디렉토리 트리 + read/write
+  - 자동 제외: `.git`/`node_modules`/`.build`/`__pycache__`/`DerivedData` 등 (15+)
+  - binary 자동 감지: `png`/`zip`/`exe`/`pdf` 등 (20+)
+  - hidden 자동 제외 (`.env`/`.gitignore`만 예외)
+  - max depth 6, file size 1MB limit
+  - `FileNode { folder | file(ext, size, isBinary) }` Sendable
+  - `FileTreeError` Korean
+- `Sources/YuminaiUI/FilesPanel.swift` (신규)
+  - 좌측 트리 (재귀 ScrollView) + 우측 viewer/editor (VSplitView)
+  - 트리: 폴더 chevron expand/collapse, depth 0-1 자동 펼침
+  - 파일 icon: swift/md/json/ts/py/yaml/sh 등 SF Symbol 매핑
+  - 파일 클릭 → 본문 read + viewer 표시
+  - "편집" 버튼 → inline TextEditor (raw mono, syntax highlight X)
+  - ⌘S 저장, dirty dot indicator
+  - "외부 IDE에서 열기" 버튼 (system default — Xcode/VSCode/etc)
+  - binary 파일은 viewer 자동 비활성 + "외부에서 열기" 안내
+  - HelpHint
+- `InspectorTab.files` 추가 (4번째 탭)
+- `AppModel`:
+  - `workspaceFileTree: [FileNode]` published state
+  - `selectedFilePath / selectedFileContents / isEditingWorkspaceFile / workspaceFileDraft / isWorkspaceFileDirty`
+  - `refreshWorkspaceFileTree() / selectWorkspaceFile / startEditingWorkspaceFile / saveWorkspaceFile / discardWorkspaceFileEdits`
+  - `WorkspaceFileTree` actor cache (workspace 변경 시 자동 재생성)
+  - 편집 중 dirty 상태에서 다른 파일 선택은 reject (UX 안전)
+- RootView: workspace 변경 시 `.task(id:)`로 자동 tree refresh
+
+**D5. Command history (메모리)**:
+- 기존 `commandBlocks` 이미 max 50 누적 — 변경 없음
+- 향후 (v0.9+): SwiftData 영속화 검토 (workspace 단위)
+
+**D6. Quick command 버튼**:
+- `QuickCommand` Sendable struct (label/command/icon)
+- `QuickCommand.defaults(test:build:lint:)` static — workspace.deliveryConfig 기반 자동
+- 추가 default: `git status` / `git diff` / `git log -5`
+- `CommandRunnerPane`에 quickCommandRow 추가 — horizontal scroll chips
+- 클릭 → onRun (입력 없이 즉시 실행)
+- `QuickCommandChip` view — accent icon + label + hover bg
+
+**테스트 7 신규** (WorkspaceFileTree):
+- excludedFolders/binaryExtensions 검증
+- FileNode flags
+- 실제 디렉토리 + .git 제외
+- read 정상/너무 큼 reject
+- write round-trip
+
+**검증**: build 5.9s, test 216/216 (209→216, +7 신규)
+
+알려진 한계:
+- Multi-tab X (1 file at a time)
+- Syntax highlight X (SwiftUI 라이브러리 부재 — code editor lib 발견 시 v0.9+)
+- 편집 중 다른 파일 선택은 reject (안전 우선) — auto-prompt save dialog는 v0.9
+- File search X (Cmd+P style) — v0.9
+- File rename / new file / delete UX X — 외부 IDE 사용 권고 (v0.9 검토)
+- Command history 영속 X (워크스페이스 단위 SwiftData는 v0.9)
+- Quick command 사용자 정의 X — workspace.deliveryConfig + git 기본만 (v0.9)
+
+**보류 (cost 너무 큼)**:
+- ACP Spike (2-3일 별도)
+- 진짜 Warp PTY-aware block UX (SwiftTerm wrap 큰 작업)
+- 진짜 IDE syntax highlight (Swift Code Editor 라이브러리 등장 시)
+
 ### Added — v0.5 R3: Dev server live ping + Editable diff + CommandRunner block UX + chain hint (ADR-036)
 
 사용자: "v0.7+ 권고 항목들도 구현 진행"
