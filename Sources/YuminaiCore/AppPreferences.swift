@@ -72,7 +72,17 @@ public struct AppPreferences: Sendable, Codable, Hashable {
     }
 
     /// cokacdir bot_settings.json 기본 경로.
+    /// cokacdir v0.4.x는 `~/.cokacdir/bot_settings.json`에 저장. 폴백으로 workspace/ 하위도 확인.
     public static func defaultCokacdirBotSettingsPath() -> String {
-        NSString(string: "~/.cokacdir/workspace/bot_settings.json").expandingTildeInPath
+        let home = NSString(string: "~").expandingTildeInPath
+        let candidates = [
+            "\(home)/.cokacdir/bot_settings.json",
+            "\(home)/.cokacdir/workspace/bot_settings.json"
+        ]
+        let fm = FileManager.default
+        for path in candidates where fm.fileExists(atPath: path) {
+            return path
+        }
+        return candidates[0]
     }
 }
