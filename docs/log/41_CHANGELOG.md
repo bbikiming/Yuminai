@@ -4,6 +4,60 @@
 
 ## [Unreleased] — 2026-05-02
 
+### Added — v0.4 Phase F: GUI 사용성 polish (위임 버튼 + 더블클릭 rename + 가이드) (ADR-033)
+
+사용자: "사용해 볼 시나리오 항목들을 명령어보다는 gui를 통해 버튼으로 사용성을 쉽게 구현해 주고 후속 작업도 검토해서 진행해"
+
+**평가** (이번 라운드):
+| 항목 | 결정 |
+|------|------|
+| GUI 위임 버튼 (Composer footer) | ✅ |
+| Tab 더블클릭 rename | ✅ |
+| Toolbar 가이드 버튼 (questionmark) | ✅ |
+| 빈 워크스페이스 onboarding 강화 | ✅ |
+| ShortcutHelpSheet에 GUI 시나리오 카드 | ✅ |
+| pane→pane 자동 답장 (안전 토글) | ⏸ 보류 (안전 우선) |
+
+**G1. Composer 위임 버튼**:
+- Composer footer에 ↪ 화살표 아이콘 (`arrowshape.turn.up.right`) Menu
+- mentionSuggestions 비어있지 않으면 표시
+- 클릭 → 사용 가능한 pane 리스트 (★ primary 표시 + agent kind label)
+- 선택 → 현재 text 앞에 `@<handle>` prepend (또는 빈 text면 mention만)
+- 사용성: `@` 키보드 입력 외에 명시적 GUI 진입점
+
+**G2. Tab 더블클릭 rename + Toolbar 가이드 버튼**:
+- PaneTabBar PaneTabButton에 `simultaneousGesture(TapGesture(count: 2))` → onRename 호출
+- tooltip: "더블클릭으로 이름 변경, 우클릭 메뉴"
+- ChatToolbar에 ⌘D 옆 `questionmark.circle` IconButton 추가 → ShortcutHelpSheet 호출
+- 단축키 ⌘/ 외에 클릭으로도 가능
+
+**G3. Onboarding hint + ShortcutHelpSheet 시나리오 카드**:
+- EmptyWorkspaceView에 "도움말" secondary 버튼 추가 (`+ 새 워크스페이스` 옆)
+- quick tip 4개로 확장 (split / 위임 / terminal+inspector / 텔레그램+delivery)
+- ShortcutHelpSheet 상단에 새 섹션 "주요 시나리오 — GUI에서 어디?"
+  - 8 카드: Codex pane 추가 / split / 위임 / rename / 텔레그램 / delivery / diff review / terminal
+  - 각 카드: icon + title + howTo 한 줄 (단축키만 X, GUI 위치 안내)
+- ShortcutHelpSheet 크기 520×560 → 560×640 (시나리오 카드 수용)
+- 헤더 라벨 "단축키" → "도움말"
+
+**F1. pane→pane 자동 답장 — 명시 보류**:
+- 평가 결과: 가치 보통, 무한 루프 위험, 사용자 control 약화, 복잡도 보통
+- **결정**: v0.5 이후로 보류. 현재는 사용자 명시 mention만 (안전 우선)
+- ADR-033에 사유 명시 (다음 라운드 검토 트리거: 사용자가 "agent끼리 자동 답장 원함" 명시)
+
+**검증**: build 2.8s, test 184/184 (변경 없음 — UI 추가만)
+
+알려진 한계:
+- 위임 버튼은 mentionSuggestions이 있어야 표시 (panes 1개일 땐 mentionSuggestions가 자기 자신 후보만이라 의미 X)
+- 더블클릭 rename은 단일 클릭(select)와 simultaneousGesture라 가끔 충돌 가능 (실측 후 조정)
+- 가이드 시나리오 카드는 정적 텍스트 — 인터랙티브 튜토리얼 X (v0.5)
+
+**보류 명시**:
+- pane→pane 자동 답장 (안전)
+- Mention picker 중간 위치 (가치 < 비용)
+- Codex JSONL 실측 정밀화 (사용 데이터 필요)
+- ACP Spike / Dual-Composer / Editable diff / T5/T6/T8 (이전 ADR-032와 동일)
+
 ### Added — v0.4 Phase E: Mention picker + Source label + Pane rename + Split layout (ADR-032)
 
 사용자: "나머지 라운드도 이어서 진행해 줘" — 보류 항목 (T4-T8 + v0.5) 평가 후 가치/비용 매트릭스로 4개 진행, 6개 명시 보류.

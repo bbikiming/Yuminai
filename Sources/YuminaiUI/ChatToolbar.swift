@@ -20,6 +20,7 @@ public struct ChatToolbar: View {
     public let onToggleInspector: () -> Void
     public let onToggleTerminal: () -> Void
     public let onShowDashboard: () -> Void
+    public let onShowShortcutHelp: () -> Void
     public let onSelectWorkspace: (UUID) -> Void
     public let onCreateWorkspace: () -> Void
     public let onSelectAgent: (AgentKind) -> Void
@@ -40,6 +41,7 @@ public struct ChatToolbar: View {
         onToggleInspector: @escaping () -> Void,
         onToggleTerminal: @escaping () -> Void = {},
         onShowDashboard: @escaping () -> Void,
+        onShowShortcutHelp: @escaping () -> Void = {},
         onSelectWorkspace: @escaping (UUID) -> Void = { _ in },
         onCreateWorkspace: @escaping () -> Void = {},
         onSelectAgent: @escaping (AgentKind) -> Void = { _ in }
@@ -59,6 +61,7 @@ public struct ChatToolbar: View {
         self.onToggleInspector = onToggleInspector
         self.onToggleTerminal = onToggleTerminal
         self.onShowDashboard = onShowDashboard
+        self.onShowShortcutHelp = onShowShortcutHelp
         self.onSelectWorkspace = onSelectWorkspace
         self.onCreateWorkspace = onCreateWorkspace
         self.onSelectAgent = onSelectAgent
@@ -102,6 +105,8 @@ public struct ChatToolbar: View {
 
             IconButton("chart.bar", help: "사용량 대시보드 (⌘D)", action: onShowDashboard)
                 .keyboardShortcut("d", modifiers: .command)
+
+            IconButton("questionmark.circle", help: "단축키 + 사용 가이드 (⌘/)", action: onShowShortcutHelp)
 
             inspectorToggle
         }

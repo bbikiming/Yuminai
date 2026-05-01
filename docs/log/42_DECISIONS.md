@@ -1,6 +1,49 @@
 # Decisions Log (ADR-lite)
 
-> 최신: ADR-032 (v0.4 Phase E — Mention picker + Source label + Rename + Split)
+> 최신: ADR-033 (v0.4 Phase F — GUI 사용성 polish + F1 안전 보류)
+
+---
+
+## ADR-033 — v0.4 Phase F: GUI 사용성 polish (위임 버튼 + 더블클릭 rename + 가이드 카드) + pane→pane 자동 답장 명시 보류
+
+- **날짜**: 2026-05-02
+- **상태**: Accepted
+- **결정**: 시나리오 항목들을 GUI 버튼으로 노출 (G1: Composer 위임 / G2: 더블클릭 rename + Toolbar 가이드 / G3: 시나리오 카드). pane→pane 자동 답장 (F1)은 안전 우선으로 명시 보류
+- **컨텍스트**:
+  - 사용자 — "사용해 볼 시나리오 항목들을 명령어보다는 gui를 통해 버튼으로 사용성을 쉽게 구현해 주고 후속 작업도 검토해서 진행"
+  - ADR-031/032에서 만든 mention/rename/split 등 기능이 키보드/우클릭 의존 → 발견성 약함
+  - 새 사용자가 첫 진입 시 "어디에 뭐 있는지" 모름
+- **각 결정**:
+  1. **Composer 위임 버튼** — `@` 키보드 의존 X, 명시적 GUI 진입점. menu에 모든 mention 후보 표시, 클릭 시 text 앞에 prepend
+  2. **Tab 더블클릭 rename** — 우클릭 메뉴 발견 어려움. `simultaneousGesture(TapGesture(count: 2))`로 단일 클릭(select)과 공존
+  3. **Toolbar 가이드 버튼** — ⌘/ 단축키 외에 명시 진입점 (`questionmark.circle`)
+  4. **ShortcutHelpSheet 시나리오 카드** — 단축키 표만 보여주는 게 아니라 "이 기능 GUI에서 어디?" 8개 카드 (icon + title + howTo)
+  5. **EmptyWorkspaceView 강화** — "도움말" 버튼 + quick tip 4개 (split / 위임 / terminal+inspector / 텔레그램+delivery)
+  6. **F1 보류** — pane→pane 자동 답장은 v0.5 이후. 사유: 무한 루프 위험, 복잡도, 사용자 control 약화
+- **F1 보류 사유 (자세히)**:
+  - 가치: agent끼리 자동 협업하면 진정한 multi-agent — 매력적
+  - 비용: chain hop counter, 같은 pane 재방문 감지, max hops 정책, UI에 chain visualization, 사용자 cancel 메커니즘
+  - 위험: 무한 루프 (max hops로 mitigation 가능하지만 디버깅 어려움)
+  - 사용자 control: agent가 사용자 모르게 다른 agent 호출 → 비용/안전 issue
+  - 결론: v0.5에서 진행 — 사용자 명시 토글 + max 1 hop default + UI에서 chain 표시
+- **격리**: 모든 변경은 UI 모듈만 (Composer / PaneTabBar / ChatToolbar / ShortcutHelpSheet) + AppModel state X (renameSheet은 ADR-032에서 이미 추가). 도메인 변경 없음
+- **결과**:
+  - Composer +1 메뉴 (delegateMenu)
+  - PaneTabBar +simultaneousGesture (rename)
+  - ChatToolbar +1 IconButton (도움말)
+  - ShortcutHelpSheet +scenariosSection (8 카드, ScenarioEntry struct)
+  - EmptyWorkspaceView quick tip 3→4 + 도움말 버튼
+  - build 2.8s, test 184/184 (UI 추가만이라 신규 테스트 없음)
+- **알려진 한계**:
+  - 위임 버튼은 panes가 1개뿐일 때 (mentionSuggestions가 자기 자신만이면) 의미 약함 — 표시는 됨
+  - 더블클릭 + 단일 클릭 시 macOS gesture 처리에 따라 가끔 race — 실측 후 조정
+  - 가이드 카드는 정적 텍스트 (인터랙티브 튜토리얼 X)
+  - F1 보류 — agent 협업의 자동화는 v0.5
+- **재검토**: 사용자 사용 후 feedback — "위임 버튼 자주 쓰는지" / "더블클릭 충돌 있는지" / "F1 진짜 원하는지"
+
+---
+
+## ADR-032 — v0.4 Phase E: UX polish 4종 + Split layout
 
 ---
 

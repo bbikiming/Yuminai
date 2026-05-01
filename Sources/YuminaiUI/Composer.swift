@@ -257,6 +257,10 @@ public struct Composer: View {
                 )
             }
 
+            if !mentionSuggestions.isEmpty {
+                delegateMenu
+            }
+
             if isStreaming {
                 HStack(spacing: 4) {
                     PulseDot(color: Theme.Color.liveDot, size: 6)
@@ -287,6 +291,46 @@ public struct Composer: View {
             permissionMode: permissionMode,
             effortLevel: effortLevel
         ))
+    }
+
+    /// Composer footer "위임" 버튼 — mention picker의 GUI 등가물.
+    /// 사용자가 `@` 기억 안 해도 클릭으로 다른 pane 선택 가능.
+    private var delegateMenu: some View {
+        Menu {
+            Section("다른 pane에 위임") {
+                ForEach(mentionSuggestions) { sug in
+                    Button {
+                        // 현재 text 앞에 mention prepend (또는 빈 text면 mention만)
+                        let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+                        if trimmed.isEmpty {
+                            text = "@\(sug.handle) "
+                        } else if !trimmed.hasPrefix("@") {
+                            text = "@\(sug.handle) " + text
+                        } else {
+                            text = "@\(sug.handle) " + trimmed
+                        }
+                    } label: {
+                        HStack {
+                            if sug.isPrimary {
+                                Image(systemName: "star.fill")
+                            }
+                            Text("@\(sug.handle)  ·  \(sug.displayName)")
+                            Text(sug.agentKindLabel).font(.caption2)
+                        }
+                    }
+                }
+            }
+        } label: {
+            Image(systemName: "arrowshape.turn.up.right")
+                .font(.system(size: 13, weight: .medium))
+                .foregroundStyle(Theme.Color.textSecondary)
+                .frame(width: 24, height: 24)
+                .contentShape(Rectangle())
+        }
+        .menuStyle(.borderlessButton)
+        .menuIndicator(.hidden)
+        .fixedSize()
+        .help("다른 pane으로 메시지 위임 (`@` 멘션과 동일)")
     }
 }
 

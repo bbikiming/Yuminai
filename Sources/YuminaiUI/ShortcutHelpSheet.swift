@@ -14,6 +14,7 @@ public struct ShortcutHelpSheet: View {
             FlatHDivider()
             ScrollView {
                 VStack(alignment: .leading, spacing: Theme.Spacing.xl) {
+                    scenariosSection
                     ForEach(Self.categories) { cat in
                         categorySection(cat)
                     }
@@ -21,13 +22,13 @@ public struct ShortcutHelpSheet: View {
                 .padding(Theme.Spacing.lg)
             }
         }
-        .frame(width: 520, height: 560)
+        .frame(width: 560, height: 640)
         .background(Theme.Color.bg)
     }
 
     private var header: some View {
         HStack {
-            Text("단축키")
+            Text("도움말")
                 .font(Theme.Typography.title)
                 .foregroundStyle(Theme.Color.text)
             Spacer()
@@ -36,6 +37,95 @@ public struct ShortcutHelpSheet: View {
         }
         .padding(Theme.Spacing.lg)
     }
+
+    @ViewBuilder
+    private var scenariosSection: some View {
+        VStack(alignment: .leading, spacing: Theme.Spacing.sm) {
+            Text("주요 시나리오 — GUI에서 어디?")
+                .font(Theme.Typography.label)
+                .foregroundStyle(Theme.Color.textSecondary)
+                .textCase(.uppercase)
+                .tracking(0.6)
+
+            VStack(spacing: Theme.Spacing.sm) {
+                ForEach(Self.scenarios) { scenario in
+                    scenarioRow(scenario)
+                }
+            }
+        }
+    }
+
+    private func scenarioRow(_ scenario: ScenarioEntry) -> some View {
+        HStack(alignment: .top, spacing: 10) {
+            Image(systemName: scenario.icon)
+                .font(.system(size: 13, weight: .medium))
+                .foregroundStyle(Theme.Color.accent)
+                .frame(width: 22, height: 22)
+                .background(Theme.Color.accentMuted)
+                .clipShape(RoundedRectangle(cornerRadius: 5))
+                .padding(.top, 2)
+            VStack(alignment: .leading, spacing: 2) {
+                Text(scenario.title)
+                    .font(Theme.Typography.body.weight(.semibold))
+                    .foregroundStyle(Theme.Color.text)
+                Text(scenario.howTo)
+                    .font(Theme.Typography.small)
+                    .foregroundStyle(Theme.Color.textSecondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            Spacer()
+        }
+        .padding(Theme.Spacing.md)
+        .background(Theme.Color.surface)
+        .overlay(
+            RoundedRectangle(cornerRadius: Theme.Radius.md)
+                .stroke(Theme.Color.borderSubtle, lineWidth: 1)
+        )
+        .clipShape(RoundedRectangle(cornerRadius: Theme.Radius.md))
+    }
+
+    static let scenarios: [ScenarioEntry] = [
+        .init(
+            icon: "plus",
+            title: "Codex pane 추가",
+            howTo: "Chat 영역 위 탭바의 ‘+’ 버튼 → ‘Codex pane 추가’"
+        ),
+        .init(
+            icon: "rectangle.split.2x1",
+            title: "두 pane 동시에 보기",
+            howTo: "탭바 오른쪽의 split 아이콘 → ‘좌·우’ 또는 ‘위·아래’ 선택 (panes 2개+ 시 표시)"
+        ),
+        .init(
+            icon: "arrowshape.turn.up.right",
+            title: "다른 pane에 위임",
+            howTo: "Composer 우측 ‘위임’ 버튼 (↪ 화살표)에서 대상 pane 선택. 또는 입력창에 `@codex` 직접 타이핑"
+        ),
+        .init(
+            icon: "pencil",
+            title: "Pane 이름 바꾸기",
+            howTo: "탭 더블클릭 또는 우클릭 → ‘이름 바꾸기…’. 의미 있는 이름이 mention 후보로 자동 등장"
+        ),
+        .init(
+            icon: "paperplane",
+            title: "텔레그램으로 제어",
+            howTo: "사이드바에서 워크스페이스 우클릭 → ‘텔레그램에 연결’. 텔레그램 챗에서 `/help`로 명령어 확인"
+        ),
+        .init(
+            icon: "checkmark.shield",
+            title: "테스트 자동 실행 (Delivery)",
+            howTo: "사이드바 우클릭 → ‘Delivery 자동화 설정…’. 테스트 명령 입력 + ‘turn 완료 시 자동 실행’ 토글"
+        ),
+        .init(
+            icon: "arrow.triangle.2.circlepath",
+            title: "Agent가 만든 변경 검토",
+            howTo: "Inspector(⌘⌥I) → ‘변경’ 탭. 파일 row 선택 → diff 보기 → ‘적용’/‘원복’ 버튼"
+        ),
+        .init(
+            icon: "terminal",
+            title: "터미널 패널 열기",
+            howTo: "Toolbar 우상단 터미널 아이콘(⌘⌥T) → 워크스페이스 dir에서 자동 시작"
+        )
+    ]
 
     @ViewBuilder
     private func categorySection(_ cat: ShortcutCategory) -> some View {
@@ -105,4 +195,11 @@ public struct ShortcutEntry: Identifiable {
     public let id = UUID()
     public let label: String
     public let keys: [String]
+}
+
+public struct ScenarioEntry: Identifiable {
+    public let id = UUID()
+    public let icon: String
+    public let title: String
+    public let howTo: String
 }

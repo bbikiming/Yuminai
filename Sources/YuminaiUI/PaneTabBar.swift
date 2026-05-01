@@ -181,6 +181,9 @@ private struct PaneTabButton: View {
         }
         .buttonStyle(.plain)
         .onHover { hovering = $0 }
+        .simultaneousGesture(
+            TapGesture(count: 2).onEnded { onRename() }
+        )
         .contextMenu {
             Button("이름 바꾸기…", systemImage: "pencil", action: onRename)
             if pane.role != .primary {
@@ -191,6 +194,7 @@ private struct PaneTabButton: View {
                 Button("닫기", systemImage: "xmark", role: .destructive, action: onClose)
             }
         }
+        .help("\(pane.displayName) — 더블클릭으로 이름 변경, 우클릭 메뉴")
     }
 
     private var rowBg: SwiftUI.Color {

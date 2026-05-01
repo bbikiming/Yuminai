@@ -384,6 +384,7 @@ struct ChatPane: View {
                 onToggleInspector: onToggleInspector,
                 onToggleTerminal: { appModel.showTerminalPane.toggle() },
                 onShowDashboard: { appModel.showUsageDashboard = true },
+                onShowShortcutHelp: { appModel.showShortcutHelp = true },
                 onSelectWorkspace: { id in appModel.selectedWorkspaceId = id },
                 onCreateWorkspace: { appModel.showCreateWorkspaceSheet = true },
                 onSelectAgent: { kind in
@@ -604,22 +605,28 @@ struct EmptyWorkspaceView: View {
                     .font(Theme.Typography.body)
                     .foregroundStyle(Theme.Color.textSecondary)
             }
-            FlatButton("+ 새 워크스페이스 만들기", variant: .primary, size: .large) {
-                appModel.showCreateWorkspaceSheet = true
+            HStack(spacing: 8) {
+                FlatButton("+ 새 워크스페이스 만들기", variant: .primary, size: .large) {
+                    appModel.showCreateWorkspaceSheet = true
+                }
+                .keyboardShortcut("n", modifiers: .command)
+                FlatButton("도움말", variant: .secondary, size: .large) {
+                    appModel.showShortcutHelp = true
+                }
             }
-            .keyboardShortcut("n", modifiers: .command)
-            Text("⌘N")
+            Text("⌘N · ⌘/")
                 .font(Theme.Typography.micro)
                 .foregroundStyle(Theme.Color.textTertiary)
 
             // 시작 가이드 — 주요 단축키 / 기능 한 눈에
             VStack(alignment: .leading, spacing: 4) {
-                quickTipRow(icon: "command", text: "⌘1~9 워크스페이스 빠른 전환, ⌘/ 단축키 도움말")
-                quickTipRow(icon: "terminal", text: "⌘⌥T 터미널 패널, ⌘⌥I Inspector(컨텍스트·노트·변경)")
-                quickTipRow(icon: "paperplane", text: "Settings → 텔레그램에서 cokacdir 봇 가져오기 / 양방향 제어")
+                quickTipRow(icon: "rectangle.split.2x1", text: "탭바 ‘+’로 Codex pane 추가, split 아이콘으로 동시에 두 pane 보기")
+                quickTipRow(icon: "arrowshape.turn.up.right", text: "Composer 우측 ‘위임’ 버튼으로 다른 pane에 자동 라우팅")
+                quickTipRow(icon: "terminal", text: "⌘⌥T 터미널, ⌘⌥I Inspector(컨텍스트·노트·변경+Delivery)")
+                quickTipRow(icon: "paperplane", text: "사이드바 우클릭 → 텔레그램 연결 / Delivery 자동화 설정")
             }
             .padding(.top, Theme.Spacing.lg)
-            .frame(maxWidth: 460)
+            .frame(maxWidth: 480)
 
             Spacer()
         }
