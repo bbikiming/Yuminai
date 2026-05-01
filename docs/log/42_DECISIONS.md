@@ -68,17 +68,70 @@
 
 ## ADR-005 — Process Spawn은 PTY 필요 시 SwiftTerm 의존성 검토
 
+- **날짜**: 2026-05-01 (작성) / 2026-05-01 (Spike 종료)
+- **상태**: **Superseded by ADR-009** — PTY 불필요 확정
+- **결정 (당시)**: 일단 외부 의존성 없이 `Process` + `Pipe`로 시작. 작동 안 하면 SwiftTerm 또는 직접 `forkpty` 사용.
+- **W1 Spike 결과**: Claude CLI 2.1.101이 `-p --output-format stream-json --input-format stream-json` 조합으로 **TTY 없이 JSON 양방향 스트리밍을 1급 지원**. PTY/SwiftTerm/forkpty 모두 불필요.
+- **결과**: ADR-009로 대체. SwiftTerm 의존성 추가하지 않음. `Package.swift`의 검토 코멘트 정리 가능.
+
+---
+
+## ADR-009 — `-p` 모드 + JSON 양방향 스트리밍 채택
+
 - **날짜**: 2026-05-01
-- **상태**: Provisional (W1 Spike 후 확정)
-- **결정**: 일단 외부 의존성 없이 `Process` + `Pipe`로 시작. 작동 안 하면 SwiftTerm 또는 직접 `forkpty` 사용.
-- **컨텍스트**: Claude CLI가 TTY 요구 정도 미상
+- **상태**: Accepted
+- **결정**: Claude CLI는 항상 다음 인자 조합으로 호출한다:
+  ```
+  claude -p \
+    --input-format stream-json \
+    --output-format stream-json \
+    --include-partial-messages \
+    --include-hook-events \
+    --session-id <uuid> \
+    --settings <workspace harness settings.json> \
+    --mcp-config <workspace harness .mcp.json> \
+    --plugin-dir <workspace harness> \
+    --add-dir <workspace directory>
+  ```
+- **컨텍스트**: W1 Spike(`claude --help` 분석)에서 `stream-json`, `--session-id`, `--settings`, `--mcp-config`, `--agents`, `--plugin-dir`, `--add-dir` 모두 공식 옵션으로 제공됨을 확인 (claude 2.1.101)
 - **대안**:
-  - SwiftTerm 처음부터 도입 → 의존성 증가
-  - `forkpty` 직접 호출 → C API, 복잡
-  - Pipe로 시작 → 가장 간단, 작동 안 할 가능성
-- **근거**: 검증 후 결정이 합리적
-- **결과**: W1 Spike에서 결정 후 [`docs/log/41_CHANGELOG.md`](41_CHANGELOG.md) 업데이트
-- **재검토**: 2026-05-08 (W1 종료 시점)
+  - Interactive REPL + PTY → ANSI 파싱 필요, TTY 필요, 복잡
+  - `-p text` 모드 → 한 단계 단순하지만 도구 호출/부분 메시지를 잃음
+  - **`-p stream-json` (채택)** → JSON 1급, 모든 메타 정보 보존
+- **근거**:
+  - **PTY 불필요**: `-p` 모드는 TTY 무관 → ADR-005 불필요
+  - **ANSI 파싱 불필요**: JSON 메시지로 직접 받음
+  - **하네스 완벽 주입**: `.harness/settings.json`, `.harness/.mcp.json`, `.harness/agents/`가 CLI 인자로 전달
+  - **세션 영속을 Claude에 위임**: `--session-id` UUID만 SwiftData에 저장, 본문 관리는 Claude
+  - **부분 메시지 + Hook 이벤트** GUI 진행 표시에 필수
+- **결과**:
+  - `Sources/YuminaiClaudeAdapter/`의 `LiveClaudeAdapter`는 단순 `Process` + `Pipe`로 구현 가능
+  - `ClaudeEvent` enum은 W2에서 실제 stream-json 메시지 보고 정밀화
+  - `ANSIStreamParser` 모듈 불필요 → 삭제 결정. 대신 `JSONStreamParser` 작성
+  - `Package.swift`의 SwiftTerm 검토 코멘트 정리
+- **리스크**: stream-json 메시지 schema 변경 시 우리도 따라야 함 (R8 — Claude Code 자체 변경)
+- **재검토**: 다음 Claude Code 메이저 버전(3.0+) 출시 시점
+
+---
+
+## ADR-010 — 세션 영속을 Claude에 위임, SwiftData는 메타만
+
+- **날짜**: 2026-05-01
+- **상태**: Accepted (ADR-009 종속)
+- **결정**: 메시지 본문 영속은 Claude CLI의 `--session-id` 메커니즘에 위임. Yuminai SwiftData에는 다음만 저장:
+  1. `Workspace` 엔티티 (디렉토리, 이름, 하네스 템플릿)
+  2. `Session` 엔티티 (UUID, workspace ref, started/ended, title)
+  3. `Message` 엔티티 (UI 표시용 캐시 — Claude의 sole source of truth가 아니라 빠른 사이드바/검색용)
+  4. `ToolEvent` (선택, 분석용)
+- **컨텍스트**: Claude CLI가 자체적으로 세션 영속/재개 메커니즘 보유 (`-r`, `-c`, `--session-id`)
+- **대안**:
+  - SwiftData가 sole source of truth → Claude의 영속 메커니즘과 이중화, 일관성 어려움
+  - Claude만 영속 → Yuminai 사이드바/검색이 어려움
+  - **하이브리드 (채택)** → Claude는 컨텍스트 복원에 사용, SwiftData는 UI/검색에 사용
+- **결과**: `YuminaiPersistence`의 `Message` 모델은 cache 의미. truncate해도 다음 호출 시 Claude가 컨텍스트 유지함.
+- **재검토**: 메시지 검색 / 분석 요구 강해지면 SwiftData를 sole source로 승격
+
+---
 
 ---
 

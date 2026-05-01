@@ -4,6 +4,12 @@
 
 ## [Unreleased] — 2026-05-01
 
+### Discovered (W1 Spike, 2026-05-01)
+- Claude CLI 2.1.101이 `-p --input-format stream-json --output-format stream-json --include-partial-messages --include-hook-events` 로 JSON 양방향 스트리밍을 공식 지원 → **PTY 불필요, ANSI 파싱 불필요**
+- `--session-id <uuid>`, `-r/--resume`, `-c/--continue`로 멀티턴 세션 영속을 Claude가 자체 처리
+- `--settings`, `--mcp-config`, `--agents`, `--plugin-dir`, `--add-dir`로 워크스페이스 하네스 완벽 주입 가능
+- 결과: ADR-005 superseded → **ADR-009 채택** (`-p` + stream-json), **ADR-010 채택** (세션 영속 Claude 위임 + SwiftData 캐시)
+
 ### Added
 - 프로젝트 초기 스캐폴딩 (디렉토리 구조 + 하네스 골격)
 - PRD 문서 12개 (00~99)

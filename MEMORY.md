@@ -12,9 +12,10 @@
 
 ## 현재 단계
 
-- **단계**: PRE-MVP (기획 + 골격 스캐폴딩 완료)
+- **단계**: PRE-MVP (기획 + 골격 스캐폴딩 + W1 Spike 완료)
 - **다음 마일스톤**: MVP-0 (4개 모듈 동작 — `docs/prd/90_ROADMAP.md`)
 - **블로커**: Xcode App 타깃 수동 추가 필요 (`App/README.md`)
+- **W1 Spike 핵심 발견**: Claude CLI는 `-p --input-format stream-json --output-format stream-json` 으로 JSON 양방향. PTY 불필요. 자세히는 `docs/design/30_CLAUDE_ADAPTER.md`와 `docs/log/42_DECISIONS.md` ADR-009/010.
 
 ## 결정된 핵심
 

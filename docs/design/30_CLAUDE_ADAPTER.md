@@ -369,17 +369,89 @@ public final actor MockClaudeAdapter: ClaudeAdapter {
 
 ---
 
-## 알아야 할 것 — Claude CLI 실제 동작 (W1 Spike 결과로 채워짐)
+## W1 Spike 결과 (2026-05-01, claude 2.1.101)
 
-| 질문 | 답 (TBD) |
+`claude --help` 분석으로 큰 발견 — **JSON 양방향 스트리밍이 1급 지원**되어 PTY/ANSI 처리 불필요.
+
+| 질문 | 답 |
 |---|---|
-| `claude --version` 표준 출력 형식? | TBD |
-| `claude` 실행 시 어떻게 입력 받나? (REPL? 단발?) | TBD |
-| Stream JSON 모드 있는가? (`--json`?) | TBD |
-| 멀티턴 세션 ID 노출? (`--session-id`?) | TBD |
-| OAuth 토큰 위치? (`~/.claude/auth.json`?) | TBD |
-| Settings 디렉토리 환경변수? (`CLAUDE_CONFIG_DIR`?) | TBD |
-| Tool 호출 출력 포맷? | TBD |
-| `--no-color` 또는 stdin이 TTY 아닐 때 ANSI 자동 제거? | TBD |
+| `claude --version` 형식 | `2.1.101 (Claude Code)` (한 줄) |
+| 실행 모드 | 기본 = interactive REPL (TTY 필요), `-p/--print` = 단발/non-interactive (Pipe 가능) |
+| Stream JSON | **YES**. `--output-format stream-json` + `--input-format stream-json` + `--include-partial-messages` |
+| 멀티턴 세션 | `--session-id <uuid>`로 명시 지정, `-r/--resume <uuid>`로 재개, `-c/--continue`로 최근 자동 재개 |
+| 세션 영속 끄기 | `--no-session-persistence` |
+| OAuth/auth | `auth` 서브명령. `--bare` 모드는 `ANTHROPIC_API_KEY` 환경변수만 사용 (OAuth + keychain 차단) |
+| Settings 주입 | `--settings <file-or-json>`, `--setting-sources <user,project,local>` |
+| MCP 주입 | `--mcp-config <files...>` (JSON 파일/문자열), `--strict-mcp-config`로 다른 MCP 무시 |
+| Custom agents 주입 | `--agents <json>` |
+| Plugin dir 주입 | `--plugin-dir <path>` (반복 가능) |
+| 작업 디렉토리 추가 | `--add-dir <dirs...>` |
+| Hook 이벤트 노출 | `--include-hook-events` (stream-json 전용) |
+| Tool 출력 포맷 | stream-json 메시지 안에 구조화 (W2에서 실제 메시지로 검증) |
+| 권한 우회 | `--dangerously-skip-permissions` (우리는 사용 안 함, GUI에서 사용자 승인) |
+| Worktree 자동 생성 | `--worktree [name]` |
+| 디버그 로그 | `--debug-file <path>` |
 
-→ MVP-0 W1 첫 task로 이 표를 채운다. `claude --help` 출력 분석 + 실제 테스트.
+## 설계 영향 (ADR-009 채택)
+
+위 발견에 따라 **MVP-0의 Claude 호출 모드 확정**:
+
+```bash
+claude \
+  --print \
+  --input-format stream-json \
+  --output-format stream-json \
+  --include-partial-messages \
+  --include-hook-events \
+  --session-id $WORKSPACE_SESSION_UUID \
+  --settings $WORKSPACE_HARNESS/settings.json \
+  --mcp-config $WORKSPACE_HARNESS/.mcp.json \
+  --plugin-dir $WORKSPACE_HARNESS \
+  --add-dir $WORKSPACE_DIRECTORY
+```
+
+이 결과:
+- **PTY 불필요** — `-p` 모드는 stdin/stdout pipe만으로 동작
+- **ANSI 파싱 불필요** — JSON 메시지가 1급 시민
+- **세션 영속을 Claude에 위임 가능** — `--session-id` UUID만 SwiftData에 저장, 본문은 Claude가 관리
+- **하네스 완벽 주입** — `.harness/settings.json` + `.harness/.mcp.json` + `.harness/agents/`가 그대로 전달됨
+
+## 멀티턴 모델 (확정)
+
+```
+1. 워크스페이스 활성화
+   ↓
+2. UUID 생성 (또는 기존 session.id 재사용)
+   ↓
+3. 매 사용자 메시지마다 Claude CLI를 단발 호출:
+   claude -p --session-id <uuid> --resume ...
+   ↓
+4. stdin으로 JSON line 보냄: {"type":"user_message","content":"..."}
+   ↓
+5. stdout에서 JSON line 스트림 수신 → ClaudeEvent로 파싱 → UI
+   ↓
+6. 종료 후 다음 사용자 입력 대기
+   ↓
+7. 다음 입력 시 같은 session-id로 재호출 → Claude가 이전 컨텍스트 자동 복원
+```
+
+대안: Claude를 살려두고 stdin에 계속 보내는 방식도 가능하지만, *단발 호출 + session-id*가 단순 + 안정.
+
+## ClaudeEvent 정밀화 (W2 일정)
+
+현재 enum:
+```swift
+public enum ClaudeEvent: Sendable, Equatable {
+    case text(String)
+    case toolCall(name: String, input: String)
+    case toolResult(success: Bool, output: String)
+    case statusChange(StatusKind)
+    case completed(exitCode: Int32)
+}
+```
+
+W2에서 실제 `stream-json` 메시지 형식 확인 후 다음과 같이 확장 예정:
+- `partialText(String)` — `--include-partial-messages` 청크
+- `hookEvent(name: String, payload: String)` — `--include-hook-events`
+- `toolPermissionRequest(...)` — 우리가 GUI 다이얼로그로 응답해야 하는 권한 요청
+- 파라미터를 `Sendable Codable struct`로 정밀화
