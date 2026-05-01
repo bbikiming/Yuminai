@@ -112,6 +112,23 @@ public final class AppModel {
     /// 다음 sendMessage에서 prompt 앞에 prepend할 실패 컨텍스트.
     public var pendingFailureFeedback: String = ""
 
+    // Multi-pane state (ADR-030, M1 phase C)
+    /// 현재 워크스페이스의 pane들. workspace 전환 시 갱신.
+    public var agentPanes: [AgentPane] = []
+    /// 활성 pane id — messages/session/usage가 이 pane의 state로 스왑됨.
+    public var activePaneId: UUID?
+    /// pane별 보존 상태 (비활성 pane의 conversation 유지).
+    /// active pane의 state는 self.messages / self.activeSettings / self.currentSessionUsage / currentClaudeSession에 직접 보유.
+    public var paneMessages: [UUID: [Message]] = [:]
+    public var paneSettings: [UUID: SessionSettings] = [:]
+    public var paneUsage: [UUID: UsageStats] = [:]
+    private var paneSessions: [UUID: any ClaudeStreamSession] = [:]
+
+    /// 활성 pane (UI 표시용 shortcut).
+    public var activePane: AgentPane? {
+        agentPanes.first { $0.id == activePaneId }
+    }
+
     private var vaultWatcher: VaultWatcher?
     private var watcherTask: Task<Void, Never>?
     private var fullTextSearchTask: Task<Void, Never>?
@@ -616,9 +633,152 @@ public final class AppModel {
             streamConsumeTask = Task { [weak self] in
                 await self?.consumeStream(captured)
             }
+
+            // 멀티-pane: workspace 활성화 시 default primary pane 1개 자동 생성 (ADR-030)
+            ensurePrimaryPane(for: workspace, session: claudeSession)
         } catch {
             self.error = error.localizedDescription
         }
+    }
+
+    // MARK: - Multi-pane (ADR-030, M1 phase C)
+
+    /// workspace 선택 시 호출 — 기존 panes 정리 후 primary pane 1개 자동 등록.
+    /// 기존에 spawn한 session/messages를 primary pane state로 wrap.
+    private func ensurePrimaryPane(for workspace: Workspace, session: any ClaudeStreamSession) {
+        // 기존 panes 정리 (workspace 전환 시 이전 panes는 폐기)
+        clearPaneState()
+
+        let primary = AgentPane(
+            agentKind: workspace.agentKind,
+            settings: activeSettings,
+            role: .primary
+        )
+        agentPanes = [primary]
+        activePaneId = primary.id
+        paneSessions[primary.id] = session
+        paneMessages[primary.id] = []
+        paneSettings[primary.id] = activeSettings
+        paneUsage[primary.id] = .zero
+    }
+
+    private func clearPaneState() {
+        agentPanes = []
+        activePaneId = nil
+        paneSessions.removeAll()
+        paneMessages.removeAll()
+        paneSettings.removeAll()
+        paneUsage.removeAll()
+    }
+
+    /// active pane 전환 — 현재 state를 보존하고 대상 pane state로 swap.
+    public func setActivePane(_ paneId: UUID) async {
+        guard let workspace = currentWorkspace,
+              activePaneId != paneId,
+              let target = agentPanes.first(where: { $0.id == paneId }) else { return }
+
+        // 1) 현재 pane 상태 보존
+        if let currentId = activePaneId {
+            paneMessages[currentId] = messages
+            paneSettings[currentId] = activeSettings
+            paneUsage[currentId] = currentSessionUsage
+            // session은 이미 paneSessions[currentId]에 보관됨 (spawn 시 등록)
+        }
+
+        // 2) stream consume task 취소 (새 pane 것으로 재시작)
+        streamConsumeTask?.cancel()
+        streamConsumeTask = nil
+        isStreaming = false
+
+        // 3) 대상 pane state 로드
+        activePaneId = paneId
+        messages = paneMessages[paneId] ?? []
+        activeSettings = paneSettings[paneId] ?? target.settings
+        currentSessionUsage = paneUsage[paneId] ?? .zero
+
+        // 4) session: 있으면 재사용, 없으면 spawn
+        if let session = paneSessions[paneId] {
+            currentClaudeSession = session
+            let captured = session
+            streamConsumeTask = Task { [weak self] in
+                await self?.consumeStream(captured)
+            }
+        } else {
+            // pane 첫 활성화 — 새 session spawn (workspace.agentKind를 pane.agentKind로 임시 override)
+            let paneWorkspace = workspace.with(agentKind: target.agentKind)
+            do {
+                let agentAd = adapter(for: paneWorkspace)
+                let session = try await agentAd.spawn(in: workspace)
+                paneSessions[paneId] = session
+                currentClaudeSession = session
+                let captured = session
+                streamConsumeTask = Task { [weak self] in
+                    await self?.consumeStream(captured)
+                }
+            } catch {
+                self.error = "pane session 시작 실패: \(error.localizedDescription)"
+            }
+        }
+    }
+
+    /// 새 pane 추가 — workspace에 같은 agent kind 여러 개 가능.
+    public func addPane(agentKind: AgentKind) async {
+        guard currentWorkspace != nil else { return }
+        let role: PaneRole = agentPanes.contains(where: { $0.role == .primary }) ? .secondary : .primary
+        let newPane = AgentPane(
+            agentKind: agentKind,
+            settings: activeSettings,
+            role: role
+        )
+        agentPanes.append(newPane)
+        paneMessages[newPane.id] = []
+        paneSettings[newPane.id] = activeSettings
+        paneUsage[newPane.id] = .zero
+        // session은 setActivePane에서 lazy spawn
+        await setActivePane(newPane.id)
+    }
+
+    /// pane 제거 — 마지막 pane은 close 불가 (워크스페이스에 항상 1개 이상).
+    public func removePane(_ paneId: UUID) async {
+        guard agentPanes.count > 1,
+              let workspace = currentWorkspace,
+              let pane = agentPanes.first(where: { $0.id == paneId }) else { return }
+
+        // session terminate
+        if let session = paneSessions[paneId] {
+            let paneWorkspace = workspace.with(agentKind: pane.agentKind)
+            let ad = adapter(for: paneWorkspace)
+            await ad.terminate(session)
+        }
+
+        // state 정리
+        paneSessions.removeValue(forKey: paneId)
+        paneMessages.removeValue(forKey: paneId)
+        paneSettings.removeValue(forKey: paneId)
+        paneUsage.removeValue(forKey: paneId)
+        agentPanes.removeAll { $0.id == paneId }
+
+        // active 변경
+        if activePaneId == paneId {
+            activePaneId = nil  // setActivePane이 swap 처리
+            if let first = agentPanes.first {
+                await setActivePane(first.id)
+            }
+        }
+
+        // primary가 사라졌으면 첫 pane을 promote
+        if !agentPanes.contains(where: { $0.role == .primary }), let first = agentPanes.first {
+            if let idx = agentPanes.firstIndex(where: { $0.id == first.id }) {
+                agentPanes[idx] = first.with(role: .primary)
+            }
+        }
+    }
+
+    /// pane custom 이름 변경.
+    public func renamePane(_ paneId: UUID, to name: String?) {
+        guard let idx = agentPanes.firstIndex(where: { $0.id == paneId }) else { return }
+        let trimmed = name?.trimmingCharacters(in: .whitespacesAndNewlines)
+        agentPanes[idx] = agentPanes[idx].with(customName: (trimmed?.isEmpty ?? true) ? nil : trimmed)
     }
 
     /// 활성 세션 설정 변경. 활성 어댑터에 반영하고, 활성 워크스페이스가 있으면 새 세션을
@@ -859,6 +1019,18 @@ public final class AppModel {
     private func teardownCurrentSession() async {
         streamConsumeTask?.cancel()
         streamConsumeTask = nil
+
+        // 모든 secondary pane sessions terminate (active pane은 별도)
+        if let workspace = currentWorkspace {
+            for pane in agentPanes {
+                if let session = paneSessions[pane.id], pane.id != activePaneId {
+                    let paneWorkspace = workspace.with(agentKind: pane.agentKind)
+                    let ad = adapter(for: paneWorkspace)
+                    await ad.terminate(session)
+                }
+            }
+        }
+
         if let claudeSession = currentClaudeSession {
             await activeAdapter.terminate(claudeSession)
         }
@@ -866,6 +1038,9 @@ public final class AppModel {
         currentSession = nil
         messages = []
         isStreaming = false
+
+        // pane state 정리 — workspace 전환 시 새 primary pane이 다시 생성됨
+        clearPaneState()
     }
 
     // MARK: - chat

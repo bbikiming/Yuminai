@@ -384,6 +384,16 @@ struct ChatPane: View {
             if appModel.selectedWorkspaceId == nil {
                 EmptyWorkspaceView()
             } else {
+                if !appModel.agentPanes.isEmpty {
+                    PaneTabBar(
+                        panes: appModel.agentPanes,
+                        activePaneId: appModel.activePaneId,
+                        codexAvailable: appModel.codexAvailable,
+                        onSelect: { id in Task { await appModel.setActivePane(id) } },
+                        onClose: { id in Task { await appModel.removePane(id) } },
+                        onAdd: { kind in Task { await appModel.addPane(agentKind: kind) } }
+                    )
+                }
                 if appModel.showTerminalPane, let path = currentWorkspacePath {
                     VSplitView {
                         ChatView(messages: appModel.messages)

@@ -1,6 +1,53 @@
 # Decisions Log (ADR-lite)
 
-> 최신: ADR-029 (v0.4 Phase B — Delivery Loop + 사용성 도움말 UI)
+> 최신: ADR-030 (v0.4 Phase C — Multi-pane Foundation)
+
+---
+
+## ADR-030 — v0.4 Phase C: Multi-pane Foundation (M1)
+
+- **날짜**: 2026-05-02
+- **상태**: Accepted (Phase C foundation, split layout/per-pane controls는 후속)
+- **결정**: 워크스페이스에 N개의 AgentPane 도입. 각 pane은 자체 session/messages/settings/usage. UI는 tab bar로 빠른 전환 (split layout은 후속). 1순위 reference: AutoGen AgentTool + Aider Architect/Editor 2-LLM
+- **컨텍스트**:
+  - 사용자 — "다음 권고 사항 이어서 진행해 줘"
+  - ADR-027 권고 phase 순서: M3→M5→M4→M1→M2 — M1 (multi-pane) 차례
+  - 1ws-1agent → 1ws-Nagent 진화 — Yuminai의 가장 큰 architectural change
+- **각 결정**:
+  1. **AgentPane domain은 Core** — 모든 모듈이 의존 가능 (UI, Telegram, App)
+  2. **PaneRole 2종 (primary/secondary)** — primary는 Telegram bridge target. 워크스페이스당 1개. 인터-에이전트 메시지(M2 후속)에서는 다른 의미로 확장 가능
+  3. **workspace 단위로 panes 관리** — `[UUID: AgentPane]` workspace.id key 매핑은 X. workspace 전환 시 panes 새로 생성/clear (같은 workspace 다시 들어가면 panes 잃음 — v0.5에서 영속 검토)
+  4. **tab swap 패턴** — 한 시점에 1 pane visible (split layout은 후속). 전환 시 messages/session/settings/usage 모두 swap. session은 lazy spawn (첫 활성 시)
+  5. **마지막 pane close 불가** — 워크스페이스에 항상 ≥1 pane. UX 단순화
+  6. **session lifecycle은 pane이 소유** — pane remove 시 자체 session terminate. 기존 currentClaudeSession은 active pane의 session alias
+  7. **AppModel 기존 alias 유지** — `messages` / `currentClaudeSession` / `activeSettings` / `currentSessionUsage` 모두 그대로. backward-compat 위해 active pane의 state로 swap (refactor 부담 ↓)
+- **대안 분석**:
+  - **워크스페이스 영속 panes** vs **세션 영속 panes**: 영속이면 workspace 다시 들어가도 같은 panes — 그러나 SwiftData 영속 비용 + session 복원 복잡 (claude session id resume). v0.4는 메모리만, v0.5에서 영속 검토
+  - **tab vs split UI**: split이 power user UX 우월 but SwiftUI에서 dynamic split 비용 큼. tab 먼저, split는 사용자 검증 후 후속
+  - **AppModel refactor strategy**: full alias getter (computed property)로 모든 기존 코드 호환 vs 새 메서드 추가 + 점진적 migration. 후자 채택 — 위험 분산, 점진적 검증 가능
+  - **session 즉시 spawn vs lazy spawn**: 즉시는 새 pane 추가 시 비용 ↑ + 사용자가 그 pane 안 쓸 수도. lazy는 setActivePane이 처리 — 자연스러움
+- **격리**:
+  - AgentPane은 YuminaiCore (모든 모듈 import 가능)
+  - PaneTabBar는 YuminaiUI (도메인 모델만 의존, callback 4개)
+  - paneSessions는 AppModel private (Sendable 경계 안전)
+- **결과**:
+  - 신규 파일 2개: AgentPane.swift / PaneTabBar.swift
+  - AppModel +6 properties + 5 actions (ensurePrimaryPane / setActivePane / addPane / removePane / renamePane + clearPaneState)
+  - RootView chat 영역 상단에 PaneTabBar 통합
+  - teardownCurrentSession 확장 (모든 panes 정리)
+  - 9 신규 테스트 (defaults / displayName / immutable updates / Codable)
+  - build 3s, test 161/161
+- **알려진 한계 → 후속 phase**:
+  - **Phase C2/C3/C4**: 좌/우 split layout / per-pane Composer 설정 / pane drag-reorder / pane settings sheet (rename/role)
+  - **Phase D (M2)**: 인터-에이전트 메시지 (`@codex` mention) — MetaGPT 메시지 환경 + AutoGen GroupChat
+  - panes 영속 X (워크스페이스 다시 들어가면 새 primary 1개)
+  - per-pane delivery config X — workspace 전체 1개
+  - per-pane usage 누적은 메모리만 (SwiftData 저장 X)
+- **재검토**: 사용자 multi-pane 사용 후 — split layout 필요성, panes 영속 필요성, per-pane 설정 분리 필요성
+
+---
+
+## ADR-029 — v0.4 Phase B: Delivery Loop (M4) + UI 도움말 일괄 적용
 
 ---
 

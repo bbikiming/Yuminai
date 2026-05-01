@@ -2,7 +2,65 @@
 
 > 변경 사항 시간순 기록. 의미 있는 변경만.
 
-## [Unreleased] — 2026-05-01
+## [Unreleased] — 2026-05-02
+
+### Added — v0.4 Phase C: Multi-pane Foundation (M1) (ADR-030)
+
+사용자: "다음 권고 사항 이어서 진행해 줘"
+ADR-027의 Phase 순서 권고 — Phase C M1 multi-pane 진행.
+
+**참조** (ADR-027 evidence): AutoGen `AgentTool` 패턴 (57.6k, 패턴만) + Aider Architect/Editor 내부 2-LLM (44.2k, 검증된 패턴).
+
+한 워크스페이스에서 Claude pane과 Codex pane을 동시에 띄우고 빠르게 전환:
+- 각 pane은 자체 session + messages + settings + usage
+- 같은 프로젝트 폴더 공유 (file system이 협업 매개체)
+- Tab 클릭으로 active 전환 (messages/session swap)
+- "+" 버튼으로 새 pane 추가 (Claude/Codex 선택)
+
+**구현**:
+1. **`Sources/YuminaiCore/AgentPane.swift` (신규)**
+   - `AgentPane { id, agentKind, settings, role, customName?, createdAt }`
+   - `displayName` computed (customName ?? agentKind.displayName)
+   - immutable updates: `with(agentKind:)` / `with(settings:)` / `with(role:)` / `with(customName:)`
+   - `PaneRole` enum: `.primary` (Telegram bridge target, 1개) / `.secondary`
+2. **`AppModel` multi-pane state (refactor)**
+   - `agentPanes: [AgentPane]` published
+   - `activePaneId: UUID?`
+   - `paneMessages: [UUID: [Message]]` / `paneSettings: [UUID: SessionSettings]` / `paneUsage: [UUID: UsageStats]`
+   - private `paneSessions: [UUID: any ClaudeStreamSession]`
+   - `activePane: AgentPane?` computed
+   - `ensurePrimaryPane(for:session:)` — workspace 활성화 시 default primary 1개 자동 등록 (기존 session/messages를 wrap)
+   - `setActivePane(_:)` — 현재 pane state 보존 (paneMessages/Settings/Usage 저장) + 대상 pane state 로드 + session lazy spawn (없으면 새로)
+   - `addPane(agentKind:)` — 새 pane 등록 + active 전환 (session은 setActivePane이 spawn)
+   - `removePane(_:)` — session terminate + state 정리 + active 변경 (마지막 pane은 close 불가)
+   - `renamePane(_:to:)` — customName 갱신
+   - `clearPaneState()` — workspace 전환 시 호출
+   - `teardownCurrentSession()` 확장 — 모든 secondary pane sessions terminate + clearPaneState
+3. **`Sources/YuminaiUI/PaneTabBar.swift` (신규)**
+   - workspace 안의 panes를 horizontal tab으로 표시
+   - 각 tab: agent icon + displayName + primary star + 호버/active 시 ✕ close 버튼
+   - active tab 하단에 2pt accent border
+   - "+" Menu — Claude pane 추가 / Codex pane 추가 (codex 미설치 시 disabled)
+   - HelpHint i 아이콘 — 사용법 안내 popover
+4. **`Sources/YuminaiApp/RootView.swift`** — chat 영역 위에 PaneTabBar 표시 (panes 1개 이상일 때)
+
+**같은 프로젝트, 다른 에이전트 협업**:
+- 두 pane 모두 `workspace.directoryPath` 공유 — file system이 자연스러운 IPC
+- Claude로 설계 → tab 전환 → Codex로 빠른 구현 → 다시 Claude로 검토
+- 각 pane은 자체 session id로 conversation context 유지 (전환 시 메시지 보존)
+
+**테스트 9 신규**:
+- AgentPaneTests (9): defaults / customName override / empty fallback / with() immutable variants 3건 / PaneRole 라벨+icon / Codable / 같은 kind 다른 id
+
+**검증**: build 3.0s, test 161/161 (152→161, +9 신규)
+
+알려진 한계 (Phase C 후속 → C2/C3/C4):
+- **좌/우 split layout** X — tab 전환만 가능 (한 시점에 1 pane만 visible). Power user UX는 다음 sub-phase
+- **per-pane Composer/Toolbar settings** X — 현재 모든 pane이 같은 activeSettings 사용 후 swap 시 pane.settings로 교체. 진짜 per-pane picker는 v0.5
+- **인터-에이전트 메시지 (`@codex`)** X — Phase D (M2)
+- **Codex JSONL schema 정밀화** X — Phase E
+- pane drag-and-drop reorder X
+- pane settings sheet (이름/role 변경) X — 현재는 컨텍스트 메뉴 없음
 
 ### Added — v0.4 Phase B: Delivery Loop (M4) + 사용성 도움말 UI (ADR-029)
 
