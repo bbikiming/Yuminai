@@ -2,9 +2,13 @@ import SwiftUI
 import YuminaiCore
 
 /// 채팅 영역 상단 toolbar v3 — Breadcrumb 좌측 inline (codex #9 반영) + 반응형 inspector 버튼.
+///
+/// Breadcrumb 클릭 시 workspace switcher menu (worksapces 리스트 + "+ 새").
 public struct ChatToolbar: View {
     public let workspaceName: String
     public let workspacePath: String?
+    public let workspaces: [Workspace]
+    public let selectedWorkspaceId: UUID?
     public let isStreaming: Bool
     public let inspectorVisible: Bool
     public let inspectorAllowed: Bool
@@ -12,11 +16,14 @@ public struct ChatToolbar: View {
     public let onToggleSidebar: () -> Void
     public let onToggleInspector: () -> Void
     public let onShowDashboard: () -> Void
-    public let onSwitchWorkspace: () -> Void
+    public let onSelectWorkspace: (UUID) -> Void
+    public let onCreateWorkspace: () -> Void
 
     public init(
         workspaceName: String,
         workspacePath: String? = nil,
+        workspaces: [Workspace] = [],
+        selectedWorkspaceId: UUID? = nil,
         isStreaming: Bool,
         inspectorVisible: Bool,
         inspectorAllowed: Bool = true,
@@ -24,10 +31,13 @@ public struct ChatToolbar: View {
         onToggleSidebar: @escaping () -> Void,
         onToggleInspector: @escaping () -> Void,
         onShowDashboard: @escaping () -> Void,
-        onSwitchWorkspace: @escaping () -> Void = {}
+        onSelectWorkspace: @escaping (UUID) -> Void = { _ in },
+        onCreateWorkspace: @escaping () -> Void = {}
     ) {
         self.workspaceName = workspaceName
         self.workspacePath = workspacePath
+        self.workspaces = workspaces
+        self.selectedWorkspaceId = selectedWorkspaceId
         self.isStreaming = isStreaming
         self.inspectorVisible = inspectorVisible
         self.inspectorAllowed = inspectorAllowed
@@ -35,7 +45,8 @@ public struct ChatToolbar: View {
         self.onToggleSidebar = onToggleSidebar
         self.onToggleInspector = onToggleInspector
         self.onShowDashboard = onShowDashboard
-        self.onSwitchWorkspace = onSwitchWorkspace
+        self.onSelectWorkspace = onSelectWorkspace
+        self.onCreateWorkspace = onCreateWorkspace
     }
 
     public var body: some View {
@@ -75,7 +86,7 @@ public struct ChatToolbar: View {
         if inspectorAllowed {
             IconButton(
                 inspectorVisible ? "sidebar.right" : "sidebar.right",
-                help: "Inspector (⌘⌥I)",
+                help: inspectorVisible ? "Inspector 닫기 (⌘⌥I)" : "Inspector 열기 (⌘⌥I)",
                 action: onToggleInspector
             )
             .keyboardShortcut("i", modifiers: [.command, .option])
@@ -84,7 +95,7 @@ public struct ChatToolbar: View {
                 .font(.system(size: 14, weight: .medium))
                 .foregroundStyle(Theme.Color.textDisabled)
                 .frame(width: 28, height: 28)
-                .help("Inspector — 윈도우가 좁아 사용 불가 (1080px 이상 필요)")
+                .help("Inspector — 창을 더 넓혀주세요 (1080px↑)")
         }
     }
 
@@ -98,8 +109,33 @@ public struct ChatToolbar: View {
             .clipShape(RoundedRectangle(cornerRadius: Theme.Radius.sm))
     }
 
+    @State private var breadcrumbHovering = false
+
     private var breadcrumb: some View {
-        Button(action: onSwitchWorkspace) {
+        Menu {
+            if workspaces.isEmpty {
+                Text("워크스페이스가 없어요")
+            } else {
+                ForEach(workspaces) { ws in
+                    Button {
+                        onSelectWorkspace(ws.id)
+                    } label: {
+                        HStack {
+                            if ws.id == selectedWorkspaceId {
+                                Image(systemName: "checkmark")
+                            }
+                            Text(ws.name)
+                        }
+                    }
+                }
+            }
+            Divider()
+            Button {
+                onCreateWorkspace()
+            } label: {
+                Label("새 워크스페이스 만들기", systemImage: "plus")
+            }
+        } label: {
             HStack(spacing: 6) {
                 Image(systemName: "folder")
                     .font(.system(size: 12, weight: .medium))
@@ -111,20 +147,26 @@ public struct ChatToolbar: View {
 
                 Image(systemName: "chevron.down")
                     .font(.system(size: 9, weight: .medium))
-                    .foregroundStyle(Theme.Color.textTertiary)
+                    .foregroundStyle(breadcrumbHovering ? Theme.Color.accent : Theme.Color.textTertiary)
             }
             .padding(.horizontal, Theme.Spacing.sm)
             .padding(.vertical, 4)
+            .background(breadcrumbHovering ? Theme.Color.surfaceHi : .clear)
+            .clipShape(RoundedRectangle(cornerRadius: Theme.Radius.sm))
+            .animation(.easeOut(duration: 0.10), value: breadcrumbHovering)
             .contentShape(Rectangle())
         }
-        .buttonStyle(.plain)
+        .menuStyle(.borderlessButton)
+        .menuIndicator(.hidden)
+        .fixedSize()
+        .onHover { breadcrumbHovering = $0 }
         .help(workspacePath ?? workspaceName)
     }
 
     private var streamingBadge: some View {
         HStack(spacing: 6) {
             PulseDot(color: Theme.Color.accent, size: 6)
-            Text("streaming")
+            Text("응답 중")
                 .font(Theme.Typography.micro)
                 .foregroundStyle(Theme.Color.accent)
         }

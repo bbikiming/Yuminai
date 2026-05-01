@@ -24,15 +24,15 @@ public struct UsageDashboard: View {
         VStack(alignment: .leading, spacing: Theme.Spacing.xl) {
             header
 
-            FlatSection("current session") {
+            FlatSection("이번 세션") {
                 UsageGrid(usage: currentSessionUsage, model: activeModel)
             }
 
-            FlatSection("all time (since launch)") {
+            FlatSection("앱 실행 후 누적") {
                 UsageGrid(usage: allTimeUsage, model: activeModel)
             }
 
-            FlatSection("model pricing", footer: "Anthropic 공식 가격 기준 (대략값)") {
+            FlatSection("모델 가격", footer: "Anthropic 공식 가격 기준 (대략값)") {
                 PricingGrid(model: activeModel)
             }
 
@@ -40,7 +40,7 @@ public struct UsageDashboard: View {
 
             HStack {
                 Spacer()
-                FlatButton("close", variant: .secondary, action: onClose)
+                FlatButton("닫기", variant: .secondary, action: onClose)
                     .keyboardShortcut(.escape, modifiers: [])
             }
         }
@@ -51,12 +51,12 @@ public struct UsageDashboard: View {
 
     private var header: some View {
         HStack {
-            Text("Usage Dashboard")
+            Text("사용량")
                 .font(Theme.Typography.title)
                 .foregroundStyle(Theme.Color.text)
             Spacer()
             HStack(spacing: 4) {
-                Text("model")
+                Text("모델")
                     .foregroundStyle(Theme.Color.textTertiary)
                 Text("·")
                     .foregroundStyle(Theme.Color.textTertiary)
@@ -75,12 +75,12 @@ struct UsageGrid: View {
     var body: some View {
         VStack(alignment: .leading, spacing: Theme.Spacing.lg) {
             HStack(spacing: Theme.Spacing.xl) {
-                StatBox(label: "messages", value: "\(usage.messageCount)")
-                StatBox(label: "input", value: usage.inputTokens.formattedShort)
-                StatBox(label: "output", value: usage.outputTokens.formattedShort)
-                StatBox(label: "cache R", value: usage.cacheReadTokens.formattedShort, color: Theme.Color.success)
-                StatBox(label: "cache W", value: usage.cacheCreationTokens.formattedShort, color: Theme.Color.warning)
-                StatBox(label: "cost", value: String(format: "$%.4f", usage.costUSD), color: Theme.Color.accent)
+                StatBox(label: "메시지", value: "\(usage.messageCount)")
+                StatBox(label: "입력", value: usage.inputTokens.formattedShort)
+                StatBox(label: "출력", value: usage.outputTokens.formattedShort)
+                StatBox(label: "캐시 R", value: usage.cacheReadTokens.formattedShort, color: Theme.Color.success)
+                StatBox(label: "캐시 W", value: usage.cacheCreationTokens.formattedShort, color: Theme.Color.warning)
+                StatBox(label: "비용", value: String(format: "$%.4f", usage.costUSD), color: Theme.Color.accent)
             }
             ContextRow(usage: usage, model: model)
         }
@@ -115,7 +115,7 @@ struct ContextRow: View {
         let ratio = usage.contextUsage(maxTokens: model.contextWindowTokens)
         VStack(alignment: .leading, spacing: 4) {
             HStack {
-                Text("context")
+                Text("컨텍스트")
                     .font(Theme.Typography.micro)
                     .foregroundStyle(Theme.Color.textTertiary)
                     .textCase(.uppercase)
@@ -152,9 +152,9 @@ struct PricingGrid: View {
 
     var body: some View {
         HStack(spacing: Theme.Spacing.xxl) {
-            label("input", String(format: "$%.2f / 1M", model.inputPricePerMillion))
-            label("output", String(format: "$%.2f / 1M", model.outputPricePerMillion))
-            label("context", model.contextWindowTokens.formattedShort)
+            label("입력 / 1M", String(format: "$%.2f", model.inputPricePerMillion))
+            label("출력 / 1M", String(format: "$%.2f", model.outputPricePerMillion))
+            label("컨텍스트", model.contextWindowTokens.formattedShort)
             Spacer()
         }
     }

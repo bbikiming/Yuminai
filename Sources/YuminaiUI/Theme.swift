@@ -1,15 +1,31 @@
 import SwiftUI
 import AppKit
 
-/// Yuminai 디자인 토큰 v3.
+/// Yuminai 디자인 토큰 v3 + Brand layer.
 ///
-/// 명세: `docs/design/60_UI_DESIGN_SPEC.md` (codex review 반영본).
-/// 핵심 변화:
-/// - Sans-serif 본문 + Mono는 code/stats 한정 (P1)
-/// - Warm 톤 다크 (R > B by 3-4) — 사이드바 vs 본문 미세 분리 (codex #4)
-/// - textTertiary 대비 ↑ (#807a76 on #1a1817 = 3.4:1, 11px+ 한정) (codex #5)
-/// - 박스 단색 차로 구분, border는 focus/active 한정 (P2)
+/// 명세: `docs/design/60_UI_DESIGN_SPEC.md` + `70_BRANDING_AND_INTERACTION.md`.
+/// 변화:
+/// - `Theme.Brand` 신규: 자전거 팀 ar2r 컬러 (codex 조사 결과 비공개 → fallback navy + orange-red 사용)
+/// - `Theme.Color.accent` 등은 Brand로 위임 → ar2r 정확한 hex 받으면 Brand만 교체하면 전체 반영
 public enum Theme {
+
+    // MARK: - Brand (ar2r 팀 컬러 — 사용자 답변 시 hex 교체)
+
+    public enum Brand {
+        /// Deep Navy — chrome accent, structural
+        public static let primary = SwiftUI.Color(rgb: 0x0E2A47)
+        public static let primaryDark = SwiftUI.Color(rgb: 0x0A1F36)
+        public static let primaryLight = SwiftUI.Color(rgb: 0x1A3F5E)
+
+        /// Vivid Orange-Red — CTA, active state, link
+        public static let accent = SwiftUI.Color(rgb: 0xFF5A36)
+        public static let accentDeep = SwiftUI.Color(rgb: 0xD94823)
+        public static let accentMuted = SwiftUI.Color(light: SwiftUI.Color(rgb: 0xFFE2D8), dark: SwiftUI.Color(rgb: 0x2A1812))
+        public static let accentBorder = SwiftUI.Color(rgb: 0xFF5A36).opacity(0.45)
+
+        /// White — 본문/대비
+        public static let contrast = SwiftUI.Color.white
+    }
 
     // MARK: - Color
 
@@ -22,38 +38,38 @@ public enum Theme {
         public static let elevated = hex(dark: 0x322e2a, light: 0xddd7cf)
         public static let inlineCode = hex(dark: 0x2a2724, light: 0xe8e4dd)
 
-        // Borders — 거의 사용 안 함, focus/active 신호용
+        // Borders — focus/active 한정
         public static let borderSubtle = hex(dark: 0x2c2926, light: 0xddd7cf)
         public static let border = hex(dark: 0x3d3834, light: 0xc8c1b9)
         public static let borderStrong = hex(dark: 0x504a44, light: 0xa8a098)
-        public static let focusRing = hex(dark: 0xcc785c, light: 0xcc785c)
+        public static let focusRing = Brand.accent
 
-        // Text — 대비 ↑ (codex #5)
+        // Text — 대비 ↑
         public static let text = hex(dark: 0xf0eeec, light: 0x1a1817)
         public static let textSecondary = hex(dark: 0xa8a3a0, light: 0x5a5552)
         public static let textTertiary = hex(dark: 0x807a76, light: 0x7a7470)
         public static let textDisabled = hex(dark: 0x5a5552, light: 0x9a948f)
 
-        // Accent — Claude orange
-        public static let accent = SwiftUI.Color(red: 0.80, green: 0.47, blue: 0.36)        // #cc785c
-        public static let accentHover = SwiftUI.Color(red: 0.84, green: 0.54, blue: 0.44)   // #d68a70
-        public static let accentMuted = hex(dark: 0x2a2018, light: 0xfde8d8)
-        public static let accentBorder = SwiftUI.Color(red: 0.80, green: 0.47, blue: 0.36).opacity(0.40)
+        // Accent — Brand로 위임
+        public static let accent = Brand.accent
+        public static let accentHover = Brand.accentDeep
+        public static let accentMuted = Brand.accentMuted
+        public static let accentBorder = Brand.accentBorder
 
-        // Status — 절제
-        public static let success = SwiftUI.Color(red: 0.56, green: 0.79, blue: 0.60)       // #8fc999
-        public static let warning = SwiftUI.Color(red: 0.83, green: 0.72, blue: 0.42)
-        public static let danger = SwiftUI.Color(red: 0.85, green: 0.45, blue: 0.45)        // #d97373
-        public static let liveDot = SwiftUI.Color(red: 0.91, green: 0.36, blue: 0.29)       // #e85d4a
+        // Status
+        public static let success = SwiftUI.Color(rgb: 0x8fc999)
+        public static let warning = SwiftUI.Color(rgb: 0xd4b86a)
+        public static let danger = SwiftUI.Color(rgb: 0xd97373)
+        public static let liveDot = Brand.accent  // streaming = brand accent (통합)
 
         // Diff
         public static let diffPlus = success
         public static let diffMinus = danger
 
         // Message role
-        public static let userBg = accentMuted
+        public static let userBg = Brand.accentMuted
         public static let userText = text
-        public static let userAccent = accent
+        public static let userAccent = Brand.accent
         public static let assistantText = text
         public static let toolText = textSecondary
 

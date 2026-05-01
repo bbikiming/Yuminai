@@ -40,6 +40,7 @@ struct RootView: View {
                     overlayBackdrop
                     overlaySidebar
                 }
+                quickSwitchHotkeys  // ⌘1~9 invisible buttons
             }
             .onAppear {
                 windowSize = geo.size
@@ -66,14 +67,14 @@ struct RootView: View {
             )
         }
         .alert(
-            "오류",
+            "잠깐, 문제가 생겼어요",
             isPresented: Binding(
                 get: { appModel.error != nil },
                 set: { if !$0 { appModel.error = nil } }
             ),
             presenting: appModel.error
         ) { _ in
-            Button("확인") { appModel.error = nil }
+            Button("알겠어요") { appModel.error = nil }
         } message: { error in
             Text(error)
         }
@@ -147,6 +148,22 @@ struct RootView: View {
             .background(Theme.Color.bgSidebar)
             .shadow(color: .black.opacity(0.4), radius: 8, x: 4, y: 0)
             .transition(.move(edge: .leading))
+    }
+
+    /// ⌘1~9: 워크스페이스 빠른 전환. invisible button을 layout에 두면 macOS가 단축키 처리.
+    private var quickSwitchHotkeys: some View {
+        ZStack {
+            ForEach(0..<min(9, appModel.workspaces.count), id: \.self) { idx in
+                Button("") {
+                    appModel.selectedWorkspaceId = appModel.workspaces[idx].id
+                }
+                .keyboardShortcut(KeyEquivalent(Character("\(idx + 1)")), modifiers: .command)
+                .opacity(0)
+                .frame(width: 0, height: 0)
+                .accessibilityHidden(true)
+            }
+        }
+        .frame(width: 0, height: 0)
     }
 
     /// compact/medium 모드에서 toolbar에 작게 표시.
@@ -230,13 +247,17 @@ struct ChatPane: View {
             ChatToolbar(
                 workspaceName: currentWorkspaceName,
                 workspacePath: currentWorkspacePath,
+                workspaces: appModel.workspaces,
+                selectedWorkspaceId: appModel.selectedWorkspaceId,
                 isStreaming: appModel.isStreaming,
                 inspectorVisible: inspectorVisible,
                 inspectorAllowed: inspectorAllowed,
                 layoutBadge: layoutModeBadge,
                 onToggleSidebar: onToggleSidebar,
                 onToggleInspector: onToggleInspector,
-                onShowDashboard: { appModel.showUsageDashboard = true }
+                onShowDashboard: { appModel.showUsageDashboard = true },
+                onSelectWorkspace: { id in appModel.selectedWorkspaceId = id },
+                onCreateWorkspace: { appModel.showCreateWorkspaceSheet = true }
             )
 
             if appModel.selectedWorkspaceId == nil {
@@ -287,9 +308,14 @@ struct EmptyWorkspaceView: View {
             Image(systemName: "rectangle.stack.badge.plus")
                 .font(.system(size: 36, weight: .light))
                 .foregroundStyle(Theme.Color.textTertiary)
-            Text("워크스페이스를 선택하거나 새로 만드세요")
-                .font(Theme.Typography.body)
-                .foregroundStyle(Theme.Color.textSecondary)
+            VStack(spacing: 6) {
+                Text("어떤 작업으로 시작할까요?")
+                    .font(Theme.Typography.title)
+                    .foregroundStyle(Theme.Color.text)
+                Text("워크스페이스 하나를 만들면 Claude가 그 폴더에서 함께 일해요.")
+                    .font(Theme.Typography.body)
+                    .foregroundStyle(Theme.Color.textSecondary)
+            }
             FlatButton("+ 새 워크스페이스 만들기", variant: .primary, size: .large) {
                 appModel.showCreateWorkspaceSheet = true
             }

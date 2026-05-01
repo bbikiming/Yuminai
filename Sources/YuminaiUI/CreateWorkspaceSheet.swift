@@ -21,24 +21,24 @@ public struct CreateWorkspaceSheet: View {
     public var body: some View {
         VStack(alignment: .leading, spacing: Theme.Spacing.xl) {
             VStack(alignment: .leading, spacing: 6) {
-                Text("새 워크스페이스")
+                Text("새 워크스페이스 만들기")
                     .font(Theme.Typography.title)
                     .foregroundStyle(Theme.Color.text)
-                Text("Claude CLI가 실행될 디렉토리를 선택하세요.")
+                Text("어떤 폴더에서 시작할까요? Claude CLI가 그 위치에서 실행돼요.")
                     .font(Theme.Typography.small)
                     .foregroundStyle(Theme.Color.textSecondary)
             }
 
             VStack(alignment: .leading, spacing: Theme.Spacing.sm) {
-                fieldLabel("name")
-                FlatTextField("예: nunchi-v2", text: $name)
+                fieldLabel("이름")
+                FlatTextField("예: 내 새 프로젝트", text: $name)
             }
 
             VStack(alignment: .leading, spacing: Theme.Spacing.sm) {
-                fieldLabel("directory")
+                fieldLabel("폴더")
                 HStack(spacing: Theme.Spacing.sm) {
-                    FlatTextField("예: ~/Documents/projects/...", text: $directoryPath)
-                    FlatButton("선택…", variant: .secondary, size: .small) {
+                    FlatTextField("예: ~/Documents/projects/내-프로젝트", text: $directoryPath)
+                    FlatButton("폴더 고르기", variant: .secondary, size: .small) {
                         selectDirectory()
                     }
                 }
@@ -50,7 +50,7 @@ public struct CreateWorkspaceSheet: View {
                 Spacer()
                 FlatButton("취소", variant: .secondary) { onCancel() }
                     .keyboardShortcut(.escape, modifiers: [])
-                FlatButton("생성", variant: .primary) { create() }
+                FlatButton("만들기", variant: .primary) { create() }
                     .keyboardShortcut(.return, modifiers: [])
                     .disabled(!isValid)
             }
@@ -85,8 +85,8 @@ public struct CreateWorkspaceSheet: View {
         panel.canChooseDirectories = true
         panel.canChooseFiles = false
         panel.allowsMultipleSelection = false
-        panel.message = "워크스페이스 디렉토리를 선택하세요"
-        panel.prompt = "선택"
+        panel.message = "어떤 폴더에서 시작할까요?"
+        panel.prompt = "이 폴더로"
         if panel.runModal() == .OK, let url = panel.url {
             directoryPath = url.path
         }

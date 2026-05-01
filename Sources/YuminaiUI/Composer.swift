@@ -33,7 +33,7 @@ public struct Composer: View {
         permissionMode: Binding<PermissionMode>,
         effortLevel: Binding<EffortLevel>,
         isStreaming: Bool,
-        placeholder: String = "메시지를 입력하세요. /로 명령, @로 노트",
+        placeholder: String = "무엇을 도와드릴까요?  `/` 로 명령, `@` 로 노트",
         gitBranch: String? = nil,
         gitDiffPlus: Int? = nil,
         gitDiffMinus: Int? = nil,
@@ -146,13 +146,13 @@ public struct Composer: View {
 
             Spacer()
 
-            IconButton("paperclip", size: 13, help: "첨부 (v0.2)", action: onAttach)
+            IconButton("paperclip", size: 13, help: "파일 첨부는 곧 지원됩니다", action: onAttach)
                 .opacity(0.5)
 
             if isStreaming {
                 HStack(spacing: 4) {
                     PulseDot(color: Theme.Color.liveDot, size: 6)
-                    Text("자동 모드")
+                    Text("응답 중")
                         .font(Theme.Typography.micro)
                         .foregroundStyle(Theme.Color.liveDot)
                 }

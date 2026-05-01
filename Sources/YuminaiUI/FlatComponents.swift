@@ -8,6 +8,41 @@ import SwiftUI
 /// - Border 강조 줄임 (focus/active만)
 /// - SendButton/IconButton variant 추가
 
+// MARK: - Interaction modifiers
+
+/// 모든 버튼 공용 — press 시 0.97 scale + 80ms ease.
+public struct PressedScaleStyle: ButtonStyle {
+    public let scale: CGFloat
+    public init(scale: CGFloat = 0.97) { self.scale = scale }
+
+    public func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+            .scaleEffect(configuration.isPressed ? scale : 1.0)
+            .animation(.easeOut(duration: 0.08), value: configuration.isPressed)
+    }
+}
+
+/// Primary CTA 전용 — hover scale 1.02 + press 0.97.
+public struct PrimaryButtonStyle: ButtonStyle {
+    @State private var hovering = false
+    public init() {}
+
+    public func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+            .scaleEffect(scaleValue(pressed: configuration.isPressed))
+            .brightness(hovering && !configuration.isPressed ? 0.04 : 0)
+            .animation(.easeOut(duration: 0.10), value: configuration.isPressed)
+            .animation(.easeOut(duration: 0.12), value: hovering)
+            .onHover { hovering = $0 }
+    }
+
+    private func scaleValue(pressed: Bool) -> CGFloat {
+        if pressed { return 0.97 }
+        if hovering { return 1.02 }
+        return 1.0
+    }
+}
+
 // MARK: - FlatButton
 
 public struct FlatButton: View {
@@ -34,6 +69,8 @@ public struct FlatButton: View {
         self.action = action
     }
 
+    @State private var hovering = false
+
     public var body: some View {
         Button(action: action) {
             HStack(spacing: 6) {
@@ -48,14 +85,26 @@ public struct FlatButton: View {
             .padding(.vertical, vPadding)
             .frame(minWidth: label.isEmpty ? hPadding * 2 + iconSize : nil)
             .foregroundStyle(fg)
-            .background(bg)
+            .background(hovering ? bgHover : bg)
             .overlay(
                 RoundedRectangle(cornerRadius: radius)
                     .stroke(border, lineWidth: borderWidth)
             )
             .clipShape(RoundedRectangle(cornerRadius: radius))
+            .animation(.easeOut(duration: 0.10), value: hovering)
         }
-        .buttonStyle(.plain)
+        .buttonStyle(variant == .primary ? AnyButtonStyle(PrimaryButtonStyle()) : AnyButtonStyle(PressedScaleStyle()))
+        .onHover { hovering = $0 }
+    }
+
+    private var bgHover: SwiftUI.Color {
+        switch variant {
+        case .primary: return Theme.Color.accentHover
+        case .secondary: return Theme.Color.surfaceHi
+        case .ghost: return Theme.Color.surfaceHi
+        case .destructive: return Theme.Color.danger.opacity(0.18)
+        case .accentSubtle: return Theme.Color.accentMuted
+        }
     }
 
     private var font: Font {
@@ -154,10 +203,22 @@ public struct IconButton: View {
                     hovering ? Theme.Color.surfaceHi : Color.clear,
                     in: RoundedRectangle(cornerRadius: Theme.Radius.sm)
                 )
+                .animation(.easeOut(duration: 0.10), value: hovering)
         }
-        .buttonStyle(.plain)
+        .buttonStyle(PressedScaleStyle(scale: 0.92))
         .onHover { hovering = $0 }
         .help(help ?? "")
+    }
+}
+
+/// AnyButtonStyle wrapper — variant 선택용.
+public struct AnyButtonStyle: ButtonStyle {
+    private let _makeBody: (Configuration) -> AnyView
+    public init<S: ButtonStyle>(_ style: S) {
+        self._makeBody = { config in AnyView(style.makeBody(configuration: config)) }
+    }
+    public func makeBody(configuration: Configuration) -> some View {
+        _makeBody(configuration)
     }
 }
 
@@ -176,13 +237,15 @@ public struct SendButton: View {
         self.onStop = onStop
     }
 
+    @State private var hovering = false
+
     public var body: some View {
         if isStreaming {
             Button(action: onStop) {
                 HStack(spacing: 6) {
                     Image(systemName: "stop.fill")
                         .font(.system(size: 11, weight: .medium))
-                    Text("stop")
+                    Text("중단")
                         .font(Theme.Typography.label)
                     Text("esc")
                         .font(Theme.Typography.micro)
@@ -191,17 +254,22 @@ public struct SendButton: View {
                 .padding(.horizontal, Theme.Spacing.md)
                 .padding(.vertical, Theme.Spacing.sm)
                 .foregroundStyle(Theme.Color.danger)
+                .background(hovering ? Theme.Color.danger.opacity(0.10) : .clear)
                 .overlay(
                     RoundedRectangle(cornerRadius: Theme.Radius.md)
                         .stroke(Theme.Color.danger.opacity(0.4), lineWidth: 1)
                 )
+                .clipShape(RoundedRectangle(cornerRadius: Theme.Radius.md))
+                .animation(.easeOut(duration: 0.10), value: hovering)
             }
-            .buttonStyle(.plain)
+            .buttonStyle(PressedScaleStyle())
+            .onHover { hovering = $0 }
             .keyboardShortcut(.escape, modifiers: [])
+            .help("응답을 중단합니다 (Esc)")
         } else {
             Button(action: onSend) {
                 HStack(spacing: 6) {
-                    Text("send")
+                    Text("보내기")
                         .font(Theme.Typography.label)
                     Text("⌘↵")
                         .font(Theme.Typography.micro)
@@ -211,14 +279,19 @@ public struct SendButton: View {
                 .padding(.vertical, Theme.Spacing.sm)
                 .foregroundStyle(.white)
                 .background(
-                    isEnabled ? Theme.Color.accent : Theme.Color.surfaceHi,
+                    isEnabled
+                        ? (hovering ? Theme.Color.accentHover : Theme.Color.accent)
+                        : Theme.Color.surfaceHi,
                     in: RoundedRectangle(cornerRadius: Theme.Radius.md)
                 )
+                .animation(.easeOut(duration: 0.10), value: hovering)
             }
-            .buttonStyle(.plain)
+            .buttonStyle(PrimaryButtonStyle())
+            .onHover { hovering = $0 }
             .keyboardShortcut(.return, modifiers: .command)
             .disabled(!isEnabled)
             .opacity(isEnabled ? 1.0 : 0.5)
+            .help("메시지를 보냅니다 (⌘ Return)")
         }
     }
 }

@@ -23,43 +23,43 @@ public struct ContextInspector: View {
     public var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: Theme.Spacing.xl) {
-                section("active") {
-                    KVRow(key: "model", value: activeSettings.model.rawValue)
-                    KVRow(key: "mode", value: activeSettings.permissionMode.rawValue)
-                    KVRow(key: "effort", value: activeSettings.effortLevel.rawValue)
+                section("활성") {
+                    KVRow(key: "모델", value: activeSettings.model.rawValue)
+                    KVRow(key: "권한", value: activeSettings.permissionMode.rawValue)
+                    KVRow(key: "강도", value: activeSettings.effortLevel.rawValue)
                     if let budget = activeSettings.maxBudgetUSD {
-                        KVRow(key: "budget", value: String(format: "$%.2f", budget))
+                        KVRow(key: "예산", value: String(format: "$%.2f", budget))
                     }
                     if let path = workspacePath {
-                        KVRow(key: "cwd", value: path, lineLimit: 2, mono: true)
+                        KVRow(key: "폴더", value: path, lineLimit: 2, mono: true)
                     }
                 }
 
-                section("context") {
+                section("컨텍스트") {
                     let ratio = usage.contextUsage(maxTokens: activeSettings.model.contextWindowTokens)
-                    KVRow(key: "used", value: String(format: "%.1f%%", ratio * 100))
-                    KVRow(key: "window", value: activeSettings.model.contextWindowTokens.formattedShort)
+                    KVRow(key: "사용률", value: String(format: "%.1f%%", ratio * 100))
+                    KVRow(key: "윈도우", value: activeSettings.model.contextWindowTokens.formattedShort)
                     InspectorGauge(ratio: ratio).padding(.top, 6)
                 }
 
-                section("tokens") {
-                    KVRow(key: "input", value: usage.inputTokens.formattedShort)
-                    KVRow(key: "output", value: usage.outputTokens.formattedShort)
-                    KVRow(key: "cache R", value: usage.cacheReadTokens.formattedShort, valueColor: Theme.Color.success)
-                    KVRow(key: "cache W", value: usage.cacheCreationTokens.formattedShort, valueColor: Theme.Color.warning)
-                    KVRow(key: "msg", value: "\(usage.messageCount)")
+                section("토큰") {
+                    KVRow(key: "입력", value: usage.inputTokens.formattedShort)
+                    KVRow(key: "출력", value: usage.outputTokens.formattedShort)
+                    KVRow(key: "캐시 읽기", value: usage.cacheReadTokens.formattedShort, valueColor: Theme.Color.success)
+                    KVRow(key: "캐시 쓰기", value: usage.cacheCreationTokens.formattedShort, valueColor: Theme.Color.warning)
+                    KVRow(key: "메시지", value: "\(usage.messageCount)")
                 }
 
-                section("cost") {
+                section("비용") {
                     KVRow(
-                        key: "session",
+                        key: "이번 세션",
                         value: String(format: "$%.4f", usage.costUSD),
                         valueColor: Theme.Color.accent
                     )
                 }
 
                 if !recentTools.isEmpty {
-                    section("recent tools") {
+                    section("최근 도구") {
                         ForEach(Array(recentTools.suffix(8).enumerated()), id: \.offset) { _, tool in
                             Text(tool)
                                 .font(Theme.Typography.small)

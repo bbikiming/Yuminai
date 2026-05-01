@@ -158,6 +158,44 @@
 
 ---
 
+## ADR-018 — 브랜딩 (ar2r 자전거 팀 컬러) + 인터랙션 표준 + UX 라이팅 한글 친화
+
+- **날짜**: 2026-05-01
+- **상태**: Accepted (브랜드 컬러는 fallback, 사용자 답변 시 교체)
+- **결정**:
+  1. `Theme.Brand` namespace 도입 — 모든 강조 색은 Brand로 위임. 토큰 한 곳 변경으로 전체 반영.
+  2. ar2r 정확한 컬러는 codex CLI 조사로 미확인 → fallback (deep navy `#0E2A47` + vivid orange-red `#FF5A36` + white) 사용
+  3. 모든 버튼에 `PressedScaleStyle` (0.97 scale, 80ms) 적용. CTA(primary)는 `PrimaryButtonStyle` (hover 1.02 + brightness 추가)
+  4. 모든 hover bg 변화에 100ms easeOut 애니메이션
+  5. UX 라이팅 전수 패스 — `docs/design/70_BRANDING_AND_INTERACTION.md` §5.2 라벨 통일표 적용
+- **컨텍스트**:
+  - 사용자 — "이 정도 디자인 퀄리티" + "ar2r 자전거 팀 컬러" + "버튼 인터랙션·애니메이션" + "UX 라이팅 한글 친화" 동시 요청
+  - 디자인은 색·인터랙션·라이팅이 동시 작동해야 일관 — 한 라운드에 통합 처리 필요
+- **codex 조사 결과** (`codex exec --skip-git-repo-check`):
+  - `ar2r` / `AR2R` / `에이알투알` + 자전거 키워드로 검색 — 공개 웹에서 자전거 팀 미확인
+  - 발견된 동명: AI tool, 프랑스 회사, 알마티 클럽 (모두 자전거 무관)
+  - codex 제안 fallback: deep navy + orange-red (자전거 저지 표준 — bold primary + high-visibility accent + white)
+- **결과**:
+  - `Theme.Brand` 5개 토큰 (primary/primaryDark/primaryLight/accent/accentDeep/accentMuted/accentBorder/contrast)
+  - `Theme.Color.accent` 등 Brand 위임
+  - `FlatComponents`에 `PressedScaleStyle`, `PrimaryButtonStyle`, `AnyButtonStyle` 추가
+  - `WorkspaceItemRow`에 hover 시 ⌘N 단축키 hint
+  - `ChatToolbar` Breadcrumb 클릭 시 native `Menu` (워크스페이스 리스트 + "+ 새")
+  - `RootView`에 ⌘1~9 invisible button 9개 (workspace 빠른 전환)
+  - 18개 view literal 한글화 (Composer/Sidebar/ChatView/ChatToolbar/ContextInspector/UsageDashboard/CreateWorkspaceSheet/RootView empty/error alert)
+- **알려진 한계 (다음 라운드)**:
+  - 로고 SwiftUI View / SVG / PNG / .icns 미생성
+  - About/splash 화면 미구현
+  - Settings는 여전히 시스템 Form
+  - ⌘K command palette 미구현 (sidebar search 콜백 빔)
+  - Toast 컴포넌트 미작성 (alert만)
+  - Sidebar ↑↓ keyboard nav (focus management) 미구현
+  - Reduce-motion 자동 감지 미적용
+  - **ar2r 정확한 컬러** — 사용자 답변 필요 (Q-A in 70 spec)
+- **재검토**: 사용자 답변 + 다음 iteration
+
+---
+
 ## ADR-017 — 반응형 Layout (LayoutMode + AppStorage user intent)
 
 - **날짜**: 2026-05-01

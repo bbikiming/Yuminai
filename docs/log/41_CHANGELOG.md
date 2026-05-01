@@ -4,6 +4,45 @@
 
 ## [Unreleased] — 2026-05-01
 
+### Added — 브랜딩 + 인터랙션 + UX 라이팅 (ADR-018, 2026-05-01)
+
+사용자 요청: "각 버튼 인터랙션·애니메이션 + 모든 설정/버튼 동작화 + UX 라이팅 한글 친화 + ar2r 자전거 팀 컬러로 브랜딩"
+
+진행:
+1. **ar2r 조사** — codex CLI로 web search, 공개 웹에서 자전거 팀 식별 불가 → fallback 자전거 저지 표준 팔레트 사용 (사용자 답변 시 토큰 한 곳만 교체)
+2. **브랜드 시스템** — `Theme.Brand` namespace 신규 (`primary` deep navy `#0E2A47`, `accent` orange-red `#FF5A36`, `accentDeep`, `accentMuted`, `accentBorder`). `Theme.Color.accent`/`accentMuted`/`accentBorder`/`accentHover`/`liveDot` 모두 Brand로 위임 → 한 곳 변경으로 전체 반영
+3. **인터랙션 강화**:
+   - `PressedScaleStyle` (모든 버튼 0.97 scale on press, 80ms easeOut)
+   - `PrimaryButtonStyle` (CTA hover 1.02 scale + brightness +0.04)
+   - `FlatButton` 모든 variant에 hover bg 토큰 (`bgHover` 추가)
+   - `IconButton` press 0.92 scale + hover bg 100ms 애니메이션
+   - `SendButton` hover/press 별도 애니, "보내기"/"중단" 한글 + tooltip
+   - `WorkspaceItemRow` hover 시 `⌘N` 단축키 hint 표시 (10개 미만)
+4. **UX 라이팅 한글 친화 (전수 패스)**:
+   - Composer placeholder → "무엇을 도와드릴까요? `/`로 명령, `@`로 노트"
+   - Composer "자동 모드" → "응답 중", attachment tooltip → "파일 첨부는 곧 지원됩니다"
+   - Sidebar "Settings" → "설정", "Workspaces" → "워크스페이스"
+   - Sidebar empty → "아직 시작한 작업이 없네요. 위 ‘+ 새 워크스페이스’로 시작해보세요."
+   - UpdateCard → "업데이트 준비 / 새 버전이 도착했어요"
+   - WorkspaceItemRow 우클릭 "삭제" → "지우기"
+   - ChatView empty → "여기서 새 작업을 시작해보세요." + 단축키 힌트 친화화
+   - ChatToolbar streaming "streaming" → "응답 중"
+   - ChatToolbar inspector tooltip → "창을 더 넓혀주세요 (1080px↑)"
+   - ContextInspector 섹션 → "활성/컨텍스트/토큰/비용/최근 도구" + key 한글
+   - UsageDashboard 제목/섹션 한글 ("이번 세션", "앱 실행 후 누적", "모델 가격")
+   - CreateWorkspaceSheet 전수 한글 ("어떤 폴더에서 시작할까요?", "이 폴더로", "만들기")
+   - RootView empty → "어떤 작업으로 시작할까요?" + 부제
+   - Error alert "오류" → "잠깐, 문제가 생겼어요" / "확인" → "알겠어요"
+5. **미동작 버튼 wiring**:
+   - Breadcrumb 클릭 → 워크스페이스 switcher menu (체크 마크 + "+ 새 워크스페이스")
+   - ⌘1~9 → 워크스페이스 빠른 전환 (invisible button 9개)
+   - Sidebar 워크스페이스 hover 시 단축키 hint 표시
+6. **`docs/design/70_BRANDING_AND_INTERACTION.md`** 작성 (ar2r 조사 결과 + 브랜드 시스템 + 인터랙션 매트릭스 + UX 라이팅 표 + 동작 명세)
+
+ADR-018 채택. 사용자 답변(ar2r 정확한 컬러) 시 Brand namespace 한 곳만 교체.
+
+검증: build 1.5s, test 52/52, run 정상
+
 ### Added — 반응형 Layout 시스템 (ADR-017, 2026-05-01)
 
 사용자 요청: "반응형부터 명확하게 구현"

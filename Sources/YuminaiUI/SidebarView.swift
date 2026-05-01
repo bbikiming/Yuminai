@@ -75,7 +75,7 @@ public struct SidebarView: View {
                 action: onCreate
             )
             SidebarMenuRow(
-                label: "Settings",
+                label: "설정",
                 icon: "gear",
                 action: onOpenSettings
             )
@@ -90,11 +90,12 @@ public struct SidebarView: View {
         ScrollView {
             VStack(alignment: .leading, spacing: 0) {
                 if !workspaces.isEmpty {
-                    SidebarGroupHeader("Workspaces")
+                    SidebarGroupHeader("워크스페이스")
                     VStack(spacing: 1) {
-                        ForEach(workspaces) { workspace in
+                        ForEach(Array(workspaces.enumerated()), id: \.element.id) { index, workspace in
                             WorkspaceItemRow(
                                 workspace: workspace,
+                                index: index,
                                 isSelected: workspace.id == selectedId,
                                 onSelect: { selectedId = workspace.id },
                                 onDelete: { onDelete(workspace) }
@@ -197,6 +198,7 @@ struct SidebarGroupHeader: View {
 /// 워크스페이스 한 row.
 struct WorkspaceItemRow: View {
     let workspace: Workspace
+    let index: Int
     let isSelected: Bool
     let onSelect: () -> Void
     let onDelete: () -> Void
@@ -215,9 +217,11 @@ struct WorkspaceItemRow: View {
                         Circle()
                             .fill(Theme.Color.accent)
                             .frame(width: Theme.Layout.sidebarDotSize, height: Theme.Layout.sidebarDotSize)
+                            .transition(.scale.combined(with: .opacity))
                     }
                 }
                 .frame(width: 16)
+                .animation(.easeOut(duration: 0.15), value: isSelected)
 
                 Text(workspace.name)
                     .font(Theme.Typography.label)
@@ -226,6 +230,13 @@ struct WorkspaceItemRow: View {
                     .truncationMode(.tail)
 
                 Spacer()
+
+                if index < 9 && hovering && !isSelected {
+                    Text("⌘\(index + 1)")
+                        .font(Theme.Typography.micro)
+                        .foregroundStyle(Theme.Color.textTertiary)
+                        .transition(.opacity)
+                }
             }
             .padding(.horizontal, Theme.Layout.sidebarItemPadH)
             .padding(.vertical, Theme.Layout.sidebarItemPadV)
@@ -234,8 +245,9 @@ struct WorkspaceItemRow: View {
             .clipShape(RoundedRectangle(cornerRadius: Theme.Radius.md))
             .selectedBar(isSelected)
             .contentShape(Rectangle())
+            .animation(.easeOut(duration: 0.10), value: hovering)
         }
-        .buttonStyle(.plain)
+        .buttonStyle(PressedScaleStyle(scale: 0.98))
         .onHover { hovering = $0 }
         .contextMenu {
             Button("이름 복사") {
@@ -243,7 +255,7 @@ struct WorkspaceItemRow: View {
                 NSPasteboard.general.setString(workspace.name, forType: .string)
             }
             Divider()
-            Button("삭제", role: .destructive, action: onDelete)
+            Button("지우기", role: .destructive, action: onDelete)
         }
         .accessibilityLabel("\(workspace.name)\(isSelected ? ", 선택됨" : "")")
         .accessibilityHint("이중 클릭으로 활성화")
@@ -262,10 +274,10 @@ struct EmptyWorkspaceHint: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: Theme.Spacing.md) {
-            Text("아직 워크스페이스가 없습니다.")
+            Text("아직 시작한 작업이 없네요.")
                 .font(Theme.Typography.small)
                 .foregroundStyle(Theme.Color.textSecondary)
-            Text("위의 '새 워크스페이스'로 시작하세요.")
+            Text("위 ‘+ 새 워크스페이스’로 시작해보세요.")
                 .font(Theme.Typography.small)
                 .foregroundStyle(Theme.Color.textTertiary)
         }
@@ -286,10 +298,10 @@ public struct UpdateCard: View {
                 .font(.system(size: 14, weight: .medium))
                 .foregroundStyle(Theme.Color.accent)
             VStack(alignment: .leading, spacing: 2) {
-                Text("업데이트 가능")
+                Text("업데이트 준비")
                     .font(Theme.Typography.label)
                     .foregroundStyle(Theme.Color.text)
-                Text("새 버전 v0.2 빌드")
+                Text("새 버전이 도착했어요")
                     .font(Theme.Typography.small)
                     .foregroundStyle(Theme.Color.textSecondary)
             }

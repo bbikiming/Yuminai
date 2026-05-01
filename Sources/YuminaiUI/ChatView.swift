@@ -8,7 +8,7 @@ public struct ChatView: View {
 
     public init(
         messages: [Message],
-        emptyStateText: String = "메시지를 입력해 시작하세요."
+        emptyStateText: String = "여기서 새 작업을 시작해보세요."
     ) {
         self.messages = messages
         self.emptyStateText = emptyStateText
@@ -58,7 +58,7 @@ struct EmptyChatView: View {
             Text(text)
                 .font(Theme.Typography.body)
                 .foregroundStyle(Theme.Color.textSecondary)
-            Text("⌘ Return으로 전송, ⌘D 사용량, ⌘⌥I Inspector")
+            Text("⌘ Return 보내기 · ⌘D 사용량 · ⌘⌥I Inspector")
                 .font(Theme.Typography.small)
                 .foregroundStyle(Theme.Color.textTertiary)
             Spacer()
