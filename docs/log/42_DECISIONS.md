@@ -1,6 +1,67 @@
 # Decisions Log (ADR-lite)
 
-> 최신: ADR-034 (v0.5 R1 — Agent chain + Inline mention + PreviewPane + Codex + Terminal reload + ACP doc)
+> 최신: ADR-035 (v0.5 R2 — Dev server auto-detect + 외부 IDE + multi-mention 안내 + Dual-Composer)
+
+---
+
+## ADR-035 — v0.5 R2: Dev server auto-detect + Editable diff 단순화 + multi-mention 안내 + Dual-Composer split
+
+- **날짜**: 2026-05-02
+- **상태**: Accepted
+- **결정**: UX 검토 후 4/6 진행 — 가치 큰 것 + 구현 가능한 것. Terminal Block UX와 ACP는 cost 명시 보류
+- **컨텍스트**:
+  - 사용자 — "다음 단계도 이어서 구현해 줘 uiux를 상세히 검토해서 구현해"
+  - **상세 UX 검토** — 단순 구현 X, 각 항목 사용성 분석 후 결정
+- **각 결정**:
+  1. **B1 dev server auto-detect** — package.json + config 파일 분석. ping은 X (사용자가 server 시작했는지 모름, false-positive 회피). Suggestion chip으로 추천만, 사용자 클릭 시 로드
+  2. **B2 Editable diff 단순화** — Cline editable은 SwiftUI 자체 구현 prohibitive (3-5인일). External editor 버튼으로 단순화 — NSWorkspace.open이 Xcode/VSCode/etc 자동 열어줌. 가치 80% 비용 5%
+  3. **B3 Multi-mention 안내** — parallel dispatch는 multi-pane state 충돌 위험 + UX 복잡. 첫 mention만 + UI hint로 명확화 (사용자가 잘못 쓰면 알아챔)
+  4. **B4 Dual-Composer 단순화** — 진짜 isolated dual은 Composer state 분리 매우 큼. **단순화**: secondary는 자체 input draft만 보관, send 시 setActivePane → input swap → sendMessage. 양쪽 동시 입력 가능 + send가 active 전환을 트리거 (focus follow)
+- **B1 UX 결정 — ping vs 추천**:
+  - ping (HTTP HEAD)으로 서버 살아있는지 확인 가능 but:
+    - false-positive: localhost:3000이 다른 앱 점유 가능
+    - 사용자가 anyway URL 직접 클릭해야 — ping은 noise
+  - **추천만 채택** — confidence label로 user expectation 관리
+- **B2 단순화 가치 분석**:
+  - Cline editable 가치: 100 (매우 높음)
+  - SwiftUI 자체 diff editor 비용: 100 (3-5인일 + 유지보수)
+  - External editor 가치: 80 (사용자가 익숙한 IDE 사용 가능)
+  - External editor 비용: 5 (NSWorkspace.open 1줄)
+  - **ROI: External editor가 압도적**
+- **B4 Dual 단순화 — focus follow 패턴**:
+  - 진짜 dual은 두 Composer가 독립 + 각자 active pane으로 send
+  - 문제: 어느 쪽이 ⌘Return target인지, 양쪽 isStreaming 상태 동시 추적
+  - **단순화**: send 시 active 전환 — 사용자 의도가 명확 (이 pane으로 보낸다 = 이 pane을 본다)
+  - 양쪽 입력 draft는 보존 (secondary @State) — 사용자가 panes 옮겨다니면서 draft 유지
+- **격리**:
+  - DevServerDetector는 YuminaiCore (UI 의존 X)
+  - openFileInExternalEditor는 AppModel (NSWorkspace.open)
+  - SecondaryPaneView 자체 @State (AppModel state 변경 X)
+- **결과**:
+  - 신규 파일 1개: DevServerDetector.swift
+  - PreviewPane +SuggestionChip + suggestions strip
+  - DiffView.FileRow +open in editor 버튼
+  - AppModel +openFileInExternalEditor + sendToPane
+  - InspectorPanel +onOpenChangeInEditor callback
+  - SecondaryPaneView +자체 Composer (draft @State)
+  - MentionParser +allInline
+  - Composer +multiMentionHint (orange banner)
+  - 15 신규 테스트
+  - build 7.6s, test 206/206 (191→206, +15)
+- **알려진 한계 / 보류**:
+  - **Terminal Block UX (Warp)** — SwiftTerm 한계, 자체 PTY wrap 비용 매우 큼 → v0.7+
+  - **ACP 실제 PoC** — 2-3일 별도 spike, ADR-034 doc 자료 유지
+  - Multi-mention parallel dispatch — v0.7+ (state 충돌)
+  - Dev server ping — false-positive 위험으로 X
+  - External editor는 system default (Xcode 등) — 사용자 설정 가능
+- **재검토**:
+  - 사용자 dual-Composer 사용 후 — focus follow가 자연스러운지
+  - 사용자 dev server suggestion 사용 후 — confidence label이 실용적인지
+  - Terminal Block UX 진짜 필요한지 (사용자 명시 요청 데이터)
+
+---
+
+## ADR-034 — v0.5 Round 1: Agent chain + Inline mention + PreviewPane + Codex schema + Terminal reload + ACP decision doc
 
 ---
 

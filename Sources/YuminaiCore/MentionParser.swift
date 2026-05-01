@@ -96,4 +96,36 @@ public struct MentionParser: Sendable {
         if t.hasPrefix("@") { t.removeFirst() }
         return t.lowercased()
     }
+
+    /// 자연어 안의 모든 mention 추출 (ADR-035 B3).
+    /// 첫 번째만 dispatch에 사용되지만, UI에 "여러 mention 발견" 안내 시 사용.
+    public func allInline(_ text: String) -> [String] {
+        let scalars = Array(text)
+        var found: [String] = []
+        var i = 0
+        while i < scalars.count {
+            let c = scalars[i]
+            if c == "@" {
+                let prev = i > 0 ? scalars[i - 1] : " "
+                if prev.isWhitespace || prev.isNewline || i == 0 {
+                    var j = i + 1
+                    while j < scalars.count {
+                        let ch = scalars[j]
+                        if ch.isWhitespace || ch.isNewline || ch == "," || ch == "." || ch == "!" || ch == "?" {
+                            break
+                        }
+                        j += 1
+                    }
+                    let target = String(scalars[i..<j])
+                    if target.count > 1 {
+                        found.append(target)
+                    }
+                    i = j
+                    continue
+                }
+            }
+            i += 1
+        }
+        return found
+    }
 }

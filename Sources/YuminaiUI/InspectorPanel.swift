@@ -54,6 +54,7 @@ public struct InspectorPanel: View {
     public let onAcceptAllChanges: () -> Void
     public let onRejectAllChanges: () -> Void
     public let onRejectChange: (ChangedFile) -> Void
+    public let onOpenChangeInEditor: (ChangedFile) -> Void
 
     // Delivery loop (ADR-029 phase B)
     public let deliveryResults: [DeliveryResult]
@@ -103,6 +104,7 @@ public struct InspectorPanel: View {
         onAcceptAllChanges: @escaping () -> Void = {},
         onRejectAllChanges: @escaping () -> Void = {},
         onRejectChange: @escaping (ChangedFile) -> Void = { _ in },
+        onOpenChangeInEditor: @escaping (ChangedFile) -> Void = { _ in },
         deliveryResults: [DeliveryResult] = [],
         isDeliveryRunning: Bool = false,
         deliveryConfig: DeliveryConfig = .disabled,
@@ -149,6 +151,7 @@ public struct InspectorPanel: View {
         self.onAcceptAllChanges = onAcceptAllChanges
         self.onRejectAllChanges = onRejectAllChanges
         self.onRejectChange = onRejectChange
+        self.onOpenChangeInEditor = onOpenChangeInEditor
         self.deliveryResults = deliveryResults
         self.isDeliveryRunning = isDeliveryRunning
         self.deliveryConfig = deliveryConfig
@@ -227,7 +230,8 @@ public struct InspectorPanel: View {
                     unifiedDiff: pendingDiff,
                     onAcceptAll: onAcceptAllChanges,
                     onRejectAll: onRejectAllChanges,
-                    onRejectFile: onRejectChange
+                    onRejectFile: onRejectChange,
+                    onOpenInEditor: onOpenChangeInEditor
                 )
                 .frame(minHeight: 200)
 

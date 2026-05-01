@@ -82,6 +82,27 @@ public struct Composer: View {
     @FocusState private var inputFocused: Bool
     @State private var showMentionPicker = false
 
+    private static let mentionParser = MentionParser()
+
+    @ViewBuilder
+    private var multiMentionHint: some View {
+        let mentions = Self.mentionParser.allInline(text)
+        if mentions.count > 1 {
+            HStack(spacing: 6) {
+                Image(systemName: "info.circle.fill")
+                    .font(.system(size: 10))
+                    .foregroundStyle(.orange)
+                Text("여러 mention 발견 (\(mentions.joined(separator: ", "))) — 첫 번째 ‘\(mentions[0])’ 만 사용됩니다.")
+                    .font(Theme.Typography.micro)
+                    .foregroundStyle(Theme.Color.textSecondary)
+                Spacer()
+            }
+            .padding(.horizontal, Theme.Spacing.md)
+            .padding(.vertical, 4)
+            .background(SwiftUI.Color.orange.opacity(0.08))
+        }
+    }
+
     public var body: some View {
         VStack(spacing: 0) {
             if !attachedFiles.isEmpty {
@@ -92,6 +113,7 @@ public struct Composer: View {
                 gitMetaRow(branch: gitBranch)
                 FlatHDivider().opacity(0.5)
             }
+            multiMentionHint
             textArea
             footer
         }

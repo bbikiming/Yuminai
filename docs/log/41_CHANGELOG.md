@@ -4,6 +4,67 @@
 
 ## [Unreleased] — 2026-05-02
 
+### Added — v0.5 R2: Dev server auto-detect + 외부 IDE 열기 + multi-mention 안내 + Dual-Composer (ADR-035)
+
+사용자: "다음 단계도 이어서 구현해 줘 uiux를 상세히 검토해서 구현해"
+
+UX 검토 후 4/6 진행, 2 보류:
+✅ B1 PreviewPane dev server auto-detect / B2 Editable diff External Editor 단순화 /
+   B3 multi-mention 안내 / B4 Dual-Composer split (단순화)
+⏸ Terminal Block UX (Warp) — SwiftTerm 한계, 자체 PTY wrap 매우 큼 → v0.7+
+⏸ ACP 실제 PoC — 2-3일 별도 작업, doc만 (ADR-034 유지)
+
+**B1. PreviewPane dev server auto-detect**:
+- `Sources/YuminaiCore/DevServerDetector.swift` (신규)
+  - `detect()` — workspace에서 package.json + config 파일 분석 → suggestions
+  - 알려진 framework 10개: Next.js / Vite / Nuxt / CRA / Angular / SvelteKit / Astro / Remix / Storybook / Docusaurus
+  - confidence 3단계: high (script 명시) / medium (config 또는 deps fallback) / low
+  - port 중복 제거
+- PreviewPane에 suggestions strip (URL bar 아래)
+  - `SuggestionChip` — framework + port + confidence icon (체크/물음표)
+  - 클릭 → URL 자동 채움 + 로드
+- empty state 메시지 동적 (suggestions 있을 때 "위에서 클릭" 안내)
+
+**B2. Editable diff — External Editor 버튼**:
+- Cline-style editable diff는 SwiftUI 자체 구현 prohibitive → **단순화**
+- `DiffView.FileRow`에 호버/select 시 `arrow.up.right.square` 버튼 추가
+- AppModel.openFileInExternalEditor(_:) — `NSWorkspace.shared.open(fullURL)`
+- 사용자가 Xcode/VSCode/IDE에서 직접 편집 후 돌아오면 다음 git status로 자동 반영
+
+**B3. Inline mention multi-target 안내**:
+- `MentionParser.allInline(_:)` — 자연어 안의 모든 mention 추출
+- Composer에 `multiMentionHint` — text에 mention 2개+ 발견 시:
+  - 주황색 banner: "여러 mention 발견 (@a, @b) — 첫 번째 ‘@a’ 만 사용됩니다."
+- 진짜 parallel multi-target dispatch는 v0.7+ (multi-pane state 충돌 위험)
+
+**B4. Dual-Composer split (단순화)**:
+- `SecondaryPaneView`에 자체 Composer 추가 (`@State private var draft`)
+- secondary Composer:
+  - placeholder: "<pane name>에게 보내기 — 보내면 이 pane이 자동 활성화돼요"
+  - "보내기" 버튼 + ⌘Return shortcut
+  - canSend: text 비어있지 않고 isStreaming 아님
+- AppModel.sendToPane(_ paneId:text:) — 자동 setActivePane + input swap + sendMessage
+- 양쪽 동시 입력 가능. send 누른 쪽이 active pane이 됨 (focus follow)
+- isStreaming 표시도 secondary 헤더에 (active pane이 secondary일 때)
+
+**테스트 15 신규**:
+- DevServerDetectorTests (11): Next.js/Vite/Angular/Storybook/Astro/dependencies fallback/confidence/empty pkg/vite.config/no config/end-to-end 중복 제거
+- MentionParser.allInline (4): multiple/single/none/email-like 무시
+
+**검증**: build 7.6s, test 206/206 (191→206, +15 신규)
+
+알려진 한계:
+- Dev server auto-detect는 ping 안 함 (사용자가 server 시작했는지 모름)
+- External editor는 system default — Xcode가 default일 수 있음 (사용자 설정)
+- Multi-mention은 안내만 — 진짜 parallel dispatch는 v0.7+
+- Dual-Composer는 secondary가 send 시 강제 활성 전환 — primary에서 작업 중이면 break (의도적, 사용자 control)
+- Terminal Block UX (Warp) 보류
+- ACP 실제 PoC 보류
+
+**보류 명시 (defer)**:
+- Terminal Block UX — 자체 PTY wrap 비용 매우 큼 (v0.7+ 또는 사용자 명시 요청 시)
+- ACP Spike — 2-3일 별도 작업 (ADR-034 doc 자료 유지)
+
 ### Added — v0.5 Round 1: Agent chain + Inline mention + PreviewPane + Codex schema + Terminal reload + ACP doc (ADR-034)
 
 사용자: "권고 항목 모두 진행해 줘"

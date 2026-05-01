@@ -15,6 +15,7 @@ public struct DiffReviewView: View {
     public let onAcceptAll: () -> Void
     public let onRejectAll: () -> Void
     public let onRejectFile: (ChangedFile) -> Void
+    public let onOpenInEditor: (ChangedFile) -> Void
 
     @State private var selectedPath: String?
 
@@ -23,13 +24,15 @@ public struct DiffReviewView: View {
         unifiedDiff: String,
         onAcceptAll: @escaping () -> Void,
         onRejectAll: @escaping () -> Void,
-        onRejectFile: @escaping (ChangedFile) -> Void
+        onRejectFile: @escaping (ChangedFile) -> Void,
+        onOpenInEditor: @escaping (ChangedFile) -> Void = { _ in }
     ) {
         self.changes = changes
         self.unifiedDiff = unifiedDiff
         self.onAcceptAll = onAcceptAll
         self.onRejectAll = onRejectAll
         self.onRejectFile = onRejectFile
+        self.onOpenInEditor = onOpenInEditor
     }
 
     public var body: some View {
@@ -97,7 +100,8 @@ public struct DiffReviewView: View {
                     file: file,
                     selected: selectedPath == file.path,
                     onSelect: { selectedPath = file.path },
-                    onReject: { onRejectFile(file) }
+                    onReject: { onRejectFile(file) },
+                    onOpenInEditor: { onOpenInEditor(file) }
                 )
             }
         }
@@ -205,6 +209,7 @@ private struct FileRow: View {
     let selected: Bool
     let onSelect: () -> Void
     let onReject: () -> Void
+    let onOpenInEditor: () -> Void
     @State private var hovering = false
 
     var body: some View {
@@ -218,6 +223,13 @@ private struct FileRow: View {
                     .truncationMode(.middle)
                 Spacer()
                 if hovering || selected {
+                    Button(action: onOpenInEditor) {
+                        Image(systemName: "arrow.up.right.square")
+                            .font(.system(size: 10))
+                            .foregroundStyle(Theme.Color.textSecondary)
+                    }
+                    .buttonStyle(.plain)
+                    .help("외부 편집기에서 열기 (system default)")
                     Button(action: onReject) {
                         Image(systemName: "arrow.uturn.backward")
                             .font(.system(size: 10))

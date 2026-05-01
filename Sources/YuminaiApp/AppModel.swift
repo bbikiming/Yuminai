@@ -1133,6 +1133,28 @@ public final class AppModel {
         }
     }
 
+    /// secondary pane에 텍스트를 직접 보내기 (ADR-035 B4 dual-Composer).
+    /// 자동으로 그 pane을 활성화 + input swap + sendMessage.
+    public func sendToPane(_ paneId: UUID, text: String) async {
+        guard agentPanes.contains(where: { $0.id == paneId }) else { return }
+        if activePaneId != paneId {
+            await setActivePane(paneId)
+        }
+        inputText = text
+        await sendMessage()
+    }
+
+    /// 외부 IDE에서 파일 열기 (system default — 보통 Xcode/VSCode/etc) — ADR-035 B2.
+    public func openFileInExternalEditor(_ relativePath: String) {
+        guard let workspace = currentWorkspace else { return }
+        let fullURL = URL(fileURLWithPath: workspace.directoryPath).appending(path: relativePath)
+        guard FileManager.default.fileExists(atPath: fullURL.path) else {
+            self.error = "파일을 찾을 수 없어요: \(relativePath)"
+            return
+        }
+        NSWorkspace.shared.open(fullURL)
+    }
+
     // MARK: - Delivery actions (ADR-029 phase B)
 
     /// 사용자가 수동으로 build/test/lint 실행.

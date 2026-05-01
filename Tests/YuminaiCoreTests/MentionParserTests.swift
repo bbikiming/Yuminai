@@ -113,4 +113,29 @@ struct MentionParserTests {
     func parseAnyNone() {
         #expect(parser.parseAny("일반 텍스트") == nil)
     }
+
+    // MARK: - allInline (ADR-035 B3)
+
+    @Test("allInline — 여러 mention 모두 추출")
+    func allInlineMultiple() {
+        let result = parser.allInline("우선 @claude 그리고 @codex 마지막에 @gemini")
+        #expect(result == ["@claude", "@codex", "@gemini"])
+    }
+
+    @Test("allInline — 1개만 있으면 1개")
+    func allInlineSingle() {
+        let result = parser.allInline("@codex 검토해줘")
+        #expect(result == ["@codex"])
+    }
+
+    @Test("allInline — 없으면 빈 배열")
+    func allInlineNone() {
+        #expect(parser.allInline("일반 텍스트").isEmpty)
+    }
+
+    @Test("allInline — email-like 무시")
+    func allInlineEmailIgnored() {
+        let result = parser.allInline("이메일 test@example.com 보냈어")
+        #expect(result.isEmpty)
+    }
 }

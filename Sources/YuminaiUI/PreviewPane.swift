@@ -1,29 +1,39 @@
 import SwiftUI
 import WebKit
+import YuminaiCore
 
-/// WKWebView 기반 임베드 preview pane (ADR-034 A4).
+/// WKWebView 기반 임베드 preview pane (ADR-034 A4 / ADR-035 B1).
 ///
 /// **use case**:
 /// - dev server localhost (예: `http://localhost:3000`)
 /// - file:// URL (예: 정적 HTML preview)
 /// - 외부 docs URL (예: `https://docs.swift.org`)
 ///
-/// 단순화 — 사용자가 URL TextField에 직접 입력. dev server auto-detect는 v0.6.
+/// **자동 감지** (ADR-035 B1): workspace의 package.json/config 파일 분석 → dev server 추천.
 public struct PreviewPane: View {
     @Binding public var urlText: String
     public let onClose: () -> Void
+    public let suggestions: [DevServerDetector.Suggestion]
 
     @State private var loadedURL: URL?
     @State private var isLoading: Bool = false
 
-    public init(urlText: Binding<String>, onClose: @escaping () -> Void) {
+    public init(
+        urlText: Binding<String>,
+        onClose: @escaping () -> Void,
+        suggestions: [DevServerDetector.Suggestion] = []
+    ) {
         self._urlText = urlText
         self.onClose = onClose
+        self.suggestions = suggestions
     }
 
     public var body: some View {
         VStack(spacing: 0) {
             urlBar
+            if !suggestions.isEmpty && loadedURL == nil {
+                suggestionStrip
+            }
             FlatHDivider()
             if let url = loadedURL {
                 WebViewWrapper(url: url, isLoading: $isLoading)
@@ -33,6 +43,25 @@ public struct PreviewPane: View {
             }
         }
         .background(Theme.Color.bg)
+    }
+
+    private var suggestionStrip: some View {
+        ScrollView(.horizontal, showsIndicators: false) {
+            HStack(spacing: 6) {
+                Text("감지됨:")
+                    .font(Theme.Typography.micro)
+                    .foregroundStyle(Theme.Color.textTertiary)
+                ForEach(suggestions) { sug in
+                    SuggestionChip(suggestion: sug) {
+                        urlText = sug.url
+                        loadURL()
+                    }
+                }
+            }
+            .padding(.horizontal, Theme.Spacing.md)
+            .padding(.vertical, 4)
+        }
+        .background(Theme.Color.accentMuted.opacity(0.5))
     }
 
     private var urlBar: some View {
@@ -77,7 +106,9 @@ public struct PreviewPane: View {
         EmptyStateHint(
             icon: "globe",
             title: "URL을 입력하세요",
-            message: "dev server (`http://localhost:3000`)나 정적 HTML(`file:///...`)을 입력하고 Return을 누르면 표시됩니다.",
+            message: suggestions.isEmpty
+                ? "dev server (`http://localhost:3000`)나 정적 HTML(`file:///...`)을 입력하고 Return을 누르면 표시됩니다."
+                : "위에서 감지된 dev server를 클릭하거나 직접 URL을 입력하세요. 서버가 실행 중인지 먼저 확인해주세요.",
             action: nil
         )
     }
@@ -97,6 +128,48 @@ public struct PreviewPane: View {
         guard let url = URL(string: withScheme) else { return }
         loadedURL = url
         urlText = withScheme
+    }
+}
+
+private struct SuggestionChip: View {
+    let suggestion: DevServerDetector.Suggestion
+    let onTap: () -> Void
+    @State private var hovering = false
+
+    var body: some View {
+        Button(action: onTap) {
+            HStack(spacing: 4) {
+                Image(systemName: confidenceIcon)
+                    .font(.system(size: 9))
+                    .foregroundStyle(Theme.Color.accent)
+                Text(suggestion.framework)
+                    .font(Theme.Typography.micro.weight(.medium))
+                    .foregroundStyle(Theme.Color.text)
+                Text(":\(suggestion.port)")
+                    .font(Theme.Typography.monoSmall)
+                    .foregroundStyle(Theme.Color.textSecondary)
+            }
+            .padding(.horizontal, 8)
+            .padding(.vertical, 3)
+            .background(hovering ? Theme.Color.surfaceHi : Theme.Color.surface)
+            .overlay(
+                RoundedRectangle(cornerRadius: 4)
+                    .stroke(Theme.Color.borderSubtle, lineWidth: 1)
+            )
+            .clipShape(RoundedRectangle(cornerRadius: 4))
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .onHover { hovering = $0 }
+        .help("\(suggestion.framework) \(suggestion.confidence.label) — \(suggestion.url) 로드")
+    }
+
+    private var confidenceIcon: String {
+        switch suggestion.confidence {
+        case .high: return "checkmark.seal.fill"
+        case .medium: return "questionmark.circle"
+        case .low: return "questionmark.diamond"
+        }
     }
 }
 

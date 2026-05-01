@@ -198,6 +198,7 @@ struct RootView: View {
                     onAcceptAllChanges: { Task { await appModel.acceptAllChanges() } },
                     onRejectAllChanges: { Task { await appModel.rejectAllChanges() } },
                     onRejectChange: { file in Task { await appModel.rejectPaths([file.path]) } },
+                    onOpenChangeInEditor: { file in appModel.openFileInExternalEditor(file.path) },
                     deliveryResults: appModel.deliveryResults,
                     isDeliveryRunning: appModel.isDeliveryRunning,
                     deliveryConfig: appModel.currentWorkspace?.deliveryConfig ?? .disabled,
@@ -527,7 +528,9 @@ struct ChatPane: View {
             let secondaryView = SecondaryPaneView(
                 pane: secondary,
                 messages: secondaryMessages,
-                onActivate: { Task { await appModel.setActivePane(secondary.id) } }
+                isStreaming: appModel.isStreaming && appModel.activePaneId == secondary.id,
+                onActivate: { Task { await appModel.setActivePane(secondary.id) } },
+                onSend: { text in Task { await appModel.sendToPane(secondary.id, text: text) } }
             )
 
             switch appModel.paneSplitMode {
@@ -604,8 +607,14 @@ struct ChatPane: View {
         @Bindable var bindable = appModel
         PreviewPane(
             urlText: $bindable.previewURLText,
-            onClose: { appModel.showPreviewPane = false }
+            onClose: { appModel.showPreviewPane = false },
+            suggestions: devServerSuggestions
         )
+    }
+
+    private var devServerSuggestions: [DevServerDetector.Suggestion] {
+        guard let path = currentWorkspacePath else { return [] }
+        return DevServerDetector(workspacePath: path).detect()
     }
 
     @State private var terminalReloadTrigger: UUID = UUID()
