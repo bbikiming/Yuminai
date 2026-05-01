@@ -4,6 +4,74 @@
 
 ## [Unreleased] — 2026-05-02
 
+### Added — v0.5 R3: Dev server live ping + Editable diff + CommandRunner block UX + chain hint (ADR-036)
+
+사용자: "v0.7+ 권고 항목들도 구현 진행"
+
+UX 검토 후 4/5 진행:
+✅ C1 Dev server live ping / C2 multi-mention chain 안내 /
+   C3 Editable diff 단순화 (inline TextEditor) /
+   C4 Terminal Block UX 단순화 (CommandRunnerPane 별개 패널)
+⏸ C5 ACP 실제 PoC — 2-3일 별도 spike, ADR-034 doc 자료 유지
+
+**C1. Dev server live ping**:
+- `DevServerDetector.pingAll(_:)` static — async TaskGroup으로 모든 suggestions 병렬 ping
+- HEAD request, 0.3초 timeout, 실패해도 silent (`isAlive: false`)
+- 5xx만 실패, 4xx도 살아있는 것으로 (정상 dev server response)
+- AppModel.refreshDevServerSuggestions — 30초 debounce + cache
+- PreviewPane SuggestionChip:
+  - live dot (녹색=alive, 빨강=dead)
+  - alive=true는 녹색 bg + 강조 border
+  - alive=false는 opacity 0.55 (dimmed)
+  - help text에 "● 응답 중" / "○ 응답 없음" prefix
+
+**C2. Multi-mention chain 안내**:
+- 기존 multiMentionHint 확장 — agentChainEnabled 상태 받음
+- chain ON: "Chain 활성 — 첫 번째로 시작, 응답에 다음 mention 있으면 chain hop으로 자동 dispatch" (accent 색)
+- chain OFF: 기존 "첫 번째만 사용 + Settings에서 ON 시 sequential 가능" (orange)
+- 사용자가 chain의 multi-mention sequential 활용을 자연스럽게 인식
+
+**C3. Editable diff (inline TextEditor 단순화)**:
+- 진짜 Cline editable diff (gutter + inline edit)는 cost prohibitive
+- **단순화**: 선택한 파일 본문을 TextEditor로 inline 편집 + ⌘S save
+- DiffView mode picker (segmented): "Diff" / "편집" 토글
+- inline editor는 readFileContents/onSaveFileContents 콜백 있을 때만 활성
+- 편집 모드에서:
+  - 본문 자동 로드 (path 변경 시 reload)
+  - "저장" 버튼 + ⌘S
+  - save 후 git diff 자동 갱신
+- AppModel: readWorkspaceFile / writeWorkspaceFile
+
+**C4. Terminal Block UX (CommandRunnerPane 별개 패널)**:
+- SwiftTerm wrap (Warp 패턴 그대로 구현)는 PTY parser 비용 매우 큼
+- **단순화**: 별개 `CommandRunnerPane` (NSTask 기반)
+- `Sources/YuminaiCore/CommandRunner.swift` (신규) — actor + ProcessRunner pattern
+  - `/bin/zsh -lc <command>` spawn + stdout/stderr capture
+  - mock runner 주입 가능 (테스트)
+- `Sources/YuminaiUI/CommandRunnerPane.swift` (신규)
+  - 헤더: 제목 + workspace dir + HelpHint + clear/close 버튼
+  - 본문: block 리스트 (CommandBlockView, 각 block collapse 가능)
+  - 입력바: `$` prefix + TextField + 실행 버튼 (⌘Return)
+  - Block: status icon (✓/✗) + 명령 + ms + exit code + stdout/stderr scroll (textSelection)
+- ChatToolbar에 `rectangle.stack` IconButton + ⌘⌥R toggle
+- RootView VSplitView 3-way: chat / terminal / commands (상호 독립 toggle)
+- max 50 blocks 누적
+
+**테스트 3 신규**:
+- CommandRunnerTests (3): success flag / mock 결과 조작 / 실패 결과
+
+**검증**: build 7.2s, test 209/209 (206→209, +3 신규)
+
+알려진 한계:
+- Live ping은 0.3s timeout — 슬로우 server는 false-negative 가능 (debounce 30초로 완화)
+- Editable diff는 raw text editor — syntax highlight X (v0.7+ 또는 SwiftUI Code Editor 라이브러리 발견 시)
+- CommandRunnerPane은 1회 명령만 — interactive (vim 등)는 SwiftTerm 패널 사용
+- Chain ON + multi-mention의 sequential dispatch는 chain 자체 로직에 의존 (각 응답에 mention 있어야 다음 hop)
+
+**보류 명시 (defer)**:
+- ACP 실제 PoC — 2-3일 별도 작업 (ADR-034 doc 자료 유지)
+- 진짜 Warp PTY-aware block UX — SwiftTerm wrap 비용 큼, 사용자 명시 요청 시 v0.8+
+
 ### Added — v0.5 R2: Dev server auto-detect + 외부 IDE 열기 + multi-mention 안내 + Dual-Composer (ADR-035)
 
 사용자: "다음 단계도 이어서 구현해 줘 uiux를 상세히 검토해서 구현해"

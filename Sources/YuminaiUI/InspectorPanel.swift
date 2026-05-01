@@ -55,6 +55,8 @@ public struct InspectorPanel: View {
     public let onRejectAllChanges: () -> Void
     public let onRejectChange: (ChangedFile) -> Void
     public let onOpenChangeInEditor: (ChangedFile) -> Void
+    public let readChangedFile: ((ChangedFile) -> String?)?
+    public let onSaveChangedFile: ((ChangedFile, String) -> Void)?
 
     // Delivery loop (ADR-029 phase B)
     public let deliveryResults: [DeliveryResult]
@@ -105,6 +107,8 @@ public struct InspectorPanel: View {
         onRejectAllChanges: @escaping () -> Void = {},
         onRejectChange: @escaping (ChangedFile) -> Void = { _ in },
         onOpenChangeInEditor: @escaping (ChangedFile) -> Void = { _ in },
+        readChangedFile: ((ChangedFile) -> String?)? = nil,
+        onSaveChangedFile: ((ChangedFile, String) -> Void)? = nil,
         deliveryResults: [DeliveryResult] = [],
         isDeliveryRunning: Bool = false,
         deliveryConfig: DeliveryConfig = .disabled,
@@ -152,6 +156,8 @@ public struct InspectorPanel: View {
         self.onRejectAllChanges = onRejectAllChanges
         self.onRejectChange = onRejectChange
         self.onOpenChangeInEditor = onOpenChangeInEditor
+        self.readChangedFile = readChangedFile
+        self.onSaveChangedFile = onSaveChangedFile
         self.deliveryResults = deliveryResults
         self.isDeliveryRunning = isDeliveryRunning
         self.deliveryConfig = deliveryConfig
@@ -231,7 +237,9 @@ public struct InspectorPanel: View {
                     onAcceptAll: onAcceptAllChanges,
                     onRejectAll: onRejectAllChanges,
                     onRejectFile: onRejectChange,
-                    onOpenInEditor: onOpenChangeInEditor
+                    onOpenInEditor: onOpenChangeInEditor,
+                    readFileContents: readChangedFile,
+                    onSaveFileContents: onSaveChangedFile
                 )
                 .frame(minHeight: 200)
 

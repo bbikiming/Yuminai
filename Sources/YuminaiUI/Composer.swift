@@ -56,7 +56,8 @@ public struct Composer: View {
         onAttach: @escaping () -> Void = {},
         onAttachNote: (() -> Void)? = nil,
         onCreatePR: (() -> Void)? = nil,
-        mentionSuggestions: [MentionSuggestion] = []
+        mentionSuggestions: [MentionSuggestion] = [],
+        agentChainEnabled: Bool = false
     ) {
         self._text = text
         self._model = model
@@ -77,6 +78,7 @@ public struct Composer: View {
         self.onAttachNote = onAttachNote
         self.onCreatePR = onCreatePR
         self.mentionSuggestions = mentionSuggestions
+        self.agentChainEnabled = agentChainEnabled
     }
 
     @FocusState private var inputFocused: Bool
@@ -84,22 +86,32 @@ public struct Composer: View {
 
     private static let mentionParser = MentionParser()
 
+    /// 여러 mention 발견 시 안내 (ADR-035 B3 + ADR-036 C2 chain 안내).
+    /// chain 활성 시 sequential dispatch가 자동으로 일어남을 안내.
+    public let agentChainEnabled: Bool
+
     @ViewBuilder
     private var multiMentionHint: some View {
         let mentions = Self.mentionParser.allInline(text)
         if mentions.count > 1 {
             HStack(spacing: 6) {
-                Image(systemName: "info.circle.fill")
+                Image(systemName: agentChainEnabled ? "link.circle.fill" : "info.circle.fill")
                     .font(.system(size: 10))
-                    .foregroundStyle(.orange)
-                Text("여러 mention 발견 (\(mentions.joined(separator: ", "))) — 첫 번째 ‘\(mentions[0])’ 만 사용됩니다.")
-                    .font(Theme.Typography.micro)
-                    .foregroundStyle(Theme.Color.textSecondary)
+                    .foregroundStyle(agentChainEnabled ? Theme.Color.accent : .orange)
+                if agentChainEnabled {
+                    Text("Chain 활성 — 첫 번째 ‘\(mentions[0])’으로 시작, 응답에 다음 mention 있으면 chain hop으로 자동 dispatch됩니다.")
+                        .font(Theme.Typography.micro)
+                        .foregroundStyle(Theme.Color.textSecondary)
+                } else {
+                    Text("여러 mention 발견 (\(mentions.joined(separator: ", "))) — 첫 번째 ‘\(mentions[0])’ 만 사용됩니다. Settings → Agent Chain ON 시 sequential dispatch 가능.")
+                        .font(Theme.Typography.micro)
+                        .foregroundStyle(Theme.Color.textSecondary)
+                }
                 Spacer()
             }
             .padding(.horizontal, Theme.Spacing.md)
             .padding(.vertical, 4)
-            .background(SwiftUI.Color.orange.opacity(0.08))
+            .background(agentChainEnabled ? Theme.Color.accentMuted.opacity(0.4) : SwiftUI.Color.orange.opacity(0.08))
         }
     }
 

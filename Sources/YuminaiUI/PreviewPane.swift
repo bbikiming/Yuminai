@@ -139,6 +139,7 @@ private struct SuggestionChip: View {
     var body: some View {
         Button(action: onTap) {
             HStack(spacing: 4) {
+                liveDot
                 Image(systemName: confidenceIcon)
                     .font(.system(size: 9))
                     .foregroundStyle(Theme.Color.accent)
@@ -151,17 +152,27 @@ private struct SuggestionChip: View {
             }
             .padding(.horizontal, 8)
             .padding(.vertical, 3)
-            .background(hovering ? Theme.Color.surfaceHi : Theme.Color.surface)
+            .background(hovering ? Theme.Color.surfaceHi : (suggestion.isAlive == true ? SwiftUI.Color.green.opacity(0.10) : Theme.Color.surface))
             .overlay(
                 RoundedRectangle(cornerRadius: 4)
-                    .stroke(Theme.Color.borderSubtle, lineWidth: 1)
+                    .stroke(suggestion.isAlive == true ? .green : Theme.Color.borderSubtle, lineWidth: 1)
             )
             .clipShape(RoundedRectangle(cornerRadius: 4))
             .contentShape(Rectangle())
+            .opacity(suggestion.isAlive == false ? 0.55 : 1.0)
         }
         .buttonStyle(.plain)
         .onHover { hovering = $0 }
-        .help("\(suggestion.framework) \(suggestion.confidence.label) — \(suggestion.url) 로드")
+        .help(helpText)
+    }
+
+    @ViewBuilder
+    private var liveDot: some View {
+        if let alive = suggestion.isAlive {
+            Circle()
+                .fill(alive ? SwiftUI.Color.green : SwiftUI.Color.red.opacity(0.5))
+                .frame(width: 5, height: 5)
+        }
     }
 
     private var confidenceIcon: String {
@@ -170,6 +181,16 @@ private struct SuggestionChip: View {
         case .medium: return "questionmark.circle"
         case .low: return "questionmark.diamond"
         }
+    }
+
+    private var helpText: String {
+        let liveLabel: String
+        switch suggestion.isAlive {
+        case .some(true): liveLabel = "● 응답 중 — "
+        case .some(false): liveLabel = "○ 응답 없음 (서버 시작 안 됨) — "
+        case .none: liveLabel = ""
+        }
+        return "\(liveLabel)\(suggestion.framework) \(suggestion.confidence.label) — \(suggestion.url) 로드"
     }
 }
 

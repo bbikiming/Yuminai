@@ -97,9 +97,18 @@ public final class AppModel {
     // Terminal pane toggle (ADR-027 phase A)
     public var showTerminalPane: Bool = false
 
-    // Preview pane (ADR-034 A4)
+    // Preview pane (ADR-034 A4 + ADR-036 C1 live ping)
     public var showPreviewPane: Bool = false
     public var previewURLText: String = ""
+    /// Detected dev server suggestions with live ping results.
+    public var devServerSuggestions: [DevServerDetector.Suggestion] = []
+    private var lastDevServerRefresh: Date = .distantPast
+
+    // Command Runner Pane (ADR-036 C4 Warp-style block UX 단순화)
+    public var showCommandRunnerPane: Bool = false
+    public var commandBlocks: [CommandRunner.CommandResult] = []
+    public var isCommandRunning: Bool = false
+    private let commandRunner = CommandRunner()
 
     // Delivery sheet (ADR-029 phase B)
     public var showDeliverySheet: Bool = false
@@ -1133,6 +1142,44 @@ public final class AppModel {
         }
     }
 
+    /// Command Runner — workspace dir에서 명령 실행 + block 누적 (ADR-036 C4).
+    public func runCommand(_ command: String) async {
+        guard let workspace = currentWorkspace else { return }
+        isCommandRunning = true
+        defer { isCommandRunning = false }
+        let workingDir = URL(fileURLWithPath: workspace.directoryPath)
+        do {
+            let result = try await commandRunner.run(command: command, in: workingDir)
+            commandBlocks.append(result)
+            // max 50 blocks 유지
+            if commandBlocks.count > 50 {
+                commandBlocks.removeFirst(commandBlocks.count - 50)
+            }
+        } catch {
+            self.error = "명령 실행 실패: \(error.localizedDescription)"
+        }
+    }
+
+    public func clearCommandBlocks() {
+        commandBlocks = []
+    }
+
+    /// Dev server suggestions 로드 + live ping (ADR-036 C1).
+    /// debounce — 30초 이내 재호출은 cache 반환.
+    public func refreshDevServerSuggestions() async {
+        guard let workspace = currentWorkspace else { return }
+        let now = Date()
+        if now.timeIntervalSince(lastDevServerRefresh) < 30 && !devServerSuggestions.isEmpty {
+            return
+        }
+        let detector = DevServerDetector(workspacePath: workspace.directoryPath)
+        let suggestions = detector.detect()
+        // background ping
+        let pinged = await DevServerDetector.pingAll(suggestions)
+        devServerSuggestions = pinged
+        lastDevServerRefresh = now
+    }
+
     /// secondary pane에 텍스트를 직접 보내기 (ADR-035 B4 dual-Composer).
     /// 자동으로 그 pane을 활성화 + input swap + sendMessage.
     public func sendToPane(_ paneId: UUID, text: String) async {
@@ -1142,6 +1189,45 @@ public final class AppModel {
         }
         inputText = text
         await sendMessage()
+    }
+
+    /// 워크스페이스의 파일 본문 read (inline editor용, ADR-036 C3).
+    public func readWorkspaceFile(_ relativePath: String) -> String? {
+        guard let workspace = currentWorkspace else { return nil }
+        let url = URL(fileURLWithPath: workspace.directoryPath).appending(path: relativePath)
+        return try? String(contentsOf: url, encoding: .utf8)
+    }
+
+    /// 워크스페이스의 파일 본문 write (inline editor save).
+    public func writeWorkspaceFile(_ relativePath: String, contents: String) {
+        guard let workspace = currentWorkspace else { return }
+        let url = URL(fileURLWithPath: workspace.directoryPath).appending(path: relativePath)
+        do {
+            try contents.write(to: url, atomically: true, encoding: .utf8)
+            // diff 새로고침
+            Task {
+                if let workspace = self.currentWorkspace {
+                    let runner = GitRunner(workspaceURL: URL(fileURLWithPath: workspace.directoryPath))
+                    if let snap = await self.checkpointManager.snapshot {
+                        let updated = try? await runner.diff()
+                        await MainActor.run {
+                            if let updated {
+                                self.pendingDiff = updated
+                            }
+                            // changedFiles도 갱신
+                            Task {
+                                if let files = try? await runner.changedFiles() {
+                                    await MainActor.run { self.pendingChanges = files }
+                                }
+                            }
+                            _ = snap
+                        }
+                    }
+                }
+            }
+        } catch {
+            self.error = "파일 저장 실패: \(error.localizedDescription)"
+        }
     }
 
     /// 외부 IDE에서 파일 열기 (system default — 보통 Xcode/VSCode/etc) — ADR-035 B2.

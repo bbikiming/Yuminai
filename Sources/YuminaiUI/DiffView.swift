@@ -16,8 +16,13 @@ public struct DiffReviewView: View {
     public let onRejectAll: () -> Void
     public let onRejectFile: (ChangedFile) -> Void
     public let onOpenInEditor: (ChangedFile) -> Void
+    /// inline 편집 (ADR-036 C3) — 선택된 파일 본문 read/save
+    public let readFileContents: ((ChangedFile) -> String?)?
+    public let onSaveFileContents: ((ChangedFile, String) -> Void)?
 
     @State private var selectedPath: String?
+    @State private var showInlineEditor: Bool = false
+    @State private var editorDraft: String = ""
 
     public init(
         changes: [ChangedFile],
@@ -25,7 +30,9 @@ public struct DiffReviewView: View {
         onAcceptAll: @escaping () -> Void,
         onRejectAll: @escaping () -> Void,
         onRejectFile: @escaping (ChangedFile) -> Void,
-        onOpenInEditor: @escaping (ChangedFile) -> Void = { _ in }
+        onOpenInEditor: @escaping (ChangedFile) -> Void = { _ in },
+        readFileContents: ((ChangedFile) -> String?)? = nil,
+        onSaveFileContents: ((ChangedFile, String) -> Void)? = nil
     ) {
         self.changes = changes
         self.unifiedDiff = unifiedDiff
@@ -33,6 +40,8 @@ public struct DiffReviewView: View {
         self.onRejectAll = onRejectAll
         self.onRejectFile = onRejectFile
         self.onOpenInEditor = onOpenInEditor
+        self.readFileContents = readFileContents
+        self.onSaveFileContents = onSaveFileContents
     }
 
     public var body: some View {
@@ -111,10 +120,12 @@ public struct DiffReviewView: View {
     @ViewBuilder
     private var diffViewer: some View {
         if let path = selectedPath {
-            ScrollView([.horizontal, .vertical]) {
-                colorizedDiff(for: path)
-                    .padding(Theme.Spacing.md)
-                    .frame(maxWidth: .infinity, alignment: .leading)
+            VStack(spacing: 0) {
+                if showInlineEditor {
+                    inlineEditor(for: path)
+                } else {
+                    diffViewMode(for: path)
+                }
             }
             .background(Theme.Color.bg)
         } else {
@@ -125,6 +136,71 @@ public struct DiffReviewView: View {
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
             .background(Theme.Color.bg)
+        }
+    }
+
+    private func diffViewer_modeBar(path: String) -> some View {
+        HStack(spacing: 6) {
+            Picker("", selection: $showInlineEditor) {
+                Text("Diff").tag(false)
+                if readFileContents != nil {
+                    Text("편집").tag(true)
+                }
+            }
+            .pickerStyle(.segmented)
+            .labelsHidden()
+            .frame(width: 140)
+            Spacer()
+            if showInlineEditor {
+                Button("저장") {
+                    if let file = changes.first(where: { $0.path == path }) {
+                        onSaveFileContents?(file, editorDraft)
+                    }
+                }
+                .keyboardShortcut("s", modifiers: .command)
+                .buttonStyle(.bordered)
+            }
+        }
+        .padding(.horizontal, Theme.Spacing.md)
+        .padding(.vertical, 4)
+        .background(Theme.Color.surface)
+        .overlay(alignment: .bottom) { FlatHDivider() }
+    }
+
+    private func diffViewMode(for path: String) -> some View {
+        VStack(spacing: 0) {
+            if readFileContents != nil {
+                diffViewer_modeBar(path: path)
+            }
+            ScrollView([.horizontal, .vertical]) {
+                colorizedDiff(for: path)
+                    .padding(Theme.Spacing.md)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+            }
+        }
+    }
+
+    private func inlineEditor(for path: String) -> some View {
+        VStack(spacing: 0) {
+            diffViewer_modeBar(path: path)
+            TextEditor(text: $editorDraft)
+                .font(Theme.Typography.mono)
+                .scrollContentBackground(.hidden)
+                .background(Theme.Color.bg)
+                .padding(Theme.Spacing.sm)
+                .onAppear {
+                    if editorDraft.isEmpty,
+                       let file = changes.first(where: { $0.path == path }),
+                       let content = readFileContents?(file) {
+                        editorDraft = content
+                    }
+                }
+                .onChange(of: path) { _, newPath in
+                    if let file = changes.first(where: { $0.path == newPath }),
+                       let content = readFileContents?(file) {
+                        editorDraft = content
+                    }
+                }
         }
     }
 

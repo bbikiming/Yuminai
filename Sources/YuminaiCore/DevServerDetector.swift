@@ -31,12 +31,14 @@ public struct DevServerDetector: Sendable {
         return results.filter { seen.insert($0.port).inserted }
     }
 
-    public struct Suggestion: Sendable, Equatable, Identifiable {
+    public struct Suggestion: Sendable, Equatable, Identifiable, Hashable {
         public let id: String
         public let framework: String
         public let port: Int
         public let url: String
         public let confidence: Confidence
+        /// live ping 결과 — nil = 미확인, true = 응답 OK, false = 응답 X (ADR-036 C1)
+        public var isAlive: Bool?
 
         public enum Confidence: Sendable, Equatable {
             case high       // package.json에 명시
@@ -52,12 +54,53 @@ public struct DevServerDetector: Sendable {
             }
         }
 
-        public init(framework: String, port: Int, confidence: Confidence) {
+        public init(framework: String, port: Int, confidence: Confidence, isAlive: Bool? = nil) {
             self.id = "\(framework):\(port)"
             self.framework = framework
             self.port = port
             self.url = "http://localhost:\(port)"
             self.confidence = confidence
+            self.isAlive = isAlive
+        }
+    }
+
+    /// suggestions 각각에 ping 결과 채우기 (ADR-036 C1).
+    /// HEAD request, 짧은 timeout (300ms), 실패해도 silent (isAlive = false).
+    public static func pingAll(_ suggestions: [Suggestion]) async -> [Suggestion] {
+        await withTaskGroup(of: (Suggestion, Bool?).self, returning: [Suggestion].self) { group in
+            for sug in suggestions {
+                group.addTask {
+                    let alive = await ping(url: sug.url)
+                    return (sug, alive)
+                }
+            }
+            var result: [Suggestion] = []
+            for await (sug, alive) in group {
+                var updated = sug
+                updated.isAlive = alive
+                result.append(updated)
+            }
+            // confidence 순서 유지를 위해 원본 순서로 재정렬
+            return suggestions.compactMap { original in
+                result.first { $0.id == original.id }
+            }
+        }
+    }
+
+    private static func ping(url: String) async -> Bool {
+        guard let url = URL(string: url) else { return false }
+        var request = URLRequest(url: url)
+        request.httpMethod = "HEAD"
+        request.timeoutInterval = 0.3
+        do {
+            let (_, response) = try await URLSession.shared.data(for: request)
+            // 2xx/3xx/4xx 모두 살아있는 것으로 간주 (5xx만 실패)
+            if let http = response as? HTTPURLResponse {
+                return http.statusCode < 500
+            }
+            return true
+        } catch {
+            return false
         }
     }
 

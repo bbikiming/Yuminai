@@ -199,6 +199,8 @@ struct RootView: View {
                     onRejectAllChanges: { Task { await appModel.rejectAllChanges() } },
                     onRejectChange: { file in Task { await appModel.rejectPaths([file.path]) } },
                     onOpenChangeInEditor: { file in appModel.openFileInExternalEditor(file.path) },
+                    readChangedFile: { file in appModel.readWorkspaceFile(file.path) },
+                    onSaveChangedFile: { file, contents in appModel.writeWorkspaceFile(file.path, contents: contents) },
                     deliveryResults: appModel.deliveryResults,
                     isDeliveryRunning: appModel.isDeliveryRunning,
                     deliveryConfig: appModel.currentWorkspace?.deliveryConfig ?? .disabled,
@@ -382,10 +384,12 @@ struct ChatPane: View {
                 codexAvailable: appModel.codexAvailable,
                 terminalVisible: appModel.showTerminalPane,
                 previewVisible: appModel.showPreviewPane,
+                commandsVisible: appModel.showCommandRunnerPane,
                 onToggleSidebar: onToggleSidebar,
                 onToggleInspector: onToggleInspector,
                 onToggleTerminal: { appModel.showTerminalPane.toggle() },
                 onTogglePreview: { appModel.showPreviewPane.toggle() },
+                onToggleCommands: { appModel.showCommandRunnerPane.toggle() },
                 onShowDashboard: { appModel.showUsageDashboard = true },
                 onShowShortcutHelp: { appModel.showShortcutHelp = true },
                 onSelectWorkspace: { id in appModel.selectedWorkspaceId = id },
@@ -484,7 +488,8 @@ struct ChatPane: View {
                     onAttachNote: appModel.isVaultConfigured
                         ? { appModel.showNotePicker.toggle() }
                         : nil,
-                    mentionSuggestions: mentionSuggestions
+                    mentionSuggestions: mentionSuggestions,
+                    agentChainEnabled: appModel.preferences.agentChainEnabled
                 )
                 .popover(isPresented: $bindable.showNotePicker, arrowEdge: .top) {
                     NotePickerPopover(
@@ -590,16 +595,37 @@ struct ChatPane: View {
 
     @ViewBuilder
     private var chatColumnWithOptionalTerminal: some View {
-        if appModel.showTerminalPane, let path = currentWorkspacePath {
+        let path = currentWorkspacePath
+        if appModel.showTerminalPane && appModel.showCommandRunnerPane, let path {
             VSplitView {
-                chatArea
-                    .frame(minHeight: 200)
-                terminalPaneSection(path: path)
-                    .frame(minHeight: 120, idealHeight: 220)
+                chatArea.frame(minHeight: 160)
+                terminalPaneSection(path: path).frame(minHeight: 100, idealHeight: 180)
+                commandRunnerSection(path: path).frame(minHeight: 100, idealHeight: 180)
+            }
+        } else if appModel.showTerminalPane, let path {
+            VSplitView {
+                chatArea.frame(minHeight: 200)
+                terminalPaneSection(path: path).frame(minHeight: 120, idealHeight: 220)
+            }
+        } else if appModel.showCommandRunnerPane, let path {
+            VSplitView {
+                chatArea.frame(minHeight: 200)
+                commandRunnerSection(path: path).frame(minHeight: 120, idealHeight: 220)
             }
         } else {
             chatArea
         }
+    }
+
+    private func commandRunnerSection(path: String) -> some View {
+        CommandRunnerPane(
+            workingDirectory: path,
+            blocks: appModel.commandBlocks,
+            isRunning: appModel.isCommandRunning,
+            onRun: { cmd in Task { await appModel.runCommand(cmd) } },
+            onClear: { appModel.clearCommandBlocks() },
+            onClose: { appModel.showCommandRunnerPane = false }
+        )
     }
 
     @ViewBuilder
@@ -608,13 +634,11 @@ struct ChatPane: View {
         PreviewPane(
             urlText: $bindable.previewURLText,
             onClose: { appModel.showPreviewPane = false },
-            suggestions: devServerSuggestions
+            suggestions: appModel.devServerSuggestions
         )
-    }
-
-    private var devServerSuggestions: [DevServerDetector.Suggestion] {
-        guard let path = currentWorkspacePath else { return [] }
-        return DevServerDetector(workspacePath: path).detect()
+        .task(id: appModel.selectedWorkspaceId) {
+            await appModel.refreshDevServerSuggestions()
+        }
     }
 
     @State private var terminalReloadTrigger: UUID = UUID()

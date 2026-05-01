@@ -17,10 +17,12 @@ public struct ChatToolbar: View {
     public let codexAvailable: Bool
     public let terminalVisible: Bool
     public let previewVisible: Bool
+    public let commandsVisible: Bool
     public let onToggleSidebar: () -> Void
     public let onToggleInspector: () -> Void
     public let onToggleTerminal: () -> Void
     public let onTogglePreview: () -> Void
+    public let onToggleCommands: () -> Void
     public let onShowDashboard: () -> Void
     public let onShowShortcutHelp: () -> Void
     public let onSelectWorkspace: (UUID) -> Void
@@ -40,10 +42,12 @@ public struct ChatToolbar: View {
         codexAvailable: Bool = false,
         terminalVisible: Bool = false,
         previewVisible: Bool = false,
+        commandsVisible: Bool = false,
         onToggleSidebar: @escaping () -> Void,
         onToggleInspector: @escaping () -> Void,
         onToggleTerminal: @escaping () -> Void = {},
         onTogglePreview: @escaping () -> Void = {},
+        onToggleCommands: @escaping () -> Void = {},
         onShowDashboard: @escaping () -> Void,
         onShowShortcutHelp: @escaping () -> Void = {},
         onSelectWorkspace: @escaping (UUID) -> Void = { _ in },
@@ -62,10 +66,12 @@ public struct ChatToolbar: View {
         self.codexAvailable = codexAvailable
         self.terminalVisible = terminalVisible
         self.previewVisible = previewVisible
+        self.commandsVisible = commandsVisible
         self.onToggleSidebar = onToggleSidebar
         self.onToggleInspector = onToggleInspector
         self.onToggleTerminal = onToggleTerminal
         self.onTogglePreview = onTogglePreview
+        self.onToggleCommands = onToggleCommands
         self.onShowDashboard = onShowDashboard
         self.onShowShortcutHelp = onShowShortcutHelp
         self.onSelectWorkspace = onSelectWorkspace
@@ -115,6 +121,13 @@ public struct ChatToolbar: View {
                 action: onTogglePreview
             )
             .keyboardShortcut("p", modifiers: [.command, .option])
+
+            IconButton(
+                commandsVisible ? "rectangle.stack.fill" : "rectangle.stack",
+                help: commandsVisible ? "Commands 숨기기 (⌘⌥R)" : "Commands 열기 (⌘⌥R)",
+                action: onToggleCommands
+            )
+            .keyboardShortcut("r", modifiers: [.command, .option])
 
             IconButton("chart.bar", help: "사용량 대시보드 (⌘D)", action: onShowDashboard)
                 .keyboardShortcut("d", modifiers: .command)

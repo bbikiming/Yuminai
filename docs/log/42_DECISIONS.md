@@ -1,6 +1,63 @@
 # Decisions Log (ADR-lite)
 
-> 최신: ADR-035 (v0.5 R2 — Dev server auto-detect + 외부 IDE + multi-mention 안내 + Dual-Composer)
+> 최신: ADR-036 (v0.5 R3 — Dev server ping + Editable diff inline + CommandRunner block + chain hint)
+
+---
+
+## ADR-036 — v0.5 R3: Live ping + Editable diff (inline) + Terminal block (별개 pane) + chain hint 강화
+
+- **날짜**: 2026-05-02
+- **상태**: Accepted
+- **결정**: v0.7+ 보류 항목 5개 평가 → 4/5 진행, 모두 단순화 패턴 채택. ACP는 별도 spike 작업으로 유지
+- **컨텍스트**:
+  - 사용자 — "v0.7+ 권고 항목들도 구현 진행"
+  - 보류 항목 모두 cost prohibitive였으나, 단순화 가능한 것들만 진행
+- **각 결정**:
+  1. **C1 ping**: ROI 명확. 0.3s timeout으로 빠른 응답, false-positive 위험은 confidence label로 완화
+  2. **C2 chain hint**: 코드 변경 작음. 사용자가 chain의 multi-mention sequential 효과를 자연스럽게 알게
+  3. **C3 editable diff (TextEditor)**: Cline editable은 SwiftUI native diff editor 부재로 비용 prohibitive. 단순화 — segmented "Diff/편집" 토글 + raw TextEditor. syntax highlight X but cost 80% 감소
+  4. **C4 CommandRunnerPane (별개)**: SwiftTerm은 PTY-based, block grouping 불가. **별개 패널** 채택 — NSTask로 단일 명령 + block. 사용자에게 명확한 use case 분리 (interactive zsh = ⌘⌥T, 기록되는 명령 = ⌘⌥R)
+- **C3 단순화 가치**:
+  - 진짜 Cline editable diff: gutter + inline edit + 변경 추적 — 3-5인일
+  - inline TextEditor: 100라인 정도 — 0.5인일
+  - 사용자 가치 중 80%는 "수정 가능" 자체에서 옴 — diff editor UX는 polish
+- **C4 별개 pane 결정 사유**:
+  - SwiftTerm wrap으로 block UX 추가 = PTY parser + prompt 인식 + grouping = 매우 큼
+  - 별개 pane = NSTask + 단순 UI = 1인일
+  - 사용자 use case 다름:
+    - 기존 SwiftTerm: interactive zsh, vim/htop 같은 interactive
+    - 새 CommandRunnerPane: 한 번 실행 + 결과 기록 (npm test, git status 등)
+  - 두 use case 분리가 UX 더 명확
+- **격리**:
+  - DevServerDetector.pingAll은 Core (URLSession Foundation)
+  - CommandRunner는 Core (NSTask Foundation)
+  - CommandRunnerPane은 UI (Core 의존)
+- **결과**:
+  - 신규 파일 2개: CommandRunner.swift / CommandRunnerPane.swift
+  - DevServerDetector +pingAll + isAlive 필드
+  - PreviewPane SuggestionChip live indicator
+  - DiffView +inline editor (segmented 토글)
+  - AppModel +readWorkspaceFile / writeWorkspaceFile / runCommand / clearCommandBlocks / refreshDevServerSuggestions
+  - ChatToolbar +commands toggle (⌘⌥R)
+  - RootView 3-way VSplit (chat / terminal / commands)
+  - InspectorPanel +readChangedFile / onSaveChangedFile
+  - Composer hint chain-aware
+  - 3 신규 테스트 (CommandRunner)
+  - build 7.2s, test 209/209 (206→209, +3)
+- **알려진 한계 / v0.8+**:
+  - Live ping 0.3s timeout — slow server false-negative 가능
+  - Editable diff syntax highlight X (SwiftUI Code Editor 라이브러리 발견 시)
+  - CommandRunnerPane은 1회 명령만 (vim 등 interactive는 SwiftTerm 사용)
+  - 진짜 Warp PTY-aware block UX — SwiftTerm wrap 큰 작업
+  - ACP 실제 PoC — 2-3일 별도 (ADR-034 doc 유지)
+- **재검토**:
+  - ping false-positive/negative 빈도 (사용자 사용 데이터)
+  - inline editor 사용 빈도 (외부 IDE 대비)
+  - CommandRunner vs Terminal 사용 빈도 비교
+
+---
+
+## ADR-035 — v0.5 R2: Dev server auto-detect + Editable diff 단순화 + multi-mention 안내 + Dual-Composer split
 
 ---
 
