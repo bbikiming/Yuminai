@@ -1,7 +1,7 @@
 import SwiftUI
 import YuminaiCore
 
-/// CLI 스타일 메시지 row. 박스/배경 없이 prefix 마커 + role 라벨 + 본문만.
+/// 메시지 한 row. role에 따라 user는 박스 + 좌측 accent bar, assistant/tool은 박스 없는 본문.
 public struct MessageBubble: View {
     public let message: Message
 
@@ -10,60 +10,115 @@ public struct MessageBubble: View {
     }
 
     public var body: some View {
-        HStack(alignment: .top, spacing: Theme.Spacing.lg) {
-            Text(prefix)
-                .font(Theme.Typography.bodyEmphasis)
-                .foregroundStyle(prefixColor)
-                .frame(width: 12, alignment: .leading)
-                .padding(.top, 1)
+        switch message.role {
+        case .user:
+            UserMessageBlock(message: message)
+        case .assistant:
+            AssistantMessageBlock(message: message)
+        case .tool:
+            ToolMessageBlock(message: message)
+        case .system:
+            SystemMessageBlock(message: message)
+        }
+    }
+}
 
-            VStack(alignment: .leading, spacing: 3) {
-                Text(roleLabel)
-                    .font(Theme.Typography.micro)
-                    .foregroundStyle(Theme.Color.textTertiary)
-                    .textCase(.uppercase)
-                    .tracking(0.5)
+// MARK: - User
 
+public struct UserMessageBlock: View {
+    public let message: Message
+    public init(message: Message) { self.message = message }
+
+    public var body: some View {
+        HStack(alignment: .top, spacing: 0) {
+            Rectangle()
+                .fill(Theme.Color.userAccent)
+                .frame(width: Theme.Stroke.bar)
+
+            VStack(alignment: .leading, spacing: 4) {
                 Text(displayContent)
                     .font(Theme.Typography.body)
-                    .foregroundStyle(Theme.Color.text)
+                    .foregroundStyle(Theme.Color.userText)
                     .textSelection(.enabled)
                     .frame(maxWidth: .infinity, alignment: .leading)
             }
+            .padding(.horizontal, Theme.Spacing.lg)
+            .padding(.vertical, Theme.Spacing.md)
         }
-        .padding(.horizontal, Theme.Spacing.xl)
-        .padding(.vertical, Theme.Spacing.md)
-        .frame(maxWidth: .infinity, alignment: .leading)
-    }
-
-    private var prefix: String {
-        switch message.role {
-        case .user: return ">"
-        case .assistant: return "·"
-        case .tool: return "○"
-        case .system: return "—"
-        }
-    }
-
-    private var prefixColor: SwiftUI.Color {
-        switch message.role {
-        case .user: return Theme.Color.rolePrefixUser
-        case .assistant: return Theme.Color.rolePrefixAssistant
-        case .tool: return Theme.Color.rolePrefixTool
-        case .system: return Theme.Color.rolePrefixSystem
-        }
-    }
-
-    private var roleLabel: String {
-        switch message.role {
-        case .user: return "you"
-        case .assistant: return "claude"
-        case .tool: return "tool"
-        case .system: return "system"
-        }
+        .background(Theme.Color.userBg)
+        .clipShape(RoundedRectangle(cornerRadius: Theme.Radius.lg))
+        .padding(.horizontal, Theme.Layout.contentPaddingH)
+        .padding(.vertical, Theme.Spacing.sm)
     }
 
     private var displayContent: String {
         message.content.isEmpty ? "(empty)" : message.content
+    }
+}
+
+// MARK: - Assistant — 박스 없음
+
+public struct AssistantMessageBlock: View {
+    public let message: Message
+    public init(message: Message) { self.message = message }
+
+    public var body: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Text("Claude")
+                .font(Theme.Typography.micro)
+                .foregroundStyle(Theme.Color.textTertiary)
+                .textCase(.uppercase)
+                .tracking(0.6)
+            Text(displayContent)
+                .font(Theme.Typography.body)
+                .foregroundStyle(Theme.Color.assistantText)
+                .textSelection(.enabled)
+                .frame(maxWidth: .infinity, alignment: .leading)
+        }
+        .padding(.horizontal, Theme.Layout.contentPaddingH)
+        .padding(.vertical, Theme.Spacing.md)
+    }
+
+    private var displayContent: String {
+        message.content.isEmpty ? "(empty)" : message.content
+    }
+}
+
+// MARK: - Tool — inline subtle
+
+public struct ToolMessageBlock: View {
+    public let message: Message
+    public init(message: Message) { self.message = message }
+
+    public var body: some View {
+        HStack(alignment: .top, spacing: Theme.Spacing.sm) {
+            Image(systemName: "circle.fill")
+                .font(.system(size: 5))
+                .foregroundStyle(Theme.Color.success)
+                .padding(.top, 6)
+            Text(message.content)
+                .font(Theme.Typography.small)
+                .foregroundStyle(Theme.Color.toolText)
+                .textSelection(.enabled)
+                .frame(maxWidth: .infinity, alignment: .leading)
+        }
+        .padding(.horizontal, Theme.Layout.contentPaddingH)
+        .padding(.vertical, 3)
+    }
+}
+
+// MARK: - System — 옅게
+
+public struct SystemMessageBlock: View {
+    public let message: Message
+    public init(message: Message) { self.message = message }
+
+    public var body: some View {
+        Text(message.content)
+            .font(Theme.Typography.small)
+            .foregroundStyle(Theme.Color.textTertiary)
+            .frame(maxWidth: .infinity, alignment: .center)
+            .padding(.horizontal, Theme.Layout.contentPaddingH)
+            .padding(.vertical, Theme.Spacing.xs)
     }
 }

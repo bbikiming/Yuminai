@@ -1,109 +1,102 @@
 import SwiftUI
 import YuminaiCore
 
-/// 채팅 영역 상단 toolbar. 좌측 워크스페이스 메타, 가운데 picker, 우측 액션.
+/// 채팅 영역 상단 toolbar v3 — Breadcrumb 좌측 inline (codex #9 반영).
 public struct ChatToolbar: View {
     public let workspaceName: String
-    @Binding public var model: ClaudeModel
-    @Binding public var permissionMode: PermissionMode
-    @Binding public var effortLevel: EffortLevel
+    public let workspacePath: String?
     public let isStreaming: Bool
     public let inspectorVisible: Bool
-    public let onSettingsApply: (SessionSettings) -> Void
+    public let onToggleSidebar: () -> Void
     public let onToggleInspector: () -> Void
     public let onShowDashboard: () -> Void
-    public let onToggleSidebar: () -> Void
+    public let onSwitchWorkspace: () -> Void
 
     public init(
         workspaceName: String,
-        model: Binding<ClaudeModel>,
-        permissionMode: Binding<PermissionMode>,
-        effortLevel: Binding<EffortLevel>,
+        workspacePath: String? = nil,
         isStreaming: Bool,
         inspectorVisible: Bool,
-        onSettingsApply: @escaping (SessionSettings) -> Void,
+        onToggleSidebar: @escaping () -> Void,
         onToggleInspector: @escaping () -> Void,
         onShowDashboard: @escaping () -> Void,
-        onToggleSidebar: @escaping () -> Void = {}
+        onSwitchWorkspace: @escaping () -> Void = {}
     ) {
         self.workspaceName = workspaceName
-        self._model = model
-        self._permissionMode = permissionMode
-        self._effortLevel = effortLevel
+        self.workspacePath = workspacePath
         self.isStreaming = isStreaming
         self.inspectorVisible = inspectorVisible
-        self.onSettingsApply = onSettingsApply
+        self.onToggleSidebar = onToggleSidebar
         self.onToggleInspector = onToggleInspector
         self.onShowDashboard = onShowDashboard
-        self.onToggleSidebar = onToggleSidebar
+        self.onSwitchWorkspace = onSwitchWorkspace
     }
 
     public var body: some View {
         HStack(spacing: Theme.Spacing.md) {
-            FlatButton("", icon: "sidebar.left", variant: .ghost, size: .small, action: onToggleSidebar)
-                .help("사이드바 (⌘⌥1)")
+            IconButton("sidebar.left", help: "사이드바 (⌘⌥1)", action: onToggleSidebar)
 
-            HStack(spacing: Theme.Spacing.xs) {
-                Text("[")
-                    .foregroundStyle(Theme.Color.textTertiary)
-                Text(workspaceName)
-                    .foregroundStyle(Theme.Color.text)
-                Text("]")
-                    .foregroundStyle(Theme.Color.textTertiary)
-            }
-            .font(Theme.Typography.label)
-
-            FlatVDivider().frame(height: 14)
-
-            ModelPicker(selection: $model) { _ in apply() }
-            ModePicker(selection: $permissionMode) { _ in apply() }
-            EffortPicker(selection: $effortLevel) { _ in apply() }
+            breadcrumb
+                .padding(.leading, Theme.Spacing.xs)
 
             if isStreaming {
                 streamingBadge
+                    .padding(.leading, Theme.Spacing.sm)
             }
 
             Spacer()
 
-            FlatButton("", icon: "chart.bar", variant: .ghost, size: .small, action: onShowDashboard)
-                .help("사용량 (⌘D)")
+            IconButton("chart.bar", help: "사용량 대시보드 (⌘D)", action: onShowDashboard)
                 .keyboardShortcut("d", modifiers: .command)
 
-            FlatButton("",
-                       icon: inspectorVisible ? "sidebar.right.fill" : "sidebar.right",
-                       variant: .ghost, size: .small, action: onToggleInspector)
-                .help("Inspector (⌘⌥I)")
-                .keyboardShortcut("i", modifiers: [.command, .option])
+            IconButton(
+                inspectorVisible ? "sidebar.right" : "sidebar.right",
+                help: "Inspector (⌘⌥I)",
+                action: onToggleInspector
+            )
+            .keyboardShortcut("i", modifiers: [.command, .option])
         }
         .padding(.horizontal, Theme.Spacing.md)
         .frame(height: Theme.Layout.toolbarHeight)
-        .flatChrome(borders: [.bottom])
+        .background(Theme.Color.bg)
+        .overlay(alignment: .bottom) {
+            FlatHDivider()
+        }
+    }
+
+    private var breadcrumb: some View {
+        Button(action: onSwitchWorkspace) {
+            HStack(spacing: 6) {
+                Image(systemName: "folder")
+                    .font(.system(size: 12, weight: .medium))
+                    .foregroundStyle(Theme.Color.textSecondary)
+
+                Text(workspaceName)
+                    .font(Theme.Typography.mono)
+                    .foregroundStyle(Theme.Color.text)
+
+                Image(systemName: "chevron.down")
+                    .font(.system(size: 9, weight: .medium))
+                    .foregroundStyle(Theme.Color.textTertiary)
+            }
+            .padding(.horizontal, Theme.Spacing.sm)
+            .padding(.vertical, 4)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .help(workspacePath ?? workspaceName)
     }
 
     private var streamingBadge: some View {
-        HStack(spacing: 4) {
-            Circle()
-                .fill(Theme.Color.accent)
-                .frame(width: 6, height: 6)
+        HStack(spacing: 6) {
+            PulseDot(color: Theme.Color.accent, size: 6)
             Text("streaming")
-                .font(Theme.Typography.label)
+                .font(Theme.Typography.micro)
                 .foregroundStyle(Theme.Color.accent)
         }
-        .padding(.horizontal, Theme.Spacing.md)
+        .padding(.horizontal, Theme.Spacing.sm)
         .padding(.vertical, 2)
         .background(Theme.Color.accentMuted)
-        .overlay(
-            RoundedRectangle(cornerRadius: Theme.Radius.sm)
-                .stroke(Theme.Color.accentBorder, lineWidth: Theme.Stroke.hairline)
-        )
         .clipShape(RoundedRectangle(cornerRadius: Theme.Radius.sm))
-    }
-
-    private func apply() {
-        onSettingsApply(SessionSettings(
-            model: model,
-            permissionMode: permissionMode,
-            effortLevel: effortLevel
-        ))
     }
 }

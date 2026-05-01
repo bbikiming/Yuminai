@@ -158,6 +158,28 @@
 
 ---
 
+## ADR-016 — codex CLI 검증 → Design Spec v3 (Claude Code 데스크탑 정합)
+
+- **날짜**: 2026-05-01
+- **상태**: Accepted
+- **결정**: 사용자 제공 Claude Code 데스크탑 스크린샷을 기준으로 design spec을 작성하고, codex CLI 0.116.0의 critical review 9건을 모두 명세서 v3에 반영. 그 위에 Theme + 11개 컴포넌트를 재구성한다.
+- **컨텍스트**: v2 flat 룩이 너무 monospace/직각 위주로 가서 "Claude Code 데스크탑처럼 플랫하고 사용성있는" 사용자 기대 미달. 스크린샷 자체를 ground truth로 정밀 추출 + 외부 디자인 시스템 검증 + codex 메타 검증 필요.
+- **codex 9건 critical 이슈**:
+  1. 단일 스크린샷 과적합 (pane/diff/terminal view 무시) → MVP 비범위 명시
+  2. Sidebar dot semantics 모호 → ●=selected 확정, status는 trailing badge 분리
+  3. Composer 핵심 컨트롤 누락 (send/stop/pickers) → 모두 명시 + 구현
+  4. 토큰이 generic SaaS dark → warm 톤 (R>B), sidebar/bg 분리
+  5. textTertiary 대비 부족 → 토큰 lift + 11~12px 한정
+  6. 팔레트 noisy (blue user bubble) → orange muted로 변경
+  7. 컴포넌트 비율 web-app적 → sidebar 32px, sf 14px, update card 2px-bar 제거
+  8. Interaction 미정의 → 키보드 표 + non-color selected + reduced motion + VoiceOver
+  9. SwiftUI 함정 → Breadcrumb 위치 변경, NSTextView 옵션, min/max width 명시
+- **방법**: `codex exec --skip-git-repo-check "Read docs/.../60_UI_DESIGN_SPEC.md, critically review..."` → tool use로 file 읽고 web 참조 (`code.claude.com/docs/en/desktop`) 후 9건 도출
+- **결과**: `docs/design/60_UI_DESIGN_SPEC.md` v3 (350+ 줄, §14에 codex→우리결정 추적), Theme.swift v3, FlatComponents v3, SidebarView/MessageBubble/Composer/ChatToolbar/ChatStatusBar/ContextInspector/SessionPickers/UsageDashboard/CreateWorkspaceSheet/ChatView/RootView 모두 v3
+- **재검토**: 사용자가 다시 띄워본 후 / 다음 iteration 라운드
+
+---
+
 ## ADR-015 — macOS 네이티브 컴포넌트 우회 + 자체 Flat 토큰 시스템
 
 - **날짜**: 2026-05-01

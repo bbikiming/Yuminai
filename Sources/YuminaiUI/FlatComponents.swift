@@ -1,9 +1,18 @@
 import SwiftUI
 
-/// CLI 친화 플랫 버튼.
+/// Yuminai 공용 flat 컴포넌트 v3.
+///
+/// 디자인 명세: docs/design/60_UI_DESIGN_SPEC.md
+/// 핵심 변화 (v2→v3):
+/// - Sans-serif 본문 폰트 사용
+/// - Border 강조 줄임 (focus/active만)
+/// - SendButton/IconButton variant 추가
+
+// MARK: - FlatButton
+
 public struct FlatButton: View {
-    public enum Variant: Sendable { case primary, secondary, ghost, destructive, accent }
-    public enum Size: Sendable { case small, regular }
+    public enum Variant: Sendable { case primary, secondary, ghost, destructive, accentSubtle }
+    public enum Size: Sendable { case mini, small, regular, large }
 
     let label: String
     let icon: String?
@@ -27,9 +36,9 @@ public struct FlatButton: View {
 
     public var body: some View {
         Button(action: action) {
-            HStack(spacing: 4) {
+            HStack(spacing: 6) {
                 if let icon {
-                    Image(systemName: icon).font(.system(size: iconSize))
+                    Image(systemName: icon).font(.system(size: iconSize, weight: .medium))
                 }
                 if !label.isEmpty {
                     Text(label).font(font)
@@ -41,48 +50,181 @@ public struct FlatButton: View {
             .foregroundStyle(fg)
             .background(bg)
             .overlay(
-                RoundedRectangle(cornerRadius: Theme.Radius.sm)
-                    .stroke(border, lineWidth: Theme.Stroke.hairline)
+                RoundedRectangle(cornerRadius: radius)
+                    .stroke(border, lineWidth: borderWidth)
             )
-            .clipShape(RoundedRectangle(cornerRadius: Theme.Radius.sm))
+            .clipShape(RoundedRectangle(cornerRadius: radius))
         }
         .buttonStyle(.plain)
     }
 
     private var font: Font {
-        size == .small ? Theme.Typography.small : Theme.Typography.label
+        switch size {
+        case .mini: return Theme.Typography.micro
+        case .small: return Theme.Typography.small
+        case .regular: return Theme.Typography.label
+        case .large: return Theme.Typography.bodyEmphasis
+        }
     }
-    private var iconSize: CGFloat { size == .small ? 9 : 11 }
-    private var hPadding: CGFloat { size == .small ? Theme.Spacing.md : Theme.Spacing.lg }
-    private var vPadding: CGFloat { size == .small ? 3 : Theme.Spacing.sm }
+    private var iconSize: CGFloat {
+        switch size {
+        case .mini: return 10
+        case .small: return 11
+        case .regular: return 13
+        case .large: return 15
+        }
+    }
+    private var hPadding: CGFloat {
+        switch size {
+        case .mini: return Theme.Spacing.sm
+        case .small: return Theme.Spacing.md
+        case .regular: return Theme.Spacing.lg - 2
+        case .large: return Theme.Spacing.lg
+        }
+    }
+    private var vPadding: CGFloat {
+        switch size {
+        case .mini: return 3
+        case .small: return Theme.Spacing.xs + 1
+        case .regular: return Theme.Spacing.sm
+        case .large: return Theme.Spacing.md
+        }
+    }
+    private var radius: CGFloat { size == .mini ? Theme.Radius.sm : Theme.Radius.md }
 
     private var bg: SwiftUI.Color {
         switch variant {
-        case .primary, .accent: return Theme.Color.accent
-        case .secondary: return Theme.Color.bgPanel
+        case .primary: return Theme.Color.accent
+        case .secondary: return Theme.Color.surface
         case .ghost: return .clear
-        case .destructive: return Theme.Color.error.opacity(0.10)
+        case .destructive: return .clear
+        case .accentSubtle: return Theme.Color.accentMuted
         }
     }
     private var fg: SwiftUI.Color {
         switch variant {
-        case .primary, .accent: return .white
-        case .destructive: return Theme.Color.error
+        case .primary: return .white
+        case .destructive: return Theme.Color.danger
         case .ghost: return Theme.Color.textSecondary
+        case .accentSubtle: return Theme.Color.accent
         default: return Theme.Color.text
         }
     }
     private var border: SwiftUI.Color {
         switch variant {
-        case .primary, .accent: return Theme.Color.accent
+        case .primary: return .clear
         case .ghost: return .clear
-        case .destructive: return Theme.Color.error.opacity(0.30)
-        default: return Theme.Color.border
+        case .destructive: return Theme.Color.danger.opacity(0.4)
+        case .accentSubtle: return Theme.Color.accentBorder
+        default: return Theme.Color.borderSubtle
+        }
+    }
+    private var borderWidth: CGFloat {
+        switch variant {
+        case .primary, .ghost: return 0
+        default: return Theme.Stroke.hairline
         }
     }
 }
 
-/// 플랫 텍스트 입력. SecureField 옵션.
+// MARK: - IconButton (작은 toolbar 아이콘)
+
+public struct IconButton: View {
+    let icon: String
+    let size: CGFloat
+    let action: () -> Void
+    var help: String?
+
+    public init(_ icon: String, size: CGFloat = 14, help: String? = nil, action: @escaping () -> Void) {
+        self.icon = icon
+        self.size = size
+        self.help = help
+        self.action = action
+    }
+
+    @State private var hovering = false
+
+    public var body: some View {
+        Button(action: action) {
+            Image(systemName: icon)
+                .font(.system(size: size, weight: .medium))
+                .foregroundStyle(hovering ? Theme.Color.text : Theme.Color.textSecondary)
+                .frame(width: size + 14, height: size + 14)
+                .background(
+                    hovering ? Theme.Color.surfaceHi : Color.clear,
+                    in: RoundedRectangle(cornerRadius: Theme.Radius.sm)
+                )
+        }
+        .buttonStyle(.plain)
+        .onHover { hovering = $0 }
+        .help(help ?? "")
+    }
+}
+
+// MARK: - SendButton (Composer 전용)
+
+public struct SendButton: View {
+    public let isStreaming: Bool
+    public let isEnabled: Bool
+    public let onSend: () -> Void
+    public let onStop: () -> Void
+
+    public init(isStreaming: Bool, isEnabled: Bool, onSend: @escaping () -> Void, onStop: @escaping () -> Void) {
+        self.isStreaming = isStreaming
+        self.isEnabled = isEnabled
+        self.onSend = onSend
+        self.onStop = onStop
+    }
+
+    public var body: some View {
+        if isStreaming {
+            Button(action: onStop) {
+                HStack(spacing: 6) {
+                    Image(systemName: "stop.fill")
+                        .font(.system(size: 11, weight: .medium))
+                    Text("stop")
+                        .font(Theme.Typography.label)
+                    Text("esc")
+                        .font(Theme.Typography.micro)
+                        .foregroundStyle(Theme.Color.danger.opacity(0.6))
+                }
+                .padding(.horizontal, Theme.Spacing.md)
+                .padding(.vertical, Theme.Spacing.sm)
+                .foregroundStyle(Theme.Color.danger)
+                .overlay(
+                    RoundedRectangle(cornerRadius: Theme.Radius.md)
+                        .stroke(Theme.Color.danger.opacity(0.4), lineWidth: 1)
+                )
+            }
+            .buttonStyle(.plain)
+            .keyboardShortcut(.escape, modifiers: [])
+        } else {
+            Button(action: onSend) {
+                HStack(spacing: 6) {
+                    Text("send")
+                        .font(Theme.Typography.label)
+                    Text("⌘↵")
+                        .font(Theme.Typography.micro)
+                        .foregroundStyle(.white.opacity(0.7))
+                }
+                .padding(.horizontal, Theme.Spacing.md)
+                .padding(.vertical, Theme.Spacing.sm)
+                .foregroundStyle(.white)
+                .background(
+                    isEnabled ? Theme.Color.accent : Theme.Color.surfaceHi,
+                    in: RoundedRectangle(cornerRadius: Theme.Radius.md)
+                )
+            }
+            .buttonStyle(.plain)
+            .keyboardShortcut(.return, modifiers: .command)
+            .disabled(!isEnabled)
+            .opacity(isEnabled ? 1.0 : 0.5)
+        }
+    }
+}
+
+// MARK: - FlatTextField
+
 public struct FlatTextField: View {
     @Binding var text: String
     let placeholder: String
@@ -106,17 +248,18 @@ public struct FlatTextField: View {
         .font(Theme.Typography.body)
         .foregroundStyle(Theme.Color.text)
         .padding(.horizontal, Theme.Spacing.md)
-        .padding(.vertical, Theme.Spacing.sm + 1)
-        .background(Theme.Color.bgInput)
+        .padding(.vertical, Theme.Spacing.sm + 2)
+        .background(Theme.Color.surface)
         .overlay(
-            RoundedRectangle(cornerRadius: Theme.Radius.sm)
-                .stroke(Theme.Color.border, lineWidth: Theme.Stroke.hairline)
+            RoundedRectangle(cornerRadius: Theme.Radius.md)
+                .stroke(Theme.Color.borderSubtle, lineWidth: Theme.Stroke.hairline)
         )
-        .clipShape(RoundedRectangle(cornerRadius: Theme.Radius.sm))
+        .clipShape(RoundedRectangle(cornerRadius: Theme.Radius.md))
     }
 }
 
-/// 플랫 form section — 헤더 + 카드 형식.
+// MARK: - FlatSection / FlatRow
+
 public struct FlatSection<Content: View>: View {
     let title: String?
     let footer: String?
@@ -132,33 +275,31 @@ public struct FlatSection<Content: View>: View {
         VStack(alignment: .leading, spacing: Theme.Spacing.sm) {
             if let title {
                 Text(title)
-                    .font(Theme.Typography.label)
+                    .font(Theme.Typography.micro)
                     .foregroundStyle(Theme.Color.textTertiary)
                     .textCase(.uppercase)
-                    .padding(.horizontal, Theme.Spacing.xs)
+                    .tracking(0.6)
             }
             VStack(alignment: .leading, spacing: 0) {
                 content()
             }
             .padding(Theme.Spacing.lg)
-            .background(Theme.Color.bgPanel)
+            .background(Theme.Color.surface)
             .overlay(
-                RoundedRectangle(cornerRadius: Theme.Radius.md)
-                    .stroke(Theme.Color.border, lineWidth: Theme.Stroke.hairline)
+                RoundedRectangle(cornerRadius: Theme.Radius.lg)
+                    .stroke(Theme.Color.borderSubtle, lineWidth: Theme.Stroke.hairline)
             )
-            .clipShape(RoundedRectangle(cornerRadius: Theme.Radius.md))
+            .clipShape(RoundedRectangle(cornerRadius: Theme.Radius.lg))
 
             if let footer {
                 Text(footer)
                     .font(Theme.Typography.small)
                     .foregroundStyle(Theme.Color.textTertiary)
-                    .padding(.horizontal, Theme.Spacing.xs)
             }
         }
     }
 }
 
-/// 한 form row (label + control).
 public struct FlatRow<Control: View>: View {
     let label: String
     let helper: String?
@@ -195,23 +336,24 @@ public struct FlatRow<Control: View>: View {
     }
 }
 
-/// 가는 가로 구분선.
+// MARK: - Dividers
+
 public struct FlatHDivider: View {
     public init() {}
     public var body: some View {
-        Rectangle().fill(Theme.Color.border).frame(height: Theme.Stroke.hairline)
+        Rectangle().fill(Theme.Color.borderSubtle).frame(height: Theme.Stroke.hairline)
     }
 }
 
-/// 가는 세로 구분선.
 public struct FlatVDivider: View {
     public init() {}
     public var body: some View {
-        Rectangle().fill(Theme.Color.border).frame(width: Theme.Stroke.hairline)
+        Rectangle().fill(Theme.Color.borderSubtle).frame(width: Theme.Stroke.hairline)
     }
 }
 
-/// 플랫 토글 — 라벨 우측에 작은 토글.
+// MARK: - FlatToggle
+
 public struct FlatToggle: View {
     let label: String
     @Binding var isOn: Bool
@@ -227,5 +369,32 @@ public struct FlatToggle: View {
         }
         .toggleStyle(.switch)
         .controlSize(.small)
+    }
+}
+
+// MARK: - Streaming pulse dot
+
+public struct PulseDot: View {
+    let color: SwiftUI.Color
+    let size: CGFloat
+    @State private var pulsing = false
+
+    public init(color: SwiftUI.Color = Theme.Color.accent, size: CGFloat = 6) {
+        self.color = color
+        self.size = size
+    }
+
+    public var body: some View {
+        Circle()
+            .fill(color)
+            .frame(width: size, height: size)
+            .opacity(pulsing ? 0.4 : 1.0)
+            .onAppear {
+                withAnimation(
+                    .easeInOut(duration: Theme.Animation.pulseDuration / 2).repeatForever(autoreverses: true)
+                ) {
+                    pulsing = true
+                }
+            }
     }
 }

@@ -1,6 +1,9 @@
 import SwiftUI
 
-/// 채팅 입력창. CLI 룩 — `>` prompt + 평평한 입력.
+/// `MessageInputView`는 v3에서 `Composer`로 대체됨. Backwards-compat shim 한정 — 새 코드는 사용 금지.
+///
+/// 새 진입점: `Composer` (Composer.swift)
+@available(*, deprecated, renamed: "Composer", message: "Composer를 사용하세요 (모델/모드/효과 picker, send/stop, git meta 통합)")
 public struct MessageInputView: View {
     @Binding public var text: String
     public let isStreaming: Bool
@@ -11,7 +14,7 @@ public struct MessageInputView: View {
     public init(
         text: Binding<String>,
         isStreaming: Bool,
-        placeholder: String = "메시지 입력 — ⌘+Return 전송",
+        placeholder: String = "메시지 입력",
         onSend: @escaping () -> Void,
         onCancel: @escaping () -> Void
     ) {
@@ -23,61 +26,9 @@ public struct MessageInputView: View {
     }
 
     public var body: some View {
-        HStack(alignment: .top, spacing: Theme.Spacing.md) {
-            Text(">")
-                .font(Theme.Typography.bodyEmphasis)
-                .foregroundStyle(Theme.Color.accent)
-                .padding(.top, 8)
-
-            ZStack(alignment: .topLeading) {
-                if text.isEmpty {
-                    Text(placeholder)
-                        .font(Theme.Typography.body)
-                        .foregroundStyle(Theme.Color.textTertiary)
-                        .padding(.horizontal, 6)
-                        .padding(.vertical, 8)
-                        .allowsHitTesting(false)
-                }
-                TextEditor(text: $text)
-                    .font(Theme.Typography.body)
-                    .scrollContentBackground(.hidden)
-                    .padding(2)
-                    .frame(minHeight: 60, maxHeight: 200)
-            }
-            .background(Theme.Color.bgInput)
-            .overlay(
-                RoundedRectangle(cornerRadius: Theme.Radius.sm)
-                    .stroke(Theme.Color.border, lineWidth: Theme.Stroke.hairline)
-            )
-            .clipShape(RoundedRectangle(cornerRadius: Theme.Radius.sm))
-
-            VStack(spacing: 4) {
-                if isStreaming {
-                    FlatButton("cancel", variant: .destructive, size: .small) {
-                        onCancel()
-                    }
-                    .keyboardShortcut(.escape, modifiers: [])
-                }
-                FlatButton(isStreaming ? "..." : "send",
-                           variant: isStreaming ? .ghost : .primary,
-                           size: .small) {
-                    triggerSend()
-                }
-                .keyboardShortcut(.return, modifiers: .command)
-                .disabled(isStreaming || text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
-
-                Text("⌘↵")
-                    .font(Theme.Typography.micro)
-                    .foregroundStyle(Theme.Color.textTertiary)
-            }
-        }
-        .padding(Theme.Spacing.lg)
-        .background(Theme.Color.bg)
-    }
-
-    private func triggerSend() {
-        let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !trimmed.isEmpty, !isStreaming else { return }
-        onSend()
+        // 단순 fallback 입력 (테스트/프리뷰용)
+        TextField(placeholder, text: $text)
+            .textFieldStyle(.roundedBorder)
+            .padding()
     }
 }

@@ -15,9 +15,10 @@ struct ThemeTests {
 
     @Test("Radius 토큰은 단조 증가한다 (none → pill)")
     func radiusIsMonotonic() {
-        #expect(Theme.Radius.none < Theme.Radius.xs)
-        #expect(Theme.Radius.xs < Theme.Radius.sm)
+        #expect(Theme.Radius.none < Theme.Radius.sm)
         #expect(Theme.Radius.sm < Theme.Radius.md)
-        #expect(Theme.Radius.md < Theme.Radius.pill)
+        #expect(Theme.Radius.md < Theme.Radius.lg)
+        #expect(Theme.Radius.lg < Theme.Radius.xl)
+        #expect(Theme.Radius.xl < Theme.Radius.pill)
     }
 }

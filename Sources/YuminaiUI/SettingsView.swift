@@ -292,7 +292,7 @@ struct SecretField: View {
         case .error(let msg):
             Text(msg)
                 .font(.caption)
-                .foregroundStyle(Theme.Color.error)
+                .foregroundStyle(Theme.Color.danger)
                 .lineLimit(1)
                 .truncationMode(.tail)
         }

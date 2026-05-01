@@ -1,70 +1,35 @@
 import SwiftUI
 import YuminaiCore
 
-/// 메시지 리스트 + 입력창. 메시지 도착 시 자동 스크롤.
+/// 메시지 리스트만. Composer는 외부에서 별도 구성.
 public struct ChatView: View {
     public let messages: [Message]
-    @Binding public var inputText: String
-    public let isStreaming: Bool
     public let emptyStateText: String
-    public let onSend: () -> Void
-    public let onCancel: () -> Void
 
     public init(
         messages: [Message],
-        inputText: Binding<String>,
-        isStreaming: Bool,
-        emptyStateText: String = "메시지를 입력해 시작하세요.",
-        onSend: @escaping () -> Void,
-        onCancel: @escaping () -> Void
+        emptyStateText: String = "메시지를 입력해 시작하세요."
     ) {
         self.messages = messages
-        self._inputText = inputText
-        self.isStreaming = isStreaming
         self.emptyStateText = emptyStateText
-        self.onSend = onSend
-        self.onCancel = onCancel
     }
 
     public var body: some View {
-        VStack(spacing: 0) {
-            messageList
-                .background(Theme.Color.bg)
-            FlatHDivider()
-            MessageInputView(
-                text: $inputText,
-                isStreaming: isStreaming,
-                onSend: onSend,
-                onCancel: onCancel
-            )
-        }
-    }
-
-    @ViewBuilder
-    private var messageList: some View {
         if messages.isEmpty {
-            VStack(spacing: Theme.Spacing.md) {
-                Spacer()
-                Text("─ empty session ─")
-                    .font(Theme.Typography.body)
-                    .foregroundStyle(Theme.Color.textTertiary)
-                Text(emptyStateText)
-                    .font(Theme.Typography.small)
-                    .foregroundStyle(Theme.Color.textTertiary)
-                Spacer()
-            }
-            .frame(maxWidth: .infinity, maxHeight: .infinity)
+            EmptyChatView(text: emptyStateText)
         } else {
             ScrollViewReader { proxy in
                 ScrollView {
-                    LazyVStack(spacing: 0) {
+                    LazyVStack(alignment: .leading, spacing: Theme.Spacing.xs) {
                         ForEach(messages) { message in
                             MessageBubble(message: message)
                                 .id(message.id)
                         }
                     }
-                    .padding(.vertical, Theme.Spacing.md)
+                    .padding(.vertical, Theme.Spacing.xl)
+                    .frame(maxWidth: .infinity, alignment: .leading)
                 }
+                .background(Theme.Color.bg)
                 .onChange(of: messages.last?.id) { _, _ in
                     guard let last = messages.last else { return }
                     withAnimation(.easeOut(duration: 0.12)) {
@@ -78,5 +43,27 @@ public struct ChatView: View {
                 }
             }
         }
+    }
+}
+
+struct EmptyChatView: View {
+    let text: String
+
+    var body: some View {
+        VStack(spacing: Theme.Spacing.lg) {
+            Spacer()
+            Image(systemName: "bubble.left.and.bubble.right")
+                .font(.system(size: 32, weight: .light))
+                .foregroundStyle(Theme.Color.textTertiary)
+            Text(text)
+                .font(Theme.Typography.body)
+                .foregroundStyle(Theme.Color.textSecondary)
+            Text("⌘ Return으로 전송, ⌘D 사용량, ⌘⌥I Inspector")
+                .font(Theme.Typography.small)
+                .foregroundStyle(Theme.Color.textTertiary)
+            Spacer()
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .background(Theme.Color.bg)
     }
 }

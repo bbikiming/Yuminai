@@ -1,30 +1,29 @@
 import SwiftUI
 import YuminaiCore
 
-/// 모델/모드/효과 picker 공통 룩 — Claude Code CLI 인스피레이션, 플랫 + monospace.
-struct InlinePicker<Value: Hashable>: View {
+/// 모델/모드/효과 picker — Composer footer 또는 toolbar에서 사용.
+struct InlinePicker: View {
     let label: String
-    let value: Value
     let valueLabel: String
     let menu: () -> AnyView
 
     init(
         label: String,
-        value: Value,
         valueLabel: String,
         @ViewBuilder menu: @escaping () -> some View
     ) {
         self.label = label
-        self.value = value
         self.valueLabel = valueLabel
         self.menu = { AnyView(menu()) }
     }
+
+    @State private var hovering = false
 
     var body: some View {
         Menu {
             menu()
         } label: {
-            HStack(spacing: 4) {
+            HStack(spacing: 5) {
                 Text(label)
                     .foregroundStyle(Theme.Color.textTertiary)
                 Text("·")
@@ -32,23 +31,21 @@ struct InlinePicker<Value: Hashable>: View {
                 Text(valueLabel)
                     .foregroundStyle(Theme.Color.text)
                 Image(systemName: "chevron.down")
-                    .font(.system(size: 7))
-                    .foregroundStyle(Theme.Color.textSecondary)
-                    .padding(.leading, 2)
+                    .font(.system(size: 8, weight: .medium))
+                    .foregroundStyle(Theme.Color.textTertiary)
+                    .padding(.leading, 1)
             }
             .font(Theme.Typography.label)
-            .padding(.horizontal, Theme.Spacing.md)
-            .padding(.vertical, Theme.Spacing.sm)
-            .background(Theme.Color.bgPanel)
-            .overlay(
-                RoundedRectangle(cornerRadius: Theme.Radius.sm)
-                    .stroke(Theme.Color.border, lineWidth: Theme.Stroke.hairline)
-            )
+            .padding(.horizontal, Theme.Spacing.md - 2)
+            .padding(.vertical, Theme.Spacing.xs + 1)
+            .background(hovering ? Theme.Color.surfaceHi : .clear)
             .clipShape(RoundedRectangle(cornerRadius: Theme.Radius.sm))
+            .contentShape(Rectangle())
         }
         .menuStyle(.borderlessButton)
         .menuIndicator(.hidden)
         .fixedSize()
+        .onHover { hovering = $0 }
     }
 }
 
@@ -62,7 +59,7 @@ public struct ModelPicker: View {
     }
 
     public var body: some View {
-        InlinePicker(label: "model", value: selection, valueLabel: selection.rawValue) {
+        InlinePicker(label: "model", valueLabel: selection.rawValue) {
             ForEach(ClaudeModel.allCases, id: \.self) { model in
                 Button {
                     selection = model
@@ -88,7 +85,7 @@ public struct ModePicker: View {
     }
 
     public var body: some View {
-        InlinePicker(label: "mode", value: selection, valueLabel: selection.rawValue) {
+        InlinePicker(label: "mode", valueLabel: selection.rawValue) {
             ForEach(PermissionMode.allCases, id: \.self) { mode in
                 Button {
                     selection = mode
@@ -114,7 +111,7 @@ public struct EffortPicker: View {
     }
 
     public var body: some View {
-        InlinePicker(label: "effort", value: selection, valueLabel: selection.rawValue) {
+        InlinePicker(label: "effort", valueLabel: selection.rawValue) {
             ForEach(EffortLevel.allCases, id: \.self) { level in
                 Button {
                     selection = level

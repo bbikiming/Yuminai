@@ -2,7 +2,7 @@ import SwiftUI
 import AppKit
 import YuminaiCore
 
-/// 새 워크스페이스 생성 시트. flat — 직접 layout, 시스템 Form 안 씀.
+/// 새 워크스페이스 생성 시트 — flat 자체 컴포넌트.
 public struct CreateWorkspaceSheet: View {
     @State private var name: String = ""
     @State private var directoryPath: String = ""
@@ -20,13 +20,13 @@ public struct CreateWorkspaceSheet: View {
 
     public var body: some View {
         VStack(alignment: .leading, spacing: Theme.Spacing.xl) {
-            VStack(alignment: .leading, spacing: 4) {
-                Text("new workspace")
+            VStack(alignment: .leading, spacing: 6) {
+                Text("새 워크스페이스")
                     .font(Theme.Typography.title)
                     .foregroundStyle(Theme.Color.text)
                 Text("Claude CLI가 실행될 디렉토리를 선택하세요.")
                     .font(Theme.Typography.small)
-                    .foregroundStyle(Theme.Color.textTertiary)
+                    .foregroundStyle(Theme.Color.textSecondary)
             }
 
             VStack(alignment: .leading, spacing: Theme.Spacing.sm) {
@@ -56,16 +56,16 @@ public struct CreateWorkspaceSheet: View {
             }
         }
         .padding(Theme.Spacing.xxl)
-        .frame(width: 540)
+        .frame(width: Theme.Layout.sheetWidth)
         .background(Theme.Color.bg)
     }
 
     private func fieldLabel(_ text: String) -> some View {
         Text(text)
-            .font(Theme.Typography.label)
+            .font(Theme.Typography.micro)
             .foregroundStyle(Theme.Color.textTertiary)
             .textCase(.uppercase)
-            .tracking(0.5)
+            .tracking(0.6)
     }
 
     private var isValid: Bool {

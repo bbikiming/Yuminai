@@ -1,7 +1,7 @@
 import SwiftUI
 import YuminaiCore
 
-/// 사용량 대시보드 — flat 그리드, 박스 + 1px border.
+/// 사용량 대시보드 — flat 그리드.
 public struct UsageDashboard: View {
     public let currentSessionUsage: UsageStats
     public let allTimeUsage: UsageStats
@@ -51,7 +51,7 @@ public struct UsageDashboard: View {
 
     private var header: some View {
         HStack {
-            Text("usage dashboard")
+            Text("Usage Dashboard")
                 .font(Theme.Typography.title)
                 .foregroundStyle(Theme.Color.text)
             Spacer()
@@ -63,7 +63,7 @@ public struct UsageDashboard: View {
                 Text(activeModel.rawValue)
                     .foregroundStyle(Theme.Color.text)
             }
-            .font(Theme.Typography.label)
+            .font(Theme.Typography.monoSmall)
         }
     }
 }
@@ -93,14 +93,14 @@ struct StatBox: View {
     var color: SwiftUI.Color = Theme.Color.text
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 2) {
+        VStack(alignment: .leading, spacing: 3) {
             Text(label)
                 .font(Theme.Typography.micro)
                 .foregroundStyle(Theme.Color.textTertiary)
                 .textCase(.uppercase)
-                .tracking(0.5)
+                .tracking(0.6)
             Text(value)
-                .font(Theme.Typography.statBig)
+                .font(Theme.Typography.monoStat)
                 .foregroundStyle(color)
         }
         .frame(minWidth: 64, alignment: .leading)
@@ -119,10 +119,10 @@ struct ContextRow: View {
                     .font(Theme.Typography.micro)
                     .foregroundStyle(Theme.Color.textTertiary)
                     .textCase(.uppercase)
-                    .tracking(0.5)
+                    .tracking(0.6)
                 Spacer()
                 Text(String(format: "%.1f%% / %@", ratio * 100, model.contextWindowTokens.formattedShort))
-                    .font(Theme.Typography.label.monospacedDigit())
+                    .font(Theme.Typography.monoSmall)
                     .foregroundStyle(Theme.Color.text)
             }
             GeometryReader { geo in
@@ -134,6 +134,7 @@ struct ContextRow: View {
                 }
             }
             .frame(height: 6)
+            .clipShape(RoundedRectangle(cornerRadius: 2))
         }
     }
 
@@ -141,7 +142,7 @@ struct ContextRow: View {
         switch ratio {
         case ..<0.5: return Theme.Color.success
         case ..<0.75: return Theme.Color.warning
-        default: return Theme.Color.error
+        default: return Theme.Color.danger
         }
     }
 }
@@ -159,14 +160,14 @@ struct PricingGrid: View {
     }
 
     private func label(_ key: String, _ value: String) -> some View {
-        VStack(alignment: .leading, spacing: 2) {
+        VStack(alignment: .leading, spacing: 3) {
             Text(key)
                 .font(Theme.Typography.micro)
                 .foregroundStyle(Theme.Color.textTertiary)
                 .textCase(.uppercase)
-                .tracking(0.5)
+                .tracking(0.6)
             Text(value)
-                .font(Theme.Typography.label.monospacedDigit())
+                .font(Theme.Typography.monoSmall)
                 .foregroundStyle(Theme.Color.text)
         }
     }

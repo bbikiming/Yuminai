@@ -2,7 +2,7 @@ import SwiftUI
 import YuminaiCore
 import YuminaiUI
 
-/// 앱 메인 윈도우의 루트 view. NavigationSplitView를 안 쓰고 직접 HStack layout.
+/// 루트 view v3 — Sidebar + Chat (Toolbar/Chat/StatusBar/Composer) + 옵션 Inspector.
 struct RootView: View {
     @Environment(AppModel.self) private var appModel
     @State private var sidebarVisible: Bool = true
@@ -16,16 +16,19 @@ struct RootView: View {
                     workspaces: appModel.workspaces,
                     selectedId: $bindable.selectedWorkspaceId,
                     onCreate: { appModel.showCreateWorkspaceSheet = true },
-                    onDelete: { ws in Task { await appModel.deleteWorkspace(ws) } }
+                    onDelete: { ws in Task { await appModel.deleteWorkspace(ws) } },
+                    onCollapse: toggleSidebar,
+                    onSearch: {
+                        // ⌘P palette — v0.2
+                    },
+                    onOpenSettings: openAppSettings,
+                    userName: "yuminai",
+                    updateAvailable: false
                 )
                 .transition(.move(edge: .leading))
             }
 
-            ChatContainer(onToggleSidebar: {
-                withAnimation(.easeInOut(duration: 0.16)) {
-                    sidebarVisible.toggle()
-                }
-            })
+            ChatPane(onToggleSidebar: toggleSidebar)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .background(Theme.Color.bg)
@@ -59,9 +62,24 @@ struct RootView: View {
             Text(error)
         }
     }
+
+    private func toggleSidebar() {
+        withAnimation(Theme.Animation.panelToggle) {
+            sidebarVisible.toggle()
+        }
+    }
+
+    private func openAppSettings() {
+        if #available(macOS 14, *) {
+            NSApp.sendAction(Selector(("showSettingsWindow:")), to: nil, from: nil)
+        } else {
+            NSApp.sendAction(Selector(("showPreferencesWindow:")), to: nil, from: nil)
+        }
+    }
 }
 
-struct ChatContainer: View {
+/// Toolbar / ChatView / StatusBar / Composer + 옵션 Inspector.
+struct ChatPane: View {
     @Environment(AppModel.self) private var appModel
     let onToggleSidebar: () -> Void
 
@@ -70,47 +88,51 @@ struct ChatContainer: View {
 
         if appModel.selectedWorkspaceId == nil {
             VStack(spacing: 0) {
-                topToolbarStub
-                EmptyChatPlaceholder()
+                placeholderToolbar
+                EmptyWorkspaceView()
             }
         } else {
             VStack(spacing: 0) {
                 ChatToolbar(
                     workspaceName: currentWorkspaceName,
-                    model: $bindable.activeSettings.model,
-                    permissionMode: $bindable.activeSettings.permissionMode,
-                    effortLevel: $bindable.activeSettings.effortLevel,
+                    workspacePath: currentWorkspacePath,
                     isStreaming: appModel.isStreaming,
                     inspectorVisible: appModel.showInspector,
-                    onSettingsApply: { newSettings in
-                        Task { await appModel.updateActiveSettings(newSettings) }
-                    },
+                    onToggleSidebar: onToggleSidebar,
                     onToggleInspector: {
-                        withAnimation(.easeInOut(duration: 0.16)) {
+                        withAnimation(Theme.Animation.panelToggle) {
                             appModel.showInspector.toggle()
                         }
                     },
-                    onShowDashboard: { appModel.showUsageDashboard = true },
-                    onToggleSidebar: onToggleSidebar
+                    onShowDashboard: { appModel.showUsageDashboard = true }
                 )
 
                 HStack(spacing: 0) {
                     VStack(spacing: 0) {
-                        ChatView(
-                            messages: appModel.messages,
-                            inputText: $bindable.inputText,
-                            isStreaming: appModel.isStreaming,
-                            emptyStateText: "메시지를 입력해 시작하세요. ⌘+Return으로 전송.",
-                            onSend: { Task { await appModel.sendMessage() } },
-                            onCancel: { appModel.cancelStream() }
-                        )
+                        ChatView(messages: appModel.messages)
+                            .frame(maxHeight: .infinity)
+
                         ChatStatusBar(
                             usage: appModel.currentSessionUsage,
                             contextWindow: appModel.currentContextWindow,
                             isStreaming: appModel.isStreaming
                         )
+
+                        Composer(
+                            text: $bindable.inputText,
+                            model: $bindable.activeSettings.model,
+                            permissionMode: $bindable.activeSettings.permissionMode,
+                            effortLevel: $bindable.activeSettings.effortLevel,
+                            isStreaming: appModel.isStreaming,
+                            onSend: { Task { await appModel.sendMessage() } },
+                            onStop: { appModel.cancelStream() },
+                            onSettingsApply: { newSettings in
+                                Task { await appModel.updateActiveSettings(newSettings) }
+                            }
+                        )
                     }
                     .frame(minWidth: 480)
+                    .background(Theme.Color.bg)
 
                     if appModel.showInspector {
                         ContextInspector(
@@ -126,20 +148,18 @@ struct ChatContainer: View {
         }
     }
 
-    private var topToolbarStub: some View {
-        HStack {
-            FlatButton("", icon: "sidebar.left", variant: .ghost, size: .small, action: onToggleSidebar)
-                .help("사이드바")
+    private var placeholderToolbar: some View {
+        HStack(spacing: Theme.Spacing.md) {
+            IconButton("sidebar.left", help: "사이드바", action: onToggleSidebar)
             Text("yuminai")
-                .font(Theme.Typography.label)
-                .foregroundStyle(Theme.Color.textTertiary)
-                .textCase(.uppercase)
-                .tracking(0.5)
+                .font(Theme.Typography.mono)
+                .foregroundStyle(Theme.Color.textSecondary)
             Spacer()
         }
         .padding(.horizontal, Theme.Spacing.md)
         .frame(height: Theme.Layout.toolbarHeight)
-        .flatChrome(borders: [.bottom])
+        .background(Theme.Color.bg)
+        .overlay(alignment: .bottom) { FlatHDivider() }
     }
 
     private var currentWorkspaceName: String {
@@ -158,18 +178,25 @@ struct ChatContainer: View {
     }
 }
 
-struct EmptyChatPlaceholder: View {
+struct EmptyWorkspaceView: View {
     @Environment(AppModel.self) private var appModel
 
     var body: some View {
-        VStack(spacing: Theme.Spacing.xl) {
+        VStack(spacing: Theme.Spacing.lg) {
             Spacer()
-            Text("─ no active workspace ─")
-                .font(Theme.Typography.body)
+            Image(systemName: "rectangle.stack.badge.plus")
+                .font(.system(size: 36, weight: .light))
                 .foregroundStyle(Theme.Color.textTertiary)
-            FlatButton("+ 새 워크스페이스", variant: .accent) {
+            Text("워크스페이스를 선택하거나 새로 만드세요")
+                .font(Theme.Typography.body)
+                .foregroundStyle(Theme.Color.textSecondary)
+            FlatButton("+ 새 워크스페이스 만들기", variant: .primary, size: .large) {
                 appModel.showCreateWorkspaceSheet = true
             }
+            .keyboardShortcut("n", modifiers: .command)
+            Text("⌘N")
+                .font(Theme.Typography.micro)
+                .foregroundStyle(Theme.Color.textTertiary)
             Spacer()
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)

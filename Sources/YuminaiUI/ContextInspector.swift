@@ -1,7 +1,7 @@
 import SwiftUI
 import YuminaiCore
 
-/// 우측 inspector. flat — 박스 없이 섹션 구분.
+/// 우측 inspector panel — sections 형식 (no card boxes).
 public struct ContextInspector: View {
     public let usage: UsageStats
     public let activeSettings: SessionSettings
@@ -24,34 +24,34 @@ public struct ContextInspector: View {
         ScrollView {
             VStack(alignment: .leading, spacing: Theme.Spacing.xl) {
                 section("active") {
-                    KeyValueRow(key: "model", value: activeSettings.model.rawValue)
-                    KeyValueRow(key: "mode", value: activeSettings.permissionMode.rawValue)
-                    KeyValueRow(key: "effort", value: activeSettings.effortLevel.rawValue)
+                    KVRow(key: "model", value: activeSettings.model.rawValue)
+                    KVRow(key: "mode", value: activeSettings.permissionMode.rawValue)
+                    KVRow(key: "effort", value: activeSettings.effortLevel.rawValue)
                     if let budget = activeSettings.maxBudgetUSD {
-                        KeyValueRow(key: "budget", value: String(format: "$%.2f", budget))
+                        KVRow(key: "budget", value: String(format: "$%.2f", budget))
                     }
                     if let path = workspacePath {
-                        KeyValueRow(key: "cwd", value: path, lineLimit: 2)
+                        KVRow(key: "cwd", value: path, lineLimit: 2, mono: true)
                     }
                 }
 
                 section("context") {
                     let ratio = usage.contextUsage(maxTokens: activeSettings.model.contextWindowTokens)
-                    KeyValueRow(key: "used", value: String(format: "%.1f%%", ratio * 100))
-                    KeyValueRow(key: "window", value: activeSettings.model.contextWindowTokens.formattedShort)
-                    GaugeBar(ratio: ratio).padding(.top, 4)
+                    KVRow(key: "used", value: String(format: "%.1f%%", ratio * 100))
+                    KVRow(key: "window", value: activeSettings.model.contextWindowTokens.formattedShort)
+                    InspectorGauge(ratio: ratio).padding(.top, 6)
                 }
 
                 section("tokens") {
-                    KeyValueRow(key: "input", value: usage.inputTokens.formattedShort)
-                    KeyValueRow(key: "output", value: usage.outputTokens.formattedShort)
-                    KeyValueRow(key: "cache R", value: usage.cacheReadTokens.formattedShort, valueColor: Theme.Color.success)
-                    KeyValueRow(key: "cache W", value: usage.cacheCreationTokens.formattedShort, valueColor: Theme.Color.warning)
-                    KeyValueRow(key: "msg", value: "\(usage.messageCount)")
+                    KVRow(key: "input", value: usage.inputTokens.formattedShort)
+                    KVRow(key: "output", value: usage.outputTokens.formattedShort)
+                    KVRow(key: "cache R", value: usage.cacheReadTokens.formattedShort, valueColor: Theme.Color.success)
+                    KVRow(key: "cache W", value: usage.cacheCreationTokens.formattedShort, valueColor: Theme.Color.warning)
+                    KVRow(key: "msg", value: "\(usage.messageCount)")
                 }
 
                 section("cost") {
-                    KeyValueRow(
+                    KVRow(
                         key: "session",
                         value: String(format: "$%.4f", usage.costUSD),
                         valueColor: Theme.Color.accent
@@ -74,7 +74,10 @@ public struct ContextInspector: View {
             .frame(maxWidth: .infinity, alignment: .leading)
         }
         .frame(width: Theme.Layout.inspectorWidth)
-        .flatChrome(borders: [.leading])
+        .background(Theme.Color.bg)
+        .overlay(alignment: .leading) {
+            FlatVDivider()
+        }
     }
 
     @ViewBuilder
@@ -84,28 +87,29 @@ public struct ContextInspector: View {
                 .font(Theme.Typography.micro)
                 .foregroundStyle(Theme.Color.textTertiary)
                 .textCase(.uppercase)
-                .tracking(0.5)
-            VStack(alignment: .leading, spacing: 2) {
+                .tracking(0.6)
+            VStack(alignment: .leading, spacing: 3) {
                 content()
             }
         }
     }
 }
 
-struct KeyValueRow: View {
+struct KVRow: View {
     let key: String
     let value: String
     var lineLimit: Int = 1
+    var mono: Bool = false
     var valueColor: SwiftUI.Color = Theme.Color.text
 
     var body: some View {
-        HStack(alignment: .top) {
+        HStack(alignment: .top, spacing: Theme.Spacing.sm) {
             Text(key)
                 .font(Theme.Typography.small)
                 .foregroundStyle(Theme.Color.textSecondary)
                 .frame(width: 64, alignment: .leading)
             Text(value)
-                .font(Theme.Typography.label.monospacedDigit())
+                .font(mono ? Theme.Typography.codeBlock : Theme.Typography.monoSmall)
                 .foregroundStyle(valueColor)
                 .lineLimit(lineLimit)
                 .truncationMode(.middle)
@@ -114,9 +118,8 @@ struct KeyValueRow: View {
     }
 }
 
-struct GaugeBar: View {
+struct InspectorGauge: View {
     let ratio: Double
-
     var body: some View {
         GeometryReader { geo in
             ZStack(alignment: .leading) {
@@ -126,14 +129,14 @@ struct GaugeBar: View {
                     .frame(width: max(2, geo.size.width * ratio))
             }
         }
-        .frame(height: 4)
+        .frame(height: 5)
+        .clipShape(RoundedRectangle(cornerRadius: 2))
     }
-
     private var color: SwiftUI.Color {
         switch ratio {
         case ..<0.5: return Theme.Color.success
         case ..<0.75: return Theme.Color.warning
-        default: return Theme.Color.error
+        default: return Theme.Color.danger
         }
     }
 }

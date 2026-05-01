@@ -4,6 +4,38 @@
 
 ## [Unreleased] — 2026-05-01
 
+### Redesigned v3 (Claude Code 데스크탑 룩 — codex 검증 반영, 2026-05-01 심야)
+
+사용자 피드백 — "이 정도 디자인 퀄리티 (Claude Code 데스크탑 스크린샷)로 / 냉정 조사 / 무한 iteration / 기획 검증 후 구현"
+
+처리 절차:
+1. 스크린샷 정밀 분석 → 색/타이포/spacing/component 상세 추출
+2. 외부 레퍼런스 검증 (Anthropic Console, Linear, Vercel, shadcn dark, Raycast)
+3. `docs/design/60_UI_DESIGN_SPEC.md` v2 작성
+4. **codex CLI 0.116.0으로 명세서 review** → 9건 critical 이슈 도출 (ADR-016)
+5. 명세서 v3로 보완 (warm 톤, 대비 ↑, palette 단순화, Composer 핵심 컨트롤, interaction 표, SwiftUI 함정 회피)
+6. 구현
+
+신규/재작성 컴포넌트:
+- **Theme v3**: warm 다크 토큰 (R>B), 4단 hierarchy (bgSidebar/bg/surface/surfaceHi/elevated/inlineCode), sans+mono 분리, monoSmall/monoStat 추가, Layout 토큰 정밀 정의 (sidebarWidth/sidebarItemHeight/composerOuterPadding 등), CenteredContent + SelectedBar modifier
+- **FlatComponents v3**: FlatButton 5 variants × 4 sizes, IconButton (hover bg), SendButton (idle/streaming/disabled 3-state), PulseDot (streaming 표시), FlatSection/FlatRow/FlatTextField/FlatToggle/FlatHDivider/FlatVDivider
+- **SidebarView v3**: top header (collapse + search) → primary action ("+ 새 워크스페이스") → menu ("Settings") → group "Workspaces" → WorkspaceItemRow (○/● dot + selected 좌측 2px bar) → UpdateCard → BottomUserCard
+- **MessageBubble v3**: role 분기 — UserMessageBlock (warm muted bg + 2px accent bar), AssistantMessageBlock (박스 없음 + role 라벨), ToolMessageBlock (작은 ● + 작은 텍스트), SystemMessageBlock (centered)
+- **Composer (신규)**: git/diff meta row → TextEditor + placeholder → footer (model/mode/effort picker + attachment + 자동 모드 + SendButton)
+- **ChatToolbar v3**: sidebar toggle + Breadcrumb (folder + name + chevron) + streaming badge + dashboard/inspector buttons
+- **ChatStatusBar v3**: ContextGauge (50/75% 임계 색) | msg/in/out/cache | cost
+- **ContextInspector v3**: 박스 없는 sections (active/context/tokens/cost/recent tools)
+- **SessionPickers v3**: InlinePicker — "label · value ▾" hover bg
+- **UsageDashboard v3 / CreateWorkspaceSheet v3**: FlatSection 사용
+- **RootView v3**: 자체 HStack (sidebar/main/inspector), Composer 통합, EmptyWorkspaceView
+
+ADR-016 — codex review 결과 반영 + design spec v3 정식 채택
+
+검증:
+- swift build → 2.21s 성공
+- swift test → 49/49 통과
+- swift run YuminaiApp → 윈도우 정상 (PID 94678)
+
 ### Redesigned (CLI-flat 룩으로 전면 재구성, 2026-05-01 늦은밤)
 - **macOS 네이티브 컴포넌트 우회** — NavigationSplitView 제거 (직접 HStack), Form/Picker/.regularMaterial 모두 chrome에서 제거
 - **Theme 전면 재정의** — 시스템 색 (`Color(NSColor.windowBackgroundColor)` 등) 모두 제거 → 명시적 light/dark 적응형 hex 토큰. 모든 폰트 monospace 기본
