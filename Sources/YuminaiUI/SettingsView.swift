@@ -9,28 +9,6 @@ public enum SecretStatus: Sendable, Equatable {
     case error(String)
 }
 
-/// openclaw CLI 감지 상태 — Telegram 탭 UI 표시용. AppModel이 OpenClawDetector → 이 struct로 변환해 주입.
-public struct OpenClawUIStatus: Sendable, Equatable {
-    public let installed: Bool
-    public let version: String?
-    public let telegramActive: Bool
-    public let message: String
-
-    public init(installed: Bool, version: String?, telegramActive: Bool, message: String) {
-        self.installed = installed
-        self.version = version
-        self.telegramActive = telegramActive
-        self.message = message
-    }
-
-    public static let unknown = OpenClawUIStatus(
-        installed: false,
-        version: nil,
-        telegramActive: false,
-        message: "‘새로고침’을 눌러 openclaw 상태를 감지해보세요."
-    )
-}
-
 /// macOS 시스템 설정 룩 — `.formStyle(.grouped)` + `LabeledContent` 표준 패턴.
 ///
 /// 모든 Section은 `Section { } header: { } footer: { }` 명시적 형식 사용 (macOS 26 ambiguity 회피).
@@ -39,7 +17,6 @@ public struct SettingsView: View {
 
     public let anthropicKeyStatus: SecretStatus
     public let telegramTokenStatus: SecretStatus
-    public let openClawStatus: OpenClawUIStatus?
 
     public let onUpdateAnthropicKey: (String) -> Void
     public let onClearAnthropicKey: () -> Void
@@ -47,35 +24,30 @@ public struct SettingsView: View {
     public let onClearTelegramToken: () -> Void
     public let onTestTelegramSend: () -> Void
     public let onSelectClaudeBinary: () -> Void
-    public let onSelectOpenClawBinary: () -> Void
-    public let onRefreshOpenClawStatus: () -> Void
+    public let onImportFromCokacdir: () -> Void
 
     public init(
         preferences: Binding<AppPreferences>,
         anthropicKeyStatus: SecretStatus,
         telegramTokenStatus: SecretStatus,
-        openClawStatus: OpenClawUIStatus? = nil,
         onUpdateAnthropicKey: @escaping (String) -> Void,
         onClearAnthropicKey: @escaping () -> Void,
         onUpdateTelegramToken: @escaping (String) -> Void,
         onClearTelegramToken: @escaping () -> Void,
         onTestTelegramSend: @escaping () -> Void,
         onSelectClaudeBinary: @escaping () -> Void,
-        onSelectOpenClawBinary: @escaping () -> Void = {},
-        onRefreshOpenClawStatus: @escaping () -> Void = {}
+        onImportFromCokacdir: @escaping () -> Void = {}
     ) {
         self._preferences = preferences
         self.anthropicKeyStatus = anthropicKeyStatus
         self.telegramTokenStatus = telegramTokenStatus
-        self.openClawStatus = openClawStatus
         self.onUpdateAnthropicKey = onUpdateAnthropicKey
         self.onClearAnthropicKey = onClearAnthropicKey
         self.onUpdateTelegramToken = onUpdateTelegramToken
         self.onClearTelegramToken = onClearTelegramToken
         self.onTestTelegramSend = onTestTelegramSend
         self.onSelectClaudeBinary = onSelectClaudeBinary
-        self.onSelectOpenClawBinary = onSelectOpenClawBinary
-        self.onRefreshOpenClawStatus = onRefreshOpenClawStatus
+        self.onImportFromCokacdir = onImportFromCokacdir
     }
 
     public var body: some View {
@@ -287,33 +259,35 @@ public struct SettingsView: View {
                     Text("텔레그램 알림 켜기")
                 }
                 if preferences.telegramEnabled {
-                    LabeledContent("연결 방식") {
-                        Picker("", selection: $preferences.telegramUseOpenClaw) {
-                            Text("Bot 토큰 직접 입력").tag(false)
-                            Text("openclaw에 위임").tag(true)
+                    LabeledContent("Bot 토큰") {
+                        SecretField(
+                            status: telegramTokenStatus,
+                            onSave: onUpdateTelegramToken,
+                            onClear: onClearTelegramToken
+                        )
+                    }
+                    if let source = preferences.telegramSourceLabel {
+                        LabeledContent("토큰 출처") {
+                            HStack(spacing: 6) {
+                                Image(systemName: "arrow.down.app.fill")
+                                    .foregroundStyle(.secondary)
+                                Text("cokacdir — \(source)")
+                                    .font(.callout)
+                                    .foregroundStyle(.secondary)
+                            }
                         }
-                        .pickerStyle(.segmented)
-                        .labelsHidden()
                     }
-
-                    if preferences.telegramUseOpenClaw {
-                        openClawConnectionFields
-                    } else {
-                        directTokenFields
-                    }
-
                     LabeledContent("Chat ID") {
                         TextField(
-                            preferences.telegramUseOpenClaw ? "Telegram 숫자 chat id (알림 수신처)" : "숫자",
+                            "숫자",
                             text: Binding(
                                 get: { preferences.telegramChatId.map(String.init) ?? "" },
                                 set: { preferences.telegramChatId = Int64($0) }
                             )
                         )
                         .textFieldStyle(.roundedBorder)
-                        .frame(maxWidth: 220)
+                        .frame(maxWidth: 200)
                     }
-
                     LabeledContent("허용 사용자 ID") {
                         TextField(
                             "쉼표로 구분",
@@ -331,21 +305,43 @@ public struct SettingsView: View {
                         .textFieldStyle(.roundedBorder)
                         .frame(maxWidth: 240)
                     }
-
                     LabeledContent("연결 확인") {
                         Button("테스트 메시지 보내기", action: onTestTelegramSend)
-                            .disabled(!testButtonEnabled)
+                            .disabled(telegramTokenStatus != .set || preferences.telegramChatId == nil)
                     }
                 }
             } header: {
                 Text("연결")
             } footer: {
-                Text(connectionFooter)
+                Text("BotFather에서 받은 토큰과, 본인 Telegram 계정의 user ID를 입력하세요.")
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }
 
             if preferences.telegramEnabled {
+                Section {
+                    HStack(spacing: 8) {
+                        Image(systemName: "square.and.arrow.down.on.square")
+                            .foregroundStyle(Color.accentColor)
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text("이 PC의 cokacdir에서 봇 가져오기")
+                                .font(.callout.weight(.medium))
+                            Text("`~/.cokacdir/workspace/bot_settings.json`에서 봇과 chat id를 자동으로 채워요.")
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                        }
+                        Spacer()
+                        Button("열기…", action: onImportFromCokacdir)
+                    }
+                    .padding(.vertical, 2)
+                } header: {
+                    Text("cokacdir 통합")
+                } footer: {
+                    Text("⚠ cokacdir 봇 서버가 같은 토큰으로 동시에 실행 중이면 두 곳에서 Telegram update를 나눠 가져 메시지가 한쪽에만 도착할 수 있어요. Yuminai를 쓰는 동안에는 cokacdir의 해당 봇을 잠시 꺼두는 걸 권장해요.")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+
                 Section {
                     Toggle("작업 완료 시", isOn: $preferences.telegramAlertPolicy.sendOnComplete)
                     Toggle("에러 발생 시", isOn: $preferences.telegramAlertPolicy.sendOnError)
@@ -357,96 +353,6 @@ public struct SettingsView: View {
         }
         .formStyle(.grouped)
         .scrollContentBackground(.hidden)
-    }
-
-    private var directTokenFields: some View {
-        LabeledContent("Bot 토큰") {
-            SecretField(
-                status: telegramTokenStatus,
-                onSave: onUpdateTelegramToken,
-                onClear: onClearTelegramToken
-            )
-        }
-    }
-
-    @ViewBuilder
-    private var openClawConnectionFields: some View {
-        LabeledContent("openclaw 경로") {
-            HStack(spacing: 6) {
-                TextField("/opt/homebrew/bin/openclaw", text: $preferences.openClawBinaryPath)
-                    .textFieldStyle(.roundedBorder)
-                    .frame(maxWidth: 280)
-                Button("찾아보기…", action: onSelectOpenClawBinary)
-            }
-        }
-        LabeledContent("Telegram 대상") {
-            TextField(
-                "@username 또는 숫자 chat id",
-                text: $preferences.openClawTelegramTarget
-            )
-            .textFieldStyle(.roundedBorder)
-            .frame(maxWidth: 280)
-        }
-        LabeledContent("openclaw 상태") {
-            HStack(spacing: 8) {
-                openClawStatusBadge
-                Button("새로고침", action: onRefreshOpenClawStatus)
-                    .controlSize(.small)
-            }
-        }
-    }
-
-    @ViewBuilder
-    private var openClawStatusBadge: some View {
-        let status = openClawStatus ?? .unknown
-        VStack(alignment: .leading, spacing: 2) {
-            HStack(spacing: 6) {
-                Image(systemName: openClawIcon(for: status))
-                    .foregroundStyle(openClawTint(for: status))
-                Text(openClawTitle(for: status))
-                    .font(.caption.weight(.medium))
-            }
-            Text(status.message)
-                .font(.caption2)
-                .foregroundStyle(.secondary)
-                .lineLimit(2)
-        }
-    }
-
-    private func openClawIcon(for status: OpenClawUIStatus) -> String {
-        if !status.installed { return "questionmark.circle" }
-        if status.telegramActive { return "checkmark.circle.fill" }
-        return "exclamationmark.triangle.fill"
-    }
-
-    private func openClawTint(for status: OpenClawUIStatus) -> Color {
-        if !status.installed { return .secondary }
-        if status.telegramActive { return .green }
-        return .orange
-    }
-
-    private func openClawTitle(for status: OpenClawUIStatus) -> String {
-        if !status.installed { return "openclaw 미감지" }
-        let suffix = status.version.map { " — \($0)" } ?? ""
-        return status.telegramActive ? "telegram 채널 활성\(suffix)" : "telegram 채널 비활성\(suffix)"
-    }
-
-    private var testButtonEnabled: Bool {
-        guard preferences.telegramChatId != nil else { return false }
-        if preferences.telegramUseOpenClaw {
-            let pathOk = !preferences.openClawBinaryPath.isEmpty
-            let targetOk = !preferences.openClawTelegramTarget
-                .trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-            return pathOk && targetOk
-        }
-        return telegramTokenStatus == .set
-    }
-
-    private var connectionFooter: String {
-        if preferences.telegramUseOpenClaw {
-            return "openclaw에 등록된 토큰을 위임 사용해요. Yuminai는 토큰을 직접 보거나 저장하지 않아요. openclaw에 telegram 채널이 먼저 활성화돼 있어야 해요."
-        }
-        return "BotFather에서 받은 토큰과, 본인 Telegram 계정의 user ID를 입력하세요."
     }
 
     // MARK: - Anthropic

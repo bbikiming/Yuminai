@@ -108,7 +108,6 @@ struct SettingsContainer: View {
             preferences: $bindable.preferences,
             anthropicKeyStatus: appModel.anthropicKeyStatus,
             telegramTokenStatus: appModel.telegramTokenStatus,
-            openClawStatus: appModel.openClawUIStatus,
             onUpdateAnthropicKey: { value in
                 Task { await appModel.saveAnthropicKey(value) }
             },
@@ -127,18 +126,24 @@ struct SettingsContainer: View {
             onSelectClaudeBinary: {
                 appModel.selectClaudeBinary()
             },
-            onSelectOpenClawBinary: {
-                appModel.selectOpenClawBinary()
-            },
-            onRefreshOpenClawStatus: {
-                Task { await appModel.refreshOpenClawStatus() }
+            onImportFromCokacdir: {
+                Task { await appModel.loadCokacdirBots() }
             }
         )
         .onChange(of: appModel.preferences) { _, _ in
             Task { await appModel.savePreferences() }
         }
-        .task {
-            await appModel.refreshOpenClawStatus()
+        .sheet(isPresented: $bindable.showCokacdirImportSheet) {
+            CokacdirImportSheet(
+                bots: appModel.cokacdirBots,
+                error: appModel.cokacdirImportError,
+                onSelect: { bot, chatId in
+                    Task { await appModel.applyCokacdirBot(bot, chatId: chatId) }
+                },
+                onCancel: {
+                    appModel.showCokacdirImportSheet = false
+                }
+            )
         }
     }
 }

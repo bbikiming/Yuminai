@@ -32,7 +32,9 @@ public final class AppModel {
 
     public var anthropicKeyStatus: SecretStatus = .notSet
     public var telegramTokenStatus: SecretStatus = .notSet
-    public var openClawStatus: OpenClawDetector.Status?
+    public var cokacdirBots: [CokacdirBot] = []
+    public var cokacdirImportError: String?
+    public var showCokacdirImportSheet: Bool = false
 
     public var showCreateWorkspaceSheet: Bool = false
     public var showUsageDashboard: Bool = false
@@ -785,15 +787,19 @@ public final class AppModel {
         guard preferences.telegramEnabled, let chatId = preferences.telegramChatId else {
             return
         }
-
-        let bot: (any TelegramClient)?
-        if preferences.telegramUseOpenClaw {
-            bot = makeOpenClawBot()
-        } else {
-            bot = await makeLiveBot()
+        let token: String?
+        do {
+            token = try await keychainStore.get(KeychainKey.telegramBotToken)
+        } catch {
+            logger.error("Telegram token 읽기 실패: \(error.localizedDescription)")
+            return
         }
-        guard let bot else { return }
+        guard let token else { return }
 
+        let bot = LiveTelegramBot(
+            token: token,
+            allowedUserIds: Set(preferences.telegramAllowedUserIds)
+        )
         telegramBot = bot
         alertDispatcher = TelegramAlertDispatcher(
             client: bot,
@@ -805,76 +811,45 @@ public final class AppModel {
         commandPump = pump
         do {
             try await pump.start()
-            let mode = preferences.telegramUseOpenClaw ? "openclaw 위임" : "직접 토큰"
-            logger.info("Telegram 활성화 (\(mode)): chatId=\(chatId)")
+            logger.info("Telegram 활성화: chatId=\(chatId)")
         } catch {
             logger.error("Telegram pump 시작 실패: \(error.localizedDescription)")
         }
     }
 
-    private func makeLiveBot() async -> LiveTelegramBot? {
-        let token: String?
+    // MARK: - cokacdir bot import (ADR-024)
+
+    /// cokacdir의 ~/.cokacdir/workspace/bot_settings.json을 읽어 봇 목록을 로드.
+    /// SettingsView "cokacdir에서 가져오기" 버튼이 호출.
+    public func loadCokacdirBots() async {
+        cokacdirImportError = nil
+        let path = AppPreferences.defaultCokacdirBotSettingsPath()
+        let importer = CokacdirImporter(botSettingsPath: path)
         do {
-            token = try await keychainStore.get(KeychainKey.telegramBotToken)
+            cokacdirBots = try await importer.loadBots()
+            showCokacdirImportSheet = true
         } catch {
-            logger.error("Telegram token 읽기 실패: \(error.localizedDescription)")
-            return nil
+            cokacdirImportError = error.localizedDescription
+            showCokacdirImportSheet = true
         }
-        guard let token else { return nil }
-        return LiveTelegramBot(
-            token: token,
-            allowedUserIds: Set(preferences.telegramAllowedUserIds)
-        )
     }
 
-    private func makeOpenClawBot() -> OpenClawTelegramBot? {
-        let trimmedTarget = preferences.openClawTelegramTarget
-            .trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !trimmedTarget.isEmpty else {
-            logger.error("openclaw target 미설정")
-            return nil
-        }
-        guard FileManager.default.isExecutableFile(atPath: preferences.openClawBinaryPath) else {
-            logger.error("openclaw 바이너리 미발견: \(self.preferences.openClawBinaryPath)")
-            return nil
-        }
-        let config = OpenClawTelegramBot.Configuration(
-            binaryURL: URL(fileURLWithPath: preferences.openClawBinaryPath),
-            target: trimmedTarget,
-            allowedUserIds: Set(preferences.telegramAllowedUserIds)
-        )
-        return OpenClawTelegramBot(configuration: config)
-    }
-
-    /// SettingsView에서 호출 — openclaw 감지 상태를 갱신.
-    public func refreshOpenClawStatus() async {
-        let detector = OpenClawDetector(binaryPath: preferences.openClawBinaryPath)
-        openClawStatus = await detector.detect()
-    }
-
-    /// SettingsView UI에 전달 — Telegram 모듈 의존 없이 표시 가능하도록 변환.
-    public var openClawUIStatus: OpenClawUIStatus? {
-        guard let status = openClawStatus else { return nil }
-        return OpenClawUIStatus(
-            installed: status.installed,
-            version: status.version,
-            telegramActive: status.telegramActive,
-            message: status.message
-        )
-    }
-
-    public func selectOpenClawBinary() {
-        let panel = NSOpenPanel()
-        panel.canChooseFiles = true
-        panel.canChooseDirectories = false
-        panel.allowsMultipleSelection = false
-        panel.message = "openclaw CLI 실행 파일을 선택하세요"
-        if panel.runModal() == .OK, let url = panel.url {
-            preferences.openClawBinaryPath = url.path
-            Task {
-                await savePreferences()
-                await refreshOpenClawStatus()
+    /// 선택한 cokacdir 봇의 토큰을 keychain에 저장 + chatId/허용 user 자동 설정.
+    public func applyCokacdirBot(_ bot: CokacdirBot, chatId: Int64) async {
+        do {
+            try await keychainStore.set(bot.token, for: KeychainKey.telegramBotToken)
+            telegramTokenStatus = .set
+            preferences.telegramChatId = chatId
+            preferences.telegramSourceLabel = bot.displayName
+            // 봇 owner를 허용 user로 자동 추가 (없으면)
+            if !preferences.telegramAllowedUserIds.contains(bot.ownerUserId) {
+                preferences.telegramAllowedUserIds.append(bot.ownerUserId)
             }
+            preferences.telegramEnabled = true
+            await savePreferences()
+            showCokacdirImportSheet = false
+        } catch {
+            cokacdirImportError = "토큰 저장 실패: \(error.localizedDescription)"
         }
     }
 

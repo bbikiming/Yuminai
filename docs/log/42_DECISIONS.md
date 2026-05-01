@@ -6,50 +6,44 @@
 
 ---
 
-## ADR-024 — openclaw CLI 위임 Telegram 모드 (토큰 비저장)
+## ADR-024 — cokacdir bot_settings.json import (LiveTelegramBot 재사용)
 
 - **날짜**: 2026-05-01
-- **상태**: Accepted
-- **결정**: 사용자 PC에 이미 설치된 `openclaw` CLI에 Telegram 송수신을 위임하는 두 번째 `TelegramClient` 구현체를 추가. Bot 토큰을 Yuminai에 직접 입력하지 않아도 됨. 직접 토큰 모드(`LiveTelegramBot`)와 공존, 사용자가 Settings에서 picker로 선택
+- **상태**: Accepted (이전 안 — openclaw 위임 — 폐기 후 재작성)
+- **결정**: cokacdir의 `~/.cokacdir/workspace/bot_settings.json`을 읽어 봇 토큰 + chat id를 Yuminai로 import하는 일회성 import 방식. 별도 actor/CLI 위임 없이 기존 `LiveTelegramBot`을 그대로 사용
 - **컨텍스트**:
-  - 사용자 — "탤래그램 봇 토큰 입력 외에 현재 이 pc에 세팅된 cocakdir(openclaw)도 적용되게"
-  - 발견: `~/.openclaw/`에 openclaw v2026.3.13 + telegram credential 저장됨 (`/opt/homebrew/bin/openclaw`)
-  - openclaw는 다중 채널 (Telegram/Discord/Slack/WhatsApp/iMessage 등) agent 오케스트레이터, `openclaw message send/read --channel <name> --target <id>` 인터페이스 제공
-  - 본인 PC의 openclaw vault를 활용하면 토큰 중복 입력 + 토큰 노출 위험 둘 다 회피
-- **대안**:
-  - 직접 credential 파일 읽기 (`~/.openclaw/credentials/telegram-pairing.json`) → 토큰 직접 다루게 됨, openclaw 내부 schema 의존, 보안상 거부 (Claude도 자동 read 차단됨 = 옳은 정책)
-  - openclaw HTTP gateway 호출 (`openclaw gateway`) → 추가 setup, 실패 모드 복잡
-  - **CLI subprocess 위임 (채택)** → process spawn만 필요, openclaw가 토큰 책임 보유, JSON 출력 안정적
-- **인터페이스 결정**:
-  - send: `openclaw message send --channel telegram --target <id> --message <text> --json`
-  - edit: `openclaw message edit --channel telegram --target <id> --message-id <id> --message <text> --json`
-  - read: `openclaw message read --channel telegram --target <id> --after <last> --limit 20 --json`
-  - 5초 폴링 — openclaw 자체 long-polling은 CLI에서 사용 불가, 짧은 폴링이 합리적 절충
-- **JSON 파싱 정책**: 방어적
-  - openclaw 내부 schema가 향후 변경될 수 있음 → multiple key fallback (`messageId` / `message_id` / `id`, `result` / `data` 중첩, `messages` / `result` / `data` / `items` key)
-  - parse 실패 시 silent (메시지 0개 반환) — 폴링 루프가 다음 시도에서 복구
-- **테스트 전략**:
-  - `ProcessRun` typealias (`@Sendable (URL, [String]) async throws -> ProcessOutput`) 주입 → mock 가능
-  - actor `MockProcessRunner`가 호출 인자 기록 + canned response 반환
-  - 10 unit test (send 4 + parse 4 + edit 1 + Detector 1)
-- **AppModel 격리**:
-  - `OpenClawDetector.Status`는 YuminaiTelegram 내부 — UI는 YuminaiTelegram을 import하지 않음
-  - YuminaiUI에 `OpenClawUIStatus` mirror struct + AppModel `openClawUIStatus` computed property로 변환 → 모듈 의존성 한 방향 유지
+  - 1차 시도: "cocakdir" 오타를 openclaw로 추정 → openclaw 위임 actor (`OpenClawTelegramBot`) 작성 + commit. 사용자 정정: 실제 도구는 [cokacdir](https://cokacdir.cokac.com/) v0.4.63
+  - cokacdir = multi-panel terminal file manager + Telegram bot server (`--ccserver <TOKEN>`)
+  - `bot_settings.json`에 봇 목록 평문 저장 — display_name / username / token / owner_user_id / last_sessions (chat → workspace path 매핑)
+  - cokacdir는 openclaw처럼 message proxy CLI가 아님 — 봇 서버 자체. `--message ... --key <HASH>` 내부 send도 token hash 필요
+- **대안 분석**:
+  - **CLI 위임** (`cokacdir --message --to <bot> --chat <id> --key <hash>`) → "internal use" 표시 + token hash 계산 필요 + 비공식 인터페이스, 깨질 위험
+  - **bot 서버 공유** (Yuminai와 cokacdir이 같은 토큰으로 동시 polling) → Telegram update 분산 (한쪽만 받음), 충돌
+  - **bot_settings.json import (채택)** → 일회성, 단순, 기존 LiveTelegramBot 재사용. 토큰 중복 저장 trade-off는 충돌 없는 운용 우선
+- **import flow**:
+  1. Settings → 텔레그램 → "cokacdir 통합" Section → "열기…" 버튼
+  2. AppModel.loadCokacdirBots() → CokacdirImporter.loadBots() → CokacdirImportSheet 표시
+  3. 사용자가 봇 + chat id 선택 (suggested chip / 직접 입력)
+  4. AppModel.applyCokacdirBot(_:chatId:) → keychain에 토큰 저장 + telegramChatId/AllowedUserIds 자동 + telegramSourceLabel 기록
+- **충돌 처리**: 같은 토큰으로 cokacdir 봇 서버가 동시 실행 중이면 polling 분산 → UI footer로 안내 ("Yuminai 사용 중에는 cokacdir의 해당 봇을 잠시 꺼두는 걸 권장")
 - **결과**:
-  - 신규 파일: `OpenClawTelegramBot.swift` (actor + Configuration + ProcessOutput + OpenClawError + OpenClawDetector + Status)
-  - `AppPreferences` +3 필드 (telegramUseOpenClaw / openClawBinaryPath / openClawTelegramTarget)
-  - `SettingsView` Telegram 탭에 segmented picker + openclaw conditional UI + 상태 badge
-  - 96/96 tests (10 신규)
+  - `CokacdirImporter` (Sendable struct) + `CokacdirBot` Sendable model + `CokacdirImportError`
+  - `CokacdirImportSheet` (YuminaiApp 모듈, YuminaiTelegram + YuminaiUI 모두 import) — 봇 라디오 리스트 + chat chip + 직접 입력
+  - `AppPreferences.telegramSourceLabel: String?` — "토큰 출처: cokacdir — <display_name>" 표시
+  - `AppModel.cokacdirBots / cokacdirImportError / showCokacdirImportSheet` + `loadCokacdirBots / applyCokacdirBot`
+  - `SettingsView` Telegram 탭에 새 Section + 충돌 안내 footer
+  - 8 신규 테스트 (parse 6 + loadBots 2)
+- **격리 결정**: `CokacdirBot`은 YuminaiTelegram public이지만 sheet UI는 YuminaiApp에 둠 (YuminaiUI에 YuminaiTelegram 의존성 추가 회피). YuminaiUI ↔ YuminaiTelegram 사이는 callback `() -> Void`로만 연결
+- **이전 안 폐기 근거** (openclaw 위임):
+  - 도구 자체가 잘못 식별됨 (openclaw는 사용자 PC에 있긴 하지만 사용자가 의도한 도구 아님)
+  - 설령 정확했어도 openclaw `channels list`에 telegram 채널 없음 (`chat: {}`) — 통합 가능 상태가 아니었음
+  - cokacdir이 실제로 활성 사용 중인 도구 (workspace 12개 + ai_sessions 9개 + 봇 2개 등록)
 - **알려진 한계**:
-  - openclaw 채널이 미활성이면 통합 안 됨 — 사용자가 `openclaw channels add` 직접 실행 필요. Yuminai 내 onboarding wizard 미제공
-  - 단일 target 가정 (멀티 챗 라우팅 미지원)
-  - polling interval 고정 5s (사용자 조정 불가)
-  - text only (inline keyboard / media 미지원)
-  - openclaw 에러 시 retry는 단순 sleep (exponential backoff X)
-- **보안 메모**:
-  - openclaw는 다중 채널 통합 도구로 알려진 보안 우려 사항이 있음 (전체 채팅 채널이 attack surface)
-  - Yuminai의 위임은 openclaw 자체 신뢰 수준에 종속 — 사용자가 openclaw를 신뢰하는 한도 내에서 사용
-- **재검토**: 사용자 사용 후 — 폴링 빈도, target 멀티 지원 여부, onboarding wizard 필요성
+  - 토큰 중복 저장 (cokacdir + Yuminai keychain) — 보안 위험은 사용자 신뢰 모델에 종속
+  - 일회성 import — cokacdir에서 토큰 재발급되면 사용자가 다시 import 필요
+  - cokacdir와 동시 실행 시 polling 충돌 — 자동 감지/회피 미구현 (사용자 운용)
+  - bot_settings.json 형식 변경에 종속 (방어적 파싱이지만 schema 깨질 수 있음)
+- **재검토**: 사용자 사용 후 — 충돌 자동 감지, cokacdir 봇 서버 status 체크 옵션 추가 여부
 
 ---
 

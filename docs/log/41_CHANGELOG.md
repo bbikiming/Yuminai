@@ -4,12 +4,53 @@
 
 ## [Unreleased] — 2026-05-01
 
-### Added — openclaw CLI 위임 Telegram 통합 (ADR-024)
+### Changed — cokacdir 봇 import로 통합 방식 교체 (ADR-024 개정)
 
-사용자 요청: "탤래그램 봇 토큰 입력 외에 현재 이 pc에 세팅된 cocakdir도 적용되게 해줘"
-("cocakdir" = openclaw — `~/.openclaw/`에서 발견)
+사용자 정정: "🟢 cokacdir started (v0.4.63) ... 이걸로 확인해서 적용해 줘"
 
-이미 PC에 설정된 [openclaw](https://github.com/openclaw/openclaw) CLI v2026.3.13 (`/opt/homebrew/bin/openclaw`)에 Telegram 송수신을 위임하는 옵션 추가. Bot 토큰은 openclaw vault에 그대로 두고 Yuminai는 토큰을 직접 보지 않는다.
+이전 ADR-024(openclaw 위임)은 잘못된 도구 가정으로 폐기. 실제 도구는 [cokacdir](https://cokacdir.cokac.com/) (`/usr/local/bin/cokacdir` 0.4.63) — multi-panel terminal file manager + Telegram bot server. CLI 위임이 아닌 **bot_settings.json 토큰 import** 방식으로 통합 재작성.
+
+**제거**:
+- `Sources/YuminaiTelegram/OpenClawTelegramBot.swift` (actor + Detector)
+- `Tests/YuminaiTelegramTests/OpenClawTelegramBotTests.swift` (10 tests)
+- AppPreferences `telegramUseOpenClaw` / `openClawBinaryPath` / `openClawTelegramTarget` 필드
+- AppModel `makeOpenClawBot` / `refreshOpenClawStatus` / `selectOpenClawBinary` / `openClawUIStatus`
+- SettingsView `openClawConnectionFields` / segmented picker / status badge
+
+**신규 (cokacdir bot import 방식)**:
+1. **`CokacdirImporter` (YuminaiTelegram)** — `~/.cokacdir/workspace/bot_settings.json` 파싱
+   - dictionary key = bot hash, value = `{display_name, username, token, owner_user_id, last_sessions: {<chat_id>: <workspace_path>}}`
+   - `loadBots()` / `parse(data:)` static
+   - 정렬: display_name 알파벳순
+   - chat id 정렬: abs 작은 순 (1:1 chat 우선, 그룹/채널 음수 ID 후순)
+2. **`CokacdirBot` Sendable struct** — botHash, displayName, username, token, ownerUserId, suggestedChatIds, handle (`@username`)
+3. **`CokacdirImportError`** — notFound / readFailed / invalidJSON
+4. **`CokacdirImportSheet` (YuminaiApp)** — 540pt 모달
+   - 봇 리스트 (BotRow: 라디오 + display name + handle + chat 후보 수)
+   - 선택 시 chat id chip 후보 (LazyVGrid, 양수=person/음수=group icon) + 직접 입력 TextField
+   - "가져오기" → AppModel.applyCokacdirBot(_:chatId:) → keychain 저장 + telegramChatId 자동 + telegramSourceLabel 기록 + ownerUserId를 allowedUserIds에 자동 추가
+5. **AppPreferences `telegramSourceLabel: String?`** — UI에 "토큰 출처: cokacdir — 스튜디오 클로드" 표시용
+6. **AppModel** — `cokacdirBots` / `cokacdirImportError` / `showCokacdirImportSheet` state + `loadCokacdirBots()` / `applyCokacdirBot(_:chatId:)` 액션
+7. **SettingsView Telegram 탭** — 새 Section "cokacdir 통합" + "열기…" 버튼 + footer로 충돌 안내 ("같은 토큰으로 cokacdir 봇 서버가 실행 중이면 update가 분산됨, Yuminai 사용 중에는 cokacdir 해당 봇을 잠시 끄는 걸 권장")
+
+**보안 메모**: cokacdir의 `bot_settings.json`은 봇 토큰을 평문 저장. import 시 Yuminai keychain에도 저장됨. 사용자가 토큰을 노출 의심하면 BotFather에서 재발급 권장.
+
+**테스트**: 8 신규 (parse 6 + loadBots 2)
+- 두 봇 파싱 (실제 cokacdir 형식)
+- 알파벳 정렬
+- token 없는 항목 무시
+- display_name 없으면 hash 앞 8자 fallback
+- chat id abs 정렬
+- invalid JSON throw
+- 파일 없으면 throw
+- end-to-end 임시 파일 → parse
+
+**검증**: build 2.07s, test 94/94 (96→94, openclaw 10건 제거 + cokacdir 8건 추가)
+
+알려진 한계:
+- cokacdir 봇 서버가 같은 토큰으로 동시 실행 중이면 polling 충돌 (UI 안내만 제공)
+- bot_settings.json 형식 변경 시 import 실패 가능 (방어적 파싱이지만 schema는 cokacdir 내부 변경에 종속)
+- import는 일회성 — cokacdir에서 토큰 재발급되면 사용자가 다시 import 필요
 
 구현:
 1. **`OpenClawTelegramBot` actor (YuminaiTelegram)** — `TelegramClient` 두 번째 구현체

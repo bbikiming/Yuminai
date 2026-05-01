@@ -12,11 +12,9 @@ public struct AppPreferences: Sendable, Codable, Hashable {
     public var telegramAllowedUserIds: [Int64]
     public var telegramChatId: Int64?
     public var telegramAlertPolicy: TelegramAlertPolicy
-    /// openclaw CLI에 위임하는 모드. true면 토큰 직접 입력 대신 openclaw vault의 토큰 사용.
-    public var telegramUseOpenClaw: Bool
-    public var openClawBinaryPath: String
-    /// openclaw `--target` 인자 (Telegram chat id 숫자 또는 `@username`).
-    public var openClawTelegramTarget: String
+    /// cokacdir bot import 시 어떤 봇에서 가져왔는지 표시 (display_name).
+    /// nil이면 직접 입력 모드.
+    public var telegramSourceLabel: String?
     public var fontSizeOffset: Int
     public var showInspectorByDefault: Bool
 
@@ -29,9 +27,7 @@ public struct AppPreferences: Sendable, Codable, Hashable {
         telegramAllowedUserIds: [Int64] = [],
         telegramChatId: Int64? = nil,
         telegramAlertPolicy: TelegramAlertPolicy = .default,
-        telegramUseOpenClaw: Bool = false,
-        openClawBinaryPath: String = AppPreferences.detectOpenClawBinaryPath(),
-        openClawTelegramTarget: String = "",
+        telegramSourceLabel: String? = nil,
         fontSizeOffset: Int = 0,
         showInspectorByDefault: Bool = false
     ) {
@@ -43,9 +39,7 @@ public struct AppPreferences: Sendable, Codable, Hashable {
         self.telegramAllowedUserIds = telegramAllowedUserIds
         self.telegramChatId = telegramChatId
         self.telegramAlertPolicy = telegramAlertPolicy
-        self.telegramUseOpenClaw = telegramUseOpenClaw
-        self.openClawBinaryPath = openClawBinaryPath
-        self.openClawTelegramTarget = openClawTelegramTarget
+        self.telegramSourceLabel = telegramSourceLabel
         self.fontSizeOffset = fontSizeOffset
         self.showInspectorByDefault = showInspectorByDefault
     }
@@ -65,17 +59,8 @@ public struct AppPreferences: Sendable, Codable, Hashable {
         return candidates[0]
     }
 
-    /// `openclaw` CLI 자동 감지. 모두 실패 시 brew 경로를 잠정 기본값으로.
-    public static func detectOpenClawBinaryPath() -> String {
-        let candidates = [
-            "/opt/homebrew/bin/openclaw",
-            "/usr/local/bin/openclaw",
-            NSString(string: "~/.local/bin/openclaw").expandingTildeInPath
-        ]
-        let fm = FileManager.default
-        for path in candidates where fm.isExecutableFile(atPath: path) {
-            return path
-        }
-        return candidates[0]
+    /// cokacdir bot_settings.json 기본 경로.
+    public static func defaultCokacdirBotSettingsPath() -> String {
+        NSString(string: "~/.cokacdir/workspace/bot_settings.json").expandingTildeInPath
     }
 }
