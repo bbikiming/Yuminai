@@ -4,6 +4,62 @@
 
 ## [Unreleased] — 2026-05-01
 
+### Added — openclaw CLI 위임 Telegram 통합 (ADR-024)
+
+사용자 요청: "탤래그램 봇 토큰 입력 외에 현재 이 pc에 세팅된 cocakdir도 적용되게 해줘"
+("cocakdir" = openclaw — `~/.openclaw/`에서 발견)
+
+이미 PC에 설정된 [openclaw](https://github.com/openclaw/openclaw) CLI v2026.3.13 (`/opt/homebrew/bin/openclaw`)에 Telegram 송수신을 위임하는 옵션 추가. Bot 토큰은 openclaw vault에 그대로 두고 Yuminai는 토큰을 직접 보지 않는다.
+
+구현:
+1. **`OpenClawTelegramBot` actor (YuminaiTelegram)** — `TelegramClient` 두 번째 구현체
+   - `send` → `openclaw message send --channel telegram --target <id> --message <text> --json`
+   - `edit` → `openclaw message edit --channel telegram --target <id> --message-id <id> --message <text> --json`
+   - `startPolling` → 5초 간격 `openclaw message read --channel telegram --target <id> --after <last> --limit 20 --json`
+   - 화이트리스트 (`allowedUserIds`) 적용은 LiveTelegramBot과 동일
+   - `ProcessRun` typealias로 process 실행 추상화 → 테스트에서 mock 주입
+   - JSON shape 방어적 파싱: `messageId`/`message_id`/`id` + `result`/`data` 중첩 + `messages`/`result`/`data`/`items` 키 모두 시도
+2. **`OpenClawDetector` (YuminaiTelegram)** — 설치 + 채널 활성 상태 감지
+   - 바이너리 존재 + 실행 가능 확인
+   - `openclaw --version`로 버전 추출
+   - `openclaw channels list --json` 응답에 "telegram" 포함 여부로 채널 활성 추정
+   - `Status { installed, version, telegramActive, message }`
+3. **`AppPreferences` 확장**
+   - `telegramUseOpenClaw: Bool` (기본 false — 직접 토큰 모드 유지)
+   - `openClawBinaryPath: String` (자동 감지 — brew/local 순)
+   - `openClawTelegramTarget: String` (`@username` 또는 숫자 chat id)
+   - `detectOpenClawBinaryPath()` static
+4. **`AppModel` 통합**
+   - `activateTelegramIfReady`가 `useOpenClaw` 분기로 `LiveTelegramBot` vs `OpenClawTelegramBot` 선택
+   - `makeLiveBot()` / `makeOpenClawBot()` 분리 (단일 책임)
+   - `openClawStatus` state + `refreshOpenClawStatus()` (Settings 진입 시 자동 호출)
+   - `openClawUIStatus: OpenClawUIStatus?` 변환 property — YuminaiUI가 YuminaiTelegram에 의존하지 않게 격리
+   - `selectOpenClawBinary()` — NSOpenPanel
+5. **`SettingsView` Telegram 탭 확장**
+   - 연결 방식 segmented picker: "Bot 토큰 직접 입력" / "openclaw에 위임"
+   - openclaw 모드 시: 경로 + 찾아보기 버튼 + 대상 (@username/chat id) + 상태 badge (✓ 활성 / ⚠ 비활성 / ? 미감지) + 새로고침 버튼
+   - footer 친화 안내: "openclaw에 등록된 토큰을 위임 사용해요. Yuminai는 토큰을 직접 보거나 저장하지 않아요."
+   - 테스트 메시지 버튼은 모드별 활성 조건 분기
+
+신규 파일:
+- `Sources/YuminaiTelegram/OpenClawTelegramBot.swift` — actor + ProcessOutput + OpenClawError + OpenClawDetector
+- `Tests/YuminaiTelegramTests/OpenClawTelegramBotTests.swift` — 10 신규 테스트 (send 4 + parse 4 + edit 1 + Detector 1)
+
+확장:
+- `AppPreferences` — telegramUseOpenClaw / openClawBinaryPath / openClawTelegramTarget + detectOpenClawBinaryPath()
+- `AppModel` — openClawStatus + makeLiveBot/makeOpenClawBot 분리 + refreshOpenClawStatus + selectOpenClawBinary + openClawUIStatus 변환
+- `SettingsView` — OpenClawUIStatus struct + openClawConnectionFields + 상태 badge UI + 모드별 conditional rendering
+- `YuminaiApp.SettingsContainer` — 신규 callback 2개 + .task로 진입 시 상태 자동 새로고침
+
+알려진 한계 (다음 라운드):
+- openclaw `channels add --channel telegram --token <token>`는 Yuminai 안에서 직접 트리거 안 함 (사용자가 별도 셸에서 실행)
+- openclaw 채널 비활성 시 적극적 onboarding wizard (ex. "이 명령을 실행하시겠어요?" 확인) 미구현
+- 멀티 챗 라우팅 미지원 (openclaw target 1개 가정)
+- openclaw 에러 시 retry 정책 단순 (15초 sleep) — exponential backoff 미적용
+- openclaw가 송신한 메시지 본문 inline keyboard / media 미지원 (text only)
+
+ADR-024 채택. 검증: build 3.89s, test 96/96 (86→96, +10 신규)
+
 ### Added — Parity Round: codex 10 gap 중 7개 + UX polish 3종 (ADR-023)
 
 사용자 요청: "다음 라운드도 전부 기획해서 구현해 줘 이 앱의 퀄리티가 클로드코드 이상의 사용성이 됐다고 자신할 때까지 래퍼런스 조사, 검증, 기획, 구현 반복해"

@@ -32,6 +32,7 @@ public final class AppModel {
 
     public var anthropicKeyStatus: SecretStatus = .notSet
     public var telegramTokenStatus: SecretStatus = .notSet
+    public var openClawStatus: OpenClawDetector.Status?
 
     public var showCreateWorkspaceSheet: Bool = false
     public var showUsageDashboard: Bool = false
@@ -784,19 +785,15 @@ public final class AppModel {
         guard preferences.telegramEnabled, let chatId = preferences.telegramChatId else {
             return
         }
-        let token: String?
-        do {
-            token = try await keychainStore.get(KeychainKey.telegramBotToken)
-        } catch {
-            logger.error("Telegram token 읽기 실패: \(error.localizedDescription)")
-            return
-        }
-        guard let token else { return }
 
-        let bot = LiveTelegramBot(
-            token: token,
-            allowedUserIds: Set(preferences.telegramAllowedUserIds)
-        )
+        let bot: (any TelegramClient)?
+        if preferences.telegramUseOpenClaw {
+            bot = makeOpenClawBot()
+        } else {
+            bot = await makeLiveBot()
+        }
+        guard let bot else { return }
+
         telegramBot = bot
         alertDispatcher = TelegramAlertDispatcher(
             client: bot,
@@ -808,9 +805,76 @@ public final class AppModel {
         commandPump = pump
         do {
             try await pump.start()
-            logger.info("Telegram 활성화: chatId=\(chatId)")
+            let mode = preferences.telegramUseOpenClaw ? "openclaw 위임" : "직접 토큰"
+            logger.info("Telegram 활성화 (\(mode)): chatId=\(chatId)")
         } catch {
             logger.error("Telegram pump 시작 실패: \(error.localizedDescription)")
+        }
+    }
+
+    private func makeLiveBot() async -> LiveTelegramBot? {
+        let token: String?
+        do {
+            token = try await keychainStore.get(KeychainKey.telegramBotToken)
+        } catch {
+            logger.error("Telegram token 읽기 실패: \(error.localizedDescription)")
+            return nil
+        }
+        guard let token else { return nil }
+        return LiveTelegramBot(
+            token: token,
+            allowedUserIds: Set(preferences.telegramAllowedUserIds)
+        )
+    }
+
+    private func makeOpenClawBot() -> OpenClawTelegramBot? {
+        let trimmedTarget = preferences.openClawTelegramTarget
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmedTarget.isEmpty else {
+            logger.error("openclaw target 미설정")
+            return nil
+        }
+        guard FileManager.default.isExecutableFile(atPath: preferences.openClawBinaryPath) else {
+            logger.error("openclaw 바이너리 미발견: \(self.preferences.openClawBinaryPath)")
+            return nil
+        }
+        let config = OpenClawTelegramBot.Configuration(
+            binaryURL: URL(fileURLWithPath: preferences.openClawBinaryPath),
+            target: trimmedTarget,
+            allowedUserIds: Set(preferences.telegramAllowedUserIds)
+        )
+        return OpenClawTelegramBot(configuration: config)
+    }
+
+    /// SettingsView에서 호출 — openclaw 감지 상태를 갱신.
+    public func refreshOpenClawStatus() async {
+        let detector = OpenClawDetector(binaryPath: preferences.openClawBinaryPath)
+        openClawStatus = await detector.detect()
+    }
+
+    /// SettingsView UI에 전달 — Telegram 모듈 의존 없이 표시 가능하도록 변환.
+    public var openClawUIStatus: OpenClawUIStatus? {
+        guard let status = openClawStatus else { return nil }
+        return OpenClawUIStatus(
+            installed: status.installed,
+            version: status.version,
+            telegramActive: status.telegramActive,
+            message: status.message
+        )
+    }
+
+    public func selectOpenClawBinary() {
+        let panel = NSOpenPanel()
+        panel.canChooseFiles = true
+        panel.canChooseDirectories = false
+        panel.allowsMultipleSelection = false
+        panel.message = "openclaw CLI 실행 파일을 선택하세요"
+        if panel.runModal() == .OK, let url = panel.url {
+            preferences.openClawBinaryPath = url.path
+            Task {
+                await savePreferences()
+                await refreshOpenClawStatus()
+            }
         }
     }
 

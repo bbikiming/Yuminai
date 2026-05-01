@@ -1,8 +1,55 @@
 # Decisions Log (ADR-lite)
 
-> 최신: ADR-023 (Parity Round — codex gap 7개 + UX polish 3개)
+> 최신: ADR-024 (openclaw CLI 위임 Telegram 통합)
 
 > 큰 결정만 기록. 형식: 결정 / 컨텍스트 / 대안 / 근거 / 결과 / 재검토 시점.
+
+---
+
+## ADR-024 — openclaw CLI 위임 Telegram 모드 (토큰 비저장)
+
+- **날짜**: 2026-05-01
+- **상태**: Accepted
+- **결정**: 사용자 PC에 이미 설치된 `openclaw` CLI에 Telegram 송수신을 위임하는 두 번째 `TelegramClient` 구현체를 추가. Bot 토큰을 Yuminai에 직접 입력하지 않아도 됨. 직접 토큰 모드(`LiveTelegramBot`)와 공존, 사용자가 Settings에서 picker로 선택
+- **컨텍스트**:
+  - 사용자 — "탤래그램 봇 토큰 입력 외에 현재 이 pc에 세팅된 cocakdir(openclaw)도 적용되게"
+  - 발견: `~/.openclaw/`에 openclaw v2026.3.13 + telegram credential 저장됨 (`/opt/homebrew/bin/openclaw`)
+  - openclaw는 다중 채널 (Telegram/Discord/Slack/WhatsApp/iMessage 등) agent 오케스트레이터, `openclaw message send/read --channel <name> --target <id>` 인터페이스 제공
+  - 본인 PC의 openclaw vault를 활용하면 토큰 중복 입력 + 토큰 노출 위험 둘 다 회피
+- **대안**:
+  - 직접 credential 파일 읽기 (`~/.openclaw/credentials/telegram-pairing.json`) → 토큰 직접 다루게 됨, openclaw 내부 schema 의존, 보안상 거부 (Claude도 자동 read 차단됨 = 옳은 정책)
+  - openclaw HTTP gateway 호출 (`openclaw gateway`) → 추가 setup, 실패 모드 복잡
+  - **CLI subprocess 위임 (채택)** → process spawn만 필요, openclaw가 토큰 책임 보유, JSON 출력 안정적
+- **인터페이스 결정**:
+  - send: `openclaw message send --channel telegram --target <id> --message <text> --json`
+  - edit: `openclaw message edit --channel telegram --target <id> --message-id <id> --message <text> --json`
+  - read: `openclaw message read --channel telegram --target <id> --after <last> --limit 20 --json`
+  - 5초 폴링 — openclaw 자체 long-polling은 CLI에서 사용 불가, 짧은 폴링이 합리적 절충
+- **JSON 파싱 정책**: 방어적
+  - openclaw 내부 schema가 향후 변경될 수 있음 → multiple key fallback (`messageId` / `message_id` / `id`, `result` / `data` 중첩, `messages` / `result` / `data` / `items` key)
+  - parse 실패 시 silent (메시지 0개 반환) — 폴링 루프가 다음 시도에서 복구
+- **테스트 전략**:
+  - `ProcessRun` typealias (`@Sendable (URL, [String]) async throws -> ProcessOutput`) 주입 → mock 가능
+  - actor `MockProcessRunner`가 호출 인자 기록 + canned response 반환
+  - 10 unit test (send 4 + parse 4 + edit 1 + Detector 1)
+- **AppModel 격리**:
+  - `OpenClawDetector.Status`는 YuminaiTelegram 내부 — UI는 YuminaiTelegram을 import하지 않음
+  - YuminaiUI에 `OpenClawUIStatus` mirror struct + AppModel `openClawUIStatus` computed property로 변환 → 모듈 의존성 한 방향 유지
+- **결과**:
+  - 신규 파일: `OpenClawTelegramBot.swift` (actor + Configuration + ProcessOutput + OpenClawError + OpenClawDetector + Status)
+  - `AppPreferences` +3 필드 (telegramUseOpenClaw / openClawBinaryPath / openClawTelegramTarget)
+  - `SettingsView` Telegram 탭에 segmented picker + openclaw conditional UI + 상태 badge
+  - 96/96 tests (10 신규)
+- **알려진 한계**:
+  - openclaw 채널이 미활성이면 통합 안 됨 — 사용자가 `openclaw channels add` 직접 실행 필요. Yuminai 내 onboarding wizard 미제공
+  - 단일 target 가정 (멀티 챗 라우팅 미지원)
+  - polling interval 고정 5s (사용자 조정 불가)
+  - text only (inline keyboard / media 미지원)
+  - openclaw 에러 시 retry는 단순 sleep (exponential backoff X)
+- **보안 메모**:
+  - openclaw는 다중 채널 통합 도구로 알려진 보안 우려 사항이 있음 (전체 채팅 채널이 attack surface)
+  - Yuminai의 위임은 openclaw 자체 신뢰 수준에 종속 — 사용자가 openclaw를 신뢰하는 한도 내에서 사용
+- **재검토**: 사용자 사용 후 — 폴링 빈도, target 멀티 지원 여부, onboarding wizard 필요성
 
 ---
 
