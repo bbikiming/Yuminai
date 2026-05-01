@@ -2,39 +2,55 @@ import SwiftUI
 import YuminaiCore
 import YuminaiUI
 
-/// 루트 view v3 — Sidebar + Chat (Toolbar/Chat/StatusBar/Composer) + 옵션 Inspector.
+/// 루트 view v3 + 반응형.
+///
+/// Layout 규칙: `Theme.Layout.mode(for:)` (LayoutMode enum). 명세: `docs/design/60_UI_DESIGN_SPEC.md`.
 struct RootView: View {
     @Environment(AppModel.self) private var appModel
-    @State private var sidebarVisible: Bool = true
+
+    /// 사용자가 마지막으로 toggle한 상태 — 영속.
+    @AppStorage("yuminai.sidebar.userVisible") private var sidebarUserVisible: Bool = true
+    @AppStorage("yuminai.inspector.userVisible") private var inspectorUserVisible: Bool = false
+
+    /// compact 모드에서 overlay popup 표시 여부 (영속 X).
+    @State private var sidebarOverlayShown: Bool = false
+
+    /// 윈도우 너비 추적.
+    @State private var windowSize: CGSize = .zero
+
+    var layoutMode: LayoutMode { Theme.Layout.mode(for: windowSize.width) }
+
+    /// inline sidebar가 보이는지 (overlay 모드는 별개).
+    var sidebarInlineVisible: Bool {
+        !layoutMode.sidebarIsOverlay && sidebarUserVisible
+    }
+
+    /// inspector가 보이는지 (mode가 허용해야 함).
+    var inspectorVisible: Bool {
+        layoutMode.allowsInspector && inspectorUserVisible
+    }
 
     var body: some View {
         @Bindable var bindable = appModel
 
-        HStack(spacing: 0) {
-            if sidebarVisible {
-                SidebarView(
-                    workspaces: appModel.workspaces,
-                    selectedId: $bindable.selectedWorkspaceId,
-                    onCreate: { appModel.showCreateWorkspaceSheet = true },
-                    onDelete: { ws in Task { await appModel.deleteWorkspace(ws) } },
-                    onCollapse: toggleSidebar,
-                    onSearch: {
-                        // ⌘P palette — v0.2
-                    },
-                    onOpenSettings: openAppSettings,
-                    userName: "yuminai",
-                    updateAvailable: false
-                )
-                .transition(.move(edge: .leading))
+        GeometryReader { geo in
+            ZStack(alignment: .leading) {
+                mainLayer
+                if layoutMode.sidebarIsOverlay && sidebarOverlayShown {
+                    overlayBackdrop
+                    overlaySidebar
+                }
             }
-
-            ChatPane(onToggleSidebar: toggleSidebar)
+            .onAppear {
+                windowSize = geo.size
+                appModel.showInspector = inspectorVisible  // legacy sync
+            }
+            .onChange(of: geo.size) { _, newSize in
+                handleSizeChange(newSize)
+            }
         }
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .frame(minWidth: Theme.Layout.minWindowWidth, minHeight: Theme.Layout.minWindowHeight)
         .background(Theme.Color.bg)
-        .onChange(of: appModel.selectedWorkspaceId) { _, newValue in
-            Task { await appModel.selectWorkspace(newValue) }
-        }
         .sheet(isPresented: $bindable.showCreateWorkspaceSheet) {
             CreateWorkspaceSheet(
                 onCreate: { ws in Task { await appModel.createWorkspace(ws) } },
@@ -61,11 +77,120 @@ struct RootView: View {
         } message: { error in
             Text(error)
         }
+        .onChange(of: appModel.selectedWorkspaceId) { _, newValue in
+            Task { await appModel.selectWorkspace(newValue) }
+        }
     }
+
+    // MARK: - Layers
+
+    private var mainLayer: some View {
+        HStack(spacing: 0) {
+            if sidebarInlineVisible {
+                sidebar
+                    .transition(.move(edge: .leading).combined(with: .opacity))
+            }
+
+            ChatPane(
+                onToggleSidebar: toggleSidebar,
+                onToggleInspector: toggleInspector,
+                inspectorAllowed: layoutMode.allowsInspector,
+                inspectorVisible: inspectorVisible,
+                layoutModeBadge: layoutModeBadge
+            )
+
+            if inspectorVisible {
+                ContextInspector(
+                    usage: appModel.currentSessionUsage,
+                    activeSettings: appModel.activeSettings,
+                    workspacePath: currentWorkspacePath,
+                    recentTools: recentToolNames
+                )
+                .transition(.move(edge: .trailing).combined(with: .opacity))
+            }
+        }
+    }
+
+    private var sidebar: some View {
+        SidebarView(
+            workspaces: appModel.workspaces,
+            selectedId: Binding(
+                get: { appModel.selectedWorkspaceId },
+                set: { appModel.selectedWorkspaceId = $0 }
+            ),
+            onCreate: {
+                appModel.showCreateWorkspaceSheet = true
+                if layoutMode.sidebarIsOverlay { sidebarOverlayShown = false }
+            },
+            onDelete: { ws in Task { await appModel.deleteWorkspace(ws) } },
+            onCollapse: toggleSidebar,
+            onSearch: { /* ⌘P palette — v0.2 */ },
+            onOpenSettings: openAppSettings,
+            userName: "yuminai",
+            updateAvailable: false
+        )
+    }
+
+    private var overlayBackdrop: some View {
+        Color.black.opacity(0.35)
+            .ignoresSafeArea()
+            .transition(.opacity)
+            .onTapGesture {
+                withAnimation(Theme.Animation.panelToggle) {
+                    sidebarOverlayShown = false
+                }
+            }
+    }
+
+    private var overlaySidebar: some View {
+        sidebar
+            .background(Theme.Color.bgSidebar)
+            .shadow(color: .black.opacity(0.4), radius: 8, x: 4, y: 0)
+            .transition(.move(edge: .leading))
+    }
+
+    /// compact/medium 모드에서 toolbar에 작게 표시.
+    private var layoutModeBadge: String? {
+        switch layoutMode {
+        case .compact: return "compact"
+        case .medium: return "medium"
+        case .regular, .wide: return nil
+        }
+    }
+
+    // MARK: - Actions
 
     private func toggleSidebar() {
         withAnimation(Theme.Animation.panelToggle) {
-            sidebarVisible.toggle()
+            if layoutMode.sidebarIsOverlay {
+                sidebarOverlayShown.toggle()
+            } else {
+                sidebarUserVisible.toggle()
+            }
+        }
+    }
+
+    private func toggleInspector() {
+        guard layoutMode.allowsInspector else { return }
+        withAnimation(Theme.Animation.panelToggle) {
+            inspectorUserVisible.toggle()
+            appModel.showInspector = inspectorUserVisible
+        }
+    }
+
+    private func handleSizeChange(_ newSize: CGSize) {
+        let oldMode = Theme.Layout.mode(for: windowSize.width)
+        windowSize = newSize
+        let newMode = Theme.Layout.mode(for: newSize.width)
+
+        if oldMode != newMode {
+            // mode 변경 시 정리:
+            // - overlay 모드 빠져나오면 overlay popup 자동 닫음
+            if !newMode.sidebarIsOverlay && sidebarOverlayShown {
+                sidebarOverlayShown = false
+            }
+            // - inspector 자동 sync (effective 변경)
+            appModel.showInspector = newMode.allowsInspector && inspectorUserVisible
         }
     }
 
@@ -75,95 +200,6 @@ struct RootView: View {
         } else {
             NSApp.sendAction(Selector(("showPreferencesWindow:")), to: nil, from: nil)
         }
-    }
-}
-
-/// Toolbar / ChatView / StatusBar / Composer + 옵션 Inspector.
-struct ChatPane: View {
-    @Environment(AppModel.self) private var appModel
-    let onToggleSidebar: () -> Void
-
-    var body: some View {
-        @Bindable var bindable = appModel
-
-        if appModel.selectedWorkspaceId == nil {
-            VStack(spacing: 0) {
-                placeholderToolbar
-                EmptyWorkspaceView()
-            }
-        } else {
-            VStack(spacing: 0) {
-                ChatToolbar(
-                    workspaceName: currentWorkspaceName,
-                    workspacePath: currentWorkspacePath,
-                    isStreaming: appModel.isStreaming,
-                    inspectorVisible: appModel.showInspector,
-                    onToggleSidebar: onToggleSidebar,
-                    onToggleInspector: {
-                        withAnimation(Theme.Animation.panelToggle) {
-                            appModel.showInspector.toggle()
-                        }
-                    },
-                    onShowDashboard: { appModel.showUsageDashboard = true }
-                )
-
-                HStack(spacing: 0) {
-                    VStack(spacing: 0) {
-                        ChatView(messages: appModel.messages)
-                            .frame(maxHeight: .infinity)
-
-                        ChatStatusBar(
-                            usage: appModel.currentSessionUsage,
-                            contextWindow: appModel.currentContextWindow,
-                            isStreaming: appModel.isStreaming
-                        )
-
-                        Composer(
-                            text: $bindable.inputText,
-                            model: $bindable.activeSettings.model,
-                            permissionMode: $bindable.activeSettings.permissionMode,
-                            effortLevel: $bindable.activeSettings.effortLevel,
-                            isStreaming: appModel.isStreaming,
-                            onSend: { Task { await appModel.sendMessage() } },
-                            onStop: { appModel.cancelStream() },
-                            onSettingsApply: { newSettings in
-                                Task { await appModel.updateActiveSettings(newSettings) }
-                            }
-                        )
-                    }
-                    .frame(minWidth: 480)
-                    .background(Theme.Color.bg)
-
-                    if appModel.showInspector {
-                        ContextInspector(
-                            usage: appModel.currentSessionUsage,
-                            activeSettings: appModel.activeSettings,
-                            workspacePath: currentWorkspacePath,
-                            recentTools: recentToolNames
-                        )
-                        .transition(.move(edge: .trailing))
-                    }
-                }
-            }
-        }
-    }
-
-    private var placeholderToolbar: some View {
-        HStack(spacing: Theme.Spacing.md) {
-            IconButton("sidebar.left", help: "사이드바", action: onToggleSidebar)
-            Text("yuminai")
-                .font(Theme.Typography.mono)
-                .foregroundStyle(Theme.Color.textSecondary)
-            Spacer()
-        }
-        .padding(.horizontal, Theme.Spacing.md)
-        .frame(height: Theme.Layout.toolbarHeight)
-        .background(Theme.Color.bg)
-        .overlay(alignment: .bottom) { FlatHDivider() }
-    }
-
-    private var currentWorkspaceName: String {
-        appModel.workspaces.first { $0.id == appModel.selectedWorkspaceId }?.name ?? "yuminai"
     }
 
     private var currentWorkspacePath: String? {
@@ -175,6 +211,70 @@ struct ChatPane: View {
             .filter { $0.role == .tool }
             .map(\.content)
             .map { String($0.prefix(80)) }
+    }
+}
+
+/// Toolbar / ChatView / StatusBar / Composer.
+struct ChatPane: View {
+    @Environment(AppModel.self) private var appModel
+    let onToggleSidebar: () -> Void
+    let onToggleInspector: () -> Void
+    let inspectorAllowed: Bool
+    let inspectorVisible: Bool
+    let layoutModeBadge: String?
+
+    var body: some View {
+        @Bindable var bindable = appModel
+
+        VStack(spacing: 0) {
+            ChatToolbar(
+                workspaceName: currentWorkspaceName,
+                workspacePath: currentWorkspacePath,
+                isStreaming: appModel.isStreaming,
+                inspectorVisible: inspectorVisible,
+                inspectorAllowed: inspectorAllowed,
+                layoutBadge: layoutModeBadge,
+                onToggleSidebar: onToggleSidebar,
+                onToggleInspector: onToggleInspector,
+                onShowDashboard: { appModel.showUsageDashboard = true }
+            )
+
+            if appModel.selectedWorkspaceId == nil {
+                EmptyWorkspaceView()
+            } else {
+                ChatView(messages: appModel.messages)
+                    .frame(maxHeight: .infinity)
+
+                ChatStatusBar(
+                    usage: appModel.currentSessionUsage,
+                    contextWindow: appModel.currentContextWindow,
+                    isStreaming: appModel.isStreaming
+                )
+
+                Composer(
+                    text: $bindable.inputText,
+                    model: $bindable.activeSettings.model,
+                    permissionMode: $bindable.activeSettings.permissionMode,
+                    effortLevel: $bindable.activeSettings.effortLevel,
+                    isStreaming: appModel.isStreaming,
+                    onSend: { Task { await appModel.sendMessage() } },
+                    onStop: { appModel.cancelStream() },
+                    onSettingsApply: { newSettings in
+                        Task { await appModel.updateActiveSettings(newSettings) }
+                    }
+                )
+            }
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .background(Theme.Color.bg)
+    }
+
+    private var currentWorkspaceName: String {
+        appModel.workspaces.first { $0.id == appModel.selectedWorkspaceId }?.name ?? "yuminai"
+    }
+
+    private var currentWorkspacePath: String? {
+        appModel.workspaces.first { $0.id == appModel.selectedWorkspaceId }?.directoryPath
     }
 }
 

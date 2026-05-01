@@ -4,6 +4,23 @@
 
 ## [Unreleased] — 2026-05-01
 
+### Added — 반응형 Layout 시스템 (ADR-017, 2026-05-01)
+
+사용자 요청: "반응형부터 명확하게 구현"
+
+- `LayoutMode` enum (compact/medium/regular/wide) — Theme.Layout 외부 namespace
+- `Theme.Layout` 신규 토큰: `breakpointCompact (760)`, `breakpointMedium (1080)`, `breakpointWide (1440)`, `minWindowWidth (600)`, `minWindowHeight (480)`, `minChatWidth (520)`
+- `Theme.Layout.mode(for:)` 정적 함수 — 너비 → mode
+- `LayoutMode.allowsInspector` / `sidebarIsOverlay` computed
+- **RootView 반응형**: GeometryReader로 윈도우 크기 추적, mode 변경 시 `handleSizeChange` 자동 정리
+- **User intent 영속**: `@AppStorage("yuminai.sidebar.userVisible")` / `"yuminai.inspector.userVisible")` — 다음 실행 복원
+- **Sidebar overlay**: compact 모드에서 toggle 시 콘텐츠 위에 popup + semi-transparent backdrop 클릭으로 닫힘
+- **Inspector 자동 hide**: medium/compact에서 사용자 의도와 무관하게 강제 hidden, 다시 regular+로 가면 사용자 의도 복원
+- **Toolbar 적응**: inspector 버튼이 mode에 따라 disabled (조명 ↓ + tooltip), layoutBadge로 "compact"/"medium" 모드 표시
+- 신규 테스트 3건 (LayoutMode boundaries / inspector allowance / sidebar overlay)
+
+검증: `swift build` 2.53s, `swift test` 52/52 통과, `swift run YuminaiApp` 윈도우 정상
+
 ### Redesigned v3 (Claude Code 데스크탑 룩 — codex 검증 반영, 2026-05-01 심야)
 
 사용자 피드백 — "이 정도 디자인 퀄리티 (Claude Code 데스크탑 스크린샷)로 / 냉정 조사 / 무한 iteration / 기획 검증 후 구현"

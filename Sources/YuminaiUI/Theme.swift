@@ -147,6 +147,28 @@ public enum Theme {
         public static let composerOuterPadding: CGFloat = 20
 
         public static let sheetWidth: CGFloat = 580
+
+        // MARK: - Responsive breakpoints
+
+        /// 최소 윈도우 너비 — 그 이하로는 macOS가 리사이즈 거부.
+        public static let minWindowWidth: CGFloat = 600
+        public static let minWindowHeight: CGFloat = 480
+
+        /// chat 본문 최소 너비 (sidebar/inspector 들어와도 chat이 이 이하면 layout 적응).
+        public static let minChatWidth: CGFloat = 520
+
+        /// 모드 분기점.
+        public static let breakpointCompact: CGFloat = 760     // 미만 = compact
+        public static let breakpointMedium: CGFloat = 1080     // 미만 = medium (inspector 강제 숨김)
+        public static let breakpointWide: CGFloat = 1440       // 미만 = regular, 이상 = wide
+
+        /// `width`에 해당하는 layout mode.
+        public static func mode(for width: CGFloat) -> LayoutMode {
+            if width < breakpointCompact { return .compact }
+            if width < breakpointMedium { return .medium }
+            if width < breakpointWide { return .regular }
+            return .wide
+        }
     }
 
     // MARK: - Animation
@@ -155,6 +177,27 @@ public enum Theme {
         public static let stateChange: SwiftUI.Animation = .easeOut(duration: 0.12)
         public static let panelToggle: SwiftUI.Animation = .easeInOut(duration: 0.18)
         public static let pulseDuration: Double = 1.5
+    }
+}
+
+/// 반응형 layout 모드 — 윈도우 너비에 따라 결정.
+public enum LayoutMode: Sendable, Equatable {
+    case compact   // < 760: sidebar overlay only, inspector 강제 hidden
+    case medium    // 760~1080: sidebar inline, inspector 강제 hidden
+    case regular   // 1080~1440: sidebar inline, inspector 옵션
+    case wide      // ≥ 1440: 모두 inline 가능
+
+    /// inspector를 사용자가 켤 수 있는 모드인지.
+    public var allowsInspector: Bool {
+        switch self {
+        case .compact, .medium: return false
+        case .regular, .wide: return true
+        }
+    }
+
+    /// sidebar가 inline이 아니라 overlay 모드인지.
+    public var sidebarIsOverlay: Bool {
+        self == .compact
     }
 }
 

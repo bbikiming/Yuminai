@@ -158,6 +158,35 @@
 
 ---
 
+## ADR-017 — 반응형 Layout (LayoutMode + AppStorage user intent)
+
+- **날짜**: 2026-05-01
+- **상태**: Accepted
+- **결정**: 윈도우 너비를 4단 breakpoint(compact/medium/regular/wide)로 분기. 각 모드에 따라 sidebar/inspector 자동 표시 정책. 사용자 의도(toggle 결과)는 AppStorage에 영속 → mode 복귀 시 복원. compact 모드에서 sidebar는 overlay popup.
+- **컨텍스트**: 좁은 윈도우(<800px)에서 sidebar+inspector+chat 모두 표시 시 chat 너비 부족 → 사용성 저하. 사용자가 매번 수동 toggle 강요당함.
+- **대안**:
+  - NavigationSplitView 시스템 자동 — 디자인 통제 불가 (ADR-015에서 우회 결정)
+  - 사용자 수동만 — UX poor
+  - **breakpoint 자동 + intent 영속 (채택)** — Linear/Slack/VS Code 등 표준 패턴
+- **breakpoint 결정 근거**:
+  - 760: macOS 작은 윈도우 (압축 시) 평균값. 그 이하는 mobile-like
+  - 1080: sidebar 280 + chat 520 + inspector 280 ≈ 1080. 임계
+  - 1440: 모든 컴포넌트 여유 + 코드 본문 여유. 표준 외장 모니터 단계
+- **결과**:
+  - `LayoutMode` enum (Theme.Layout 외부)
+  - `Theme.Layout.mode(for:)` static
+  - RootView `GeometryReader` + `@AppStorage` 2건 + `@State sidebarOverlayShown`
+  - `handleSizeChange(_:)` — mode 변경 시 자동 정리 (overlay 닫기, inspector sync)
+  - ChatToolbar inspector 버튼 disabled 상태 + tooltip
+  - 단위 테스트 3건 (boundaries / allowance / overlay)
+- **알려진 한계**:
+  - sidebar/inspector 너비 사용자 리사이즈 미지원 (현재 고정) — 다음 라운드 후보
+  - 동적 contentMaxWidth 미적용 (chat 본문 폭 자동 조정 가능) — 다음 라운드 후보
+  - reduce-motion 환경에서 transition 애니메이션 자동 disable 미적용
+- **재검토**: 사용자 사용 후 — 너비 임계값이 본인 환경에 맞는지
+
+---
+
 ## ADR-016 — codex CLI 검증 → Design Spec v3 (Claude Code 데스크탑 정합)
 
 - **날짜**: 2026-05-01
