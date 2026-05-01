@@ -9,19 +9,21 @@ import AppKit
 /// - `Theme.Color.accent` 등은 Brand로 위임 → ar2r 정확한 hex 받으면 Brand만 교체하면 전체 반영
 public enum Theme {
 
-    // MARK: - Brand (ar2r 팀 컬러 — 사용자 답변 시 hex 교체)
+    // MARK: - Brand (AG2R La Mondiale 자전거 팀 시그니처 시안)
 
+    /// 사용자 확인: 강조색 = 밝은 하늘색 (AG2R 시그니처 시안 톤)
+    /// AG2R 저지의 시그니처 cyan을 디지털 다크 모드용으로 보정.
     public enum Brand {
-        /// Deep Navy — chrome accent, structural
+        /// chrome accent (지금은 잘 안 쓰임 — 차후 about/splash 화면용)
         public static let primary = SwiftUI.Color(rgb: 0x0E2A47)
         public static let primaryDark = SwiftUI.Color(rgb: 0x0A1F36)
         public static let primaryLight = SwiftUI.Color(rgb: 0x1A3F5E)
 
-        /// Vivid Orange-Red — CTA, active state, link
-        public static let accent = SwiftUI.Color(rgb: 0xFF5A36)
-        public static let accentDeep = SwiftUI.Color(rgb: 0xD94823)
-        public static let accentMuted = SwiftUI.Color(light: SwiftUI.Color(rgb: 0xFFE2D8), dark: SwiftUI.Color(rgb: 0x2A1812))
-        public static let accentBorder = SwiftUI.Color(rgb: 0xFF5A36).opacity(0.45)
+        /// Bright Cyan/Sky — CTA, active state, link, streaming, selected
+        public static let accent = SwiftUI.Color(rgb: 0x22C8E0)
+        public static let accentDeep = SwiftUI.Color(rgb: 0x0FA8C0)
+        public static let accentMuted = SwiftUI.Color(light: SwiftUI.Color(rgb: 0xD4F2F8), dark: SwiftUI.Color(rgb: 0x0A2128))
+        public static let accentBorder = SwiftUI.Color(rgb: 0x22C8E0).opacity(0.45)
 
         /// White — 본문/대비
         public static let contrast = SwiftUI.Color.white

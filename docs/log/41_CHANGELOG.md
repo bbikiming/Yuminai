@@ -4,6 +4,27 @@
 
 ## [Unreleased] — 2026-05-01
 
+### Changed — 브랜드 컬러 = AG2R 시안 + Picker 전면 재구성 (ADR-019)
+
+사용자 답변: ar2r → AG2R La Mondiale 자전거 팀 → 시그니처 시안. 추가 — "설정 버튼/모델 변경 스위치 인터랙션 작동 안 함, Claude Code 같은 dropdown 디자인"
+
+처리:
+1. **Theme.Brand.accent → 밝은 시안** (`#22C8E0`, AG2R 톤). accentDeep `#0FA8C0`, accentMuted dark cyan `#0A2128`. Brand 한 곳만 교체로 전체 자동 반영
+2. **Settings 호출 fix** — `NSApp.sendAction("showSettingsWindow:")` → `@Environment(\.openSettings)` (SwiftUI 14+ 표준)
+3. **PickerMenu 신규 컴포넌트** — Claude Code 데스크탑 dropdown 룩 그대로:
+   - native `.popover()` 기반 (안정적 위치)
+   - `PickerSection` (title + shortcutHint + items)
+   - `PickerItem` (label + subtitle + isSelected + shortcutHint)
+   - `ShortcutKeyBadge` (`[⇧] [⌘] [I]` 같은 cap 디자인)
+   - 항목 hover bg + ✓ 마커 + 우측 단축키 숫자
+4. **ModelPicker/EffortPicker/ModePicker** 모두 PickerMenu로 교체:
+   - 모델: 5개 모델 + ✓ + 1~5 단축키 hint + ⇧⌘M section hint
+   - 권한 모드: 6개 모드 + 부제 (shortDescription) + 선택 ✓
+   - 작업량: 4단계 + 부제 + ⇧⌘E section hint
+5. `PickerTriggerLabel` — Composer footer의 inline button (`label · value ▾`), hover 시 chevron이 accent 색
+
+ADR-019 채택. 검증: build 2.49s, test 52/52, run 정상.
+
 ### Added — 브랜딩 + 인터랙션 + UX 라이팅 (ADR-018, 2026-05-01)
 
 사용자 요청: "각 버튼 인터랙션·애니메이션 + 모든 설정/버튼 동작화 + UX 라이팅 한글 친화 + ar2r 자전거 팀 컬러로 브랜딩"

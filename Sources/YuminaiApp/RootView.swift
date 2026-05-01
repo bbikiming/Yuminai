@@ -211,12 +211,10 @@ struct RootView: View {
         }
     }
 
+    @Environment(\.openSettings) private var openSettingsAction
+
     private func openAppSettings() {
-        if #available(macOS 14, *) {
-            NSApp.sendAction(Selector(("showSettingsWindow:")), to: nil, from: nil)
-        } else {
-            NSApp.sendAction(Selector(("showPreferencesWindow:")), to: nil, from: nil)
-        }
+        openSettingsAction()
     }
 
     private var currentWorkspacePath: String? {

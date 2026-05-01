@@ -158,6 +158,36 @@
 
 ---
 
+## ADR-019 — Brand accent = AG2R 시안 + PickerMenu 자체 컴포넌트 (Claude Code 룩)
+
+- **날짜**: 2026-05-01
+- **상태**: Accepted
+- **결정**:
+  1. ar2r → AG2R La Mondiale 확정 → `Theme.Brand.accent`를 밝은 시안 `#22C8E0`로 교체
+  2. SwiftUI native `Menu` → 자체 `PickerMenu` (popover 기반)으로 전면 교체. Claude Code 데스크탑 dropdown 디자인 정합
+  3. Settings 호출 → `@Environment(\.openSettings)` 사용 (`NSApp.sendAction` 대체)
+- **컨텍스트**:
+  - 사용자 메시지: "밝은 하늘색 강조색" + "설정 버튼/모델 스위치 작동 안 함" + Claude Code dropdown 스크린샷 제공
+  - 기존 inline `Menu` (borderlessButton style)이 일부 환경에서 trigger 안 되는 알려진 이슈
+- **PickerMenu 설계**:
+  - native `.popover(isPresented:)` 기반 — macOS 표준, 위치/크기 안정
+  - `PickerSection`: title + 우측 shortcut hint badges (⇧⌘M 등) + items
+  - `PickerItem`: label + subtitle (부제, "1M"/"레거시" 같은) + isSelected (✓) + shortcutHint (1, 2, 3 등)
+  - 항목 hover bg + 클릭 시 자동 close
+  - `ShortcutKeyBadge` — 키캡 모양 미니 컴포넌트 (border + 작은 폰트)
+- **결과**:
+  - `Sources/YuminaiUI/PickerMenu.swift` (신규, 200줄+)
+  - `SessionPickers.swift` 전면 재작성 — 모든 picker가 PickerMenu 사용
+  - `PickerTriggerLabel` — Composer footer inline label (hover chevron → accent)
+  - Theme.Brand.accent / accentDeep / accentMuted / accentBorder 모두 시안 톤
+- **재검토**: 사용자 사용 후 — popover 위치/크기, shortcut hint 가시성, Settings 호출 동작 여부
+- **알려진 한계**:
+  - PickerMenu는 popover라 윈도우 매우 좁을 때 잘림 가능 (compact mode)
+  - shortcut hint (1, 2, 3)은 표시만, 실제 단축키 처리는 미연결 (다음 라운드)
+  - "빠른 모드" toggle (Claude Code 스크린샷의 마지막 섹션)은 우리 도메인에 없어 미구현
+
+---
+
 ## ADR-018 — 브랜딩 (ar2r 자전거 팀 컬러) + 인터랙션 표준 + UX 라이팅 한글 친화
 
 - **날짜**: 2026-05-01
