@@ -48,6 +48,13 @@ public struct InspectorPanel: View {
     public let onDiscardEdits: () -> Void
     public let onReloadNote: () -> Void
 
+    // Diff review (ADR-027 phase A3)
+    public let pendingChanges: [ChangedFile]
+    public let pendingDiff: String
+    public let onAcceptAllChanges: () -> Void
+    public let onRejectAllChanges: () -> Void
+    public let onRejectChange: (ChangedFile) -> Void
+
     public init(
         tab: Binding<InspectorTab>,
         usage: UsageStats,
@@ -80,7 +87,12 @@ public struct InspectorPanel: View {
         onStartEditing: @escaping () -> Void = {},
         onSave: @escaping () -> Void = {},
         onDiscardEdits: @escaping () -> Void = {},
-        onReloadNote: @escaping () -> Void = {}
+        onReloadNote: @escaping () -> Void = {},
+        pendingChanges: [ChangedFile] = [],
+        pendingDiff: String = "",
+        onAcceptAllChanges: @escaping () -> Void = {},
+        onRejectAllChanges: @escaping () -> Void = {},
+        onRejectChange: @escaping (ChangedFile) -> Void = { _ in }
     ) {
         self._tab = tab
         self.usage = usage
@@ -114,6 +126,11 @@ public struct InspectorPanel: View {
         self.onSave = onSave
         self.onDiscardEdits = onDiscardEdits
         self.onReloadNote = onReloadNote
+        self.pendingChanges = pendingChanges
+        self.pendingDiff = pendingDiff
+        self.onAcceptAllChanges = onAcceptAllChanges
+        self.onRejectAllChanges = onRejectAllChanges
+        self.onRejectChange = onRejectChange
     }
 
     public var body: some View {
@@ -177,6 +194,15 @@ public struct InspectorPanel: View {
             .frame(maxWidth: .infinity, maxHeight: .infinity)
         case .notes:
             notesContent
+        case .changes:
+            DiffReviewView(
+                changes: pendingChanges,
+                unifiedDiff: pendingDiff,
+                onAcceptAll: onAcceptAllChanges,
+                onRejectAll: onRejectAllChanges,
+                onRejectFile: onRejectChange
+            )
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
     }
 
@@ -465,12 +491,13 @@ public struct InspectorPanel: View {
 }
 
 public enum InspectorTab: String, CaseIterable, Sendable, Equatable {
-    case context, notes
+    case context, notes, changes
 
     public var label: String {
         switch self {
         case .context: return "컨텍스트"
         case .notes: return "노트"
+        case .changes: return "변경"
         }
     }
 
@@ -478,6 +505,7 @@ public enum InspectorTab: String, CaseIterable, Sendable, Equatable {
         switch self {
         case .context: return "info.circle"
         case .notes: return "doc.text"
+        case .changes: return "arrow.triangle.2.circlepath"
         }
     }
 }

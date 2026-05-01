@@ -4,6 +4,63 @@
 
 ## [Unreleased] — 2026-05-01
 
+### Added — v0.4 Phase A: Diff Review + Embedded Terminal (ADR-028)
+
+사용자: "권고 사항 기준으로 구현 진행해 줘" — 83_NEXT_ROUND_PLAN의 권고 default 채택.
+
+Phase A는 v0.4 라운드의 첫 단계. M3 (diff review) + M5.a (basic terminal) 통합 구현.
+
+**M5.a — 임베드 터미널 (SwiftTerm)**:
+- 두 번째 외부 SPM 의존성 도입 — `SwiftTerm` (Miguel de Icaza, 1.4k stars, MIT)
+- ADR-021 외부 의존성 정책 변경 — wrapping으로 lock-in 완화 (TerminalPane이 SwiftTerm 직접 노출 X)
+- `Sources/YuminaiUI/TerminalPane.swift` — `LocalProcessTerminalView` NSViewRepresentable wrap
+  - 워크스페이스 디렉토리에서 `$SHELL --login` spawn
+  - 시작 직후 `cd <workspace>` + `clear` 자동
+  - workingDirectory 변경 시 자동 cd
+  - ANSI 256색 + processTerminated callback (M4 delivery loop 의존성)
+- ChatToolbar에 ⌘⌥T toggle 버튼 (`terminal` icon)
+- RootView VSplitView로 chat 위/터미널 아래 분할
+
+**M3 — Diff Review UI (git-as-source-of-truth)**:
+- `Sources/YuminaiCore/GitRunner.swift` — actor + ProcessResult + GitError + ChangedFile 모델
+  - `ProcessRun` typealias 주입 → mock 가능
+  - `parsePorcelain(_)` static — `git status --porcelain=v1 -z` NUL-separated 파싱
+  - `currentHeadSha()` / `changedFiles()` / `diff()` / `revert(paths:)` / `revertAll()`
+  - status 인식: modified / added / deleted / renamed / copied / untracked
+- `Sources/YuminaiApp/CheckpointManager.swift` — actor, agent turn 단위 checkpoint
+  - `beginTurn(workspace:)` — HEAD SHA 기록 (git 저장소 아니면 silent no-op)
+  - `endTurn(workspace:)` — changedFiles + unified diff 캡처
+  - `acceptAll()` / `rejectAll(workspace:)` / `rejectPaths(_:workspace:)`
+  - 정책 (사용자 권고: manual): 자동 commit X / 자동 reject X / 사용자 명시적 액션만
+- `Sources/YuminaiUI/DiffView.swift` — `DiffReviewView` SwiftUI
+  - Summary header (N개 파일 + 모두 적용 / 모두 원복)
+  - File list (status badge + path + 각 파일 reject 버튼)
+  - Unified diff viewer (+ 녹색 / − 빨강 / hunk header surfaceHi / context 일반)
+  - `extractHunks(from:path:)` — `diff --git` 헤더 기준 file별 라인 추출
+  - `lineKind(_:)` static — added/removed/hunkHeader/context 분류
+- `InspectorTab` enum에 `.changes` case 추가 (icon: arrow.triangle.2.circlepath)
+- AppModel:
+  - `pendingChanges: [ChangedFile]` + `pendingDiff: String` published state
+  - `currentWorkspace` computed
+  - `sendMessage()` hook — turn 시작 시 `checkpointManager.beginTurn`
+  - `handle(.completed)` hook — turn 종료 시 endTurn + state 갱신
+  - `acceptAllChanges()` / `rejectAllChanges()` / `rejectPaths(_)` 액션
+
+**테스트** (17 신규):
+- GitRunnerPorcelainTests (6): single modified / untracked ?? / 여러 파일 / renamed old-path skip / 빈 입력 / 한글 라벨
+- GitRunnerMockTests (1): mock으로 changedFiles 호출 시 git status 인자 전달
+- DiffLineKindTests (6): added/removed/hunk header/diff meta/context/empty
+- DiffExtractHunksTests (4): 단일 파일 / 여러 파일 중 특정만 / 매칭 없음 / 빈 diff
+
+**검증**: build OK (SwiftTerm dependency resolve 22s 후 4-9s incremental), test 144/144 (127→144, +17 신규)
+
+알려진 한계 (Phase B/D에서 처리):
+- Diff editable X (Cline SOTA지만 SwiftUI 비용 큼, v0.5)
+- 자동 commit 정책 X (사용자 권고: manual, hybrid v0.5)
+- TerminalPane은 작업 디렉토리 변경 외 추가 customization X (block 그룹화 = M5.b/Phase B)
+- diff 파일 경로에 quote 없는 매칭 — 한글/공백 path는 `extractHunks`가 놓칠 수 있음 (실측 후 정밀화)
+- VaultWatcher는 .md 한정 — 일반 dir watcher (M3 의존성) 추가 필요할 수 있음 (현재 turn 종료 시 git status로 충분)
+
 ### Added — 멀티 에이전트 기반 + Codex CLI 통합 + cokacdir chat label (ADR-026)
 
 사용자 요청 (3가지):

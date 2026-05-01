@@ -29,7 +29,12 @@ let package = Package(
     dependencies: [
         // Notion급 마크다운 렌더링 — Apple swift-markdown 기반, MIT
         // ADR-021: 외부 의존성 정책 변경 — wrapping으로 lock-in 완화
-        .package(url: "https://github.com/gonzalezreal/swift-markdown-ui", from: "2.4.0")
+        .package(url: "https://github.com/gonzalezreal/swift-markdown-ui", from: "2.4.0"),
+
+        // SwiftTerm — Miguel de Icaza의 native Swift terminal emulator
+        // ADR-027: v0.4 phase A의 embedded terminal pane, MIT
+        // wrapping으로 lock-in 완화 — TerminalPane이 SwiftTerm을 직접 노출하지 않음
+        .package(url: "https://github.com/migueldeicaza/SwiftTerm", from: "1.2.0")
     ],
     targets: [
         .target(name: "YuminaiCore", path: "Sources/YuminaiCore", swiftSettings: strict),
@@ -49,7 +54,8 @@ let package = Package(
             name: "YuminaiUI",
             dependencies: [
                 "YuminaiCore",
-                .product(name: "MarkdownUI", package: "swift-markdown-ui")
+                .product(name: "MarkdownUI", package: "swift-markdown-ui"),
+                .product(name: "SwiftTerm", package: "SwiftTerm")
             ],
             path: "Sources/YuminaiUI",
             swiftSettings: strict

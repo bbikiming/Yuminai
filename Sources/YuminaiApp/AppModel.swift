@@ -94,6 +94,14 @@ public final class AppModel {
     // 도움말 sheet (C1)
     public var showShortcutHelp: Bool = false
 
+    // Terminal pane toggle (ADR-027 phase A)
+    public var showTerminalPane: Bool = false
+
+    // Diff review state (ADR-027 phase A2/A3)
+    public var pendingChanges: [ChangedFile] = []
+    public var pendingDiff: String = ""
+    public var hasPendingChanges: Bool { !pendingChanges.isEmpty }
+
     private var vaultWatcher: VaultWatcher?
     private var watcherTask: Task<Void, Never>?
     private var fullTextSearchTask: Task<Void, Never>?
@@ -105,6 +113,7 @@ public final class AppModel {
     private var alertDispatcher: TelegramAlertDispatcher?
     private var commandPump: TelegramCommandPump?
     private var sessionBridge: TelegramSessionBridge?
+    private let checkpointManager = CheckpointManager()
 
     private let logger = Logger(subsystem: "com.yuminai", category: "AppModel")
 
@@ -695,8 +704,48 @@ public final class AppModel {
             Task {
                 await dispatcher?.dispatch(category: category, message: summary)
             }
+            // Checkpoint 종료 + 변경 캡처 (Inspector "변경" 탭으로)
+            if let workspace = currentWorkspace {
+                let cm = checkpointManager
+                Task { @MainActor in
+                    if let snap = await cm.endTurn(workspace: workspace) {
+                        self.pendingChanges = snap.changedFiles
+                        self.pendingDiff = snap.diff
+                    }
+                }
+            }
         }
         forwardToBridgeIfBound(event)
+    }
+
+    // MARK: - Diff review actions (ADR-027 phase A2/A3)
+
+    public func acceptAllChanges() async {
+        await checkpointManager.acceptAll()
+        pendingChanges = []
+        pendingDiff = ""
+    }
+
+    public func rejectAllChanges() async {
+        guard let workspace = currentWorkspace else { return }
+        do {
+            try await checkpointManager.rejectAll(workspace: workspace)
+            pendingChanges = []
+            pendingDiff = ""
+        } catch {
+            self.error = "변경 원복 실패: \(error.localizedDescription)"
+        }
+    }
+
+    public func rejectPaths(_ paths: [String]) async {
+        guard let workspace = currentWorkspace else { return }
+        do {
+            try await checkpointManager.rejectPaths(paths, workspace: workspace)
+            pendingChanges = await checkpointManager.pendingChanges
+            pendingDiff = (await checkpointManager.snapshot)?.diff ?? ""
+        } catch {
+            self.error = "일부 변경 원복 실패: \(error.localizedDescription)"
+        }
     }
 
     private func forwardToBridgeIfBound(_ event: ClaudeEvent) {
@@ -768,12 +817,24 @@ public final class AppModel {
             Task { await bridge.notifyTurnStart(userText: preview) }
         }
 
+        // Checkpoint 시작 — git 저장소면 HEAD SHA 기록
+        if let workspace = currentWorkspace {
+            let cm = checkpointManager
+            Task { await cm.beginTurn(workspace: workspace) }
+        }
+
         do {
             try await claudeSession.send(bodyForUser)
         } catch {
             self.error = "전송 실패: \(error.localizedDescription)"
             isStreaming = false
         }
+    }
+
+    /// 활성 워크스페이스 — checkpoint/diff 등에서 사용.
+    public var currentWorkspace: Workspace? {
+        guard let id = selectedWorkspaceId else { return nil }
+        return workspaces.first { $0.id == id }
     }
 
     // MARK: - 첨부

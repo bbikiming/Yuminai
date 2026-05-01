@@ -163,7 +163,12 @@ struct RootView: View {
                     onStartEditing: { appModel.startEditingNote() },
                     onSave: { Task { await appModel.saveNote() } },
                     onDiscardEdits: { appModel.discardEdits() },
-                    onReloadNote: { Task { await appModel.reloadNoteFromDisk() } }
+                    onReloadNote: { Task { await appModel.reloadNoteFromDisk() } },
+                    pendingChanges: appModel.pendingChanges,
+                    pendingDiff: appModel.pendingDiff,
+                    onAcceptAllChanges: { Task { await appModel.acceptAllChanges() } },
+                    onRejectAllChanges: { Task { await appModel.rejectAllChanges() } },
+                    onRejectChange: { file in Task { await appModel.rejectPaths([file.path]) } }
                 )
                 .transition(.move(edge: .trailing).combined(with: .opacity))
             }
@@ -330,8 +335,10 @@ struct ChatPane: View {
                 layoutBadge: layoutModeBadge,
                 activeAgent: currentAgentKind,
                 codexAvailable: appModel.codexAvailable,
+                terminalVisible: appModel.showTerminalPane,
                 onToggleSidebar: onToggleSidebar,
                 onToggleInspector: onToggleInspector,
+                onToggleTerminal: { appModel.showTerminalPane.toggle() },
                 onShowDashboard: { appModel.showUsageDashboard = true },
                 onSelectWorkspace: { id in appModel.selectedWorkspaceId = id },
                 onCreateWorkspace: { appModel.showCreateWorkspaceSheet = true },
@@ -343,8 +350,18 @@ struct ChatPane: View {
             if appModel.selectedWorkspaceId == nil {
                 EmptyWorkspaceView()
             } else {
-                ChatView(messages: appModel.messages)
+                if appModel.showTerminalPane, let path = currentWorkspacePath {
+                    VSplitView {
+                        ChatView(messages: appModel.messages)
+                            .frame(minHeight: 200)
+                        terminalPaneSection(path: path)
+                            .frame(minHeight: 120, idealHeight: 220)
+                    }
                     .frame(maxHeight: .infinity)
+                } else {
+                    ChatView(messages: appModel.messages)
+                        .frame(maxHeight: .infinity)
+                }
 
                 ChatStatusBar(
                     usage: appModel.currentSessionUsage,
@@ -395,6 +412,38 @@ struct ChatPane: View {
 
     private var currentAgentKind: AgentKind {
         appModel.workspaces.first { $0.id == appModel.selectedWorkspaceId }?.agentKind ?? .default
+    }
+
+    private func terminalPaneSection(path: String) -> some View {
+        VStack(spacing: 0) {
+            HStack(spacing: 6) {
+                Image(systemName: "terminal")
+                    .font(.system(size: 11, weight: .medium))
+                    .foregroundStyle(Theme.Color.textSecondary)
+                Text("터미널")
+                    .font(Theme.Typography.small.weight(.medium))
+                    .foregroundStyle(Theme.Color.textSecondary)
+                Text(URL(fileURLWithPath: path).lastPathComponent)
+                    .font(Theme.Typography.monoSmall)
+                    .foregroundStyle(Theme.Color.textTertiary)
+                Spacer()
+                Button {
+                    appModel.showTerminalPane = false
+                } label: {
+                    Image(systemName: "xmark")
+                        .font(.system(size: 10, weight: .medium))
+                        .foregroundStyle(Theme.Color.textSecondary)
+                }
+                .buttonStyle(.plain)
+                .help("터미널 닫기")
+            }
+            .padding(.horizontal, Theme.Spacing.md)
+            .padding(.vertical, Theme.Spacing.xs)
+            .background(Theme.Color.surface)
+            .overlay(alignment: .bottom) { FlatHDivider() }
+
+            TerminalPane(workingDirectory: path)
+        }
     }
 }
 

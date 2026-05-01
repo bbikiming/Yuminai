@@ -15,8 +15,10 @@ public struct ChatToolbar: View {
     public let layoutBadge: String?
     public let activeAgent: AgentKind
     public let codexAvailable: Bool
+    public let terminalVisible: Bool
     public let onToggleSidebar: () -> Void
     public let onToggleInspector: () -> Void
+    public let onToggleTerminal: () -> Void
     public let onShowDashboard: () -> Void
     public let onSelectWorkspace: (UUID) -> Void
     public let onCreateWorkspace: () -> Void
@@ -33,8 +35,10 @@ public struct ChatToolbar: View {
         layoutBadge: String? = nil,
         activeAgent: AgentKind = .default,
         codexAvailable: Bool = false,
+        terminalVisible: Bool = false,
         onToggleSidebar: @escaping () -> Void,
         onToggleInspector: @escaping () -> Void,
+        onToggleTerminal: @escaping () -> Void = {},
         onShowDashboard: @escaping () -> Void,
         onSelectWorkspace: @escaping (UUID) -> Void = { _ in },
         onCreateWorkspace: @escaping () -> Void = {},
@@ -50,8 +54,10 @@ public struct ChatToolbar: View {
         self.layoutBadge = layoutBadge
         self.activeAgent = activeAgent
         self.codexAvailable = codexAvailable
+        self.terminalVisible = terminalVisible
         self.onToggleSidebar = onToggleSidebar
         self.onToggleInspector = onToggleInspector
+        self.onToggleTerminal = onToggleTerminal
         self.onShowDashboard = onShowDashboard
         self.onSelectWorkspace = onSelectWorkspace
         self.onCreateWorkspace = onCreateWorkspace
@@ -79,6 +85,13 @@ public struct ChatToolbar: View {
             }
 
             Spacer()
+
+            IconButton(
+                terminalVisible ? "terminal.fill" : "terminal",
+                help: terminalVisible ? "터미널 숨기기 (⌘⌥T)" : "터미널 열기 (⌘⌥T)",
+                action: onToggleTerminal
+            )
+            .keyboardShortcut("t", modifiers: [.command, .option])
 
             IconButton("chart.bar", help: "사용량 대시보드 (⌘D)", action: onShowDashboard)
                 .keyboardShortcut("d", modifiers: .command)

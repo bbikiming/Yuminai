@@ -1,6 +1,50 @@
 # Decisions Log (ADR-lite)
 
-> 최신: ADR-027 (v0.4 라운드 기획 — 5개 주제 + Phase 분할 + 외부 OSS 근거)
+> 최신: ADR-028 (v0.4 Phase A — Diff Review + Terminal 구현)
+
+---
+
+## ADR-028 — v0.4 Phase A: Diff Review (M3) + Embedded Terminal (M5.a)
+
+- **날짜**: 2026-05-01
+- **상태**: Accepted (구현 완료, Phase A)
+- **결정**: ADR-027 권고 default 7개 모두 채택 후 Phase A 구현. M3 + M5.a를 한 commit으로 통합 (작업이 같은 라운드 + UI 영역 공유).
+- **컨텍스트**:
+  - 사용자 — "권고 사항 기준으로 구현 진행해 줘"
+  - ADR-027의 권고 default 7개 모두 OK (split UI / manual accept / 자동 + hard cap / SwiftTerm OK / @codex syntax / phase 순서 / ACP v0.5 spike)
+- **각 결정**:
+  1. **SwiftTerm 채택 (M5.a)** — Miguel de Icaza의 검증된 native Swift terminal. 두 번째 외부 dep (첫째: swift-markdown-ui). lock-in 완화는 TerminalPane wrapping으로
+  2. **git-as-source (M3)** — Aider 패턴 그대로. 자체 diff 모델 X, git status/diff/checkout/clean을 단일 진실의 원천으로
+  3. **manual accept** — 사용자 권고. 자동 commit/reject 모두 X. UI에서 명시적 클릭만
+  4. **silent no-op for non-git workspaces** — git 저장소 아니면 checkpoint skip (panic X). 사용자에게 "이 워크스페이스는 git이 없어서 변경 추적 안 됨" 안내는 v0.5 (현재는 변경 탭이 빈 상태로만 표시)
+  5. **VSplitView로 chat/terminal 분할** — macOS native split view 사용 (NSSplitView wrap). 좌/우 split (M1.b)는 다른 phase
+  6. **InspectorTab .changes 추가** — 기존 컨텍스트/노트 옆에 자연스럽게. badge X (현재는 단순)
+- **대안 분석**:
+  - **자체 diff 모델** vs **git-as-source**: 자체 모델은 history 추적 자유도 ↑ but 복잡도 ↑↑. git은 이미 모든 사용자가 익숙 + 이미 워크스페이스에 있음 → git 채택
+  - **xterm.js + WKWebView** vs **SwiftTerm**: web view는 무겁고 native UX 약함. SwiftTerm 검증됨 + macOS native
+  - **자동 turn-단위 commit** vs **manual accept**: 자동은 noise ↑ + revert 어려움. 사용자가 명시적으로 결정하는 게 안전
+- **격리**:
+  - `GitRunner`는 `YuminaiCore` (모든 모듈 사용 가능)
+  - `CheckpointManager`는 `YuminaiApp` (AppModel 의존)
+  - `TerminalPane`은 `YuminaiUI` (SwiftTerm wrap)
+  - `DiffReviewView`는 `YuminaiUI` (도메인 모델 `ChangedFile`만 의존)
+- **결과**:
+  - 신규 파일 4개: TerminalPane / GitRunner / CheckpointManager / DiffView
+  - 신규 테스트 17건 (porcelain 6 + mock 1 + line kind 6 + extract hunks 4)
+  - InspectorTab .changes / AppModel +5 properties + 4 actions
+  - SwiftTerm 외부 dep
+  - build 22s (SwiftTerm 첫 resolve 후) + 4-9s incremental, 144/144 tests
+- **알려진 한계 → 후속 phase**:
+  - Editable diff X (Cline SOTA, v0.5 — SwiftUI native diff editor 부재)
+  - 자동 commit X (manual policy, hybrid v0.5)
+  - Block 그룹화 X (Warp UX) — Phase B (M5.b)
+  - Diff path 매칭에 한글/공백 정밀도 약함 — 실측 후 정밀화
+  - 일반 dir file watcher X — turn 종료 시 git status 1회로 충분, watcher는 v0.5
+- **재검토**: Phase B (M4 delivery loop) 시작 전 Phase A 사용자 검증 결과 반영
+
+---
+
+## ADR-027 — v0.4 라운드 기획 + GitHub 최상위 스타 레퍼런스 근거 채택
 
 ---
 
