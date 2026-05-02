@@ -222,6 +222,7 @@ struct RootView: View {
                 chatIdToWorkspaceName: appModel.telegramChatIdToWorkspaceName(),
                 workspaceIdToName: Dictionary(uniqueKeysWithValues: appModel.workspaces.map { ($0.id.uuidString, $0.name) }),
                 routingDecisions: appModel.routingDecisions,
+                anomalyThreshold: appModel.preferences.anomalyZScoreThreshold,
                 onClose: { appModel.showTelegramUsageDashboard = false },
                 onClearStats: { Task { await appModel.clearTelegramUsage() } }
             )

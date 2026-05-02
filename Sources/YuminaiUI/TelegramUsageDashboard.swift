@@ -31,6 +31,8 @@ public struct TelegramUsageDashboard: View {
     public let workspaceIdToName: [String: String]
     /// **ADR-064 Phase 1** — routing decisions (telegram dashboard에 통합)
     public let routingDecisions: [RoutingDecisionRecord]
+    /// **ADR-066 Phase 2** — anomaly threshold (Settings에서)
+    public let anomalyThreshold: Double
     public let onClose: () -> Void
     public let onClearStats: () -> Void
 
@@ -77,6 +79,7 @@ public struct TelegramUsageDashboard: View {
         chatIdToWorkspaceName: [String: String],
         workspaceIdToName: [String: String] = [:],
         routingDecisions: [RoutingDecisionRecord] = [],
+        anomalyThreshold: Double = 2.0,
         onClose: @escaping () -> Void,
         onClearStats: @escaping () -> Void
     ) {
@@ -85,6 +88,7 @@ public struct TelegramUsageDashboard: View {
         self.chatIdToWorkspaceName = chatIdToWorkspaceName
         self.workspaceIdToName = workspaceIdToName
         self.routingDecisions = routingDecisions
+        self.anomalyThreshold = anomalyThreshold
         self.onClose = onClose
         self.onClearStats = onClearStats
     }
@@ -118,15 +122,28 @@ public struct TelegramUsageDashboard: View {
         }
         .frame(width: 880, height: 720)
         .background(Theme.Color.bg)
-        // ADR-065 Phase 5 — Chat detail sheet
+        // ADR-065 Phase 5 + ADR-066 Phase 1 — Chat detail with chat-specific buckets
         .sheet(item: $selectedChatForDetail) { chat in
             ChatDetailSheet(
                 chatStats: chat,
                 workspaceIdToName: workspaceIdToName,
                 workspaceLabel: chatIdToWorkspaceName[String(chat.chatId)],
-                chatHourlyBuckets: snapshot.hourlyBuckets,  // 전체 hourly (chat 별 분리는 이후 enhancement)
+                chatHourlyBuckets: chatSpecificBuckets(for: chat.chatId),
+                anomalyThreshold: anomalyThreshold,
                 onClose: { selectedChatForDetail = nil }
             )
+        }
+    }
+
+    /// **ADR-066 Phase 1** — 특정 chat의 hourly buckets 추출 (chat별 forecast).
+    private func chatSpecificBuckets(for chatId: Int64) -> [HourlyUsageBucket] {
+        let key = String(chatId)
+        return snapshot.hourlyBuckets.compactMap { bucket -> HourlyUsageBucket? in
+            guard bucket.chatCosts[key] != nil || bucket.chatTurnCounts[key] != nil else { return nil }
+            var chatBucket = HourlyUsageBucket(timestamp: bucket.timestamp)
+            chatBucket.turnCount = bucket.chatTurnCounts[key] ?? 0
+            chatBucket.costUSD = bucket.chatCosts[key] ?? 0
+            return chatBucket
         }
     }
 
@@ -166,6 +183,11 @@ public struct TelegramUsageDashboard: View {
                     Button("전체 Report → Markdown") { exportMarkdown(.fullReport) }
                     Button("Chat Stats → Markdown") { exportMarkdown(.chatStats) }
                     Button("Command Stats → Markdown") { exportMarkdown(.commandStats) }
+                }
+                Section("SVG (ADR-066 Phase 4 — vector)") {
+                    Button("Hourly Cost Trend → SVG") { exportSVG(.costTrend) }
+                    Button("Hourly Turn Count → SVG") { exportSVG(.turnCount) }
+                    Button("Command Frequency → SVG") { exportSVG(.commandFreq) }
                 }
             } label: {
                 Label("내보내기", systemImage: "square.and.arrow.up")
@@ -791,6 +813,42 @@ public struct TelegramUsageDashboard: View {
     /// **ADR-065 Phase 4** — Markdown export 종류.
     private enum MarkdownKind {
         case fullReport, chatStats, commandStats
+    }
+
+    /// **ADR-066 Phase 4** — SVG export 종류.
+    private enum SVGKind {
+        case costTrend, turnCount, commandFreq
+    }
+
+    @MainActor
+    private func exportSVG(_ kind: SVGKind) {
+        let svg: String
+        let suggestedName: String
+        switch kind {
+        case .costTrend:
+            let values = filteredHourly.map { $0.costUSD }
+            svg = SVGExporter.lineChart(values: values, title: "Hourly Cost Trend (USD)", strokeColor: "#10b981", fillColor: "#10b98140")
+            suggestedName = "telegram-cost-trend.svg"
+        case .turnCount:
+            let values = filteredHourly.map { Double($0.turnCount) }
+            svg = SVGExporter.lineChart(values: values, title: "Hourly Turn Count", strokeColor: "#3b82f6", fillColor: "#3b82f640")
+            suggestedName = "telegram-turn-count.svg"
+        case .commandFreq:
+            let sorted = snapshot.commandStats.sorted { $0.value > $1.value }.prefix(10)
+            svg = SVGExporter.barChart(
+                labels: sorted.map { $0.key },
+                values: sorted.map { Double($0.value) },
+                title: "Command Frequency Top 10",
+                barColor: "#f97316"
+            )
+            suggestedName = "telegram-command-freq.svg"
+        }
+        let panel = NSSavePanel()
+        panel.allowedContentTypes = [.svg]
+        panel.nameFieldStringValue = suggestedName
+        if panel.runModal() == .OK, let url = panel.url {
+            try? svg.write(to: url, atomically: true, encoding: .utf8)
+        }
     }
 
     @MainActor

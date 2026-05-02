@@ -555,6 +555,19 @@ public struct SettingsView: View {
                         .font(Theme.Typography.monoSmall)
                         .frame(width: 40, alignment: .trailing)
                 }
+                // ADR-066 Phase 2 — Anomaly Z-score threshold slider
+                HStack {
+                    LabelWithHint(
+                        "Anomaly threshold (z-score)",
+                        hint: "ADR-066 Phase 2 — Telegram dashboard의 anomaly detection 민감도. 2.0=95% (default, 표준), 3.0=99.7% (덜 민감), 1.5=87% (더 민감)."
+                    )
+                    Spacer()
+                    Slider(value: $preferences.anomalyZScoreThreshold, in: 1.0...4.0, step: 0.1)
+                        .frame(width: 180)
+                    Text(String(format: "%.1f", preferences.anomalyZScoreThreshold))
+                        .font(Theme.Typography.monoSmall)
+                        .frame(width: 40, alignment: .trailing)
+                }
                 HStack {
                     LabelWithHint(
                         "Routing log retention (일)",

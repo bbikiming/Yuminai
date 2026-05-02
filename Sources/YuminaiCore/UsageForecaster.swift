@@ -76,18 +76,44 @@ public enum UsageForecaster {
         }
     }
 
-    // MARK: - ADR-065 Phase 1 — Holt-Winters (additive seasonal forecast)
+    // MARK: - ADR-065 Phase 1 + ADR-066 Phase 3 — Holt-Winters (additive + multiplicative)
 
-    /// **ADR-065 Phase 1** — Holt-Winters additive: level + trend + seasonal 분리.
-    /// alpha (level), beta (trend), gamma (seasonal) — 모두 0~1.
-    /// seasonLength: 주기 (예: hourly 데이터 → 24 hours/day cycle).
+    /// **ADR-066 Phase 3** — Holt-Winters seasonal model 종류.
+    public enum HoltWintersModel: String, Sendable, Hashable, Codable {
+        case additive       // X = level + trend + seasonal (작은 값 안정)
+        case multiplicative // X = (level + trend) × seasonal (비율 변동 데이터)
+    }
+
+    /// **ADR-065 Phase 1 + ADR-066 Phase 3** — Holt-Winters forecast.
+    /// - additive: `level + trend + seasonal[t-L]`
+    /// - multiplicative: `(level + trend) × seasonal[t-L]`
+    /// 작은 값 (≤ 0)은 multiplicative에서 무한대/0 가능 — additive로 자동 fallback.
     public static func holtWintersForecast(
         _ values: [Double],
         seasonLength: Int = 24,
         alpha: Double = 0.3,
         beta: Double = 0.1,
         gamma: Double = 0.1,
-        steps: Int = 1
+        steps: Int = 1,
+        model: HoltWintersModel = .additive
+    ) -> [Double]? {
+        // multiplicative은 0 또는 음수 있으면 additive로 fallback
+        let effectiveModel: HoltWintersModel = (model == .multiplicative && values.contains(where: { $0 <= 0.0001 }))
+            ? .additive
+            : model
+        if effectiveModel == .multiplicative {
+            return holtWintersMultiplicative(values, seasonLength: seasonLength, alpha: alpha, beta: beta, gamma: gamma, steps: steps)
+        }
+        return holtWintersAdditive(values, seasonLength: seasonLength, alpha: alpha, beta: beta, gamma: gamma, steps: steps)
+    }
+
+    private static func holtWintersAdditive(
+        _ values: [Double],
+        seasonLength: Int,
+        alpha: Double,
+        beta: Double,
+        gamma: Double,
+        steps: Int
     ) -> [Double]? {
         // 충분한 데이터: 최소 2 cycle
         guard values.count >= 2 * seasonLength else { return nil }
@@ -118,6 +144,78 @@ public enum UsageForecaster {
             forecasts.append(level + Double(h) * trend + s)
         }
         return forecasts
+    }
+
+    /// **ADR-066 Phase 3** — Holt-Winters multiplicative.
+    /// 같은 algorithm이지만 seasonal은 ratio (X / level), forecast는 곱셈.
+    private static func holtWintersMultiplicative(
+        _ values: [Double],
+        seasonLength: Int,
+        alpha: Double,
+        beta: Double,
+        gamma: Double,
+        steps: Int
+    ) -> [Double]? {
+        guard values.count >= 2 * seasonLength else { return nil }
+        let firstCycle = Array(values.prefix(seasonLength))
+        var level = firstCycle.reduce(0, +) / Double(seasonLength)
+        guard level > 0.0001 else { return nil }
+        let secondCycle = Array(values.dropFirst(seasonLength).prefix(seasonLength))
+        let secondAvg = secondCycle.reduce(0, +) / Double(seasonLength)
+        var trend = (secondAvg - level) / Double(seasonLength)
+        // initial seasonal = ratio (X / level)
+        var seasonal = firstCycle.map { $0 / level }
+
+        for i in seasonLength..<values.count {
+            let s = seasonal[i % seasonLength]
+            let prevLevel = level
+            level = alpha * (values[i] / max(s, 0.0001)) + (1 - alpha) * (prevLevel + trend)
+            trend = beta * (level - prevLevel) + (1 - beta) * trend
+            seasonal[i % seasonLength] = gamma * (values[i] / max(level, 0.0001)) + (1 - gamma) * s
+        }
+        var forecasts: [Double] = []
+        for h in 1...steps {
+            let s = seasonal[(values.count + h - 1) % seasonLength]
+            forecasts.append((level + Double(h) * trend) * s)
+        }
+        return forecasts
+    }
+
+    // MARK: - ADR-066 Phase 5 — Forecast confidence interval
+
+    /// **ADR-066 Phase 5** — EWMA forecast + 95% confidence interval (±2σ).
+    /// 잔차 (residuals) 기반 stddev 계산.
+    public static func forecastWithCI(_ values: [Double], alpha: Double = defaultAlpha) -> ForecastWithCI? {
+        guard values.count >= minSamples else { return nil }
+        let smoothed = ewmaSeries(values, alpha: alpha)
+        let next = smoothed.last ?? 0
+        // residuals
+        let residuals = zip(values, smoothed).map { abs($0 - $1) }
+        let mean = residuals.reduce(0, +) / Double(residuals.count)
+        let variance = residuals.map { pow($0 - mean, 2) }.reduce(0, +) / Double(residuals.count)
+        let stddev = sqrt(variance)
+        // 95% CI ≈ ±2σ
+        let halfWidth = 2 * stddev
+        return ForecastWithCI(
+            forecast: next,
+            lowerBound: max(0, next - halfWidth),
+            upperBound: next + halfWidth,
+            stddev: stddev
+        )
+    }
+
+    public struct ForecastWithCI: Sendable, Hashable {
+        public let forecast: Double
+        public let lowerBound: Double
+        public let upperBound: Double
+        public let stddev: Double
+
+        public init(forecast: Double, lowerBound: Double, upperBound: Double, stddev: Double) {
+            self.forecast = forecast
+            self.lowerBound = lowerBound
+            self.upperBound = upperBound
+            self.stddev = stddev
+        }
     }
 
     // MARK: - ADR-065 Phase 3 — Z-score anomaly detection

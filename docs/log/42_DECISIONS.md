@@ -1,6 +1,71 @@
 # Decisions Log (ADR-lite)
 
-> 최신: ADR-065 (Holt-Winters + anomaly + Markdown export + chat detail)
+> 최신: ADR-066 (chat-specific buckets + multiplicative HW + CI + anomaly threshold UI + SVG)
+
+---
+
+## ADR-066 — Chat 분리 + 고급 forecast + Settings + SVG export (5 phases)
+
+- **날짜**: 2026-05-03
+- **상태**: Accepted
+
+### 결정
+
+#### Phase 1: chat별 hourly buckets 분리
+- `HourlyUsageBucket.chatTurnCounts: [String: Int]` + `chatCosts: [String: Double]`
+- recordTurnStart / recordTurnComplete: 전체 + chat별 동시 누적
+- `hourlyBuckets(forChatId:)` API
+- TelegramUsageDashboard.chatSpecificBuckets(for:) helper
+- ChatDetailSheet에 chat-specific 데이터 전달
+
+#### Phase 3: Multiplicative Holt-Winters
+- `HoltWintersModel` enum (additive / multiplicative)
+- multiplicative: `(level + trend) × seasonal`
+- 0 또는 음수 포함 시 additive로 자동 fallback (안전)
+- ChatDetailSheet.forecastSection에서 두 모델 동시 표시
+
+#### Phase 5: Forecast confidence interval (±2σ)
+- `forecastWithCI(_:alpha:)` API + `ForecastWithCI` struct
+- 잔차 (residuals) 기반 stddev → ±2σ (95% CI)
+- lowerBound는 max(0, ...) clamp
+- ChatDetailSheet: RuleMark로 CI 시각화 (red 8pt 두께)
+
+#### Phase 2: Anomaly threshold Settings UI
+- `AppPreferences.anomalyZScoreThreshold: Double = 2.0`
+- General tab Slider (1.0~4.0, 0.1 step)
+- ChatDetailSheet에서 threshold 적용 (label도 동적)
+
+#### Phase 4: SVG export (vector)
+- `Sources/YuminaiCore/SVGExporter.swift` 신설
+- `lineChart(values:title:width:height:strokeColor:fillColor:showArea:)`
+  - line + area + points
+  - 자동 scale (data min/max → viewBox)
+  - Y axis labels (max / min)
+- `barChart(labels:values:title:...)`
+  - 자동 normalize, value + label 표시
+- XML escape (& < > " ')
+- TelegramUsageDashboard 메뉴: SVG section (cost trend / turn count / command freq)
+
+### 적용 결과
+```
+swift build              → Build complete! (14.35s)
+swift test               → 489/489 passed (101 suites, +11 new)
+새 파일                  → 1 (SVGExporter.swift)
+수정 파일                → 6 (UsageForecaster, AppPreferences, SettingsView, TelegramUsageStore, ChatDetailSheet, TelegramUsageDashboard)
+```
+
+### 트레이드오프
+- **chat-specific buckets는 hourly bucket struct 비대화**: 100+ chat이면 메모리 ↑. 100K bucket 가정 시 OK.
+- **multiplicative HW는 양수 데이터 보장 필요**: 0 → additive fallback (silent). caller는 알 필요 없음.
+- **CI는 잔차 기반**: 정규 분포 가정 — 비정규 분포에선 부정확.
+- **SVG export는 client-side render**: 큰 dataset (10K+ points)은 brewser 느림 가능. 향후 simplification.
+
+### 향후 (ADR-067 후보)
+- ChartsDashboard에도 SVG export
+- chat별 forecast comparison (multiple chat overlay)
+- anomaly auto-alert (threshold 초과 시 Telegram push)
+- forecast accuracy 측정 (MAE / RMSE)
+- chat별 cost forecast trend chart in dashboard
 
 ---
 

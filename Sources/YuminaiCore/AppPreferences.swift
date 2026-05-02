@@ -68,6 +68,9 @@ public struct AppPreferences: Sendable, Codable, Hashable {
     /// nil이면 비활성. 0.0~1.0 (예: 0.85 = 85%)
     /// **default nil** — 사용자 의도와 다를 수 있으므로 명시적 활성 권장.
     public var autoNewSessionContextThreshold: Double?
+    /// **ADR-066 Phase 2** — Z-score anomaly detection threshold.
+    /// 일반적으로 2.0 (95%) 또는 3.0 (99.7%). default 2.0.
+    public var anomalyZScoreThreshold: Double
     /// pane 응답에 `@<other>` mention이 있으면 자동으로 다음 turn dispatch (ADR-034 A1).
     /// **default OFF** — 무한 루프 위험, 명시적 토글 필요.
     public var agentChainEnabled: Bool
@@ -103,6 +106,7 @@ public struct AppPreferences: Sendable, Codable, Hashable {
         dailyBudgetUSD: Double? = nil,
         workspaceDailyBudgetsUSD: [UUID: Double] = [:],
         autoNewSessionContextThreshold: Double? = nil,
+        anomalyZScoreThreshold: Double = 2.0,
         agentChainEnabled: Bool = false,
         agentChainMaxHops: Int = 1,
         fontSizeOffset: Int = 0,
@@ -134,6 +138,7 @@ public struct AppPreferences: Sendable, Codable, Hashable {
         self.dailyBudgetUSD = dailyBudgetUSD
         self.workspaceDailyBudgetsUSD = workspaceDailyBudgetsUSD
         self.autoNewSessionContextThreshold = autoNewSessionContextThreshold
+        self.anomalyZScoreThreshold = anomalyZScoreThreshold
         self.agentChainEnabled = agentChainEnabled
         self.agentChainMaxHops = agentChainMaxHops
         self.fontSizeOffset = fontSizeOffset
@@ -169,6 +174,7 @@ public struct AppPreferences: Sendable, Codable, Hashable {
         self.dailyBudgetUSD = try c.decodeIfPresent(Double.self, forKey: .dailyBudgetUSD)
         self.workspaceDailyBudgetsUSD = try c.decodeIfPresent([UUID: Double].self, forKey: .workspaceDailyBudgetsUSD) ?? [:]
         self.autoNewSessionContextThreshold = try c.decodeIfPresent(Double.self, forKey: .autoNewSessionContextThreshold)
+        self.anomalyZScoreThreshold = try c.decodeIfPresent(Double.self, forKey: .anomalyZScoreThreshold) ?? 2.0
         self.agentChainEnabled = try c.decodeIfPresent(Bool.self, forKey: .agentChainEnabled) ?? false
         self.agentChainMaxHops = try c.decodeIfPresent(Int.self, forKey: .agentChainMaxHops) ?? 1
         self.fontSizeOffset = try c.decodeIfPresent(Int.self, forKey: .fontSizeOffset) ?? 0

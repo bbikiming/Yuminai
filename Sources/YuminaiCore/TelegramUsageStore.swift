@@ -42,22 +42,25 @@ public actor TelegramUsageStore {
 
     /// turn 시작 시 호출 — chat별 + hourly bucket 카운트.
     /// **ADR-063 Phase 5** — workspaceId 추가 (chat별 workspace 사용 분포).
+    /// **ADR-066 Phase 1** — chat별 hourly bucket 분리 (chat-specific forecast).
     public func recordTurnStart(chatId: Int64, workspaceId: UUID? = nil) {
         let key = String(chatId)
         var stats = chatStats[key] ?? ChatUsageStats(chatId: chatId)
         stats.turnCount += 1
         stats.lastUsedAt = Date()
-        // ADR-063 Phase 5 — workspace 사용 분포 누적
         if let wsId = workspaceId {
             stats.workspaceUsageCounts[wsId.uuidString, default: 0] += 1
         }
         chatStats[key] = stats
-        // hourly bucket
-        upsertHourlyBucket { $0.turnCount += 1 }
+        upsertHourlyBucket { bucket in
+            bucket.turnCount += 1
+            bucket.chatTurnCounts[key, default: 0] += 1
+        }
         persist()
     }
 
     /// turn 종료 시 호출 — cost + token 누적.
+    /// **ADR-066 Phase 1** — chat별 cost도 hourly bucket에 분리.
     public func recordTurnComplete(
         chatId: Int64,
         costUSD: Double,
@@ -70,13 +73,25 @@ public actor TelegramUsageStore {
         stats.totalInputTokens += inputTokens
         stats.totalOutputTokens += outputTokens
         chatStats[key] = stats
-        // hourly bucket
         upsertHourlyBucket { bucket in
             bucket.costUSD += costUSD
             bucket.inputTokens += inputTokens
             bucket.outputTokens += outputTokens
+            bucket.chatCosts[key, default: 0] += costUSD
         }
         persist()
+    }
+
+    /// **ADR-066 Phase 1** — 특정 chat의 hourly buckets 추출 (forecast 입력용).
+    public func hourlyBuckets(forChatId chatId: Int64) -> [HourlyUsageBucket] {
+        let key = String(chatId)
+        return hourlyBuckets.compactMap { bucket -> HourlyUsageBucket? in
+            guard bucket.chatCosts[key] != nil || bucket.chatTurnCounts[key] != nil else { return nil }
+            var chatBucket = HourlyUsageBucket(timestamp: bucket.timestamp)
+            chatBucket.turnCount = bucket.chatTurnCounts[key] ?? 0
+            chatBucket.costUSD = bucket.chatCosts[key] ?? 0
+            return chatBucket
+        }
     }
 
     /// **ADR-063 Phase 2** — hourly buckets를 daily로 병합.
@@ -198,6 +213,9 @@ public struct HourlyUsageBucket: Codable, Sendable, Hashable, Identifiable {
     public var costUSD: Double = 0
     public var inputTokens: Int = 0
     public var outputTokens: Int = 0
+    /// **ADR-066 Phase 1** — 이 bucket의 chat 별 분리 (chat별 forecast 가능).
+    public var chatTurnCounts: [String: Int] = [:]
+    public var chatCosts: [String: Double] = [:]
 
     public init(timestamp: Date) {
         self.timestamp = timestamp

@@ -166,6 +166,119 @@ struct MarkdownExportTests {
     }
 }
 
+@Suite("Holt-Winters multiplicative + CI (ADR-066 Phase 3 + 5)")
+struct HWMultiCITests {
+    @Test("multiplicative HW: 양수 데이터")
+    func multPositive() {
+        var values: [Double] = []
+        for i in 0..<48 {
+            values.append(10 + 5 * sin(Double(i) * .pi / 12) + 5)  // 양수 보장
+        }
+        let result = UsageForecaster.holtWintersForecast(values, seasonLength: 24, steps: 3, model: .multiplicative)
+        #expect(result != nil)
+        #expect(result?.count == 3)
+    }
+
+    @Test("multiplicative HW: 0 포함 → additive fallback")
+    func multZeroFallback() {
+        var values = Array(repeating: 1.0, count: 48)
+        values[10] = 0  // 0 포함
+        let result = UsageForecaster.holtWintersForecast(values, seasonLength: 24, model: .multiplicative)
+        #expect(result != nil)  // additive fallback
+    }
+
+    @Test("forecastWithCI: minSamples 미만 nil")
+    func ciMinSamples() {
+        let ci = UsageForecaster.forecastWithCI([1.0])
+        #expect(ci == nil)
+    }
+
+    @Test("forecastWithCI: 잔차 stddev 기반 CI")
+    func ciCalc() {
+        let ci = UsageForecaster.forecastWithCI([10.0, 12.0, 14.0, 11.0, 13.0])
+        #expect(ci != nil)
+        #expect(ci!.upperBound > ci!.forecast)
+        #expect(ci!.lowerBound <= ci!.forecast)
+        #expect(ci!.stddev > 0)
+    }
+
+    @Test("forecastWithCI: lowerBound는 0 이상 clamp")
+    func ciLowerBoundClamped() {
+        let ci = UsageForecaster.forecastWithCI([0.001, 0.002, 0.001, 0.003])
+        #expect(ci != nil)
+        #expect(ci!.lowerBound >= 0)
+    }
+}
+
+@Suite("SVGExporter (ADR-066 Phase 4)")
+struct SVGExporterTests {
+    @Test("lineChart: 빈 데이터 → empty hint")
+    func emptyChart() {
+        let svg = SVGExporter.lineChart(values: [], title: "test")
+        #expect(svg.contains("no data"))
+        #expect(svg.contains("<svg"))
+        #expect(svg.contains("</svg>"))
+    }
+
+    @Test("lineChart: 정상 데이터")
+    func normalLine() {
+        let svg = SVGExporter.lineChart(values: [1.0, 2.0, 3.0, 4.0, 5.0], title: "Trend")
+        #expect(svg.contains("Trend"))
+        #expect(svg.contains("<path"))
+        #expect(svg.contains("<circle"))  // points
+    }
+
+    @Test("barChart: labels + values 매칭")
+    func barChart() {
+        let svg = SVGExporter.barChart(
+            labels: ["A", "B", "C"],
+            values: [10, 20, 30],
+            title: "Bars"
+        )
+        #expect(svg.contains("<rect"))
+        #expect(svg.contains(">A<"))
+        #expect(svg.contains(">B<"))
+    }
+
+    @Test("escape: XML special chars")
+    func xmlEscape() {
+        let svg = SVGExporter.lineChart(values: [1.0], title: "<a&b>")
+        #expect(svg.contains("&lt;a&amp;b&gt;"))
+    }
+}
+
+@Suite("TelegramUsageStore chat-specific buckets (ADR-066 Phase 1)")
+struct ChatSpecificBucketsTests {
+    private func makeStore() -> TelegramUsageStore {
+        let suite = "yuminai-tg-chat-bucket-\(UUID().uuidString)"
+        let defaults = UserDefaults(suiteName: suite)!
+        return TelegramUsageStore(defaults: defaults)
+    }
+
+    @Test("chat별 turn count 분리")
+    func chatTurnSeparation() async {
+        let store = makeStore()
+        await store.recordTurnStart(chatId: 100)
+        await store.recordTurnStart(chatId: 200)
+        let buckets100 = await store.hourlyBuckets(forChatId: 100)
+        let buckets200 = await store.hourlyBuckets(forChatId: 200)
+        #expect(buckets100.count == 1)
+        #expect(buckets100[0].turnCount == 1)
+        #expect(buckets200[0].turnCount == 1)
+    }
+
+    @Test("chat별 cost 분리")
+    func chatCostSeparation() async {
+        let store = makeStore()
+        await store.recordTurnComplete(chatId: 1, costUSD: 0.10, inputTokens: 100, outputTokens: 50)
+        await store.recordTurnComplete(chatId: 2, costUSD: 0.05, inputTokens: 50, outputTokens: 25)
+        let b1 = await store.hourlyBuckets(forChatId: 1)
+        let b2 = await store.hourlyBuckets(forChatId: 2)
+        #expect(abs(b1[0].costUSD - 0.10) < 0.0001)
+        #expect(abs(b2[0].costUSD - 0.05) < 0.0001)
+    }
+}
+
 @Suite("CSVExporter streaming write (ADR-064 Phase 3)")
 struct CSVStreamingTests {
     @Test("streaming write: 100 rows")

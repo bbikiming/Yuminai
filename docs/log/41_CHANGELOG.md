@@ -4,6 +4,57 @@
 
 ## [Unreleased] — 2026-05-03
 
+### Added — ADR-066 Chat 분리 + 고급 forecast + Settings + SVG export (5 phases)
+
+**Phase 1 — chat별 hourly buckets 분리**
+- HourlyUsageBucket.chatTurnCounts + chatCosts
+- recordTurn*: 전체 + chat별 동시 누적
+- hourlyBuckets(forChatId:) API + chatSpecificBuckets(for:) UI helper
+
+**Phase 3 — Multiplicative Holt-Winters**
+- HoltWintersModel enum (additive/multiplicative)
+- 0/음수 자동 additive fallback
+- ChatDetailSheet에서 두 모델 동시 표시
+
+**Phase 5 — Confidence interval (±2σ)**
+- forecastWithCI + ForecastWithCI struct (forecast/lower/upper/stddev)
+- 잔차 기반 stddev, lowerBound 0 clamp
+- RuleMark 시각화
+
+**Phase 2 — Anomaly threshold Settings UI**
+- AppPreferences.anomalyZScoreThreshold (default 2.0)
+- General tab Slider (1.0~4.0)
+
+**Phase 4 — SVG export (vector)**
+- Sources/YuminaiCore/SVGExporter.swift
+- lineChart (line + area + points + Y labels)
+- barChart (normalize + value/label)
+- XML escape
+- TelegramUsageDashboard 메뉴: 3 SVG export
+
+### Tests added (+11)
+- HW multi positive / 0 fallback (2)
+- forecastWithCI: minSamples / 잔차 calc / lowerBound clamp (3)
+- SVGExporter: empty / line / bar / XML escape (4)
+- chat-specific buckets: turn / cost (2)
+
+### 빌드/테스트 결과
+- swift build → Build complete! (14.35s)
+- swift test → 489/489 passed (101 suites)
+
+### 새 파일
+- SVGExporter.swift
+
+### 수정 파일
+- UsageForecaster (HoltWintersModel + multiplicative + forecastWithCI)
+- AppPreferences (anomalyZScoreThreshold)
+- SettingsView (anomaly slider)
+- TelegramUsageStore (chat-specific buckets)
+- ChatDetailSheet (CI + multi HW + threshold)
+- TelegramUsageDashboard (chatSpecificBuckets helper + SVG menu)
+
+---
+
 ### Added — ADR-065 고급 분석 + 상세 view + 다양한 export (5 phases)
 
 **Phase 1 — Holt-Winters seasonal forecast**

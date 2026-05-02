@@ -16,17 +16,22 @@ public struct ChatDetailSheet: View {
     public let chatHourlyBuckets: [HourlyUsageBucket]
     public let onClose: () -> Void
 
+    /// **ADR-066 Phase 2** — anomaly threshold (Settings preference에서)
+    public let anomalyThreshold: Double
+
     public init(
         chatStats: ChatUsageStats,
         workspaceIdToName: [String: String],
         workspaceLabel: String? = nil,
         chatHourlyBuckets: [HourlyUsageBucket] = [],
+        anomalyThreshold: Double = 2.0,
         onClose: @escaping () -> Void
     ) {
         self.chatStats = chatStats
         self.workspaceIdToName = workspaceIdToName
         self.workspaceLabel = workspaceLabel
         self.chatHourlyBuckets = chatHourlyBuckets
+        self.anomalyThreshold = anomalyThreshold
         self.onClose = onClose
     }
 
@@ -133,32 +138,47 @@ public struct ChatDetailSheet: View {
         .clipShape(RoundedRectangle(cornerRadius: Theme.Radius.md))
     }
 
-    /// **ADR-065 Phase 2** — chat별 individual EWMA forecast.
+    /// **ADR-065 Phase 2 + ADR-066 Phase 3 + 5** — chat별 forecast + multiplicative + CI.
     @ViewBuilder
     private var forecastSection: some View {
         let costs = chatHourlyBuckets.map(\.costUSD)
         VStack(alignment: .leading, spacing: 6) {
-            Text("Cost Forecast (EWMA + Holt-Winters)")
+            Text("Cost Forecast (EWMA + Holt-Winters + 95% CI)")
                 .font(Theme.Typography.body.weight(.semibold))
             if costs.count < UsageForecaster.minSamples {
                 Text("forecast: \(UsageForecaster.minSamples)개 이상 sample 필요 (현재 \(costs.count))")
                     .font(Theme.Typography.small)
                     .foregroundStyle(Theme.Color.textSecondary)
             } else {
-                let next = UsageForecaster.forecastNext(costs) ?? 0
                 let trend = UsageForecaster.trend(costs)
-                let hwForecasts = UsageForecaster.holtWintersForecast(costs, seasonLength: min(24, costs.count / 2), steps: 5)
-                HStack {
-                    Image(systemName: trend.icon)
-                        .foregroundStyle(trend == .up ? .red : (trend == .down ? .green : .gray))
-                    Text("EWMA next: $\(String(format: "%.4f", next))")
-                        .font(Theme.Typography.small.weight(.medium))
-                    if let hw = hwForecasts?.first {
-                        Text("· HW (seasonal): $\(String(format: "%.4f", hw))")
-                            .font(Theme.Typography.small)
+                // ADR-066 Phase 5 — confidence interval
+                let ci = UsageForecaster.forecastWithCI(costs)
+                // ADR-066 Phase 3 — multiplicative HW (data 충분 시)
+                let hwAdditive = UsageForecaster.holtWintersForecast(costs, seasonLength: min(24, costs.count / 2), steps: 1, model: .additive)
+                let hwMult = UsageForecaster.holtWintersForecast(costs, seasonLength: min(24, costs.count / 2), steps: 1, model: .multiplicative)
+                VStack(alignment: .leading, spacing: 4) {
+                    HStack {
+                        Image(systemName: trend.icon)
+                            .foregroundStyle(trend == .up ? .red : (trend == .down ? .green : .gray))
+                        if let ci {
+                            Text("EWMA: $\(String(format: "%.4f", ci.forecast))")
+                                .font(Theme.Typography.small.weight(.medium))
+                            Text("[$\(String(format: "%.4f", ci.lowerBound))~$\(String(format: "%.4f", ci.upperBound))]")
+                                .font(Theme.Typography.micro)
+                                .foregroundStyle(Theme.Color.textTertiary)
+                        }
+                        Spacer()
+                    }
+                    if let add = hwAdditive?.first {
+                        Text("HW additive: $\(String(format: "%.4f", add))")
+                            .font(Theme.Typography.micro)
                             .foregroundStyle(.purple)
                     }
-                    Spacer()
+                    if let mult = hwMult?.first {
+                        Text("HW multiplicative: $\(String(format: "%.4f", mult))")
+                            .font(Theme.Typography.micro)
+                            .foregroundStyle(.indigo)
+                    }
                 }
                 Chart {
                     ForEach(Array(costs.enumerated()), id: \.offset) { idx, value in
@@ -168,12 +188,22 @@ public struct ChatDetailSheet: View {
                         )
                         .foregroundStyle(Color.blue)
                     }
-                    PointMark(
-                        x: .value("Sample", costs.count),
-                        y: .value("Forecast", next)
-                    )
-                    .foregroundStyle(Color.red)
-                    .symbolSize(80)
+                    if let ci {
+                        // ADR-066 Phase 5 — confidence interval as RuleMark
+                        PointMark(
+                            x: .value("Sample", costs.count),
+                            y: .value("Forecast", ci.forecast)
+                        )
+                        .foregroundStyle(Color.red)
+                        .symbolSize(80)
+                        RuleMark(
+                            x: .value("Sample", costs.count),
+                            yStart: .value("Lower", ci.lowerBound),
+                            yEnd: .value("Upper", ci.upperBound)
+                        )
+                        .foregroundStyle(Color.red.opacity(0.4))
+                        .lineStyle(StrokeStyle(lineWidth: 8))
+                    }
                 }
                 .frame(height: 140)
             }
@@ -183,13 +213,13 @@ public struct ChatDetailSheet: View {
         .clipShape(RoundedRectangle(cornerRadius: Theme.Radius.md))
     }
 
-    /// **ADR-065 Phase 3** — anomaly detection.
+    /// **ADR-065 Phase 3 + ADR-066 Phase 2** — anomaly detection (threshold from preferences).
     @ViewBuilder
     private var anomaliesSection: some View {
         let costs = chatHourlyBuckets.map(\.costUSD)
-        let anomalies = UsageForecaster.detectAnomalies(costs, threshold: 2.0)
+        let anomalies = UsageForecaster.detectAnomalies(costs, threshold: anomalyThreshold)
         VStack(alignment: .leading, spacing: 6) {
-            Text("Anomaly Detection (z-score > 2.0)")
+            Text("Anomaly Detection (z-score > \(String(format: "%.1f", anomalyThreshold)))")
                 .font(Theme.Typography.body.weight(.semibold))
             if anomalies.isEmpty {
                 Text("✓ 정상 패턴 — 이상치 없음")
