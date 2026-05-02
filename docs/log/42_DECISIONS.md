@@ -1,6 +1,86 @@
 # Decisions Log (ADR-lite)
 
-> 최신: ADR-038 (v0.9+ R1 — Syntax highlight + Multi-tab + Cmd+P 파일 검색 + Quick command 사용자 정의)
+> 최신: ADR-039 (v0.9+ R3 — File CRUD UX: 새 파일/폴더 + 이름 변경 + 삭제 + path safety)
+
+---
+
+## ADR-039 — v0.9+ R3: File CRUD UX (rename / new file / new folder / delete)
+
+- **날짜**: 2026-05-02
+- **상태**: Accepted
+- **결정**: ADR-038 v1.0+로 미뤘던 파일 CRUD UX를 v0.9+ R3로 앞당김 — 사용자가 외부 IDE 없이 워크스페이스 내에서 파일 생성/이름변경/삭제 가능. `WorkspaceFileTree` actor에 4 CRUD 메서드 + path safety + UI: 트리 컨텍스트 메뉴 + 공통 이름 입력 sheet + 삭제 confirmation alert
+- **컨텍스트**:
+  - 사용자 — "진행해 줘" (R2 점검 후 file CRUD가 ROI 가장 높다는 분석 승인)
+  - ADR-038 v1.0+ 후보 중 가장 자연스러운 후속 — Multi-tab + 검색 까지 가능하지만 새 파일 만들려면 외부 IDE 필요했던 것
+  - macOS Finder 컨텍스트 메뉴 + VSCode tree 패턴 표준 — 새로 학습할 게 적음
+- **각 결정**:
+  1. **CRUD 4종 일괄 (rename / new file / new folder / delete)**:
+     - **편집 + 정리** workflow 완전성을 위해 4종 모두 필요. rename만 빼고는 외부 IDE 의존
+     - **delete confirmation 필수** — 폴더는 재귀 삭제 (Finder 휴지통 X, 영구 삭제) 명시
+  2. **공통 이름 입력 sheet (FileNameSheet) — 단순화**:
+     - 새 파일/새 폴더/이름 변경 모두 같은 UI shape (TextField 1개 + 부모 위치 표시 + Enter/Esc)
+     - 3개 별도 sheet → 1 sheet + intent enum으로 단순화 (FileNameSheetIntent)
+     - sheet binding은 `Identifiable` enum + `.sheet(item:)` 패턴
+     - inline tree rename (TextField in row)은 SwiftUI에서 focus 관리 까다로움 + sheet가 더 안전 — VSCode도 sheet/popover 선호
+  3. **삭제는 alert (sheet X)**:
+     - destructive operation은 SwiftUI `Alert` + `.destructive` button role 표준
+     - confirmation message에 "복구할 수 없어요" + 폴더면 "안 모든 파일이 함께 삭제" 명시
+  4. **컨텍스트 메뉴 (`.contextMenu`) — Finder/VSCode 표준**:
+     - 파일: 이름 변경 / 삭제
+     - 폴더: 새 파일 / 새 폴더 / divider / 이름 변경 / 삭제
+     - root scope 새 파일/새 폴더는 트리 헤더 + 버튼 (Finder의 "현재 폴더" 동작 차용)
+  5. **Path safety (보안 — 절대 필수)**:
+     - 빈 경로 / 절대 경로 (`/etc/passwd`) / `..` traversal 모두 차단
+     - `resolveSafePath` helper — standardize 후 rootURL prefix 검증 (symlink escape 방어)
+     - rename 시 새 이름에 `/`/`\\` 포함 차단 (같은 부모 디렉토리 내에서만 허용)
+  6. **AppModel openFileTabs 자동 sync**:
+     - **rename**: 영향받는 tab path를 새 path로 업데이트 (파일 단일 + 폴더 prefix 변경 둘 다)
+     - **delete**: 영향받는 tab 모두 강제 close (dirty 무시 — 디스크에 없으니 의미 없음)
+     - **create file**: 새 파일은 자동 tab 열기 (편집 즉시 가능 UX)
+- **단순화 ROI 분석**:
+  - **CRUD 4종**: 가치 80 (외부 IDE 의존 제거), 비용 1.5인일 (path safety + tab sync 까다로움) — ROI 양호
+  - **공통 sheet**: 비용 절감 (3개 별도 → 1) + UI 일관성
+  - **컨텍스트 메뉴**: 비용 0.2인일 (`.contextMenu` modifier만), 가치 50 (사용자 학습 최소)
+- **격리**:
+  - `WorkspaceFileTree`: CRUD + path safety는 Core (UI 의존 X)
+  - `FileNameSheet` / `FileDeleteConfirmation` / `FileNameSheetIntent`: App 모듈 (UI binding 종속)
+  - `FilesPanel`: UI에서 callback만 호출 (sheet/alert 책임 X)
+  - **분리 원칙**: UI는 의도(intent)를 emit, App layer가 sheet/alert 제어
+- **외부 의존성 정책**:
+  - 새 dependency 없음 — Foundation FileManager + SwiftUI 표준 사용
+- **단순화 보류 (v1.0+)**:
+  - **inline rename** (트리 cell 안 TextField) — focus 관리 까다로움, sheet로 충분
+  - **drag-drop 폴더 이동** — rename + 같은 부모 제약 풀어야 함, 큰 작업
+  - **휴지통 (Trash, NSWorkspace.recycle)** — 복구 가능 옵션. 현재는 영구 삭제만, 사용자 신호 후 추가
+  - **다중 선택 + 일괄 삭제** — checkbox UI 비용
+  - **rename 시 imports/refs 자동 업데이트** — LSP 의존 (큰 작업)
+- **결과**:
+  - 신규 파일 2개 (App): FileNameSheet.swift / FileNameSheetIntent (같은 파일)
+  - 신규 파일 1개 (Test): WorkspaceFileTreeCRUDTests.swift (19 tests)
+  - 수정 파일 4개:
+    - YuminaiCore/WorkspaceFileTree.swift — CRUD 4 메서드 + resolveSafePath helper + 3 새 error case
+    - YuminaiApp/AppModel.swift — 4 CRUD 메서드 + commitFileNameIntent + 2 sheet state
+    - YuminaiUI/FilesPanel.swift — 4 callback + tree header CRUD 버튼 + FileNodeRow 컨텍스트 메뉴
+    - YuminaiUI/InspectorPanel.swift — 4 callback forwarding
+    - YuminaiApp/RootView.swift — sheet/alert binding + 4 callback wiring
+  - **테스트 19 신규 (271/271 통과, 252→271)**:
+    - createFile (basic / 중첩 / duplicate reject)
+    - createFolder (basic / duplicate reject)
+    - rename (basic / 중첩 / `/` 차단 / 빈 이름 / missing source / target exists)
+    - delete (file / folder 재귀 / missing)
+    - path safety (절대 경로 / `..` traversal / 빈 경로)
+    - workflow 통합 (createFile then read / createFile then write)
+  - 빌드 6.71s clean
+- **알려진 한계 / v1.1+**:
+  - 폴더 사이 이동 (drag-drop or rename to different parent)
+  - 휴지통 (NSWorkspace.recycle)
+  - 다중 선택 일괄 작업
+  - rename 시 자동 imports 업데이트 (LSP)
+  - inline rename (트리 cell 내 TextField)
+- **재검토**:
+  - 사용자 외부 IDE 사용 빈도 감소 여부 (가설: file CRUD 추가 후 80% 워크플로 Yuminai 안에서 가능)
+  - delete confirmation이 너무 잦은 마찰 만드는지
+  - 컨텍스트 메뉴 vs 단축키 — `Delete` 키 / `F2` rename 표준 단축키 추가 필요한지
 
 ---
 

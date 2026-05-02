@@ -4,6 +4,55 @@
 
 ## [Unreleased] — 2026-05-02
 
+### Added — v0.9+ R3: File CRUD UX (rename / new file / new folder / delete) (ADR-039)
+
+사용자: "진행해 줘" (R2 점검 후 file CRUD가 v1.0+ 후보 중 ROI 가장 높다는 분석 승인)
+
+**WorkspaceFileTree CRUD (Core, ADR-039)**:
+- `createFile(_:)` — 빈 파일 생성, 중간 디렉토리 자동
+- `createFolder(_:)` — 폴더 생성, 중첩 자동
+- `rename(_:to:)` — 같은 부모 디렉토리 내에서 이름 변경 (`/` 차단)
+- `delete(_:)` — 파일/폴더 삭제 (폴더는 재귀)
+- `resolveSafePath(_:)` helper — 빈/절대/`..` traversal/symlink escape 모두 차단
+- `FileTreeError` 3 case 추가: `alreadyExists` / `invalidName` / `invalidPath`
+
+**AppModel CRUD + tab sync**:
+- `createWorkspaceFile / createWorkspaceFolder / renameWorkspaceNode / deleteWorkspaceNode`
+- `commitFileNameIntent(_:name:)` — sheet 제출 → intent 분기
+- `fileNameSheetIntent: FileNameSheetIntent?` + `fileDeleteConfirmation: FileDeleteConfirmation?` state
+- **rename 시**: 영향받는 openFileTabs path 업데이트 (단일 + 폴더 prefix 둘 다)
+- **delete 시**: 영향받는 tab 강제 close (dirty 무시 — 디스크에 없으니 의미 없음)
+- **create file 시**: 새 파일 자동 tab 열기
+
+**UI — FilesPanel 컨텍스트 메뉴 + tree header**:
+- 트리 헤더에 "새 파일" / "새 폴더" 버튼 (root scope)
+- `FileNodeRow.contextMenu`:
+  - 파일: 이름 변경 / 삭제
+  - 폴더: 새 파일 / 새 폴더 / divider / 이름 변경 / 삭제
+- 4 callback (`onRequestCreateFile/Folder/Rename/Delete`) emission 패턴
+
+**FileNameSheet (App, 신규)**:
+- 새 파일 / 새 폴더 / 이름 변경 공통 sheet (FileNameSheetIntent enum)
+- 440×220, TextField + 부모 위치 표시 + Enter/Esc + InlineHint
+- 입력 검증 (빈/`/`/`\\` 포함 차단)
+- `FileDeleteConfirmation` — alert state struct (Identifiable)
+
+**RootView 통합**:
+- `.sheet(item: $bindable.fileNameSheetIntent)` — FileNameSheet 등록
+- `.alert(item: $bindable.fileDeleteConfirmation)` — 삭제 확인 + destructive button
+- 4 CRUD callback wiring
+
+**테스트 19 신규 (252→271 통과)**:
+- WorkspaceFileTreeCRUDTests:
+  - createFile (basic / intermediate dirs / duplicate reject)
+  - createFolder (basic / duplicate reject)
+  - rename (basic / 중첩 / `/` 차단 / 빈 이름 / missing source / target exists)
+  - delete (file / folder 재귀 / missing)
+  - path safety (절대 경로 / `..` / 빈 경로)
+  - workflow (create then read / create then write)
+
+빌드 6.71s clean.
+
 ### Polish — v0.9+ R2: 누락된 dx/단축키 보완 (ADR-038 R2)
 
 사용자: "현재 진행상황 점검해서 누락된 부분 파악하고 이어서 진행해 줘"

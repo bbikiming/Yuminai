@@ -26,6 +26,13 @@ public struct FilesPanel: View {
     public let onRefreshTree: () -> Void
     public let onOpenInExternalEditor: (String) -> Void
     public let onShowSearch: () -> Void
+    /// 새 파일/폴더 생성 — parent path (root는 ""). ADR-039
+    public let onRequestCreateFile: (String) -> Void
+    public let onRequestCreateFolder: (String) -> Void
+    /// 이름 변경 — 대상 path + isFolder. ADR-039
+    public let onRequestRename: (String, Bool) -> Void
+    /// 삭제 — 대상 path + isFolder. ADR-039
+    public let onRequestDelete: (String, Bool) -> Void
 
     public init(
         tree: [FileNode],
@@ -44,7 +51,11 @@ public struct FilesPanel: View {
         onDiscardEdits: @escaping () -> Void,
         onRefreshTree: @escaping () -> Void,
         onOpenInExternalEditor: @escaping (String) -> Void,
-        onShowSearch: @escaping () -> Void = {}
+        onShowSearch: @escaping () -> Void = {},
+        onRequestCreateFile: @escaping (String) -> Void = { _ in },
+        onRequestCreateFolder: @escaping (String) -> Void = { _ in },
+        onRequestRename: @escaping (String, Bool) -> Void = { _, _ in },
+        onRequestDelete: @escaping (String, Bool) -> Void = { _, _ in }
     ) {
         self.tree = tree
         self.openTabs = openTabs
@@ -63,6 +74,10 @@ public struct FilesPanel: View {
         self.onRefreshTree = onRefreshTree
         self.onOpenInExternalEditor = onOpenInExternalEditor
         self.onShowSearch = onShowSearch
+        self.onRequestCreateFile = onRequestCreateFile
+        self.onRequestCreateFolder = onRequestCreateFolder
+        self.onRequestRename = onRequestRename
+        self.onRequestDelete = onRequestDelete
     }
 
     public var body: some View {
@@ -116,6 +131,20 @@ public struct FilesPanel: View {
                     placement: .bottom
                 )
                 Spacer()
+                Button(action: { onRequestCreateFile("") }) {
+                    Image(systemName: "doc.badge.plus")
+                        .font(.system(size: 10))
+                        .foregroundStyle(Theme.Color.textSecondary)
+                }
+                .buttonStyle(.plain)
+                .help("새 파일 (root)")
+                Button(action: { onRequestCreateFolder("") }) {
+                    Image(systemName: "folder.badge.plus")
+                        .font(.system(size: 10))
+                        .foregroundStyle(Theme.Color.textSecondary)
+                }
+                .buttonStyle(.plain)
+                .help("새 폴더 (root)")
                 Button(action: onShowSearch) {
                     Image(systemName: "magnifyingglass")
                         .font(.system(size: 10))
@@ -151,7 +180,11 @@ public struct FilesPanel: View {
                                 node: node,
                                 depth: 0,
                                 selectedPath: selectedPath,
-                                onSelect: onSelect
+                                onSelect: onSelect,
+                                onCreateFile: onRequestCreateFile,
+                                onCreateFolder: onRequestCreateFolder,
+                                onRename: onRequestRename,
+                                onDelete: onRequestDelete
                             )
                         }
                     }
@@ -349,14 +382,31 @@ private struct FileNodeRow: View {
     let depth: Int
     let selectedPath: String?
     let onSelect: (String) -> Void
+    let onCreateFile: (String) -> Void
+    let onCreateFolder: (String) -> Void
+    let onRename: (String, Bool) -> Void
+    let onDelete: (String, Bool) -> Void
 
     @State private var expanded: Bool
 
-    init(node: FileNode, depth: Int, selectedPath: String?, onSelect: @escaping (String) -> Void) {
+    init(
+        node: FileNode,
+        depth: Int,
+        selectedPath: String?,
+        onSelect: @escaping (String) -> Void,
+        onCreateFile: @escaping (String) -> Void = { _ in },
+        onCreateFolder: @escaping (String) -> Void = { _ in },
+        onRename: @escaping (String, Bool) -> Void = { _, _ in },
+        onDelete: @escaping (String, Bool) -> Void = { _, _ in }
+    ) {
         self.node = node
         self.depth = depth
         self.selectedPath = selectedPath
         self.onSelect = onSelect
+        self.onCreateFile = onCreateFile
+        self.onCreateFolder = onCreateFolder
+        self.onRename = onRename
+        self.onDelete = onDelete
         // depth 0-1 자동 펼침
         self._expanded = State(initialValue: depth < 2)
     }
@@ -370,7 +420,11 @@ private struct FileNodeRow: View {
                         node: child,
                         depth: depth + 1,
                         selectedPath: selectedPath,
-                        onSelect: onSelect
+                        onSelect: onSelect,
+                        onCreateFile: onCreateFile,
+                        onCreateFolder: onCreateFolder,
+                        onRename: onRename,
+                        onDelete: onDelete
                     )
                 }
             }
@@ -409,6 +463,34 @@ private struct FileNodeRow: View {
         }
         .buttonStyle(.plain)
         .onHover { hovering = $0 }
+        .contextMenu { contextMenuContent }
+    }
+
+    @ViewBuilder
+    private var contextMenuContent: some View {
+        if node.isFolder {
+            Button {
+                onCreateFile(node.path)
+            } label: {
+                Label("새 파일", systemImage: "doc.badge.plus")
+            }
+            Button {
+                onCreateFolder(node.path)
+            } label: {
+                Label("새 폴더", systemImage: "folder.badge.plus")
+            }
+            Divider()
+        }
+        Button {
+            onRename(node.path, node.isFolder)
+        } label: {
+            Label("이름 변경", systemImage: "pencil")
+        }
+        Button(role: .destructive) {
+            onDelete(node.path, node.isFolder)
+        } label: {
+            Label("삭제", systemImage: "trash")
+        }
     }
 
     private var iconName: String {

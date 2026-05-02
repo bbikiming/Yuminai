@@ -100,6 +100,29 @@ struct RootView: View {
                 onCancel: { appModel.showFileSearchSheet = false }
             )
         }
+        .sheet(item: $bindable.fileNameSheetIntent) { intent in
+            FileNameSheet(
+                intent: intent,
+                onSubmit: { name in
+                    Task { await appModel.commitFileNameIntent(intent, name: name) }
+                    appModel.fileNameSheetIntent = nil
+                },
+                onCancel: { appModel.fileNameSheetIntent = nil }
+            )
+        }
+        .alert(item: $bindable.fileDeleteConfirmation) { confirmation in
+            Alert(
+                title: Text(confirmation.title),
+                message: Text(confirmation.message),
+                primaryButton: .destructive(Text("삭제")) {
+                    Task { await appModel.deleteWorkspaceNode(at: confirmation.path) }
+                    appModel.fileDeleteConfirmation = nil
+                },
+                secondaryButton: .cancel(Text("취소")) {
+                    appModel.fileDeleteConfirmation = nil
+                }
+            )
+        }
         .sheet(item: $bindable.renameSheetPane) { pane in
             PaneRenameSheet(
                 pane: pane,
@@ -245,7 +268,21 @@ struct RootView: View {
                     onDiscardFileEdits: { appModel.discardWorkspaceFileEdits() },
                     onRefreshFileTree: { Task { await appModel.refreshWorkspaceFileTree() } },
                     onOpenFileInExternalEditor: { path in appModel.openFileInExternalEditor(path) },
-                    onShowFileSearch: { appModel.showFileSearchSheet = true }
+                    onShowFileSearch: { appModel.showFileSearchSheet = true },
+                    onRequestCreateFile: { parent in
+                        appModel.fileNameSheetIntent = .newFile(parent: parent)
+                    },
+                    onRequestCreateFolder: { parent in
+                        appModel.fileNameSheetIntent = .newFolder(parent: parent)
+                    },
+                    onRequestRename: { path, isFolder in
+                        appModel.fileNameSheetIntent = .rename(path: path, isFolder: isFolder)
+                    },
+                    onRequestDelete: { path, isFolder in
+                        appModel.fileDeleteConfirmation = FileDeleteConfirmation(
+                            path: path, isFolder: isFolder
+                        )
+                    }
                 )
                 .task(id: appModel.selectedWorkspaceId) {
                     // Workspace 전환 시 다른 워크스페이스의 stale tab 정리 (ADR-038 R2).

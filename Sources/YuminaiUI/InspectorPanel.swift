@@ -66,6 +66,10 @@ public struct InspectorPanel: View {
     public let onRefreshFileTree: () -> Void
     public let onOpenFileInExternalEditor: (String) -> Void
     public let onShowFileSearch: () -> Void
+    public let onRequestCreateFile: (String) -> Void
+    public let onRequestCreateFolder: (String) -> Void
+    public let onRequestRename: (String, Bool) -> Void
+    public let onRequestDelete: (String, Bool) -> Void
 
     // Diff review (ADR-027 phase A3)
     public let pendingChanges: [ChangedFile]
@@ -152,7 +156,11 @@ public struct InspectorPanel: View {
         onDiscardFileEdits: @escaping () -> Void = {},
         onRefreshFileTree: @escaping () -> Void = {},
         onOpenFileInExternalEditor: @escaping (String) -> Void = { _ in },
-        onShowFileSearch: @escaping () -> Void = {}
+        onShowFileSearch: @escaping () -> Void = {},
+        onRequestCreateFile: @escaping (String) -> Void = { _ in },
+        onRequestCreateFolder: @escaping (String) -> Void = { _ in },
+        onRequestRename: @escaping (String, Bool) -> Void = { _, _ in },
+        onRequestDelete: @escaping (String, Bool) -> Void = { _, _ in }
     ) {
         self._tab = tab
         self.usage = usage
@@ -219,6 +227,10 @@ public struct InspectorPanel: View {
         self.onRefreshFileTree = onRefreshFileTree
         self.onOpenFileInExternalEditor = onOpenFileInExternalEditor
         self.onShowFileSearch = onShowFileSearch
+        self.onRequestCreateFile = onRequestCreateFile
+        self.onRequestCreateFolder = onRequestCreateFolder
+        self.onRequestRename = onRequestRename
+        self.onRequestDelete = onRequestDelete
     }
 
     public var body: some View {
@@ -300,7 +312,11 @@ public struct InspectorPanel: View {
                 onDiscardEdits: onDiscardFileEdits,
                 onRefreshTree: onRefreshFileTree,
                 onOpenInExternalEditor: onOpenFileInExternalEditor,
-                onShowSearch: onShowFileSearch
+                onShowSearch: onShowFileSearch,
+                onRequestCreateFile: onRequestCreateFile,
+                onRequestCreateFolder: onRequestCreateFolder,
+                onRequestRename: onRequestRename,
+                onRequestDelete: onRequestDelete
             )
             .frame(maxWidth: .infinity, maxHeight: .infinity)
         case .changes:

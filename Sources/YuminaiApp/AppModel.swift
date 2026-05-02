@@ -118,6 +118,9 @@ public final class AppModel {
     public var activeFileTabId: UUID?
     /// File search (Cmd+P, ADR-038 E3) 표시 여부
     public var showFileSearchSheet: Bool = false
+    /// File CRUD sheet/alert (ADR-039 R3)
+    public var fileNameSheetIntent: FileNameSheetIntent?
+    public var fileDeleteConfirmation: FileDeleteConfirmation?
     private var workspaceFileTreeActor: WorkspaceFileTree?
 
     /// 활성 tab — UI에 표시되는 파일.
@@ -1297,6 +1300,103 @@ public final class AppModel {
               let idx = openFileTabs.firstIndex(where: { $0.id == id }) else { return }
         openFileTabs[idx].draft = openFileTabs[idx].savedContents
         openFileTabs[idx].isEditing = false
+    }
+
+    // MARK: - File CRUD (ADR-039 R3)
+
+    /// 새 파일 생성 + 트리 refresh + 새 tab 자동 열기.
+    public func createWorkspaceFile(at relativePath: String) async {
+        guard let actor = workspaceFileTreeActor else { return }
+        do {
+            let path = try await actor.createFile(relativePath)
+            await refreshWorkspaceFileTree()
+            await selectWorkspaceFile(path)
+        } catch {
+            self.error = error.localizedDescription
+        }
+    }
+
+    /// 새 폴더 생성 + 트리 refresh.
+    public func createWorkspaceFolder(at relativePath: String) async {
+        guard let actor = workspaceFileTreeActor else { return }
+        do {
+            try await actor.createFolder(relativePath)
+            await refreshWorkspaceFileTree()
+        } catch {
+            self.error = error.localizedDescription
+        }
+    }
+
+    /// 파일/폴더 이름 변경 + 트리 refresh + 열린 tab의 path 업데이트 (rename된 파일 또는 그 하위).
+    public func renameWorkspaceNode(at relativePath: String, to newName: String) async {
+        guard let actor = workspaceFileTreeActor else { return }
+        do {
+            let newPath = try await actor.rename(relativePath, to: newName)
+            // 열린 tab 중 rename된 파일 (또는 폴더 rename으로 prefix 변경된 파일)의 path 업데이트
+            let oldPrefix = relativePath
+            let newPrefix = newPath
+            for idx in openFileTabs.indices {
+                let p = openFileTabs[idx].path
+                if p == oldPrefix {
+                    openFileTabs[idx] = FileTab(
+                        id: openFileTabs[idx].id,
+                        path: newPrefix,
+                        savedContents: openFileTabs[idx].savedContents,
+                        draft: openFileTabs[idx].draft,
+                        isEditing: openFileTabs[idx].isEditing
+                    )
+                } else if p.hasPrefix(oldPrefix + "/") {
+                    let suffix = p.dropFirst(oldPrefix.count + 1)
+                    openFileTabs[idx] = FileTab(
+                        id: openFileTabs[idx].id,
+                        path: "\(newPrefix)/\(suffix)",
+                        savedContents: openFileTabs[idx].savedContents,
+                        draft: openFileTabs[idx].draft,
+                        isEditing: openFileTabs[idx].isEditing
+                    )
+                }
+            }
+            await refreshWorkspaceFileTree()
+        } catch {
+            self.error = error.localizedDescription
+        }
+    }
+
+    /// FileNameSheet 제출 핸들러 — intent에 따라 적절한 CRUD 호출.
+    public func commitFileNameIntent(_ intent: FileNameSheetIntent, name: String) async {
+        switch intent {
+        case .newFile(let parent):
+            let path = parent.isEmpty ? name : "\(parent)/\(name)"
+            await createWorkspaceFile(at: path)
+        case .newFolder(let parent):
+            let path = parent.isEmpty ? name : "\(parent)/\(name)"
+            await createWorkspaceFolder(at: path)
+        case .rename(let path, _):
+            await renameWorkspaceNode(at: path, to: name)
+        }
+    }
+
+    /// 파일/폴더 삭제 + 트리 refresh + 영향받는 tab 강제 닫기 (dirty 무시 — 사용자가 명시 삭제).
+    public func deleteWorkspaceNode(at relativePath: String) async {
+        guard let actor = workspaceFileTreeActor else { return }
+        do {
+            try await actor.delete(relativePath)
+            // 삭제된 path와 그 하위에 해당하는 tab 모두 close (강제 — 디스크에 없으니 dirty 의미 없음)
+            let affectedIds = openFileTabs
+                .filter { $0.path == relativePath || $0.path.hasPrefix(relativePath + "/") }
+                .map(\.id)
+            for id in affectedIds {
+                if let idx = openFileTabs.firstIndex(where: { $0.id == id }) {
+                    openFileTabs.remove(at: idx)
+                    if activeFileTabId == id {
+                        activeFileTabId = openFileTabs.last?.id
+                    }
+                }
+            }
+            await refreshWorkspaceFileTree()
+        } catch {
+            self.error = error.localizedDescription
+        }
     }
 
     /// Command Runner — workspace dir에서 명령 실행 + block 누적 (ADR-036 C4).

@@ -71,6 +71,96 @@ public actor WorkspaceFileTree {
         try contents.write(to: url, atomically: true, encoding: .utf8)
     }
 
+    // MARK: - CRUD (ADR-039 file rename/new/delete)
+
+    /// 새 파일 생성 — 빈 본문. 이미 존재하면 reject.
+    /// - parameter relativePath: rootURL 기준 상대 경로 (예: "src/new.swift")
+    /// - returns: 정규화된 상대 경로 (디스크 표준화 후)
+    @discardableResult
+    public func createFile(_ relativePath: String) async throws -> String {
+        let safe = try resolveSafePath(relativePath)
+        if FileManager.default.fileExists(atPath: safe.url.path) {
+            throw FileTreeError.alreadyExists(path: safe.relative)
+        }
+        let parent = safe.url.deletingLastPathComponent()
+        try FileManager.default.createDirectory(at: parent, withIntermediateDirectories: true)
+        FileManager.default.createFile(atPath: safe.url.path, contents: Data(), attributes: nil)
+        return safe.relative
+    }
+
+    /// 새 폴더 생성 — 중간 폴더 자동 생성. 이미 존재하면 reject.
+    @discardableResult
+    public func createFolder(_ relativePath: String) async throws -> String {
+        let safe = try resolveSafePath(relativePath)
+        if FileManager.default.fileExists(atPath: safe.url.path) {
+            throw FileTreeError.alreadyExists(path: safe.relative)
+        }
+        try FileManager.default.createDirectory(at: safe.url, withIntermediateDirectories: true)
+        return safe.relative
+    }
+
+    /// 파일 또는 폴더 이름 변경 — 같은 부모 디렉토리 내에서만.
+    /// 새 path가 이미 존재하면 reject.
+    /// - returns: 정규화된 새 상대 경로
+    @discardableResult
+    public func rename(_ relativePath: String, to newName: String) async throws -> String {
+        let trimmedName = newName.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmedName.isEmpty else {
+            throw FileTreeError.invalidName(name: newName)
+        }
+        guard !trimmedName.contains("/") && !trimmedName.contains("\\") else {
+            throw FileTreeError.invalidName(name: newName)
+        }
+        let source = try resolveSafePath(relativePath)
+        guard FileManager.default.fileExists(atPath: source.url.path) else {
+            throw FileTreeError.fileNotFound(path: relativePath)
+        }
+        let parentRel = (source.relative as NSString).deletingLastPathComponent
+        let newRelative = parentRel.isEmpty ? trimmedName : "\(parentRel)/\(trimmedName)"
+        let dest = try resolveSafePath(newRelative)
+        if FileManager.default.fileExists(atPath: dest.url.path) {
+            throw FileTreeError.alreadyExists(path: dest.relative)
+        }
+        try FileManager.default.moveItem(at: source.url, to: dest.url)
+        return dest.relative
+    }
+
+    /// 파일 또는 폴더 삭제 — 폴더는 재귀 삭제.
+    public func delete(_ relativePath: String) async throws {
+        let safe = try resolveSafePath(relativePath)
+        guard FileManager.default.fileExists(atPath: safe.url.path) else {
+            throw FileTreeError.fileNotFound(path: relativePath)
+        }
+        try FileManager.default.removeItem(at: safe.url)
+    }
+
+    // MARK: - Path Safety
+
+    /// 상대 경로를 검증하고 표준화된 URL + 정규 상대경로 반환.
+    /// - 빈 문자열 / 절대 경로 / `..` traversal 차단
+    /// - rootURL 외부 escape 차단 (standardize 후 prefix 검사)
+    nonisolated func resolveSafePath(_ relativePath: String) throws -> (url: URL, relative: String) {
+        let trimmed = relativePath.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else {
+            throw FileTreeError.invalidName(name: relativePath)
+        }
+        guard !trimmed.hasPrefix("/") else {
+            throw FileTreeError.invalidPath(path: relativePath, reason: "절대 경로는 허용되지 않아요")
+        }
+        let components = trimmed.split(separator: "/", omittingEmptySubsequences: true).map(String.init)
+        guard !components.contains("..") else {
+            throw FileTreeError.invalidPath(path: relativePath, reason: "‘..’ 경로 traversal은 허용되지 않아요")
+        }
+        let url = rootURL.appending(path: components.joined(separator: "/")).standardizedFileURL
+        let rootStandard = rootURL.standardizedFileURL.path
+        guard url.path.hasPrefix(rootStandard + "/") || url.path == rootStandard else {
+            throw FileTreeError.invalidPath(path: relativePath, reason: "워크스페이스 외부 경로는 허용되지 않아요")
+        }
+        let suffix = url.path.dropFirst(rootStandard.count)
+        let relative = String(suffix.drop(while: { $0 == "/" }))
+        return (url, relative)
+    }
+
     // MARK: - Private
 
     private func buildNodes(at folder: URL, relativeTo root: URL, depth: Int, maxDepth: Int) throws -> [FileNode] {
@@ -166,6 +256,9 @@ public enum FileTreeError: Error, LocalizedError, Sendable {
     case notFound(path: String)
     case fileNotFound(path: String)
     case tooLarge(path: String, size: Int, limit: Int)
+    case alreadyExists(path: String)
+    case invalidName(name: String)
+    case invalidPath(path: String, reason: String)
 
     public var errorDescription: String? {
         switch self {
@@ -174,6 +267,9 @@ public enum FileTreeError: Error, LocalizedError, Sendable {
         case .tooLarge(let p, let size, let limit):
             let mb = Double(size) / (1024 * 1024)
             return "파일이 너무 커요 (\(String(format: "%.1f", mb))MB > \(limit / 1_000_000)MB): \(p)"
+        case .alreadyExists(let p): return "이미 존재해요: \(p)"
+        case .invalidName(let n): return "유효하지 않은 이름: ‘\(n)’ (빈 이름이거나 ‘/’ 포함 불가)"
+        case .invalidPath(let p, let r): return "\(r): \(p)"
         }
     }
 }
