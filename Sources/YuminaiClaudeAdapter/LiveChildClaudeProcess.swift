@@ -33,6 +33,8 @@ public actor LiveChildClaudeProcess: ChildClaudeProcess {
     private let codexPath: URL
     private let environment: [String: String]
     private let defaultSettings: SessionSettings
+    /// **ADR-055 HIGH 2** — 진행 중인 process pid 추적. cancelAll() 시 모두 SIGTERM/SIGKILL.
+    private var activePids: Set<Int32> = []
 
     public init(
         claudePath: URL,
@@ -46,6 +48,27 @@ public actor LiveChildClaudeProcess: ChildClaudeProcess {
         self.defaultSettings = defaultSettings
     }
 
+    /// **ADR-055 HIGH 2** — 진행 중인 모든 child process kill (사용자 /cancel 응답).
+    public func cancelAll() async {
+        let pids = activePids
+        for pid in pids {
+            kill(pid, SIGTERM)
+        }
+        try? await Task.sleep(for: .milliseconds(500))
+        for pid in activePids {
+            kill(pid, SIGKILL)
+        }
+        activePids.removeAll()
+    }
+
+    private func registerPid(_ pid: Int32) {
+        activePids.insert(pid)
+    }
+
+    private func unregisterPid(_ pid: Int32) {
+        activePids.remove(pid)
+    }
+
     public func runOnce(
         prompt: String,
         in workspace: Workspace,
@@ -53,6 +76,10 @@ public actor LiveChildClaudeProcess: ChildClaudeProcess {
         purpose: ChildProcessPurpose,
         timeoutSeconds: Int = 60
     ) async throws -> ChildProcessOutput {
+        // ADR-055 HIGH 1 + #1 — ProjectProfile을 child process에 inject.
+        // `systemPromptAppendix()` 사용 → LiveClaudeAdapter와 정확히 같은 string → cache key 일치 → hit ↑.
+        let systemAppendix: String? = workspace.projectProfile.systemPromptAppendix()
+
         // agent별 binary 선택
         let binaryPath: URL
         let arguments: [String]
@@ -60,7 +87,9 @@ public actor LiveChildClaudeProcess: ChildClaudeProcess {
         case .claude:
             binaryPath = claudePath
             // Claude Code headless mode — `--print` 단일 호출 + stream-json 파싱
-            arguments = [
+            // ADR-055 HIGH 1 — ProjectProfile을 system prompt appendix로 inject
+            //                  → child process도 idiom/framework 인지 (큰 비효율 수정)
+            var args = [
                 "-p", prompt,
                 "--output-format", "json",
                 "--session-id", UUID().uuidString,
@@ -68,9 +97,14 @@ public actor LiveChildClaudeProcess: ChildClaudeProcess {
                 "--permission-mode", defaultSettings.permissionMode.rawValue,
                 "--effort", defaultSettings.effortLevel.rawValue
             ]
+            if let appendix = systemAppendix {
+                args.append(contentsOf: ["--append-system-prompt", appendix])
+            }
+            arguments = args
         case .codex:
             binaryPath = codexPath
             // codex CLI는 stdin을 읽음. prompt는 stdin으로 전달 (별도 처리 필요)
+            // ADR-055 HIGH 1 — codex는 --append-system-prompt 없으므로 prompt prefix로 inject
             arguments = ["exec", "--non-interactive"]
         }
 
@@ -103,9 +137,20 @@ public actor LiveChildClaudeProcess: ChildClaudeProcess {
             throw YuminaiError.claudeSpawnFailed(reason: "child process spawn 실패: \(error.localizedDescription)")
         }
 
-        // codex는 stdin으로 prompt 전달
+        // ADR-055 HIGH 2 — pid 등록 (cancelAll로 추적 가능)
+        let pid = process.processIdentifier
+        registerPid(pid)
+        defer { Task { await self.unregisterPid(pid) } }
+
+        // codex는 stdin으로 prompt 전달 (ADR-055 HIGH 1 — system appendix prefix)
         if agent == .codex {
-            try? stdinPipe.fileHandleForWriting.write(contentsOf: Data(prompt.utf8))
+            let codexPrompt: String
+            if let appendix = systemAppendix {
+                codexPrompt = "[프로젝트 컨텍스트]\n\(appendix)\n\n[작업]\n\(prompt)"
+            } else {
+                codexPrompt = prompt
+            }
+            try? stdinPipe.fileHandleForWriting.write(contentsOf: Data(codexPrompt.utf8))
             try? stdinPipe.fileHandleForWriting.close()
         }
 

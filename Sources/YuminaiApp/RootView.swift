@@ -74,6 +74,9 @@ struct RootView: View {
                 currentSessionUsage: appModel.currentSessionUsage,
                 allTimeUsage: appModel.allTimeUsage,
                 activeModel: appModel.activeSettings.model,
+                costSnapshot: appModel.costTracker.snapshot(),
+                externalTurnCount: appModel.externalTurnCount,
+                externalTurnCostUSD: appModel.externalTurnTotalCostUSD,
                 onClose: { appModel.showUsageDashboard = false }
             )
         }

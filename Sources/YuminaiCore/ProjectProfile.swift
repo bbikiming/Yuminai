@@ -47,18 +47,25 @@ public struct ProjectProfile: Sendable, Codable, Hashable {
 
     /// HandoffPromptBuilder + ModelCapabilityMatrix용 system context 한 줄.
     /// 예: "Next.js + TypeScript 웹 / PostgreSQL 백엔드 / Jest 테스트"
+    ///
+    /// **ADR-055 #1 — Anthropic prompt cache 친화적**:
+    /// - 결정적 ordering (platform → language → frameworks → backend → test → notes)
+    /// - 모든 변경 시 같은 prefix 유지 (notes 등 자주 변하는 부분은 마지막)
+    /// - cache_control marker는 caller (LiveClaudeAdapter)의 책임
+    /// → 같은 ProjectProfile은 매번 같은 string → Anthropic prompt cache hit ↑
     public func systemContextSummary() -> String {
         var parts: [String] = []
-        // Platform + primary language
+        // ADR-055 #1 — 결정적 ordering (cache key 일치율 ↑)
+        // Platform + primary language (가장 안정적, 거의 안 바뀜)
         if platform != .unknown {
             parts.append("\(platform.displayName)")
         }
         if primaryLanguage != .unknown {
             parts.append(primaryLanguage.displayName)
         }
-        // Frameworks
+        // Frameworks (sorted — cache key 안정화)
         if !frameworks.isEmpty {
-            parts.append(frameworks.joined(separator: " + "))
+            parts.append(frameworks.sorted().joined(separator: " + "))
         }
         // Backend
         if hasBackend, let backend = backendLanguage, backend != .unknown {
@@ -70,11 +77,24 @@ public struct ProjectProfile: Sendable, Codable, Hashable {
         if let test = testFramework, !test.isEmpty {
             parts.append("\(test) 테스트")
         }
-        // Notes
+        // Notes (가장 자주 변경 — 끝에 배치, prefix는 안정 유지)
         if !notes.isEmpty {
             parts.append("note: \(notes)")
         }
         return parts.isEmpty ? "(프로필 미설정)" : parts.joined(separator: " / ")
+    }
+
+    /// **ADR-055 #1** — Anthropic prompt cache marker 포함 system prompt appendix.
+    /// LiveClaudeAdapter / LiveChildClaudeProcess 모두 같은 형식으로 inject → cache key 일치.
+    ///
+    /// Anthropic API의 `cache_control: {"type": "ephemeral"}` marker는 CLI 옵션으로는 직접
+    /// 노출되지 않지만, **prompt 자체가 같으면 자동 cache hit**됨.
+    /// → 결정적 ordering + 같은 prefix가 핵심.
+    public func systemPromptAppendix() -> String? {
+        let summary = systemContextSummary()
+        guard summary != "(프로필 미설정)" else { return nil }
+        // 같은 prefix 유지 (메인/child 모두 동일 string)
+        return "프로젝트 컨텍스트: \(summary)\n적절한 idiom과 framework convention을 따라주세요."
     }
 }
 

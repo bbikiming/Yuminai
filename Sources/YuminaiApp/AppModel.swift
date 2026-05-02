@@ -323,6 +323,15 @@ public final class AppModel {
     /// Aider architect_coder.py + Cline SubagentRunStats 패턴.
     public let costTracker: CostTracker = CostTracker()
 
+    /// **ADR-055 #5** — Routing learning store (cancel된 keyword를 mute, 사용자 정의 keyword 추가).
+    public let routingLearningStore: RoutingLearningStore = RoutingLearningStore()
+    /// in-memory snapshot (UI binding용)
+    public var routingLearningSnapshot: RoutingLearningStore.Snapshot = RoutingLearningStore.Snapshot(
+        mutedKeywords: [],
+        cancelCounts: [:],
+        customKeywords: [:]
+    )
+
     /// ADR-054 — 진행 중인 ChildClaudeProcess (decomposition/rehearsal/parallel) progress.
     /// UI가 spinner/badge 표시. 완료/실패 시 자동 prune (3초 후).
     public var activeChildProcesses: [ChildProcessProgress] = []
@@ -475,6 +484,8 @@ public final class AppModel {
         // ADR-052 — routing decision log + palette pin/recent 로드
         await loadRoutingDecisionLog()
         await loadPalettePins()
+        // ADR-055 #5 — routing learning snapshot 로드
+        routingLearningSnapshot = await routingLearningStore.snapshot()
     }
 
     // MARK: - Obsidian Vault
@@ -1308,12 +1319,29 @@ public final class AppModel {
                     tokenCount: result.outputTokens
                 )
                 harness.appendSystem("✓ Pane 2 (\(secondaryPane.agentKind.shortLabel)) 완료 — \(result.durationMs)ms, $\(String(format: "%.4f", result.costUSD))")
+                // ADR-055 HIGH 3 — Telegram forward
+                notifyBoundBridgeChildProcessResult(
+                    purpose: .parallel,
+                    agent: secondaryPane.agentKind,
+                    resultText: "[Pane 2 — \(secondary.title)]\n\n\(result.resultText)",
+                    durationMs: result.durationMs,
+                    costUSD: result.costUSD,
+                    success: true
+                )
             } else {
                 completeChildProcess(progressId, status: .failed)
                 harness.updateTaskStatus(secondary.id, .failed, output: result.resultText)
                 // Devin coordinator 권고: 한 쪽 실패 시 다른 쪽 pause + user prompt (silent kill 금지)
                 harness.appendSystem("⚠ Pane 2 실패 — Pane 1 결과는 보존. user 검토 후 결정")
                 error = "병렬 실행 중 Pane 2 실패: \(result.resultText.prefix(200))"
+                notifyBoundBridgeChildProcessResult(
+                    purpose: .parallel,
+                    agent: secondaryPane.agentKind,
+                    resultText: "Pane 2 실패: \(result.resultText.prefix(300))",
+                    durationMs: result.durationMs,
+                    costUSD: 0,
+                    success: false
+                )
             }
             persistCurrentHarnessState()
         } else {
@@ -1329,6 +1357,7 @@ public final class AppModel {
     // MARK: - ADR-054 ChildProcess progress helpers
 
     /// ChildClaudeProcess 시작 시 등록 — UI에 spinner 표시.
+    /// **ADR-055 HIGH 3** — bound workspace이면 Telegram bridge에도 시작 알림 forward.
     @discardableResult
     public func registerChildProcess(
         purpose: ChildProcessPurpose,
@@ -1342,6 +1371,15 @@ public final class AppModel {
             status: .running
         )
         activeChildProcesses.append(progress)
+        // ADR-055 HIGH 3 — bound workspace은 Telegram에 시작 알림
+        if let bridge = sessionBridge,
+           let bound = preferences.telegramBoundWorkspaceId,
+           selectedWorkspaceId == bound {
+            let p = purpose.rawValue
+            let a = agent.shortLabel
+            let ctx = context
+            Task { await bridge.notifyChildProcessStart(purpose: p, agent: a, context: ctx) }
+        }
         return progress.id
     }
 
@@ -1355,6 +1393,34 @@ public final class AppModel {
             await MainActor.run {
                 self?.activeChildProcesses.removeAll { $0.id == id }
             }
+        }
+    }
+
+    /// **ADR-055 HIGH 3** — ChildProcess 결과를 Telegram에 forward (bound workspace만).
+    /// 호출자: decomposeUserTask / launchRehearsal / runReadyTasksInParallel 완료 후.
+    public func notifyBoundBridgeChildProcessResult(
+        purpose: ChildProcessPurpose,
+        agent: AgentKind,
+        resultText: String,
+        durationMs: Int,
+        costUSD: Double,
+        success: Bool
+    ) {
+        guard let bridge = sessionBridge,
+              let bound = preferences.telegramBoundWorkspaceId,
+              selectedWorkspaceId == bound
+        else { return }
+        let p = purpose.rawValue
+        let a = agent.shortLabel
+        Task {
+            await bridge.notifyChildProcessComplete(
+                purpose: p,
+                agent: a,
+                resultText: resultText,
+                durationMs: durationMs,
+                costUSD: costUSD,
+                success: success
+            )
         }
     }
 
@@ -1779,10 +1845,29 @@ public final class AppModel {
                 }
                 self.error = "✓ 작업 \(parsed.count)개로 분해됨 (격리 호출, $\(String(format: "%.4f", output.costUSD)))"
                 persistCurrentHarnessState()
+                // ADR-055 HIGH 3 — Telegram에 결과 forward
+                let summary = "\(parsed.count)개 sub-task로 분해:\n" +
+                    parsed.enumerated().map { "  \($0.offset + 1). \($0.element.title)" }.joined(separator: "\n")
+                notifyBoundBridgeChildProcessResult(
+                    purpose: .decomposition,
+                    agent: workspace.agentKind,
+                    resultText: summary,
+                    durationMs: output.durationMs,
+                    costUSD: output.costUSD,
+                    success: true
+                )
                 return parsed.count
             } catch {
                 completeChildProcess(progressId, status: .failed)
                 self.error = "Decomposition 호출 실패: \(error.localizedDescription)"
+                notifyBoundBridgeChildProcessResult(
+                    purpose: .decomposition,
+                    agent: workspace.agentKind,
+                    resultText: "실패: \(error.localizedDescription)",
+                    durationMs: 0,
+                    costUSD: 0,
+                    success: false
+                )
                 return 0
             }
         }
@@ -1881,7 +1966,12 @@ public final class AppModel {
     /// **side effect**: pane 전환 + SharedLog 기록 + RoutingDecisionLog append. inputText는 caller 책임.
     public func applyHarnessAutoRoutingIfNeeded(userText: String) async -> String? {
         guard preferences.harnessAutoRoutingEnabled else { return nil }
-        let classification = ModelCapabilityMatrix.classifyTaskKind(userText)
+        // ADR-055 #5 — 사용자 학습 결과 반영 (mute + custom keyword)
+        let classification = ModelCapabilityMatrix.classifyTaskKind(
+            userText,
+            mutedKeywords: routingLearningSnapshot.mutedKeywords,
+            customKeywords: routingLearningSnapshot.customKeywords
+        )
         let recommended = ModelCapabilityMatrix.recommend(for: classification.kind)
         guard let workspace = currentWorkspace else { return nil }
         let currentKind = workspace.agentKind
@@ -1941,6 +2031,19 @@ public final class AppModel {
                         outcome: .cancelled,
                         estimatedHandoffTokens: handoff.estimatedTokens
                     )
+                    // ADR-055 #5 — cancel된 keyword 학습 (3회 이상 cancel되면 자동 mute)
+                    if let kw = classification.matchedKeyword {
+                        await routingLearningStore.recordCancel(keyword: kw)
+                        routingLearningSnapshot = await routingLearningStore.snapshot()
+                        // 사용자에게 학습 알림
+                        let count = routingLearningSnapshot.cancelCounts[kw] ?? 0
+                        if routingLearningSnapshot.mutedKeywords.contains(kw) {
+                            harness.appendSystem("🤖 학습: ‘\(kw)’ keyword가 \(count)회 cancel됨 → 앞으로 자동 routing 안 함 (Settings에서 unmute 가능)")
+                        } else if count >= 2 {
+                            let remain = RoutingLearningStore.muteThreshold - count
+                            harness.appendSystem("🤖 학습 진행: ‘\(kw)’가 \(count)회 cancel됨 (\(remain)회 더면 자동 mute)")
+                        }
+                    }
                     return nil
                 }
             }
@@ -2186,6 +2289,15 @@ public final class AppModel {
                 rehearsalsByTask[taskId]?[idx] = run
             }
             error = "✓ 리허설 완료: \(agent.shortLabel) (\(output.durationMs)ms, $\(String(format: "%.4f", output.costUSD)))"
+            // ADR-055 HIGH 3 — Telegram forward
+            notifyBoundBridgeChildProcessResult(
+                purpose: .rehearsal,
+                agent: agent,
+                resultText: "[\(task.title)] 리허설 결과:\n\n\(output.resultText)",
+                durationMs: output.durationMs,
+                costUSD: output.costUSD,
+                success: true
+            )
         } catch {
             completeChildProcess(progressId, status: .failed)
             run.status = .failed
@@ -2196,6 +2308,14 @@ public final class AppModel {
                 rehearsalsByTask[taskId]?[idx] = run
             }
             self.error = "리허설 실패: \(error.localizedDescription)"
+            notifyBoundBridgeChildProcessResult(
+                purpose: .rehearsal,
+                agent: agent,
+                resultText: "리허설 실패: \(error.localizedDescription)",
+                durationMs: 0,
+                costUSD: 0,
+                success: false
+            )
         }
     }
 
@@ -2315,10 +2435,16 @@ public final class AppModel {
                 Task {
                     await dispatcher?.dispatch(category: category, message: summary)
                 }
-            } else if externalTurnCount > 0 {
-                // ADR-045 R2.H5 — 외부 turn 누적 비용 추적 (마지막 turn의 cost를 누적치에 추가)
-                // 외부 turn이 한 번이라도 발생했고 bound chain이 진행 중인 경우만 — 혼합 시나리오에서 over-counting 가능성 있으나 단순화 우선
-                externalTurnTotalCostUSD += currentSessionUsage.costUSD
+            } else if isExternalTurn {
+                // ADR-055 HIGH 4 — 외부 turn cost를 정확히 추적 (delta only).
+                //   이전 버그: `currentSessionUsage.costUSD` 전체를 매번 누적 → N배 over-counting
+                //   수정: turn 시작 시 cost snapshot → 종료 시 차이만 누적
+                let delta = currentSessionUsage.costUSD - externalTurnStartCostSnapshot
+                if delta > 0 {
+                    externalTurnTotalCostUSD += delta
+                }
+                externalTurnStartCostSnapshot = currentSessionUsage.costUSD
+                isExternalTurn = false  // turn 종료
             }
             // Checkpoint 종료 + 변경 캡처 + Delivery loop 자동 실행 (ADR-029)
             if let workspace = currentWorkspace {
@@ -2968,6 +3094,15 @@ public final class AppModel {
             Task { await adapter.terminate(claudeSession) }
         }
         isStreaming = false
+        // ADR-055 HIGH 2 — 진행 중인 ChildProcess도 모두 kill
+        // (decomposition / rehearsal / parallel 격리 호출이 cancel 안 되던 문제 수정)
+        if let child = childProcess {
+            Task { await child.cancelAll() }
+        }
+        // 진행 중 progress badge들도 cancelled로 (UI 즉시 반응)
+        for idx in activeChildProcesses.indices where activeChildProcesses[idx].status == .running || activeChildProcesses[idx].status == .starting {
+            activeChildProcesses[idx].status = .failed
+        }
     }
 
     // MARK: - secrets
@@ -3269,9 +3404,16 @@ public final class AppModel {
     /// hour 단위로 reset되지 않고 누적 — /status에서 표시.
     public var externalTurnCount: Int = 0
     public var externalTurnTotalCostUSD: Double = 0
+    /// **ADR-055 HIGH 4** — 외부 turn 시작 시점의 cost snapshot (over-counting 방지).
+    public var externalTurnStartCostSnapshot: Double = 0
+    /// **ADR-055 HIGH 4** — 현재 turn이 외부(Telegram)에서 시작됐는지.
+    public var isExternalTurn: Bool = false
 
     public func incrementExternalTurnCount() {
         externalTurnCount += 1
+        // ADR-055 HIGH 4 — turn 시작 시 cost snapshot
+        externalTurnStartCostSnapshot = currentSessionUsage.costUSD
+        isExternalTurn = true
     }
 
     /// /status 명령에 응답할 텍스트 생성. ADR-045 R2.H5 — 외부 turn 비용 + context % 가시화.

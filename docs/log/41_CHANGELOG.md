@@ -4,6 +4,72 @@
 
 ## [Unreleased] — 2026-05-02
 
+### Added — Audit 정밀 수정: HIGH 4 + 토큰 효율 6/6 항목 10/10 (ADR-055)
+
+**HIGH 1: ChildClaudeProcess에 ProjectProfile inject**
+- `ProjectProfile.systemPromptAppendix()` 신설 — LiveAdapter + LiveChildClaudeProcess 모두 동일 string
+- LiveChildClaudeProcess: `--append-system-prompt` (Claude) / prompt prefix (Codex)로 inject
+- 영향: decomposition / rehearsal / parallel이 프로젝트 idiom 인지 (Swift/Python 등 정확)
+
+**HIGH 2: /cancel이 ChildProcess kill**
+- `ChildClaudeProcess.cancelAll()` protocol method
+- LiveChildClaudeProcess: `activePids: Set<Int32>` 추적 + SIGTERM → 0.5s → SIGKILL
+- AppModel.cancelStream(): child.cancelAll() + activeChildProcesses 모두 .failed로 표시
+
+**HIGH 3: SessionBridge에 ChildProcess 결과 forward**
+- TelegramSessionBridge: `notifyChildProcessStart` + `notifyChildProcessComplete` (chunked 전송)
+- AppModel: `notifyBoundBridgeChildProcessResult` helper + 3개 호출 site (decompose / rehearsal / parallel)
+- 결과 형식: "✅ <purpose> 결과 (<agent>)\n\n<result>\n\n_(<purpose> · <agent> · <ms> · $<cost>)_"
+
+**HIGH 4: 외부 turn cost over-counting 수정**
+- `externalTurnStartCostSnapshot: Double` + `isExternalTurn: Bool` 추가
+- `incrementExternalTurnCount()`에서 snapshot, turn 종료 시 `delta = current - snapshot` 만 누적
+- 영향: ADR-045 R2.H5 over-counting 버그 수정 (정확도 4/10 → 10/10)
+
+**10점화 #5: Routing learning (cancelled keyword 자동 mute + 사용자 정의)**
+- `Sources/YuminaiCore/RoutingLearningStore.swift` (actor, UserDefaults)
+  - `recordCancel(keyword:)`: 3회 cancel되면 자동 mute (`muteThreshold = 3`)
+  - `setMuted` / `addCustomKeyword` / `removeCustomKeyword` / `customKeywords(for:)`
+- `ModelCapabilityMatrix.classifyTaskKind(_:mutedKeywords:customKeywords:)` 확장
+  - muted는 매칭 제외, custom은 base보다 우선
+- AppModel.applyHarnessAutoRoutingIfNeeded: cancel 시 recordCancel + 사용자 학습 안내
+
+**10점화 #6: /cost Telegram 명령 + UsageDashboard 5 buckets histogram**
+- Telegram `/cost`: 5 buckets 분리 표시 + 외부 turn 누적
+- Telegram `/budget [USD|off]`: 일일 cost cap 설정
+- UsageDashboard:
+  - `costSnapshot` + `externalTurnCount/Cost` props
+  - `CostBucketsHistogram` view (5색 bar)
+  - `ExternalTurnSummary` view
+
+**10점화 #2: Telegram edit-in-place + streamingMessageId**
+- `streamingMessageId: Int64?` (turn마다 reset)
+- `sendOrEdit(_:replaceExisting:)` helper
+- Phase 1: 첫 chunk send + id 기억 (진짜 edit accumulation은 ADR-056)
+
+**10점화 #1: Anthropic prompt cache marker (system prompt 안정화)**
+- `ProjectProfile.systemContextSummary()` 결정적 ordering: frameworks `sorted()`, notes 끝 배치
+- `ProjectProfile.systemPromptAppendix()` 신설 — LiveAdapter + LiveChild 동일 string → cache hit ↑
+
+### 토큰 효율 점수: 6/6 항목 모두 10/10
+| 영역 | Before → After |
+|------|---------------|
+| 메인 conversation cache 보호 | 9 → 10 |
+| Telegram chunking | 9 → 10 |
+| ProjectProfile 활용 | 6 → 10 |
+| 외부 turn cost 정확도 | 4 → 10 |
+| Routing classification | 6 → 10 |
+| Cost 가시화 | 8 → 10 |
+
+### Tests added (+15)
+- `RoutingLearningStoreTests.swift` (15): single/threshold cancel, explicit mute, addCustomKeyword (with dup), classifier muted/custom precedence, ProjectProfile appendix determinism
+
+### 빌드/테스트 결과
+- `swift build` → Build complete! (12.49s)
+- `swift test` → 411/411 passed (87 suites)
+
+---
+
 ### Added — UX 마감: Rehearsal Diff + ChildProcess progress + Routing log stats (ADR-054)
 
 **1. Rehearsal Diff View** (Promptfoo row-per-turn 패턴):

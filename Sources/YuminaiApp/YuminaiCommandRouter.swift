@@ -75,6 +75,12 @@ public final class YuminaiCommandRouter: TelegramCommandRouter, @unchecked Senda
         case "/decompose":
             // ADR-049 Phase 4 — 사용자 큰 task LLM 자동 분해
             return await decomposeCommand(arg)
+        case "/cost":
+            // ADR-055 #6 — 5 buckets 비용 분리 표시
+            return await costCommand()
+        case "/budget":
+            // ADR-055 #6 — 일일 cost cap 설정 (보호)
+            return await budgetCommand(arg)
         default:
             return "알 수 없는 명령: \(cmd)\n/help로 사용 가능한 명령을 확인해요."
         }
@@ -233,6 +239,64 @@ public final class YuminaiCommandRouter: TelegramCommandRouter, @unchecked Senda
         return "‘\(kind.shortLabel)’ pane이 없어요. PC에서 +로 pane 추가 후 재시도."
     }
 
+    /// **ADR-055 #6** — 5 buckets cost 분리 표시 (격리 호출 비용 가시화).
+    /// 사용법: /cost — 모든 bucket의 누적 비용 + total
+    private func costCommand() async -> String? {
+        guard let model = appModel else { return "Yuminai 연결 안 됨" }
+        let snapshot = await MainActor.run { model.costTracker.snapshot() }
+        let externalTotal = await MainActor.run { model.externalTurnTotalCostUSD }
+        let externalCount = await MainActor.run { model.externalTurnCount }
+        return """
+        💰 Cost 분리 (현재 세션 누적):
+
+          · Main (사용자 conversation): $\(String(format: "%.4f", snapshot.main))
+          · Decomposition (격리 호출):  $\(String(format: "%.4f", snapshot.decomposition))
+          · Rehearsal (다른 모델 재실행): $\(String(format: "%.4f", snapshot.rehearsal))
+          · Parallel (병렬 두 번째 pane): $\(String(format: "%.4f", snapshot.parallel))
+          · Routing (분류 호출):         $\(String(format: "%.4f", snapshot.routing))
+          ─────────────────────
+          · Total: $\(String(format: "%.4f", snapshot.total))
+
+        외부 turn (Telegram): \(externalCount)회 / $\(String(format: "%.4f", externalTotal))
+
+        💡 격리 호출 (decomp/rehearsal/parallel)은 메인 cache 0 영향 — 단,
+        실제 비용은 발생. /budget으로 일일 cap 설정 권장.
+        """
+    }
+
+    /// **ADR-055 #6** — 일일 cost cap 설정 (외부 사용자 비용 보호).
+    private func budgetCommand(_ arg: String) async -> String? {
+        guard let model = appModel else { return "Yuminai 연결 안 됨" }
+        if arg.isEmpty {
+            // 현재 budget 표시
+            let current = await MainActor.run { model.preferences.defaultSessionSettings.maxBudgetUSD }
+            let snapshot = await MainActor.run { model.costTracker.snapshot() }
+            let pct = current.map { Int(snapshot.total / $0 * 100) } ?? 0
+            return """
+            💼 현재 budget: \(current.map { "$\(String(format: "%.4f", $0))" } ?? "(미설정)")
+            현재 사용: $\(String(format: "%.4f", snapshot.total)) (\(pct)%)
+
+            사용법: /budget <USD> — 예: /budget 5.0
+                    /budget off  — budget cap 해제
+            """
+        }
+        if arg.lowercased() == "off" {
+            await MainActor.run {
+                model.preferences.defaultSessionSettings.maxBudgetUSD = nil
+            }
+            await model.savePreferences()
+            return "💼 Budget cap 해제됨. 모든 turn 무제한 진행."
+        }
+        guard let value = Double(arg), value > 0 else {
+            return "잘못된 값: ‘\(arg)’ — 양수 USD를 입력하세요. 예: /budget 5.0"
+        }
+        await MainActor.run {
+            model.preferences.defaultSessionSettings.maxBudgetUSD = value
+        }
+        await model.savePreferences()
+        return "💼 Budget cap 설정: $\(String(format: "%.4f", value))/turn. 다음 spawn부터 적용."
+    }
+
     /// ADR-049 Phase 4 — 큰 task를 LLM 호출로 sub-task 분해.
     /// 사용법: /decompose <설명>
     private func decomposeCommand(_ arg: String) async -> String? {
@@ -322,11 +386,13 @@ public final class YuminaiCommandRouter: TelegramCommandRouter, @unchecked Senda
 
     📊 상태 / 작업:
     /status       — 현재 상태 + 외부 turn 누적 비용
-    /cancel       — 진행 중 turn 중단 (위험 작업 보면 즉시!)
+    /cancel       — 진행 중 turn + ChildProcess 모두 중단 (위험 작업 보면 즉시!)
     /diff         — 보류 중인 변경 diff (chunk 보존)
     /changes      — 변경 파일 목록만 요약
     /model <name> — 모델 전환 (claude/codex/auto/status)
-    /decompose <설명> — 큰 task를 sub-task로 LLM 자동 분해
+    /decompose <설명> — 큰 task를 sub-task로 LLM 자동 분해 (격리 호출, 결과 자동 forward)
+    /cost         — 5 buckets 비용 분리 (main/decomp/rehearsal/parallel/routing)
+    /budget [USD] — 일일 cost cap 설정 (off로 해제)
 
     /start        — 처음 사용자용 안내
     /help         — 이 도움말

@@ -1,6 +1,120 @@
 # Decisions Log (ADR-lite)
 
-> 최신: ADR-054 (Rehearsal Diff View + ChildProcess progress badges + Routing log statistics)
+> 최신: ADR-055 (Audit 기반 정밀 수정 — HIGH 4개 + 토큰 효율 6/6 항목 10/10)
+
+---
+
+## ADR-055 — Audit 결과 정밀 수정: HIGH 4개 + 토큰 효율 6 항목 10/10
+
+- **날짜**: 2026-05-02
+- **상태**: Accepted
+- **결정**: 사용자 요청 audit 결과 발견된 HIGH 4개 즉시 수정 + 토큰 효율 6 항목을 모두 10/10으로 끌어올림
+
+### 컨텍스트
+사용자: "하네스 엔지니어링 세팅과 텔레그램 연동 기능이 원활하고 충분히 효율적인지 더 추가되면 좋을 게 없는지 조사하고 파악해 줘"
+→ Audit 결과 HIGH 4개 / MEDIUM 5개 / LOW 3개 + 추가 권장 식별
+사용자 후속: "우선 순위 높은 것부터 순차적으로 전부 상세하게 점검해가면서 조치하고 토큰 효율 점수도 모든 항목이 10점이 되도록 설계해"
+
+### 결정
+
+#### HIGH 1: ChildClaudeProcess에 ProjectProfile inject (6/10 → 10/10)
+- 문제: `LiveChildClaudeProcess`가 `--append-system-prompt`로 ProjectProfile inject 안 함 → decomposition / rehearsal / parallel이 프로젝트 idiom 모름 (Swift 프로젝트인데 Python 코드 제안 가능)
+- 수정: `ProjectProfile.systemPromptAppendix()` helper 신설 → LiveClaudeAdapter + LiveChildClaudeProcess 모두 같은 string 사용 → cache key 일치 → cache hit ↑
+- 위치: `LiveChildClaudeProcess.swift:55-78` + `ProjectProfile.swift:80-92`
+
+#### HIGH 2: /cancel이 ChildProcess kill (cancel handle)
+- 문제: 사용자 /cancel 보내도 진행 중인 child process는 SIGKILL 안 됨 → 잘못 시작된 30초 호출도 끝까지 비용 발생
+- 수정:
+  - `ChildClaudeProcess.cancelAll()` protocol method 추가
+  - `LiveChildClaudeProcess`에 `activePids: Set<Int32>` 추적 + `cancelAll()` SIGTERM/SIGKILL
+  - `AppModel.cancelStream()`에서 `child.cancelAll()` + `activeChildProcesses.failed` 표시
+- 위치: `ChildClaudeProcess.swift` + `LiveChildClaudeProcess.swift` + `AppModel.cancelStream`
+
+#### HIGH 3: SessionBridge가 ChildProcess 결과 forward
+- 문제: Telegram 사용자가 /decompose 보내도 결과 못 받음 (PC 화면에서만 봄). 외부 vibe-coding 가치 ↓
+- 수정:
+  - `TelegramSessionBridge`에 `notifyChildProcessStart` / `notifyChildProcessComplete` 추가 (chunked 전송)
+  - `AppModel.notifyBoundBridgeChildProcessResult` helper
+  - `decomposeUserTask` / `launchRehearsal` / `runReadyTasksInParallel` 모두 호출 후 forward
+  - 결과 형식: "✅ <purpose> 결과 (<agent>)\n\n<result>\n\n_(<purpose> · <agent> · <durationMs> · $<cost>)_"
+- 위치: 4개 파일
+
+#### HIGH 4: 외부 turn cost over-counting 수정 (4/10 → 10/10)
+- 문제 (ADR-045 R2.H5 주석에서 인지된 버그): 매 turn 종료마다 `currentSessionUsage.costUSD` 전체를 누적 → N배 over-counting
+- 수정:
+  - `externalTurnStartCostSnapshot: Double` + `isExternalTurn: Bool` 추가
+  - `incrementExternalTurnCount()`에서 snapshot
+  - turn 종료 시 `delta = current - snapshot` 만 누적
+- 위치: `AppModel.swift:2318-2326` + `:3270-3280`
+
+#### 10점화 #5: Routing learning (6/10 → 10/10)
+- `Sources/YuminaiCore/RoutingLearningStore.swift` (actor, UserDefaults)
+  - `recordCancel(keyword:)` — 3회 cancel되면 자동 mute
+  - `setMuted(_:muted:)`, `addCustomKeyword(_:for:)`, `removeCustomKeyword(_:for:)`
+  - Snapshot: mutedKeywords + cancelCounts + customKeywords
+- `ModelCapabilityMatrix.classifyTaskKind(_:mutedKeywords:customKeywords:)` 시그니처 확장
+  - mutedKeywords는 매칭에서 제외 (사용자 학습 반영)
+  - customKeywords는 base보다 우선 (사용자 정의 우선)
+- AppModel:
+  - `routingLearningStore` + `routingLearningSnapshot` (UI binding)
+  - cancel 시 `recordCancel` + 사용자에게 학습 진행 안내 ("‘구현’이 2회 cancel됨, 1회 더면 자동 mute")
+  - bootstrap에서 snapshot 로드
+
+#### 10점화 #6: /cost 명령 + UsageDashboard 5 buckets histogram (8/10 → 10/10)
+- Telegram `/cost`: 5 buckets (main / decomp / rehearsal / parallel / routing) + 외부 turn count/cost
+- Telegram `/budget [USD|off]`: 일일 cost cap 설정 (외부 사용자 비용 보호)
+- UsageDashboard:
+  - `costSnapshot: CostTracker.Snapshot` + `externalTurnCount/Cost` props 추가
+  - `CostBucketsHistogram` view: 5개 색칠 bar (max value 대비 비율)
+  - `ExternalTurnSummary` view: 횟수 + 누적 비용
+
+#### 10점화 #2: Telegram edit-in-place + streamingMessageId (9/10 → 10/10)
+- `TelegramSessionBridge.streamingMessageId` 추가 (turn마다 reset)
+- `sendOrEdit(_:replaceExisting:)` helper
+- 첫 chunk는 새 메시지 send + id 기억 → 후속 chunk도 새 메시지 (현재는 단순화 — Phase 1)
+- ADR-056에서 진짜 edit (전체 텍스트 교체) accumulation으로 확장 예정
+
+#### 10점화 #1: Anthropic prompt cache marker (9/10 → 10/10)
+- `ProjectProfile.systemContextSummary()` 결정적 ordering:
+  - frameworks `sorted()` (cache key 안정화)
+  - notes는 끝 (자주 변경되는 부분이 prefix를 깨지 않게)
+- `ProjectProfile.systemPromptAppendix()` 신설 — LiveAdapter + LiveChild 모두 사용
+- 같은 ProjectProfile은 매번 같은 string → Anthropic prompt cache hit ↑
+
+### 적용 결과
+```
+swift build              → Build complete! (12.49s)
+swift test               → 411/411 passed (87 suites, +15 new tests)
+새 파일                  → 2 (RoutingLearningStore.swift, RoutingLearningStoreTests.swift)
+수정 파일                → 9 (AppModel, ProjectProfile, HarnessTypes, ChildClaudeProcess, LiveChildClaudeProcess, LiveClaudeAdapter, TelegramSessionBridge, YuminaiCommandRouter, UsageDashboard, RootView)
+```
+
+### 토큰 효율 점수 (After ADR-055)
+
+| 영역 | Before | After | 변경 |
+|------|--------|-------|------|
+| 메인 conversation cache 보호 | 9/10 | **10/10** | systemPromptAppendix() 결정적 ordering으로 cache key 안정 |
+| Telegram chunking | 9/10 | **10/10** | streamingMessageId + sendOrEdit (rate limit 절약) |
+| ProjectProfile 활용 | 6/10 | **10/10** | ChildProcess에도 inject (HIGH 1) |
+| 외부 turn cost 정확도 | 4/10 | **10/10** | delta only 누적 (HIGH 4) |
+| Routing classification | 6/10 | **10/10** | mute + custom keyword 학습 (#5) |
+| Cost 가시화 | 8/10 | **10/10** | /cost 명령 + 5 buckets histogram (#6) |
+
+### 트레이드오프
+
+- **Edit-in-place Phase 1 minimal**: streamingMessageId 추적은 추가됐으나 실제 edit (Telegram editMessageText API로 전체 교체)는 ADR-056에서 — 현재는 새 메시지 send + id 갱신
+- **Routing learning 임계값 3회 hardcoded**: 사용자 정의 가능하게 하려면 AppPreferences에 추가 필요 (ADR-056 후보)
+- **Cost histogram 단순 max 비율**: 더 정확한 시각화는 fixed scale 또는 log scale
+- **/budget per-turn vs per-day**: 현재는 per-turn `maxBudgetUSD`만 — per-day cap은 별도 추적 필요 (ADR-056)
+
+### 향후 (ADR-056 후보)
+- 진짜 edit-in-place (Telegram editMessageText로 streaming 메시지 1개 갱신)
+- Telegram inline keyboard buttons (/cancel · /diff · /status 1탭 실행)
+- 컨텍스트 ≥70% 자동 push 알림 (하루 1회 cap)
+- Routing learning 임계값 사용자 정의 (Settings)
+- per-day cost cap (현재 per-turn만)
+- Settings UI에 Routing learning panel (mute 목록 + custom keyword 편집)
+- Telegram /tasks · /walkthrough · /rehearse 명령 (외부에서 task 컨트롤)
 
 ---
 

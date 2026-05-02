@@ -90,19 +90,37 @@ public enum ModelCapabilityMatrix {
 
     /// ADR-050 — XAI (explainable AI) 원칙: 어떤 keyword가 매칭됐는지 함께 반환.
     /// 사용자에게 "왜 이 모델로 routing됐는지" 설명할 때 사용.
-    public static func classifyTaskKind(_ userText: String) -> (kind: TaskKind, matchedKeyword: String?) {
+    /// **ADR-055 #5** — `mutedKeywords` + `customKeywords` 옵션으로 사용자 학습 결과 반영.
+    public static func classifyTaskKind(
+        _ userText: String,
+        mutedKeywords: Set<String> = [],
+        customKeywords: [String: [String]] = [:]
+    ) -> (kind: TaskKind, matchedKeyword: String?) {
         let lower = userText.lowercased()
-        let codeGenKeywords = ["구현", "코딩", "작성해줘", "implement", "write a function", "create a class", "write code", "코드 작성"]
-        let reviewKeywords = ["리뷰", "review", "검토", "improve", "개선", "리팩터", "refactor"]
-        let debugKeywords = ["버그", "에러", "fix", "디버그", "debug", "안 돌아가", "doesn't work", "고쳐"]
-        let planKeywords = ["계획", "plan", "어떻게", "how to", "설계", "architect", "approach"]
-        let searchKeywords = ["찾아", "search", "검색", "어디", "where is"]
+        // base keywords
+        let codeGenBase = ["구현", "코딩", "작성해줘", "implement", "write a function", "create a class", "write code", "코드 작성"]
+        let reviewBase = ["리뷰", "review", "검토", "improve", "개선", "리팩터", "refactor"]
+        let debugBase = ["버그", "에러", "fix", "디버그", "debug", "안 돌아가", "doesn't work", "고쳐"]
+        let planBase = ["계획", "plan", "어떻게", "how to", "설계", "architect", "approach"]
+        let searchBase = ["찾아", "search", "검색", "어디", "where is"]
 
-        if let m = codeGenKeywords.first(where: lower.contains) { return (.codeGeneration, m) }
-        if let m = reviewKeywords.first(where: lower.contains) { return (.codeReview, m) }
-        if let m = debugKeywords.first(where: lower.contains) { return (.debugging, m) }
-        if let m = planKeywords.first(where: lower.contains) { return (.planning, m) }
-        if let m = searchKeywords.first(where: lower.contains) { return (.longContextSearch, m) }
+        // ADR-055 #5 — custom keywords prepend (사용자 정의가 우선)
+        let codeGenKeywords = (customKeywords[TaskKind.codeGeneration.rawValue] ?? []) + codeGenBase
+        let reviewKeywords = (customKeywords[TaskKind.codeReview.rawValue] ?? []) + reviewBase
+        let debugKeywords = (customKeywords[TaskKind.debugging.rawValue] ?? []) + debugBase
+        let planKeywords = (customKeywords[TaskKind.planning.rawValue] ?? []) + planBase
+        let searchKeywords = (customKeywords[TaskKind.longContextSearch.rawValue] ?? []) + searchBase
+
+        // muted keyword는 매칭에서 제외 (학습 반영 — 사용자가 N회 cancel한 keyword)
+        func firstMatch(_ keywords: [String]) -> String? {
+            keywords.first { lower.contains($0) && !mutedKeywords.contains($0) }
+        }
+
+        if let m = firstMatch(codeGenKeywords) { return (.codeGeneration, m) }
+        if let m = firstMatch(reviewKeywords) { return (.codeReview, m) }
+        if let m = firstMatch(debugKeywords) { return (.debugging, m) }
+        if let m = firstMatch(planKeywords) { return (.planning, m) }
+        if let m = firstMatch(searchKeywords) { return (.longContextSearch, m) }
         return (.generalChat, nil)
     }
 

@@ -46,12 +46,12 @@ public final actor LiveClaudeAdapter: ClaudeAdapter {
             throw YuminaiError.claudeSpawnFailed(reason: "워크스페이스 디렉토리 없음: \(workspace.directoryPath)")
         }
 
-        // ADR-049 — projectProfile을 system prompt appendix로 자동 inject (Claude --append-system-prompt)
+        // ADR-049 + ADR-055 #1 — projectProfile을 system prompt appendix로 자동 inject.
         // Anthropic prompt caching 활용 — 같은 system context는 cache 적용됨.
+        // ADR-055 #1: `systemPromptAppendix()` 사용 — 결정적 ordering으로 cache key 안정화
+        // → child process도 같은 형식으로 inject 가능 (LiveChildClaudeProcess와 동일)
         var combinedExtraArgs = extraArguments
-        let profileSummary = workspace.projectProfile.systemContextSummary()
-        if profileSummary != "(프로필 미설정)" {
-            let appendix = "프로젝트 컨텍스트: \(profileSummary)\n적절한 idiom과 framework convention을 따라주세요."
+        if let appendix = workspace.projectProfile.systemPromptAppendix() {
             combinedExtraArgs.append(contentsOf: ["--append-system-prompt", appendix])
         }
 

@@ -30,6 +30,10 @@ public protocol ChildClaudeProcess: Sendable {
         purpose: ChildProcessPurpose,
         timeoutSeconds: Int
     ) async throws -> ChildProcessOutput
+
+    /// **ADR-055 HIGH 2** — 진행 중인 모든 child process kill (사용자 /cancel 응답).
+    /// 호출 후 진행 중이던 runOnce는 throw됨 (cancellation error).
+    func cancelAll() async
 }
 
 /// purpose enum — observability 및 cost bucket 라우팅용.
@@ -160,5 +164,9 @@ public actor MockChildClaudeProcess: ChildClaudeProcess {
             durationMs: 50,
             exitCode: 0
         )
+    }
+
+    public func cancelAll() async {
+        // mock은 즉시 응답이라 cancel할 게 없음
     }
 }
