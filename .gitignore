@@ -64,3 +64,4 @@ logs/
 
 # Notes auto-generated
 .obsidian/workspace*.json
+dist/

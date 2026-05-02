@@ -1,6 +1,99 @@
 # Decisions Log (ADR-lite)
 
-> 최신: ADR-067 (accuracy + auto-alert + ChartsDashboard SVG + multi-chat overlay + chat trend)
+> 최신: ADR-068 (브랜딩 마무리 — 앱 아이콘 + About + Splash + Info.plist + DMG)
+
+---
+
+## ADR-068 — 브랜딩 마무리 + 배포 패키지 (5 phases)
+
+- **날짜**: 2026-05-03
+- **상태**: Accepted
+
+### 결정
+
+#### Phase 1: Yuminai 앱 아이콘 디자인
+**컨셉**: "Convergence" — 3개 dot이 한 점으로 수렴하는 V/funnel 형태
+- multi-agent (claude/codex/etc) → unified harness conversation 표현
+- macOS Big Sur+ squircle (180px corner radius for 1024px canvas)
+- Brand cyan gradient (#0FA8C0 → #22C8E0 → #5BD9EE)
+- White minimal glyph + subtle shadow
+
+**파일**:
+- `App/Assets/AppIcon.svg` — vector master (1024×1024)
+- `App/Assets/AppIcon.iconset/` — 10 PNG sizes (16~1024)
+- `App/Assets/AppIcon.icns` — macOS bundle icon (570 KB)
+- `Sources/YuminaiUI/BrandLogo.swift` — SwiftUI Shapes 재현 (in-app render)
+
+#### Phase 2: About sheet
+- `Sources/YuminaiUI/AboutSheet.swift` (480×620)
+- BrandLogo (128px) + 앱 이름 + 버전
+- Tagline + 4 stat blocks (ADRs / Tests / Lines / Files)
+- Credits (Swift / Anthropic / OpenAI / Telegram / Charts)
+- ⌘K Palette 진입점 (`sheet.about`)
+
+#### Phase 3: Splash screen
+- `Sources/YuminaiUI/SplashScreen.swift`
+- Cyan gradient full-screen + BrandLogo (180px) + spring 애니메이션
+- 첫 실행: 2초 표시 + "처음 시작합니다…" 텍스트
+- 후속 실행: 0.8초 (빠른 인지)
+- 사용자 클릭 시 즉시 dismiss
+- AppModel.isFirstLaunch (UserDefaults) + showSplash (default true)
+- RootView ZStack overlay + opacity transition
+
+#### Phase 4: Info.plist + .app bundle metadata
+- `App/Info.plist`:
+  - CFBundleDisplayName, CFBundleIdentifier (com.yuminai.Yuminai)
+  - CFBundleVersion 1, CFBundleShortVersionString 1.0.0
+  - LSMinimumSystemVersion 14.0
+  - 권한 descriptions (Documents/Downloads/AppleEvents)
+  - NSAppTransportSecurity (api.telegram.org + api.anthropic.com 예외)
+  - LSApplicationCategoryType: developer-tools
+
+#### Phase 5: DMG 패키징 script
+- `App/build_app_bundle.sh` (실행 가능)
+- 단계:
+  1. `swift build -c release` (release binary)
+  2. `.app` bundle 구조 생성 (Contents/MacOS + Resources)
+  3. binary + Info.plist + AppIcon.icns + SwiftPM bundles 복사
+  4. ad-hoc codesign (local Gatekeeper 통과)
+  5. `--dmg` 옵션 시 DMG 생성 (UDZO 압축, /Applications symlink 포함)
+- 결과: `dist/Yuminai.app` + `dist/Yuminai-1.0.0.dmg`
+
+### 적용 결과
+```
+swift build              → Build complete! (10.29s)
+swift test               → 495/495 passed (102 suites)
+build_app_bundle.sh --dmg → ✅ 성공
+  · dist/Yuminai.app (170 MB binary + icon)
+  · dist/Yuminai-1.0.0.dmg (6.7 MB 압축)
+새 파일                  → 5 (AppIcon.svg/.icns + 10 PNGs, BrandLogo/AboutSheet/SplashScreen/Info.plist/build script)
+```
+
+### 디자인 결정 근거
+
+**왜 "Convergence" 컨셉?**
+- Yuminai 핵심 가치 = 다중 LLM (Claude/Codex/Gemini)을 한 vibe-coding 흐름으로 통합
+- 시각적 전달: 3개 → 1개 funnel = 직관적 "harness orchestration"
+- 작은 사이즈 (16×16 menu bar)에서도 식별 가능 = 단순한 도형
+
+**왜 cyan gradient?**
+- Theme.Brand.accent (#22C8E0) — 이미 in-app accent로 통일
+- 자전거 팀 시그니처 시안 (사용자 확인 컬러)
+- gradient (deep → light)로 깊이감 + premium feel
+
+### 트레이드오프
+- **SVG vs Sketch/Figma**: SVG로 시작 — 코드로 버전 관리 + 빠른 iteration. Figma 디자인은 향후.
+- **App Sandbox 비활성**: Claude CLI subprocess 실행 위해 sandbox X. 보안 trade-off (사용자 환경 제어).
+- **ad-hoc codesign**: notarization 없음 — Gatekeeper 첫 실행 시 우클릭→열기 필요. notarization은 Apple Developer 계정 + ADR-069+.
+- **Universal binary**: 현재는 native arch only (arm64 또는 x86_64). Universal은 별도 lipo build.
+
+### 향후 (ADR-069 후보)
+- Notarization (Apple Developer ID + altool)
+- Universal binary (arm64 + x86_64 lipo)
+- Auto-update (Sparkle framework)
+- Custom DMG 배경 이미지 + 정렬
+- Asset catalog (Xcode 프로젝트 자동 생성)
+- App Store 배포 검토
 
 ---
 

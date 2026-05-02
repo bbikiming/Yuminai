@@ -236,6 +236,20 @@ public final class AppModel {
     public var showRoutingLog: Bool = false
     /// **ADR-061 Phase 1** — SwiftUI Charts dashboard sheet
     public var showChartsDashboard: Bool = false
+    /// **ADR-068 Phase 2** — About sheet
+    public var showAbout: Bool = false
+    /// **ADR-068 Phase 3** — Splash screen visible
+    public var showSplash: Bool = true
+    /// 첫 실행 여부 (UserDefaults)
+    public var isFirstLaunch: Bool = {
+        let key = "yuminai.firstLaunchCompleted"
+        let prev = UserDefaults.standard.bool(forKey: key)
+        if !prev {
+            UserDefaults.standard.set(true, forKey: key)
+            return true
+        }
+        return false
+    }()
     /// **ADR-062 Phase 6** — Telegram usage dashboard sheet
     public var showTelegramUsageDashboard: Bool = false
     /// **ADR-062 Phase 3** — Chat binding audit log viewer sheet
@@ -1195,6 +1209,18 @@ public final class AppModel {
             shortcut: nil,
             perform: { [weak self] in
                 self?.presentExclusiveSheet { $0.showTelegramUsageDashboard = true }
+            }
+        ))
+        // ADR-068 Phase 2 — About sheet
+        actions.append(PaletteAction(
+            actionId: "sheet.about",
+            category: "Sheet",
+            title: "About Yuminai",
+            subtitle: "버전 + 로고 + ADR 통계 + credits",
+            icon: "info.circle",
+            shortcut: nil,
+            perform: { [weak self] in
+                self?.presentExclusiveSheet { $0.showAbout = true }
             }
         ))
         // ADR-062 Phase 3 — Chat Binding Audit Log Viewer
@@ -3084,6 +3110,7 @@ public final class AppModel {
         showChartsDashboard = false
         showTelegramUsageDashboard = false
         showChatBindingAuditLog = false
+        showAbout = false
     }
 
     /// 새 sheet/alert을 열기 전에 다른 sheet 모두 닫고 setter 실행.

@@ -1,0 +1,75 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <!-- App identification -->
+    <key>CFBundleDisplayName</key>
+    <string>Yuminai</string>
+    <key>CFBundleName</key>
+    <string>Yuminai</string>
+    <key>CFBundleIdentifier</key>
+    <string>com.yuminai.Yuminai</string>
+    <key>CFBundleVersion</key>
+    <string>1</string>
+    <key>CFBundleShortVersionString</key>
+    <string>1.0.0</string>
+    <key>CFBundlePackageType</key>
+    <string>APPL</string>
+    <key>CFBundleSignature</key>
+    <string>????</string>
+    <key>CFBundleExecutable</key>
+    <string>YuminaiApp</string>
+    <key>CFBundleIconFile</key>
+    <string>AppIcon</string>
+
+    <!-- Min macOS version -->
+    <key>LSMinimumSystemVersion</key>
+    <string>14.0</string>
+
+    <!-- High resolution -->
+    <key>NSHighResolutionCapable</key>
+    <true/>
+
+    <!-- Principal class (SwiftUI App lifecycle) -->
+    <key>NSPrincipalClass</key>
+    <string>NSApplication</string>
+
+    <!-- Permissions / privacy descriptions -->
+    <key>NSDocumentsFolderUsageDescription</key>
+    <string>Obsidian Vault 접근에 사용됩니다.</string>
+    <key>NSDownloadsFolderUsageDescription</key>
+    <string>다운로드 폴더의 파일을 첨부하기 위해 사용됩니다.</string>
+    <key>NSAppleEventsUsageDescription</key>
+    <string>외부 앱(Obsidian URL 스킴 등) 연동에 사용됩니다.</string>
+
+    <!-- Network usage (Telegram + Anthropic API) -->
+    <key>NSAppTransportSecurity</key>
+    <dict>
+        <key>NSAllowsArbitraryLoads</key>
+        <false/>
+        <key>NSExceptionDomains</key>
+        <dict>
+            <key>api.telegram.org</key>
+            <dict>
+                <key>NSIncludesSubdomains</key>
+                <true/>
+            </dict>
+            <key>api.anthropic.com</key>
+            <dict>
+                <key>NSIncludesSubdomains</key>
+                <true/>
+            </dict>
+        </dict>
+    </dict>
+
+    <!-- Document types (Yuminai workspace .pen files 등) — 향후 -->
+
+    <!-- App category -->
+    <key>LSApplicationCategoryType</key>
+    <string>public.app-category.developer-tools</string>
+
+    <!-- Copyright -->
+    <key>NSHumanReadableCopyright</key>
+    <string>© 2026 Yuminai · MIT License</string>
+</dict>
+</plist>

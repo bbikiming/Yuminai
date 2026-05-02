@@ -50,6 +50,19 @@ struct RootView: View {
                 fileSearchHotkey  // ⌘P invisible
                 fileTabHotkeys  // ⌘⌥W close (ADR-042 R2.H8) + ⌘⇧[/⌘⇧] tab nav
                 terminalSessionHotkeys  // ⌃⇧T/⌃⇧W/⌃Tab/⌃⇧Tab (ADR-040)
+                // ADR-068 Phase 3 — Splash screen overlay
+                if appModel.showSplash {
+                    SplashScreen(
+                        isFirstLaunch: appModel.isFirstLaunch,
+                        onDismiss: {
+                            withAnimation(.easeOut(duration: 0.3)) {
+                                appModel.showSplash = false
+                            }
+                        }
+                    )
+                    .transition(.opacity)
+                    .zIndex(1000)
+                }
             }
             .onAppear {
                 windowSize = geo.size
@@ -184,6 +197,10 @@ struct RootView: View {
         // ADR-051 — Harness 도움말
         .sheet(isPresented: $bindable.showHarnessHelp) {
             HarnessHelpSheet(onClose: { appModel.showHarnessHelp = false })
+        }
+        // ADR-068 Phase 2 — About sheet
+        .sheet(isPresented: $bindable.showAbout) {
+            AboutSheet(onClose: { appModel.showAbout = false })
         }
         // ADR-052 — Routing Decision Log viewer
         .sheet(isPresented: $bindable.showRoutingLog) {

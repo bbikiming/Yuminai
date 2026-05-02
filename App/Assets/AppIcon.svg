@@ -1,0 +1,78 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Yuminai App Icon - ADR-068
+
+  컨셉: "Convergence" — 다중 모델(claude/codex/등)이 한 곳으로 수렴하는 harness orchestration 표현.
+
+  디자인 원칙:
+  - macOS Big Sur+ icon spec (squircle 1024×1024, 100px corner radius equivalent)
+  - 단일 강조색 (brand cyan #22C8E0) + white minimal glyph
+  - 그라디언트 (deep → light cyan) 으로 깊이감
+  - 3개 dot이 V 형태로 한 점에 수렴 (multi-agent → single conversation)
+  - 미니멀 + 인지 가능 (작은 사이즈에서도 식별 가능)
+-->
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" width="1024" height="1024">
+  <defs>
+    <!-- Primary background gradient (cyan deep → light) -->
+    <linearGradient id="bgGradient" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#0FA8C0"/>
+      <stop offset="50%" stop-color="#22C8E0"/>
+      <stop offset="100%" stop-color="#5BD9EE"/>
+    </linearGradient>
+
+    <!-- Subtle inner glow -->
+    <radialGradient id="innerGlow" cx="50%" cy="35%" r="65%">
+      <stop offset="0%" stop-color="#FFFFFF" stop-opacity="0.15"/>
+      <stop offset="100%" stop-color="#FFFFFF" stop-opacity="0"/>
+    </radialGradient>
+
+    <!-- Glyph drop shadow -->
+    <filter id="glyphShadow" x="-20%" y="-20%" width="140%" height="140%">
+      <feGaussianBlur in="SourceAlpha" stdDeviation="8"/>
+      <feOffset dx="0" dy="6" result="offsetblur"/>
+      <feComponentTransfer>
+        <feFuncA type="linear" slope="0.25"/>
+      </feComponentTransfer>
+      <feMerge>
+        <feMergeNode/>
+        <feMergeNode in="SourceGraphic"/>
+      </feMerge>
+    </filter>
+  </defs>
+
+  <!-- 1. Background — Apple squircle (rounded square) -->
+  <!-- macOS icon: 824×824 의 visible area는 1024 캔버스 안에 100px padding 권장 -->
+  <rect x="100" y="100" width="824" height="824" rx="180" ry="180" fill="url(#bgGradient)"/>
+
+  <!-- 2. Inner glow (subtle highlight from top) -->
+  <rect x="100" y="100" width="824" height="824" rx="180" ry="180" fill="url(#innerGlow)"/>
+
+  <!-- 3. Convergence glyph — 3 dots → 1 dot (V/funnel) -->
+  <g filter="url(#glyphShadow)">
+    <!-- Top three dots (multi-agent: claude, codex, gemini placeholder) -->
+    <!-- 좌상 -->
+    <circle cx="350" cy="340" r="60" fill="#FFFFFF"/>
+    <!-- 중상 (큰 dot) -->
+    <circle cx="512" cy="300" r="72" fill="#FFFFFF"/>
+    <!-- 우상 -->
+    <circle cx="674" cy="340" r="60" fill="#FFFFFF"/>
+
+    <!-- Convergence lines — 위 3개 dot이 아래 중앙 dot으로 모임 -->
+    <!-- subtle stroke로 흐름 표현 (white at low opacity) -->
+    <path d="M 350,400 Q 430,560 510,650"
+          stroke="#FFFFFF" stroke-width="14" stroke-linecap="round"
+          fill="none" opacity="0.9"/>
+    <path d="M 512,372 L 512,650"
+          stroke="#FFFFFF" stroke-width="14" stroke-linecap="round"
+          fill="none" opacity="0.9"/>
+    <path d="M 674,400 Q 594,560 514,650"
+          stroke="#FFFFFF" stroke-width="14" stroke-linecap="round"
+          fill="none" opacity="0.9"/>
+
+    <!-- Bottom dot (수렴 = unified conversation) — 가장 큰 점으로 강조 -->
+    <circle cx="512" cy="700" r="92" fill="#FFFFFF"/>
+
+    <!-- Center accent (수렴 dot 내부에 작은 cyan dot) -->
+    <circle cx="512" cy="700" r="32" fill="url(#bgGradient)"/>
+  </g>
+</svg>

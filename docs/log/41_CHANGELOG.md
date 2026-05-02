@@ -4,6 +4,62 @@
 
 ## [Unreleased] — 2026-05-03
 
+### Added — ADR-068 브랜딩 마무리 + 배포 패키지 (5 phases)
+
+**Phase 1 — Yuminai App Icon (Convergence design)**
+- App/Assets/AppIcon.svg (1024×1024 vector master)
+- 컨셉: 3 dots → 1 dot funnel (multi-agent → unified conversation)
+- Brand cyan gradient (#0FA8C0 → #22C8E0 → #5BD9EE)
+- white minimal glyph + macOS squircle
+- iconset/ 10 PNG sizes (16~1024) + AppIcon.icns (570 KB)
+- BrandLogo SwiftUI shape view (in-app vector render)
+
+**Phase 2 — About sheet**
+- Sources/YuminaiUI/AboutSheet.swift (480×620)
+- 4 stat cards: ADRs / Tests / Lines / Files
+- Credits 5개 (Swift / Anthropic / OpenAI / Telegram / Charts)
+- ⌘K Palette 진입 (sheet.about)
+
+**Phase 3 — Splash screen**
+- Sources/YuminaiUI/SplashScreen.swift
+- Cyan gradient full-screen + BrandLogo (180px) + spring 애니메이션
+- 첫 실행 2초, 후속 0.8초 (UserDefaults 기반)
+- AppModel.showSplash + isFirstLaunch state
+
+**Phase 4 — Info.plist + .app bundle metadata**
+- App/Info.plist (CFBundle keys + 권한 descriptions + ATS exceptions)
+- com.yuminai.Yuminai bundle id + LSApplicationCategoryType developer-tools
+
+**Phase 5 — DMG 패키징 script**
+- App/build_app_bundle.sh (실행 가능)
+- swift build -c release → .app bundle → ad-hoc codesign → DMG (UDZO + Applications symlink)
+- 검증 완료:
+  - dist/Yuminai.app (생성)
+  - dist/Yuminai-1.0.0.dmg (6.7 MB)
+
+### 빌드/테스트 결과
+- swift build → Build complete! (10.29s)
+- swift test → 495/495 passed (102 suites)
+- build_app_bundle.sh --dmg → ✅ Success
+
+### 새 파일
+- App/Assets/AppIcon.svg (vector master)
+- App/Assets/AppIcon.iconset/ (10 PNG sizes)
+- App/Assets/AppIcon.icns (macOS bundle icon)
+- App/Assets/AppIcon.png (in-app 512px)
+- App/Info.plist (bundle metadata)
+- App/build_app_bundle.sh (release + DMG script)
+- Sources/YuminaiUI/BrandLogo.swift
+- Sources/YuminaiUI/AboutSheet.swift
+- Sources/YuminaiUI/SplashScreen.swift
+
+### 수정 파일
+- AppModel (showAbout/showSplash/isFirstLaunch state + Palette action)
+- RootView (Splash overlay + About sheet binding)
+- .gitignore (dist/ 추가)
+
+---
+
 ### Added — ADR-067 Forecast accuracy + 자동 알림 + 통합 시각화 (5 phases)
 
 **Phase 4 — Forecast accuracy (MAE/RMSE/MAPE)**
