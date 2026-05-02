@@ -279,6 +279,61 @@ struct ChatSpecificBucketsTests {
     }
 }
 
+@Suite("Forecast accuracy (ADR-067 Phase 4)")
+struct AccuracyTests {
+    @Test("accuracy: 동일 actual = forecast → MAE/RMSE 0")
+    func perfectAccuracy() {
+        let metrics = UsageForecaster.accuracy(
+            actual: [10.0, 20.0, 30.0],
+            forecast: [10.0, 20.0, 30.0]
+        )
+        #expect(metrics != nil)
+        #expect(metrics?.mae == 0)
+        #expect(metrics?.rmse == 0)
+        #expect(metrics?.mape == 0)
+    }
+
+    @Test("accuracy: MAE/RMSE 정확 계산")
+    func maeRmse() {
+        // actual: [10, 20, 30], forecast: [12, 18, 33]
+        // errors: [-2, 2, -3] → abs: [2, 2, 3], sum 7, MAE = 7/3 = 2.333
+        // squared: [4, 4, 9], sum 17, MSE = 17/3 = 5.667, RMSE = 2.380
+        let m = UsageForecaster.accuracy(actual: [10.0, 20.0, 30.0], forecast: [12.0, 18.0, 33.0])
+        #expect(m != nil)
+        #expect(abs((m?.mae ?? 0) - 7.0/3.0) < 0.001)
+        #expect(abs((m?.rmse ?? 0) - sqrt(17.0/3.0)) < 0.001)
+    }
+
+    @Test("accuracy: MAPE skip 0 actuals")
+    func mapeSkipZero() {
+        // actual: [0, 10], forecast: [5, 15]
+        // 첫 sample (actual=0) skip, 두 번째: |10-15|/10 * 100 = 50
+        let m = UsageForecaster.accuracy(actual: [0.0, 10.0], forecast: [5.0, 15.0])
+        #expect(m != nil)
+        #expect(abs((m?.mape ?? 0) - 50.0) < 0.001)
+    }
+
+    @Test("accuracy: 불일치 길이 → nil")
+    func mismatchLength() {
+        let m = UsageForecaster.accuracy(actual: [1.0, 2.0], forecast: [1.0])
+        #expect(m == nil)
+    }
+
+    @Test("backtest: 데이터 부족 → nil")
+    func backtestInsufficient() {
+        let m = UsageForecaster.backtest([1.0, 2.0, 3.0])
+        #expect(m == nil)  // 3 < 5 + 3 (holdout + minSamples)
+    }
+
+    @Test("backtest: 충분한 데이터")
+    func backtestBasic() {
+        let values = (0..<20).map { Double($0) }
+        let m = UsageForecaster.backtest(values, holdoutCount: 5)
+        #expect(m != nil)
+        #expect((m?.mae ?? 0) > 0)  // EWMA는 trending data에 lag → error > 0
+    }
+}
+
 @Suite("CSVExporter streaming write (ADR-064 Phase 3)")
 struct CSVStreamingTests {
     @Test("streaming write: 100 rows")

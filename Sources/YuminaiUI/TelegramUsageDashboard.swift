@@ -14,14 +14,6 @@ import YuminaiCore
 /// 4. chat별 사용량 (horizontal BarMark + ranking)
 /// 5. 명령별 사용 빈도 (BarMark Top 10)
 /// 6. 토큰 분리 (input vs output, BarMark stacked)
-/// **ADR-063 Phase 5** — workspace × chat usage chart datum.
-private struct WorkspaceUsageDatum: Identifiable, Hashable {
-    let id = UUID()
-    let chatLabel: String
-    let workspaceName: String
-    let count: Int
-}
-
 public struct TelegramUsageDashboard: View {
     public let snapshot: TelegramUsageStore.Snapshot
     public let dailyBuckets: [DailyUsageBucket]
@@ -107,6 +99,7 @@ public struct TelegramUsageDashboard: View {
                     hourlyTurnsChart
                     hourlyCostChart
                     forecastChart           // ADR-064 Phase 5
+                    multiChatForecastChart  // ADR-067 Phase 2 + 5
                     chatRankingChart
                     chatActivityGauge       // ADR-064 Phase 4
                     commandFrequencyChart
@@ -114,6 +107,7 @@ public struct TelegramUsageDashboard: View {
                     workspaceUsagePerChatChart
                     workspaceChatHeatmap    // ADR-064 Phase 2
                     routingTrendChart       // ADR-064 Phase 1
+                    accuracyMetricsCard     // ADR-067 Phase 4
                 }
                 .padding(Theme.Spacing.lg)
             }
@@ -508,6 +502,128 @@ public struct TelegramUsageDashboard: View {
         }
     }
 
+    // MARK: - ADR-067 Phase 2 + 5: Multi-chat forecast comparison
+
+    /// **ADR-067 Phase 2 + 5** — chat별 cost 시계열 + forecast overlay (top 3 chat).
+    private var multiChatForecastChart: some View {
+        chartSection(title: "Chat별 Cost Trend + Forecast Overlay", subtitle: "ADR-067 — top 3 chat 비교 (각 chat의 EWMA forecast)", chartId: "multi_chat_forecast") {
+            multiChatForecastContent
+        }
+    }
+
+    @ViewBuilder
+    private var multiChatForecastContent: some View {
+        let topChats = snapshot.chatStats.values.sorted { $0.totalCostUSD > $1.totalCostUSD }.prefix(3)
+        if topChats.isEmpty {
+            emptyHint("chat 데이터 없음")
+        } else {
+            let allPoints: [ChatForecastPoint] = topChats.flatMap { chat -> [ChatForecastPoint] in
+                let key = String(chat.chatId)
+                let buckets = snapshot.hourlyBuckets.compactMap { b -> (Date, Double)? in
+                    guard let cost = b.chatCosts[key] else { return nil }
+                    return (b.timestamp, cost)
+                }
+                let label = chatLabel(for: chat.chatId)
+                var points: [ChatForecastPoint] = buckets.map { (date, cost) in
+                    ChatForecastPoint(chatLabel: label, timestamp: date, cost: cost, isForecast: false)
+                }
+                let costs = buckets.map { $0.1 }
+                if costs.count >= UsageForecaster.minSamples,
+                   let next = UsageForecaster.forecastNext(costs),
+                   let lastDate = buckets.last?.0 {
+                    let nextDate = lastDate.addingTimeInterval(3600)
+                    points.append(ChatForecastPoint(chatLabel: label, timestamp: nextDate, cost: next, isForecast: true))
+                }
+                return points
+            }
+            if allPoints.isEmpty {
+                emptyHint("chat별 cost trend 없음")
+            } else {
+                Chart {
+                    ForEach(allPoints, id: \.self) { p in
+                        if p.isForecast {
+                            PointMark(
+                                x: .value("Time", p.timestamp),
+                                y: .value("Cost", p.cost)
+                            )
+                            .foregroundStyle(by: .value("Chat", p.chatLabel))
+                            .symbolSize(80)
+                            .symbol(.diamond)
+                        } else {
+                            LineMark(
+                                x: .value("Time", p.timestamp),
+                                y: .value("Cost", p.cost),
+                                series: .value("Chat", p.chatLabel)
+                            )
+                            .foregroundStyle(by: .value("Chat", p.chatLabel))
+                            .interpolationMethod(.catmullRom)
+                        }
+                    }
+                }
+                .chartLegend(position: .top)
+                .chartYAxis {
+                    AxisMarks(position: .leading) { value in
+                        AxisValueLabel {
+                            if let v = value.as(Double.self) {
+                                Text("$\(String(format: "%.4f", v))").font(.caption2)
+                            }
+                        }
+                    }
+                }
+                .frame(height: 200)
+                Text("◇ = next-hour EWMA forecast")
+                    .font(Theme.Typography.micro)
+                    .foregroundStyle(Theme.Color.textTertiary)
+            }
+        }
+    }
+
+    // MARK: - ADR-067 Phase 4: Forecast accuracy card
+
+    private var accuracyMetricsCard: some View {
+        chartSection(title: "Forecast Accuracy (Backtesting)", subtitle: "ADR-067 Phase 4 — 마지막 5 sample을 hold-out으로 EWMA 검증", chartId: "accuracy") {
+            accuracyContent
+        }
+    }
+
+    @ViewBuilder
+    private var accuracyContent: some View {
+        let costs = filteredHourly.map { $0.costUSD }
+        if let metrics = UsageForecaster.backtest(costs, holdoutCount: 5) {
+            HStack(spacing: 16) {
+                stringStatBlock("MAE", String(format: "$%.4f", metrics.mae), color: .blue)
+                stringStatBlock("RMSE", String(format: "$%.4f", metrics.rmse), color: .indigo)
+                stringStatBlock("MAPE", String(format: "%.1f%%", metrics.mape), color: metrics.mape < 20 ? .green : (metrics.mape < 50 ? .yellow : .orange))
+                Spacer()
+            }
+            Text(qualityHint(mape: metrics.mape))
+                .font(Theme.Typography.small)
+                .foregroundStyle(Theme.Color.textSecondary)
+        } else {
+            emptyHint("backtest: 8개 이상 sample 필요 (현재 \(costs.count))")
+        }
+    }
+
+    /// **ADR-067 Phase 4** — String 값을 받는 stat block (기존은 Int).
+    private func stringStatBlock(_ label: String, _ value: String, color: Color) -> some View {
+        VStack(alignment: .leading, spacing: 2) {
+            Text(label)
+                .font(Theme.Typography.micro)
+                .foregroundStyle(Theme.Color.textTertiary)
+                .textCase(.uppercase)
+            Text(value)
+                .font(Theme.Typography.body.weight(.semibold))
+                .foregroundStyle(color)
+        }
+    }
+
+    private func qualityHint(mape: Double) -> String {
+        if mape < 10 { return "✓ 매우 정확 (< 10% 오차)" }
+        if mape < 20 { return "✓ 양호 (< 20% 오차)" }
+        if mape < 50 { return "⚠ 보통 (< 50% 오차) — 변동성이 클 수 있음" }
+        return "❗ 부정확 (>= 50% 오차) — 데이터 부족 또는 패턴 미상"
+    }
+
     // MARK: - ADR-064 Phase 4: Chat last activity gauge
 
     private var chatActivityGauge: some View {
@@ -899,4 +1015,20 @@ public struct TelegramUsageDashboard: View {
             try? csv.write(to: url, atomically: true, encoding: .utf8)
         }
     }
+}
+
+/// **ADR-063 Phase 5** — workspace × chat usage chart datum (file-private).
+private struct WorkspaceUsageDatum: Identifiable, Hashable {
+    let id = UUID()
+    let chatLabel: String
+    let workspaceName: String
+    let count: Int
+}
+
+/// **ADR-067 Phase 2 + 5** — multi-chat forecast point (file-private).
+private struct ChatForecastPoint: Hashable {
+    let chatLabel: String
+    let timestamp: Date
+    let cost: Double
+    let isForecast: Bool
 }

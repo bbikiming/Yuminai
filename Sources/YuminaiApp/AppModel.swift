@@ -3803,6 +3803,8 @@ public final class AppModel {
             outputTokens: outputTokens
         )
         telegramUsageSnapshot = await telegramUsageStore.snapshot()
+        // ADR-067 Phase 3 — anomaly auto-alert (cooldown 1h)
+        await maybeAnomalyAlert()
     }
 
     public func recordTelegramCommand(_ command: String) async {
@@ -3823,6 +3825,37 @@ public final class AppModel {
     public func clearTelegramUsage() async {
         await telegramUsageStore.clear()
         telegramUsageSnapshot = await telegramUsageStore.snapshot()
+    }
+
+    /// **ADR-067 Phase 3** — anomaly auto-alert (turn 종료 시 호출).
+    /// 누적 hourly cost가 anomaly threshold 초과면 Telegram bridge로 push.
+    /// 같은 anomaly type은 1시간 내 1회만 (alert spam 방지).
+    public var lastAnomalyAlertAt: Date?
+    public func maybeAnomalyAlert() async {
+        // bound bridge 있어야 alert 가능
+        guard let bridge = sessionBridge else { return }
+        // 1시간 cooldown
+        if let last = lastAnomalyAlertAt, Date().timeIntervalSince(last) < 3600 {
+            return
+        }
+        let costs = telegramUsageSnapshot.hourlyBuckets.map(\.costUSD)
+        guard costs.count >= 3 else { return }
+        let threshold = preferences.anomalyZScoreThreshold
+        let anomalies = UsageForecaster.detectAnomalies(costs, threshold: threshold)
+        // 가장 최근 sample이 anomaly인지 (마지막 index)
+        let lastIdx = costs.count - 1
+        guard let recentAnomaly = anomalies.first(where: { $0.index == lastIdx }) else {
+            return
+        }
+        let direction = recentAnomaly.direction == .high ? "🚨 spike" : "🔻 drop"
+        let msg = """
+        \(direction) anomaly 감지!
+          · 최근 1시간 cost: $\(String(format: "%.4f", recentAnomaly.value))
+          · z-score: \(String(format: "%.2f", recentAnomaly.zScore)) (threshold \(String(format: "%.1f", threshold)))
+          · /cost로 자세히 확인
+        """
+        Task { await bridge.sendNotice(msg) }
+        lastAnomalyAlertAt = Date()
     }
 
     /// **ADR-062 Phase 6** — chatId → workspace name (UI 라벨용).

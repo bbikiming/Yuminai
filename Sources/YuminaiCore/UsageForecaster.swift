@@ -253,4 +253,53 @@ public enum UsageForecaster {
         case high  // 평균보다 매우 높음 (spike)
         case low   // 평균보다 매우 낮음 (drop)
     }
+
+    // MARK: - ADR-067 Phase 4 — Forecast accuracy metrics
+
+    /// **ADR-067 Phase 4** — forecast 정확도 측정.
+    /// MAE (Mean Absolute Error) + RMSE (Root Mean Square Error) + MAPE (Mean Absolute Percentage Error).
+    public struct AccuracyMetrics: Sendable, Hashable {
+        public let mae: Double
+        public let rmse: Double
+        public let mape: Double  // 0~100 (%)
+
+        public init(mae: Double, rmse: Double, mape: Double) {
+            self.mae = mae
+            self.rmse = rmse
+            self.mape = mape
+        }
+    }
+
+    /// **ADR-067 Phase 4** — actual vs forecast 비교.
+    /// 두 배열 같은 길이 + 길이 ≥ 1.
+    public static func accuracy(actual: [Double], forecast: [Double]) -> AccuracyMetrics? {
+        guard actual.count == forecast.count, !actual.isEmpty else { return nil }
+        let n = Double(actual.count)
+        let errors = zip(actual, forecast).map { $0 - $1 }
+        let absErrors = errors.map(abs)
+        let mae = absErrors.reduce(0, +) / n
+        let mse = errors.map { $0 * $0 }.reduce(0, +) / n
+        let rmse = sqrt(mse)
+        // MAPE: avoid div by 0 (skip 0 actuals)
+        let mapeData = zip(actual, forecast).compactMap { (a, f) -> Double? in
+            guard abs(a) > 0.0001 else { return nil }
+            return abs((a - f) / a) * 100
+        }
+        let mape = mapeData.isEmpty ? 0 : mapeData.reduce(0, +) / Double(mapeData.count)
+        return AccuracyMetrics(mae: mae, rmse: rmse, mape: mape)
+    }
+
+    /// **ADR-067 Phase 4** — backtesting: 마지막 N개를 hold-out으로 EWMA forecast accuracy 측정.
+    /// values를 train + test 분리 → train으로 EWMA 학습 → test 구간 예측 → accuracy 계산.
+    public static func backtest(_ values: [Double], holdoutCount: Int = 5, alpha: Double = defaultAlpha) -> AccuracyMetrics? {
+        guard values.count > holdoutCount + minSamples else { return nil }
+        let trainEnd = values.count - holdoutCount
+        let train = Array(values.prefix(trainEnd))
+        let test = Array(values.suffix(holdoutCount))
+        // train의 마지막 EWMA → 모든 test 예측 (naive: 같은 값 반복)
+        let smoothed = ewmaSeries(train, alpha: alpha)
+        guard let lastEWMA = smoothed.last else { return nil }
+        let forecast = Array(repeating: lastEWMA, count: holdoutCount)
+        return accuracy(actual: test, forecast: forecast)
+    }
 }

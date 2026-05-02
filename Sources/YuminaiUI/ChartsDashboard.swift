@@ -145,15 +145,62 @@ public struct ChartsDashboard: View {
 
     private var footer: some View {
         HStack {
-            // ADR-062 Phase 5 — PNG export 버튼
+            // ADR-062 Phase 5 — PNG export
             FlatButton("PNG 내보내기", icon: "square.and.arrow.up", variant: .secondary) {
                 exportChartsToPNG()
             }
+            // ADR-067 Phase 1 — SVG export menu
+            Menu {
+                Button("Cache Hit Trend → SVG") { exportSVG(.cacheTrend) }
+                Button("Cost Breakdown → SVG") { exportSVG(.costBreakdown) }
+                Button("Workspace Cost → SVG") { exportSVG(.workspaceCost) }
+            } label: {
+                Label("SVG 내보내기", systemImage: "doc.richtext")
+                    .font(Theme.Typography.small)
+            }
+            .menuStyle(.borderlessButton)
+            .frame(width: 140)
             Spacer()
             FlatButton("닫기", variant: .primary) { onClose() }
                 .keyboardShortcut(.escape, modifiers: [])
         }
         .padding(Theme.Spacing.md)
+    }
+
+    /// **ADR-067 Phase 1** — SVG export 종류.
+    private enum SVGKind {
+        case cacheTrend, costBreakdown, workspaceCost
+    }
+
+    @MainActor
+    private func exportSVG(_ kind: SVGKind) {
+        let svg: String
+        let suggestedName: String
+        switch kind {
+        case .cacheTrend:
+            let values = filteredCacheTrend.map { $0.hitRatio * 100 }
+            svg = SVGExporter.lineChart(values: values, title: "Cache Hit Ratio (%)", strokeColor: "#10b981", fillColor: "#10b98140")
+            suggestedName = "yuminai-cache-trend.svg"
+        case .costBreakdown:
+            let labels = ["Main", "Decomp", "Rehearsal", "Parallel", "Routing"]
+            let values = [costSnapshot.main, costSnapshot.decomposition, costSnapshot.rehearsal, costSnapshot.parallel, costSnapshot.routing]
+            svg = SVGExporter.barChart(labels: labels, values: values, title: "Cost Breakdown (USD)", barColor: "#3b82f6")
+            suggestedName = "yuminai-cost-breakdown.svg"
+        case .workspaceCost:
+            svg = SVGExporter.barChart(
+                labels: workspaceCosts.map { $0.workspaceName },
+                values: workspaceCosts.map { $0.costUSD },
+                title: "Workspace Cost (Today)",
+                barColor: "#8b5cf6"
+            )
+            suggestedName = "yuminai-workspace-cost.svg"
+        }
+        let panel = NSSavePanel()
+        panel.allowedContentTypes = [.svg]
+        panel.nameFieldStringValue = suggestedName
+        if panel.runModal() == .OK, let url = panel.url {
+            try? svg.write(to: url, atomically: true, encoding: .utf8)
+        }
     }
 
     /// **ADR-062 Phase 5** — SwiftUI ImageRenderer로 chart 영역 PNG 저장.

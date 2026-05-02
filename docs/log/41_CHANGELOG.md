@@ -4,6 +4,46 @@
 
 ## [Unreleased] — 2026-05-03
 
+### Added — ADR-067 Forecast accuracy + 자동 알림 + 통합 시각화 (5 phases)
+
+**Phase 4 — Forecast accuracy (MAE/RMSE/MAPE)**
+- AccuracyMetrics struct + accuracy(actual:forecast:)
+- backtest(_:holdoutCount:alpha:) train/test split
+
+**Phase 3 — Anomaly auto-alert**
+- AppModel.maybeAnomalyAlert (1h cooldown)
+- recordTelegramTurnComplete 후 호출
+- threshold preferences 적용 + bridge push
+
+**Phase 1 — ChartsDashboard SVG export**
+- footer Menu (3 SVG: cache trend / cost breakdown / workspace cost)
+
+**Phase 2 + 5 — Multi-chat forecast overlay**
+- TelegramUsageDashboard.multiChatForecastChart
+- top 3 chat × hourly costs + EWMA forecast diamond
+- LineMark series별 + chartLegend
+
+**Phase 4 (UI) — Accuracy card**
+- accuracyMetricsCard: 3 stat blocks (MAE/RMSE/MAPE)
+- color by MAPE (< 20 green / < 50 yellow / ≥ 50 orange)
+- qualityHint 메시지
+
+### Tests added (+6)
+- accuracy: perfect / mae+rmse / mape skip 0 / mismatch length
+- backtest: insufficient / basic
+
+### 빌드/테스트 결과
+- swift build → Build complete! (9.34s)
+- swift test → 495/495 passed (102 suites)
+
+### 수정 파일
+- UsageForecaster (+AccuracyMetrics +accuracy +backtest)
+- AppModel (+lastAnomalyAlertAt +maybeAnomalyAlert)
+- ChartsDashboard (+SVG menu +exportSVG helper)
+- TelegramUsageDashboard (+multiChatForecastChart +accuracyMetricsCard +ChatForecastPoint struct)
+
+---
+
 ### Added — ADR-066 Chat 분리 + 고급 forecast + Settings + SVG export (5 phases)
 
 **Phase 1 — chat별 hourly buckets 분리**

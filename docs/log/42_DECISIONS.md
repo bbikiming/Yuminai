@@ -1,6 +1,72 @@
 # Decisions Log (ADR-lite)
 
-> 최신: ADR-066 (chat-specific buckets + multiplicative HW + CI + anomaly threshold UI + SVG)
+> 최신: ADR-067 (accuracy + auto-alert + ChartsDashboard SVG + multi-chat overlay + chat trend)
+
+---
+
+## ADR-067 — Forecast accuracy + 자동 알림 + 통합 시각화 (5 phases)
+
+- **날짜**: 2026-05-03
+- **상태**: Accepted
+
+### 결정
+
+#### Phase 4: Forecast accuracy (MAE/RMSE/MAPE)
+- `UsageForecaster.AccuracyMetrics` struct (mae/rmse/mape)
+- `accuracy(actual:forecast:)` — 두 배열 비교
+  - MAE = Σ|error| / n
+  - RMSE = sqrt(Σerror² / n)
+  - MAPE = Σ|error/actual| / n × 100 (skip 0 actuals)
+- `backtest(_:holdoutCount:alpha:)` — train/test 분리 → naive forecast → accuracy
+
+#### Phase 3: Anomaly auto-alert (Telegram push)
+- `AppModel.maybeAnomalyAlert()` — turn 종료 후 호출
+- 1시간 cooldown (alert spam 방지)
+- 가장 최근 sample이 anomaly면 bridge.sendNotice
+- 형식: "🚨 spike anomaly 감지! cost: $X, z-score: Y"
+- threshold는 `preferences.anomalyZScoreThreshold` 적용
+
+#### Phase 1: ChartsDashboard SVG export
+- footer Menu (3 SVG export):
+  - Cache Hit Trend → SVG (line chart)
+  - Cost Breakdown → SVG (bar chart)
+  - Workspace Cost → SVG (bar chart)
+- NSSavePanel + UTType.svg
+- 기존 PNG export와 공존
+
+#### Phase 2 + 5: Multi-chat forecast overlay
+- TelegramUsageDashboard.multiChatForecastChart
+- top 3 chat by total cost
+- 각 chat의 hourly costs + EWMA forecast (1 step) overlay
+- LineMark series별 (chat별 색) + diamond PointMark for forecast
+- chartLegend, $YY axis
+
+#### Phase 4 (UI): Forecast accuracy card in dashboard
+- TelegramUsageDashboard.accuracyMetricsCard
+- 3 stat blocks: MAE / RMSE / MAPE
+- color: MAPE < 20 green, < 50 yellow, ≥ 50 orange
+- qualityHint: "✓ 매우 정확" / "✓ 양호" / "⚠ 보통" / "❗ 부정확"
+
+### 적용 결과
+```
+swift build              → Build complete! (9.34s)
+swift test               → 495/495 passed (102 suites, +6 new)
+새 파일                  → 0 (모두 기존 파일 확장)
+수정 파일                → 4 (UsageForecaster, AppModel, ChartsDashboard, TelegramUsageDashboard)
+```
+
+### 트레이드오프
+- **anomaly alert 1시간 cooldown**: spike 후 또 spike하면 두 번째는 silent. cooldown 단축은 Settings로.
+- **multi-chat overlay top 3만**: chart 가독성 우선. 더 많이는 별도 view.
+- **backtest naive forecast**: EWMA last value를 모든 test에 반복 — 더 정교한 backtesting (rolling window)은 향후.
+- **MAPE 0 actual skip**: 데이터의 일부만 계산. zero-heavy 데이터는 부정확.
+
+### 향후 (ADR-068 후보)
+- Anomaly cooldown Settings UI
+- backtest rolling window (정확도 ↑)
+- forecast 신뢰도 별 가중치 (MAPE 작을수록 강조)
+- chat별 anomaly detection (전체가 아닌 chat 단위)
+- Markdown export streaming write
 
 ---
 
