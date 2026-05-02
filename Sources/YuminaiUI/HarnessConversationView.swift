@@ -16,19 +16,22 @@ public struct HarnessConversationView: View {
     public let agentResponseCounts: [AgentKind: Int]
     public let sessionCostUSD: Double
     public let contextWindowSize: Int  // default 200K
+    public let onShowHelp: () -> Void
 
     public init(
         entries: [ConversationEntry],
         estimatedTotalTokens: Int = 0,
         agentResponseCounts: [AgentKind: Int] = [:],
         sessionCostUSD: Double = 0,
-        contextWindowSize: Int = 200_000
+        contextWindowSize: Int = 200_000,
+        onShowHelp: @escaping () -> Void = {}
     ) {
         self.entries = entries
         self.estimatedTotalTokens = estimatedTotalTokens
         self.agentResponseCounts = agentResponseCounts
         self.sessionCostUSD = sessionCostUSD
         self.contextWindowSize = contextWindowSize
+        self.onShowHelp = onShowHelp
     }
 
     /// 컨텍스트 윈도우 사용 비율 (0.0~1.0).
@@ -70,6 +73,14 @@ public struct HarnessConversationView: View {
                 Text("\(entries.count) entries")
                     .font(Theme.Typography.micro)
                     .foregroundStyle(Theme.Color.textTertiary)
+                // ADR-051 — Help button (친절한 cheatsheet)
+                Button(action: onShowHelp) {
+                    Image(systemName: "questionmark.circle")
+                        .font(.system(size: 11))
+                        .foregroundStyle(Theme.Color.textSecondary)
+                }
+                .buttonStyle(.plain)
+                .help("Harness 도움말 — 단축키/명령/패턴")
             }
             .padding(.horizontal, Theme.Spacing.md)
             .padding(.vertical, Theme.Spacing.xs)

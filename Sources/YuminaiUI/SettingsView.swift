@@ -432,10 +432,29 @@ public struct SettingsView: View {
                         hint: "사용자 입력 keyword 분석 (한국어/영어) 후 적합한 모델로 자동 pane 전환. 예: ‘구현해줘’ → Codex / ‘리뷰’ → Claude. 전환 시 handoff prompt가 자동 inject돼 새 모델이 컨텍스트 catch up. 비용: 모델 전환마다 handoff prompt만큼 토큰 추가 (~4K tokens)."
                     )
                 }
+                if preferences.harnessAutoRoutingEnabled {
+                    HStack {
+                        LabelWithHint(
+                            "Cancel countdown (초)",
+                            hint: "ADR-051 — 자동 routing 전 사용자가 개입할 수 있는 시간. 0이면 즉시 전환, 3 권장. Esc 또는 banner 버튼으로 취소."
+                        )
+                        Spacer()
+                        Stepper(value: $preferences.harnessRoutingCountdownSeconds, in: 0...10) {
+                            Text("\(preferences.harnessRoutingCountdownSeconds)초").font(Theme.Typography.monoSmall)
+                        }
+                        .frame(width: 140)
+                    }
+                }
                 Toggle(isOn: $preferences.harnessUIEnabled) {
                     LabelWithHint(
-                        "Harness 통합 view (Inspector)",
+                        "Harness 통합 view (Inspector 탭)",
                         hint: "Inspector에 ‘Harness’ 탭 추가 — 모든 모델 응답을 단일 timeline으로 + agent badge + TaskGraph mini-map. 전통 multi-pane은 그대로 유지."
+                    )
+                }
+                Toggle(isOn: $preferences.harnessInlineModeEnabled) {
+                    LabelWithHint(
+                        "Inline mode (메인 chat 교체)",
+                        hint: "ADR-051 — 메인 chat area를 Harness 통합 view로 교체. multi-pane이 안 보임. ⌘K Command Palette에서 빠른 토글 가능."
                     )
                 }
             } header: {

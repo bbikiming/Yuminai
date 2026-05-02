@@ -92,6 +92,8 @@ public struct InspectorPanel: View {
     public let onHarnessRemoveTask: (UUID) -> Void
     public let onHarnessAddTask: () -> Void
     public let onHarnessRunTask: (UUID) -> Void
+    public let onHarnessShowWalkthrough: (UUID) -> Void
+    public let onHarnessShowHelp: () -> Void
 
     // Diff review (ADR-027 phase A3)
     public let pendingChanges: [ChangedFile]
@@ -202,7 +204,9 @@ public struct InspectorPanel: View {
         onHarnessUpdateTaskStatus: @escaping (UUID, TaskStatus) -> Void = { _, _ in },
         onHarnessRemoveTask: @escaping (UUID) -> Void = { _ in },
         onHarnessAddTask: @escaping () -> Void = {},
-        onHarnessRunTask: @escaping (UUID) -> Void = { _ in }
+        onHarnessRunTask: @escaping (UUID) -> Void = { _ in },
+        onHarnessShowWalkthrough: @escaping (UUID) -> Void = { _ in },
+        onHarnessShowHelp: @escaping () -> Void = {}
     ) {
         self._tab = tab
         self.usage = usage
@@ -293,6 +297,8 @@ public struct InspectorPanel: View {
         self.onHarnessRemoveTask = onHarnessRemoveTask
         self.onHarnessAddTask = onHarnessAddTask
         self.onHarnessRunTask = onHarnessRunTask
+        self.onHarnessShowWalkthrough = onHarnessShowWalkthrough
+        self.onHarnessShowHelp = onHarnessShowHelp
     }
 
     public var body: some View {
@@ -430,7 +436,8 @@ public struct InspectorPanel: View {
                     entries: harnessEntries,
                     estimatedTotalTokens: harnessEstimatedTokens,
                     agentResponseCounts: harnessAgentCounts,
-                    sessionCostUSD: harnessSessionCostUSD
+                    sessionCostUSD: harnessSessionCostUSD,
+                    onShowHelp: onHarnessShowHelp
                 )
                 .frame(minHeight: 200)
                 TaskGraphMiniMap(
@@ -438,7 +445,8 @@ public struct InspectorPanel: View {
                     onUpdateStatus: onHarnessUpdateTaskStatus,
                     onRemove: onHarnessRemoveTask,
                     onAddTask: onHarnessAddTask,
-                    onRunReadyTask: onHarnessRunTask
+                    onRunReadyTask: onHarnessRunTask,
+                    onShowWalkthrough: onHarnessShowWalkthrough
                 )
                 .frame(minHeight: 140, idealHeight: 220)
             }

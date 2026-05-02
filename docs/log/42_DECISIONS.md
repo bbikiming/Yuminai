@@ -1,6 +1,133 @@
 # Decisions Log (ADR-lite)
 
-> 최신: ADR-050 (Harness Phase 6 + UX 강화 — 영속화 / 자동 진행 / 증명된 패턴 6종)
+> 최신: ADR-051 (Harness 다음 라운드 — Intervention / Command Palette / Inline mode / Walk-through / 친절한 도움말)
+
+---
+
+## ADR-051 — Harness 사용성 강화: 5개 핵심 + 친절한 도움말
+
+- **날짜**: 2026-05-02
+- **상태**: Accepted
+- **결정**: ADR-050 후속 — 사용자 신뢰 + 발견성 + 효율성 강화 5개 + 친절한 도움말 시스템
+
+### 컨텍스트
+사용자: "다음 라운드 기획 상세하게 점검 + 도움말도 친절하게 사용성있게"
+
+### 1. Intervention countdown (자동 routing 전 cancel window)
+
+**근거 (UX research)**: agent autonomous decision에는 사용자 intervention point가 필요 (XAI 원칙 + Devin step budget 패턴).
+
+- `AppPreferences.harnessRoutingCountdownSeconds: Int = 3`
+- `AppModel.PendingRouting` struct + `pendingRouting: PendingRouting?` state
+- `applyHarnessAutoRoutingIfNeeded`이 1초 단위 sleep loop:
+  - 매 초 `pendingRouting` update (secondsRemaining)
+  - 사용자가 `cancelPendingRouting()` 호출하면 nil → routing 취소
+  - countdown 끝나면 routing 진행
+- ChatPane에 banner UI (orange, "취소" 버튼 + Esc 단축키)
+- SharedLog에 cancel 시 `🚫 자동 routing 취소됨` 기록
+
+### 2. ⌘K Command Palette (Linear Method)
+
+**근거**: Linear / Notion / VSCode 모두 ⌘K command palette 표준. power user 효율성 ↑.
+
+- 신규 `CommandPaletteSheet` (App, ~180줄)
+- `PaletteAction` struct (id/category/title/subtitle/icon/shortcut/perform)
+- fuzzy search (title/subtitle/category 매칭)
+- ↑↓ navigation (selectedIndex), ↩︎ 실행, Esc 취소
+- AppModel.buildCommandPaletteActions() — 카테고리별 동적 생성:
+  - **Workspace**: 활성 전환 (workspaces 전체)
+  - **Model**: pane 전환 (claude/codex)
+  - **Harness**: routing toggle, inline mode toggle, decompose 현재 input
+  - **Task**: ready task 실행 (▶)
+  - **Sheet**: Harness 도움말, 단축키 도움말, 파일 검색, 사용량 대시보드
+- ⌘K hotkey (RootView fileSearchHotkey ZStack에 추가)
+
+### 3. HarnessUI inline mode (메인 chat area 교체)
+
+**근거**: Antigravity의 핵심 UX — manager mode에서 모든 응답을 단일 timeline.
+
+- `AppPreferences.harnessInlineModeEnabled: Bool = false` (opt-in)
+- `chatArea` 분기:
+  - inline mode true → HarnessConversationView (with onShowHelp callback)
+  - false → traditionalChatArea (기존 multi-pane)
+- Settings + Command Palette 양쪽에서 토글 가능
+
+### 4. Walk-through view (Antigravity 패턴)
+
+**근거**: Antigravity의 walk-through review — 완료 task의 step-by-step 검토.
+
+- 신규 `WalkthroughSheet` (App, ~200줄)
+- TaskGraphMiniMap에서 완료/실패 task hover 시 📊 버튼 노출
+- 720x540 sheet:
+  - **Header**: task title + description + status badge
+  - **Left sidebar**: 진행 단계 navigator (각 entry timestamp)
+  - **Right detail**: 선택 step의 content + tokens + attachments
+  - **Footer**: 최종 결과 (task.output) + 닫기
+- step 분류: user / agent (with AgentBadge) / system
+- entry 필터: task.entryRefs 우선, 없으면 task.createdAt 이후 모든 entry
+
+### 5. 친절한 도움말 시스템
+
+**근거**: Hick's law (선택 마비) + onboarding research — 단일 진입점에서 모든 정보.
+
+신규 `HarnessHelpSheet` (App, ~300줄) — 640x600:
+- **Intro**: Harness란?
+- **주요 단축키**: ⌘K / ⌘P / ⌘/ / ⌘D / Esc
+- **Telegram 명령**: 8개 (/model, /decompose, /use, /diff, /changes, /bind 등)
+- **핵심 사용 패턴**: 5개 (Manager mode / 자동 routing / ProjectProfile / SharedLog / 외부 vibe-coding)
+- **FAQ**: 4개 (routing 잘못 / 토큰 절약 / 분해 비용 / inline vs multi-pane)
+
+호출 경로:
+- HarnessConversationView header `?` 버튼
+- Command Palette "Harness 도움말 (사용성)" 카테고리 1순위
+- ShortcutHelpSheet에 "Harness (다중 모델)" 카테고리 신규 추가 (⌘K / Esc / TG / click / hover→📊 등)
+
+### Settings UI 강화
+
+`SettingsView` Harness 섹션 확장:
+- 자동 routing toggle (기존)
+- **Cancel countdown stepper** (0~10초, 활성 시만 노출) — 신규
+- Harness 통합 view (Inspector) toggle (기존)
+- **Inline mode toggle** (메인 chat 교체) — 신규
+- HelpHint로 각 항목 설명
+
+### 격리
+
+- Core: AppPreferences 신규 옵션 (countdown / inline mode)
+- App: PendingRouting / buildCommandPaletteActions / EditProjectProfile / WalkthroughSheet / HarnessHelpSheet / CommandPaletteSheet
+- UI: HarnessConversationView onShowHelp / TaskGraphMiniMap onShowWalkthrough / InspectorPanel callbacks / SettingsView Harness 섹션 확장
+- 호출자 변경: RootView (sheet 3개 추가 + ⌘K hotkey + chatArea 분기) / TaskGraphMiniMap (walkthrough 버튼)
+
+### 결과
+
+- 신규 파일 2개:
+  - YuminaiApp/CommandPaletteSheet.swift (~180줄)
+  - YuminaiApp/HarnessSheets.swift (~500줄, WalkthroughSheet + HarnessHelpSheet)
+- 수정 파일 7개:
+  - YuminaiCore/AppPreferences.swift — countdown / inline mode + Codable backward-compat
+  - YuminaiApp/AppModel.swift — PendingRouting / countdown loop / cancelPendingRouting / buildCommandPaletteActions / showCommandPalette / walkthroughTaskId / showHarnessHelp
+  - YuminaiApp/RootView.swift — 3 sheet 등록 + ⌘K hotkey + intervention banner + chatArea 분기 + walkthroughBinding
+  - YuminaiUI/InspectorPanel.swift — onHarnessShowWalkthrough / onHarnessShowHelp
+  - YuminaiUI/HarnessConversationView.swift — onShowHelp + ? 버튼
+  - YuminaiUI/TaskGraphMiniMap.swift — onShowWalkthrough + 📊 hover 버튼
+  - YuminaiUI/SettingsView.swift — countdown stepper + inline mode toggle
+  - YuminaiUI/ShortcutHelpSheet.swift — Harness 카테고리 신규 + ⌘K
+- 테스트 339/339 통과 (regression 0)
+- 빌드 6.28s clean
+
+### 알려진 한계 / 다음 라운드
+
+- **Multi-agent 병렬 실행**: 두 pane에서 dependency 없는 task 동시 — 큰 변경 (background stream 관리)
+- **TaskDecomposition LLM 비용 분리**: 별도 ephemeral session — adapter 변경
+- **Routing decision log**: 전체 history view — 디버깅용
+- **Walk-through 리허설 (re-run)**: 완료 task를 다른 모델로 다시 실행
+- **Command Palette 카테고리 사용자 정의**: 자주 쓰는 액션 ★ 핀
+
+### 재검토
+
+- countdown 3초가 적정한지 (사용자 피드백 기반 조정)
+- Command Palette action 수가 늘면 카테고리 그루핑 필요
+- inline mode 사용자 데이터 — multi-pane 대비 선호도
 
 ---
 

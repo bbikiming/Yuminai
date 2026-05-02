@@ -4,6 +4,44 @@
 
 ## [Unreleased] — 2026-05-02
 
+### Added — Harness 사용성 강화: 5개 핵심 + 친절한 도움말 (ADR-051)
+
+**1. Intervention countdown** — 자동 routing 전 cancel window:
+- `AppPreferences.harnessRoutingCountdownSeconds: Int = 3` (Settings stepper 0~10)
+- `AppModel.PendingRouting` + `pendingRouting` state + `cancelPendingRouting()`
+- `applyHarnessAutoRoutingIfNeeded` 1초 단위 sleep loop, cancel 시 SharedLog에 `🚫 자동 routing 취소됨` 기록
+- ChatPane intervention banner (orange, "취소" 버튼 + Esc 단축키)
+
+**2. ⌘K Command Palette** (Linear Method):
+- 신규 `CommandPaletteSheet` — fuzzy search + ↑↓ navigation
+- `PaletteAction` (id/category/title/subtitle/icon/shortcut/perform)
+- AppModel.buildCommandPaletteActions() 카테고리: Workspace / Model / Harness / Task / Sheet
+- ⌘K hotkey (RootView)
+
+**3. HarnessUI inline mode** (메인 chat 교체):
+- `AppPreferences.harnessInlineModeEnabled: Bool = false`
+- chatArea 분기: inline → HarnessConversationView, false → traditionalChatArea
+- Settings + Command Palette 양쪽 토글
+
+**4. Walk-through view** (Antigravity 패턴):
+- 신규 `WalkthroughSheet` — 720x540, left navigator + right detail
+- TaskGraphMiniMap에서 완료/실패 task hover 시 📊 버튼
+- Step 분류: user/agent (AgentBadge)/system + entry timestamp + tokens + attachments
+- footer에 task.output
+
+**5. 친절한 HarnessHelpSheet** (사용성):
+- 신규 `HarnessHelpSheet` — 640x600, intro/단축키/명령/패턴/FAQ
+- HarnessConversationView header `?` 버튼
+- Command Palette "Harness 도움말" 1순위
+- ShortcutHelpSheet "Harness (다중 모델)" 카테고리 신규
+
+**Settings 강화**:
+- Cancel countdown stepper (활성 시만 노출)
+- Inline mode toggle + HelpHint
+- ShortcutHelpSheet에 ⌘K 추가
+
+빌드 6.28s clean. 전체 339/339 통과 (regression 0).
+
 ### Added — Harness Phase 6 + UX 강화 (증명된 패턴 6종) (ADR-050)
 
 **Phase 6 핵심**:

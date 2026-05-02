@@ -12,6 +12,7 @@ public struct TaskGraphMiniMap: View {
     public let onRemove: (UUID) -> Void
     public let onAddTask: () -> Void
     public let onRunReadyTask: (UUID) -> Void
+    public let onShowWalkthrough: (UUID) -> Void
 
     @AppStorage("yuminai.harness.taskGraphMode") private var modeRaw: String = TaskGraphViewMode.list.rawValue
 
@@ -24,13 +25,15 @@ public struct TaskGraphMiniMap: View {
         onUpdateStatus: @escaping (UUID, TaskStatus) -> Void = { _, _ in },
         onRemove: @escaping (UUID) -> Void = { _ in },
         onAddTask: @escaping () -> Void = {},
-        onRunReadyTask: @escaping (UUID) -> Void = { _ in }
+        onRunReadyTask: @escaping (UUID) -> Void = { _ in },
+        onShowWalkthrough: @escaping (UUID) -> Void = { _ in }
     ) {
         self.tasks = tasks
         self.onUpdateStatus = onUpdateStatus
         self.onRemove = onRemove
         self.onAddTask = onAddTask
         self.onRunReadyTask = onRunReadyTask
+        self.onShowWalkthrough = onShowWalkthrough
     }
 
     public var body: some View {
@@ -112,7 +115,8 @@ public struct TaskGraphMiniMap: View {
                         allTasks: tasks,
                         onUpdateStatus: { status in onUpdateStatus(task.id, status) },
                         onRemove: { onRemove(task.id) },
-                        onRunReady: { onRunReadyTask(task.id) }
+                        onRunReady: { onRunReadyTask(task.id) },
+                        onShowWalkthrough: { onShowWalkthrough(task.id) }
                     )
                 }
             }
@@ -237,6 +241,7 @@ private struct TaskRow: View {
     let onUpdateStatus: (TaskStatus) -> Void
     let onRemove: () -> Void
     let onRunReady: () -> Void
+    let onShowWalkthrough: () -> Void
 
     @State private var hovering = false
 
@@ -272,6 +277,16 @@ private struct TaskRow: View {
                         .help("이 task를 시작 (active pane으로 dispatch)")
                     }
                     if hovering {
+                        // ADR-051 — Walk-through 버튼 (완료된 task만)
+                        if task.status == .completed || task.status == .failed {
+                            Button(action: onShowWalkthrough) {
+                                Image(systemName: "rectangle.stack.fill.badge.person.crop")
+                                    .font(.system(size: 10))
+                                    .foregroundStyle(Theme.Color.accent)
+                            }
+                            .buttonStyle(.plain)
+                            .help("이 task의 진행 과정 walk-through")
+                        }
                         Menu {
                             ForEach(TaskStatus.allCases, id: \.self) { s in
                                 Button(s.rawValue, action: { onUpdateStatus(s) })

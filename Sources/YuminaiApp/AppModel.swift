@@ -222,6 +222,12 @@ public final class AppModel {
     }
     /// ADR-049 — ProjectProfile 편집 sheet 대상 워크스페이스 id (nil이면 닫힘)
     public var editingProjectProfileForWorkspaceId: UUID?
+    /// ADR-051 — ⌘K Command Palette 표시 여부
+    public var showCommandPalette: Bool = false
+    /// ADR-051 — Walk-through view 대상 task id (nil이면 닫힘)
+    public var walkthroughTaskId: UUID?
+    /// ADR-051 — Harness 도움말 sheet
+    public var showHarnessHelp: Bool = false
     public var selectedFilePaths: Set<String> {
         get { files.selectedPaths }
         set { files.selectedPaths = newValue }
@@ -914,6 +920,144 @@ public final class AppModel {
         // 향후 추가: dev server suggestions refresh, mention scope reset 등
     }
 
+    /// ADR-051 — Command Palette actions builder. caller (RootView)가 sheet에 전달.
+    /// 새 action 추가는 여기서 — 워크스페이스/모델/task/harness/sheet 카테고리.
+    public func buildCommandPaletteActions() -> [PaletteAction] {
+        var actions: [PaletteAction] = []
+
+        // Workspace switching
+        for workspace in workspaces {
+            actions.append(PaletteAction(
+                category: "Workspace",
+                title: "활성: \(workspace.name)",
+                subtitle: workspace.directoryPath,
+                icon: "folder",
+                shortcut: nil,
+                perform: { [weak self] in
+                    Task { await self?.transitionToWorkspace(workspace.id) }
+                }
+            ))
+        }
+
+        // Model switching (active workspace의 panes)
+        for pane in agentPanes {
+            actions.append(PaletteAction(
+                category: "Model",
+                title: "전환: \(pane.agentKind.shortLabel)",
+                subtitle: "활성 pane을 \(pane.agentKind.shortLabel)으로",
+                icon: pane.agentKind == .codex ? "chevron.left.forwardslash.chevron.right" : "c.circle",
+                shortcut: nil,
+                perform: { [weak self] in
+                    Task { _ = await self?.switchToPaneOfKind(pane.agentKind) }
+                }
+            ))
+        }
+
+        // Harness routing toggle
+        actions.append(PaletteAction(
+            category: "Harness",
+            title: preferences.harnessAutoRoutingEnabled ? "자동 routing 끄기" : "자동 routing 켜기",
+            subtitle: "사용자 입력 keyword 기반 모델 자동 전환",
+            icon: "arrow.left.arrow.right.circle",
+            shortcut: nil,
+            perform: { [weak self] in
+                Task { @MainActor in
+                    self?.preferences.harnessAutoRoutingEnabled.toggle()
+                    await self?.savePreferences()
+                }
+            }
+        ))
+
+        // Inline mode toggle
+        actions.append(PaletteAction(
+            category: "Harness",
+            title: preferences.harnessInlineModeEnabled ? "Inline mode 끄기 (multi-pane으로)" : "Inline mode 켜기 (단일 timeline)",
+            subtitle: "메인 chat area를 Harness 통합 view로 교체",
+            icon: "sparkles.rectangle.stack",
+            shortcut: nil,
+            perform: { [weak self] in
+                Task { @MainActor in
+                    self?.preferences.harnessInlineModeEnabled.toggle()
+                    await self?.savePreferences()
+                }
+            }
+        ))
+
+        // Decompose
+        if !inputText.isEmpty {
+            actions.append(PaletteAction(
+                category: "Harness",
+                title: "현재 입력 분해 (/decompose)",
+                subtitle: "‘\(String(inputText.prefix(40)))…’를 sub-task로 분해",
+                icon: "list.bullet.indent",
+                shortcut: nil,
+                perform: { [weak self] in
+                    guard let self else { return }
+                    let text = self.inputText
+                    Task { _ = await self.decomposeUserTask(text) }
+                }
+            ))
+        }
+
+        // Run ready tasks
+        for task in harness.readyTasks {
+            actions.append(PaletteAction(
+                category: "Task",
+                title: "▶ \(task.title)",
+                subtitle: task.description,
+                icon: "play.circle",
+                shortcut: nil,
+                perform: { [weak self] in
+                    Task { await self?.runHarnessTask(task.id) }
+                }
+            ))
+        }
+
+        // Sheets
+        actions.append(PaletteAction(
+            category: "Sheet",
+            title: "Harness 도움말 (사용성)",
+            subtitle: "단축키 / 명령 / 패턴 / FAQ — 친절한 cheatsheet",
+            icon: "lightbulb",
+            shortcut: nil,
+            perform: { [weak self] in
+                self?.presentExclusiveSheet { $0.showHarnessHelp = true }
+            }
+        ))
+        actions.append(PaletteAction(
+            category: "Sheet",
+            title: "단축키 도움말",
+            subtitle: "모든 단축키 리스트",
+            icon: "questionmark.circle",
+            shortcut: "⌘/",
+            perform: { [weak self] in
+                self?.presentExclusiveSheet { $0.showShortcutHelp = true }
+            }
+        ))
+        actions.append(PaletteAction(
+            category: "Sheet",
+            title: "파일 검색",
+            subtitle: "워크스페이스 파일 fuzzy 검색",
+            icon: "doc.text.magnifyingglass",
+            shortcut: "⌘P",
+            perform: { [weak self] in
+                self?.presentExclusiveSheet { $0.showFileSearchSheet = true }
+            }
+        ))
+        actions.append(PaletteAction(
+            category: "Sheet",
+            title: "사용량 대시보드",
+            subtitle: "전체 token/cost 통계",
+            icon: "chart.bar",
+            shortcut: "⌘D",
+            perform: { [weak self] in
+                self?.presentExclusiveSheet { $0.showUsageDashboard = true }
+            }
+        ))
+
+        return actions
+    }
+
     /// ADR-050 Phase 6 — TaskGraph "▶ 실행" 액션. ready task를 active pane에 dispatch.
     /// 1. task.assignedAgent로 pane 전환 (있으면)
     /// 2. handoff prompt + task description을 inputText로 prepend
@@ -1367,13 +1511,25 @@ public final class AppModel {
         return true
     }
 
+    /// ADR-051 — pending routing decision (countdown 중인 routing).
+    /// view가 banner로 표시 + 사용자 cancel 가능.
+    public var pendingRouting: PendingRouting?
+
+    public struct PendingRouting: Equatable, Sendable {
+        public let from: AgentKind
+        public let to: AgentKind
+        public let reason: String
+        public let estimatedHandoffTokens: Int
+        public let secondsRemaining: Int
+    }
+
     /// ADR-048 Phase 3 — Harness 자동 routing. 사용자 입력 → 추천 agent → 다른 pane이면 자동 전환.
     /// ADR-050 — XAI 원칙: routing 이유 (matched keyword) SharedLog에 기록.
+    /// ADR-051 — countdown intervention (preferences.harnessRoutingCountdownSeconds > 0 시).
     /// returns: routing이 발생했으면 generated handoff prompt (caller가 inputText에 prepend), 아니면 nil.
     /// **side effect**: pane 전환 + SharedLog 기록. inputText는 caller 책임.
     public func applyHarnessAutoRoutingIfNeeded(userText: String) async -> String? {
         guard preferences.harnessAutoRoutingEnabled else { return nil }
-        // ADR-050 XAI — keyword 매칭 정보 함께 가져오기
         let classification = ModelCapabilityMatrix.classifyTaskKind(userText)
         let recommended = ModelCapabilityMatrix.recommend(for: classification.kind)
         guard let workspace = currentWorkspace else { return nil }
@@ -1382,15 +1538,42 @@ public final class AppModel {
         guard let targetPane = agentPanes.first(where: { $0.agentKind == recommended }) else {
             return nil
         }
-        await setActivePane(targetPane.id)
         let handoff = harness.buildHandoffPrompt(
             targetModel: recommended,
             projectProfile: workspace.projectProfile
         )
-        // ADR-050 XAI 설명 — 사용자가 SharedLog에서 왜 전환됐는지 즉시 인지
         let reason = classification.matchedKeyword.map { "‘\($0)’ keyword 감지 → \(classification.kind.rawValue)" } ?? "keyword 일반"
+
+        // ADR-051 — countdown intervention
+        let countdown = preferences.harnessRoutingCountdownSeconds
+        if countdown > 0 {
+            // banner 표시 + N초 sleep (사용자가 그 사이 cancelPendingRouting 호출 가능)
+            for remaining in stride(from: countdown, through: 1, by: -1) {
+                pendingRouting = PendingRouting(
+                    from: currentKind,
+                    to: recommended,
+                    reason: reason,
+                    estimatedHandoffTokens: handoff.estimatedTokens,
+                    secondsRemaining: remaining
+                )
+                try? await Task.sleep(for: .seconds(1))
+                // 사용자가 cancel하면 pendingRouting이 nil
+                if pendingRouting == nil {
+                    harness.appendSystem("🚫 자동 routing 취소됨 (사용자 개입) — 현재 \(currentKind.shortLabel) 유지")
+                    return nil
+                }
+            }
+            pendingRouting = nil
+        }
+
+        await setActivePane(targetPane.id)
         harness.appendSystem("🔀 자동 routing: \(currentKind.shortLabel) → \(recommended.shortLabel)\n  사유: \(reason)\n  handoff: ~\(handoff.estimatedTokens) tokens")
         return handoff.promptText + "\n\n---\n\n"
+    }
+
+    /// ADR-051 — 사용자가 routing countdown 중 취소.
+    public func cancelPendingRouting() {
+        pendingRouting = nil
     }
 
     /// ADR-047 Phase 2 — turn 단위 agent 응답 누적 buffer.
@@ -1909,6 +2092,10 @@ public final class AppModel {
         fileDeleteConfirmation = nil
         renameSheetPane = nil
         terminalRenameTargetId = nil
+        editingProjectProfileForWorkspaceId = nil
+        showCommandPalette = false
+        walkthroughTaskId = nil
+        showHarnessHelp = false
     }
 
     /// 새 sheet/alert을 열기 전에 다른 sheet 모두 닫고 setter 실행.

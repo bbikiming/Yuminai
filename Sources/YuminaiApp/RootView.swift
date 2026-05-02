@@ -151,6 +151,29 @@ struct RootView: View {
                 onCancel: { appModel.editingProjectProfileForWorkspaceId = nil }
             )
         }
+        // ADR-051 — ⌘K Command Palette
+        .sheet(isPresented: $bindable.showCommandPalette) {
+            CommandPaletteSheet(
+                actions: appModel.buildCommandPaletteActions(),
+                onPerform: { action in
+                    appModel.showCommandPalette = false
+                    action.perform()
+                },
+                onCancel: { appModel.showCommandPalette = false }
+            )
+        }
+        // ADR-051 — Walk-through view (완료 task step-by-step)
+        .sheet(item: walkthroughBinding) { task in
+            WalkthroughSheet(
+                task: task,
+                allEntries: appModel.harness.conversationLog,
+                onClose: { appModel.walkthroughTaskId = nil }
+            )
+        }
+        // ADR-051 — Harness 도움말
+        .sheet(isPresented: $bindable.showHarnessHelp) {
+            HarnessHelpSheet(onClose: { appModel.showHarnessHelp = false })
+        }
         .sheet(item: $bindable.renameSheetPane) { pane in
             PaneRenameSheet(
                 pane: pane,
@@ -345,7 +368,13 @@ struct RootView: View {
                             assignedAgent: appModel.currentWorkspace?.agentKind
                         )
                     },
-                    onHarnessRunTask: { id in Task { await appModel.runHarnessTask(id) } }
+                    onHarnessRunTask: { id in Task { await appModel.runHarnessTask(id) } },
+                    onHarnessShowWalkthrough: { id in
+                        appModel.presentExclusiveSheet { $0.walkthroughTaskId = id }
+                    },
+                    onHarnessShowHelp: {
+                        appModel.presentExclusiveSheet { $0.showHarnessHelp = true }
+                    }
                 )
                 .task(id: appModel.selectedWorkspaceId) {
                     // ADR-043 R4 — 단일 transition 함수로 응집 (race/순서 명확)
@@ -413,14 +442,37 @@ struct RootView: View {
 
     /// ⌘P — 파일 검색 (Cmd+P palette) sheet.
     private var fileSearchHotkey: some View {
-        Button {
-            appModel.presentExclusiveSheet { $0.showFileSearchSheet = true }
-        } label: { EmptyView() }
-            .keyboardShortcut("p", modifiers: .command)
-            .opacity(0)
-            .frame(width: 0, height: 0)
-            .accessibilityHidden(true)
-            .disabled(appModel.currentWorkspace == nil)
+        ZStack {
+            Button {
+                appModel.presentExclusiveSheet { $0.showFileSearchSheet = true }
+            } label: { EmptyView() }
+                .keyboardShortcut("p", modifiers: .command)
+                .opacity(0)
+                .frame(width: 0, height: 0)
+                .accessibilityHidden(true)
+                .disabled(appModel.currentWorkspace == nil)
+            // ADR-051 — ⌘K Command Palette
+            Button {
+                appModel.presentExclusiveSheet { $0.showCommandPalette = true }
+            } label: { EmptyView() }
+                .keyboardShortcut("k", modifiers: .command)
+                .opacity(0)
+                .frame(width: 0, height: 0)
+                .accessibilityHidden(true)
+        }
+    }
+
+    /// ADR-051 — Walk-through sheet binding (task id ↔ HarnessTask).
+    private var walkthroughBinding: Binding<HarnessTask?> {
+        Binding(
+            get: {
+                guard let id = appModel.walkthroughTaskId else { return nil }
+                return appModel.harness.tasks.first { $0.id == id }
+            },
+            set: { newValue in
+                appModel.walkthroughTaskId = newValue?.id
+            }
+        )
     }
 
     /// ADR-049 — ProjectProfile 편집 sheet binding (workspace id ↔ Workspace).
@@ -717,6 +769,10 @@ struct ChatPane: View {
                     .background(Theme.Color.accentMuted)
                     .overlay(alignment: .bottom) { FlatHDivider() }
                 }
+                // ADR-051 — Routing intervention banner (3초 cancel window)
+                if let pending = appModel.pendingRouting {
+                    routingInterventionBanner(pending: pending)
+                }
                 if !appModel.agentPanes.isEmpty {
                     PaneTabBar(
                         panes: appModel.agentPanes,
@@ -815,6 +871,22 @@ struct ChatPane: View {
     /// chat 영역 — split mode에 따라 1 pane (active) 또는 2 panes (active + secondary).
     @ViewBuilder
     private var chatArea: some View {
+        // ADR-051 — Inline mode: 메인 chat을 통째로 HarnessConversationView로 교체
+        if appModel.preferences.harnessInlineModeEnabled {
+            HarnessConversationView(
+                entries: appModel.harness.conversationLog,
+                estimatedTotalTokens: appModel.harness.estimatedTotalTokens,
+                agentResponseCounts: appModel.harness.agentResponseCounts,
+                sessionCostUSD: appModel.currentSessionUsage.costUSD,
+                onShowHelp: { appModel.presentExclusiveSheet { $0.showHarnessHelp = true } }
+            )
+        } else {
+            traditionalChatArea
+        }
+    }
+
+    @ViewBuilder
+    private var traditionalChatArea: some View {
         let activeView = ChatView(
             messages: appModel.messages,
             assistantLabel: appModel.activePane?.displayName ?? "Claude"
@@ -1123,6 +1195,43 @@ struct ChatPane: View {
                 .allowsHitTesting(isActive)
             }
         }
+    }
+
+    /// ADR-051 — Routing intervention banner (3초 cancel window).
+    /// 사용자가 자동 routing 결정에 개입할 수 있는 짧은 윈도우 — 신뢰 UX (XAI + intervention 원칙).
+    fileprivate func routingInterventionBanner(pending: AppModel.PendingRouting) -> some View {
+        HStack(spacing: 8) {
+            Image(systemName: "arrow.left.arrow.right.circle.fill")
+                .font(.system(size: 13))
+                .foregroundStyle(Color.orange)
+            VStack(alignment: .leading, spacing: 2) {
+                Text("자동 routing 예정 — \(pending.from.shortLabel) → \(pending.to.shortLabel)")
+                    .font(Theme.Typography.small.weight(.medium))
+                    .foregroundStyle(Theme.Color.text)
+                Text("\(pending.reason) · ~\(pending.estimatedHandoffTokens) tokens handoff · \(pending.secondsRemaining)초 후 진행")
+                    .font(Theme.Typography.micro)
+                    .foregroundStyle(Theme.Color.textSecondary)
+            }
+            Spacer()
+            Button("취소 (현재 모델 유지)") {
+                appModel.cancelPendingRouting()
+            }
+            .buttonStyle(.plain)
+            .padding(.horizontal, 8)
+            .padding(.vertical, 4)
+            .background(Theme.Color.surface)
+            .overlay(
+                RoundedRectangle(cornerRadius: Theme.Radius.sm)
+                    .stroke(Color.orange, lineWidth: 1)
+            )
+            .clipShape(RoundedRectangle(cornerRadius: Theme.Radius.sm))
+            .keyboardShortcut(.escape, modifiers: [])
+        }
+        .padding(.horizontal, Theme.Spacing.md)
+        .padding(.vertical, Theme.Spacing.xs)
+        .background(Color.orange.opacity(0.12))
+        .overlay(alignment: .bottom) { FlatHDivider() }
+        .transition(.move(edge: .top).combined(with: .opacity))
     }
 }
 

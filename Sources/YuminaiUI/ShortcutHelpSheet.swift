@@ -173,7 +173,17 @@ public struct ShortcutHelpSheet: View {
             .init(label: "사용량 대시보드", keys: ["⌘", "D"]),
             .init(label: "설정", keys: ["⌘", ","]),
             .init(label: "단축키 도움말 (이 화면)", keys: ["⌘", "/"]),
+            .init(label: "Command Palette", keys: ["⌘", "K"]),
             .init(label: "워크스페이스 빠른 전환", keys: ["⌘", "1~9"])
+        ]),
+        // ADR-051 — Harness 카테고리
+        ShortcutCategory(title: "Harness (다중 모델)", shortcuts: [
+            .init(label: "Command Palette (모든 액션)", keys: ["⌘", "K"]),
+            .init(label: "자동 routing 취소 (countdown 중)", keys: ["esc"]),
+            .init(label: "Telegram /model claude|codex|auto", keys: ["TG"]),
+            .init(label: "Telegram /decompose <설명>", keys: ["TG"]),
+            .init(label: "TaskGraph ▶ 실행 (ready task)", keys: ["click"]),
+            .init(label: "Walk-through (완료 task)", keys: ["hover→📊"])
         ]),
         ShortcutCategory(title: "채팅", shortcuts: [
             .init(label: "메시지 보내기", keys: ["⌘", "↵"]),

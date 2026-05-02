@@ -35,6 +35,12 @@ public struct AppPreferences: Sendable, Codable, Hashable {
     /// ADR-049 Phase 5 — Inspector에 Harness conversation view + TaskGraph mini-map 표시.
     /// **default false** — 전통 multi-pane이 default. 옵트인하면 Inspector에 'Harness' 탭 추가.
     public var harnessUIEnabled: Bool
+    /// ADR-051 — 자동 routing 전 N초 cancel countdown (사용자 신뢰 ↑).
+    /// 0이면 즉시 routing (이전 동작). 3 권장.
+    public var harnessRoutingCountdownSeconds: Int
+    /// ADR-051 — Harness inline mode: 메인 chat area를 HarnessConversationView로 교체.
+    /// **default false** — 전통 ChatView가 default.
+    public var harnessInlineModeEnabled: Bool
     /// pane 응답에 `@<other>` mention이 있으면 자동으로 다음 turn dispatch (ADR-034 A1).
     /// **default OFF** — 무한 루프 위험, 명시적 토글 필요.
     public var agentChainEnabled: Bool
@@ -61,6 +67,8 @@ public struct AppPreferences: Sendable, Codable, Hashable {
         telegramShowCostInline: Bool = true,
         harnessAutoRoutingEnabled: Bool = false,
         harnessUIEnabled: Bool = false,
+        harnessRoutingCountdownSeconds: Int = 3,
+        harnessInlineModeEnabled: Bool = false,
         agentChainEnabled: Bool = false,
         agentChainMaxHops: Int = 1,
         fontSizeOffset: Int = 0,
@@ -83,6 +91,8 @@ public struct AppPreferences: Sendable, Codable, Hashable {
         self.telegramShowCostInline = telegramShowCostInline
         self.harnessAutoRoutingEnabled = harnessAutoRoutingEnabled
         self.harnessUIEnabled = harnessUIEnabled
+        self.harnessRoutingCountdownSeconds = harnessRoutingCountdownSeconds
+        self.harnessInlineModeEnabled = harnessInlineModeEnabled
         self.agentChainEnabled = agentChainEnabled
         self.agentChainMaxHops = agentChainMaxHops
         self.fontSizeOffset = fontSizeOffset
@@ -109,6 +119,8 @@ public struct AppPreferences: Sendable, Codable, Hashable {
         self.telegramShowCostInline = try c.decodeIfPresent(Bool.self, forKey: .telegramShowCostInline) ?? true
         self.harnessAutoRoutingEnabled = try c.decodeIfPresent(Bool.self, forKey: .harnessAutoRoutingEnabled) ?? false
         self.harnessUIEnabled = try c.decodeIfPresent(Bool.self, forKey: .harnessUIEnabled) ?? false
+        self.harnessRoutingCountdownSeconds = try c.decodeIfPresent(Int.self, forKey: .harnessRoutingCountdownSeconds) ?? 3
+        self.harnessInlineModeEnabled = try c.decodeIfPresent(Bool.self, forKey: .harnessInlineModeEnabled) ?? false
         self.agentChainEnabled = try c.decodeIfPresent(Bool.self, forKey: .agentChainEnabled) ?? false
         self.agentChainMaxHops = try c.decodeIfPresent(Int.self, forKey: .agentChainMaxHops) ?? 1
         self.fontSizeOffset = try c.decodeIfPresent(Int.self, forKey: .fontSizeOffset) ?? 0
