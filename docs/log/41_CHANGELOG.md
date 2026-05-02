@@ -4,6 +4,53 @@
 
 ## [Unreleased] — 2026-05-02
 
+### Refactored / Added — audit 후속 R3.2~R3.6 + R5: 코디네이터 4개 추가 + Sheet 상호배제 + F2 단축키 (ADR-044)
+
+**R3.2 WorkspaceFileManager** (큰 추출):
+- 신규 `Sources/YuminaiApp/WorkspaceFileManager.swift` (~330줄, @MainActor @Observable)
+- 9 state + 17 메서드 (tree refresh / tab lifecycle / editing / CRUD / selection / inline rename / sync helpers)
+- AppModel facade pass-through — 호출자 변경 0건
+
+**R3.3 CommandRunnerCoordinator**:
+- 신규 `Sources/YuminaiApp/CommandRunnerCoordinator.swift` (~70줄)
+- 3 state + 4 메서드 (run/clear/copyOutput/buildShareToAgentPrefix)
+
+**R3.5 DeliveryCoordinator** (state-only):
+- 신규 `Sources/YuminaiApp/DeliveryCoordinator.swift` (~50줄)
+- results/isRunning/pendingFailureFeedback + cap 응집
+- triggerAutoDelivery는 AppModel 잔존 (workspace 의존)
+
+**R3.4 AgentPaneCoordinator** (state holder만):
+- 신규 `Sources/YuminaiApp/AgentPaneCoordinator.swift` (~95줄)
+- panes/messages/settings/usage dict + chain hops/visited
+- lifecycle은 AppModel 잔존 (ClaudeStreamSession protocol 의존)
+
+**R3.6 ObsidianVaultCoordinator** (minimal):
+- 신규 `Sources/YuminaiApp/ObsidianVaultCoordinator.swift` (~60줄)
+- 14 state holder (vault/tree/note/search/edit/picker/disambig/favorites/recents)
+- lifecycle은 AppModel 잔존 (VaultWatcher 의존)
+
+**R3.7 TelegramCoordinator — 보류**:
+- public state surface 작음, lifecycle이 4 private session object에 위임
+- coord 추출 ROI 낮음 — ADR-045 별도 보호 작업 후 재검토
+
+**R5.A Sheet mutual exclusion**:
+- AppModel.dismissAllSheets() — 모든 11개 sheet/alert state 일괄 클리어
+- AppModel.presentExclusiveSheet { setter } — 새 sheet 열기 전 dismiss 자동
+- showFileSearchSheet / showShortcutHelp programmatic 호출 모두 적용
+
+**R5.B F2 키 NSEvent local monitor**:
+- SwiftUI .onKeyPress가 F2 미지원 → NSEvent.addLocalMonitorForEvents (keyCode 120)
+- RootView.installF2Monitor() — onAppear 시 install, onDisappear 시 remove
+- 가드: sheet/alert/inline rename 활성 중이면 무시
+- 동작: appModel.beginInlineRename(activeFileTab.path) → 이벤트 소비
+
+**R5.C CommandBlock 버튼 발견성**:
+- copy/share/rerun 버튼: hover-only → opacity 0.4 always-visible (hover 시 1.0)
+- 발견성 ↑ + 시각 노이즈 균형
+
+전체 293/293 통과. 빌드 7.30~7.36s clean.
+
 ### Fixed — audit 기반 R4: 안정성 + magic number 추출 (ADR-043)
 
 - AppLimits enum 신규 — 산재된 magic number 단일 source

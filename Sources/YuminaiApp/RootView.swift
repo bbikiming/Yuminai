@@ -1,4 +1,5 @@
 import SwiftUI
+import AppKit
 import YuminaiCore
 import YuminaiUI
 
@@ -17,6 +18,10 @@ struct RootView: View {
 
     /// 윈도우 너비 추적.
     @State private var windowSize: CGSize = .zero
+
+    /// ADR-042 R5.B — F2 키 NSEvent local monitor (active file tab의 inline rename 시작).
+    /// SwiftUI .onKeyPress가 F2를 직접 지원하지 않아 NSEvent로 우회.
+    @State private var f2Monitor: Any?
 
     var layoutMode: LayoutMode { Theme.Layout.mode(for: windowSize.width) }
 
@@ -49,7 +54,9 @@ struct RootView: View {
             .onAppear {
                 windowSize = geo.size
                 appModel.showInspector = inspectorVisible  // legacy sync
+                installF2Monitor()
             }
+            .onDisappear { removeF2Monitor() }
             .onChange(of: geo.size) { _, newSize in
                 handleSizeChange(newSize)
             }
@@ -279,7 +286,7 @@ struct RootView: View {
                     onDiscardFileEdits: { appModel.discardWorkspaceFileEdits() },
                     onRefreshFileTree: { Task { await appModel.refreshWorkspaceFileTree() } },
                     onOpenFileInExternalEditor: { path in appModel.openFileInExternalEditor(path) },
-                    onShowFileSearch: { appModel.showFileSearchSheet = true },
+                    onShowFileSearch: { appModel.presentExclusiveSheet { $0.showFileSearchSheet = true } },
                     onRequestCreateFile: { parent in
                         appModel.fileNameSheetIntent = .newFile(parent: parent)
                     },
@@ -375,7 +382,7 @@ struct RootView: View {
     /// ⌘P — 파일 검색 (Cmd+P palette) sheet.
     private var fileSearchHotkey: some View {
         Button {
-            appModel.showFileSearchSheet = true
+            appModel.presentExclusiveSheet { $0.showFileSearchSheet = true }
         } label: { EmptyView() }
             .keyboardShortcut("p", modifiers: .command)
             .opacity(0)
@@ -477,7 +484,7 @@ struct RootView: View {
     }
 
     private var helpHotkey: some View {
-        Button("") { appModel.showShortcutHelp = true }
+        Button("") { appModel.presentExclusiveSheet { $0.showShortcutHelp = true } }
             .keyboardShortcut("/", modifiers: .command)
             .opacity(0)
             .frame(width: 0, height: 0)
@@ -526,6 +533,36 @@ struct RootView: View {
         withAnimation(Theme.Animation.panelToggle) {
             inspectorUserVisible.toggle()
             appModel.showInspector = inspectorUserVisible
+        }
+    }
+
+    /// ADR-042 R5.B — NSEvent local monitor 설치 (F2 키).
+    /// active file tab이 있고 inline rename 중이 아니면 inline rename 시작.
+    private func installF2Monitor() {
+        guard f2Monitor == nil else { return }
+        f2Monitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { event in
+            // F2 = keyCode 120 on macOS
+            guard event.keyCode == 120 else { return event }
+            // sheet/alert 열려있으면 무시 (텍스트 입력 방해 방지)
+            guard appModel.fileNameSheetIntent == nil,
+                  appModel.fileDeleteConfirmation == nil,
+                  !appModel.showFileSearchSheet,
+                  !appModel.showShortcutHelp else {
+                return event
+            }
+            // 인라인 rename 진행 중이면 무시
+            guard appModel.inlineRenameTargetPath == nil else { return event }
+            // 활성 파일이 없으면 무시
+            guard let path = appModel.activeFileTab?.path else { return event }
+            appModel.beginInlineRename(path)
+            return nil  // 이벤트 소비 (다른 핸들러 차단)
+        }
+    }
+
+    private func removeF2Monitor() {
+        if let monitor = f2Monitor {
+            NSEvent.removeMonitor(monitor)
+            f2Monitor = nil
         }
     }
 
@@ -596,7 +633,7 @@ struct ChatPane: View {
                 onTogglePreview: { appModel.showPreviewPane.toggle() },
                 onToggleCommands: { appModel.showCommandRunnerPane.toggle() },
                 onShowDashboard: { appModel.showUsageDashboard = true },
-                onShowShortcutHelp: { appModel.showShortcutHelp = true },
+                onShowShortcutHelp: { appModel.presentExclusiveSheet { $0.showShortcutHelp = true } },
                 onSelectWorkspace: { id in appModel.selectedWorkspaceId = id },
                 onCreateWorkspace: { appModel.showCreateWorkspaceSheet = true },
                 onSelectAgent: { kind in
@@ -1188,7 +1225,7 @@ struct EmptyWorkspaceView: View {
                 }
                 .keyboardShortcut("n", modifiers: .command)
                 FlatButton("도움말", variant: .secondary, size: .large) {
-                    appModel.showShortcutHelp = true
+                    appModel.presentExclusiveSheet { $0.showShortcutHelp = true }
                 }
             }
             Text("⌘N 새 워크스페이스 · ⌘/ 단축키 도움말")

@@ -1,6 +1,96 @@
 # Decisions Log (ADR-lite)
 
-> 최신: ADR-043 (audit 기반 R4 — 안정성: max cap, persist 직렬화, transition 응집, unread fallback)
+> 최신: ADR-044 (audit 후속 R3.2~R3.6 + R5 — 코디네이터 4개 추가 추출 + sheet 중첩 차단 + F2 inline rename)
+
+---
+
+## ADR-044 — audit 후속: 4 코디네이터 추가 추출 + Sheet 상호배제 + F2 단축키 + UX polish
+
+- **날짜**: 2026-05-02
+- **상태**: Accepted
+- **결정**: ADR-042 R3.1 (TerminalSessionCoordinator) 후속 — 남은 코디네이터 6개 중 4개 추출 + sheet mutual exclusion helper + F2 키 NSEvent monitor + UX polish
+
+### R3.2 WorkspaceFileManager (HIGH ROI)
+- 신규 `WorkspaceFileManager.swift` (~330줄, @MainActor @Observable)
+- 9 state + 17 메서드 응집:
+  - tree refresh + tab lifecycle (select/setActive/close/closeAll/selectAdjacent/closeActive)
+  - editing (start/save/discard) + activeDraft custom setter
+  - CRUD (createFile/createFolder/renameNode/deleteNode/moveNode/deleteSelected)
+  - selection (toggle/clear) + inline rename (begin/cancel/commit)
+  - tab sync helpers (rename/delete affected tabs)
+- WorkspaceFileTree actor 의존성은 coord 내부 (workspace는 caller 주입)
+- AppModel facade — 전역 호출자 변경 0건 (R3.1 패턴)
+- lastError pattern으로 caller에 에러 전파
+
+### R3.3 CommandRunnerCoordinator (작은)
+- 신규 `CommandRunnerCoordinator.swift` (~70줄)
+- 3 state (showPane/blocks/isRunning) + 4 메서드 (run/clear/copyOutput/buildShareToAgentPrefix)
+- buildShareToAgentPrefix는 prefix만 반환 — composer enqueue는 facade 책임 (분리)
+
+### R3.5 DeliveryCoordinator (state-only)
+- 신규 `DeliveryCoordinator.swift` (~50줄)
+- 3 state (results/isRunning/pendingFailureFeedback) + 4 메서드 (appendResult/appendResults/clear/consumePendingFailure)
+- triggerAutoDelivery + checkpoint은 AppModel 잔존 (workspace 의존성 깊음)
+
+### R3.4 AgentPaneCoordinator (minimal — state holder만)
+- 신규 `AgentPaneCoordinator.swift` (~95줄)
+- 5 state dict + 2 chain state (chainHops/chainVisited)
+- 활성 pane projection (activePane/activeMessages/activeSettings/activeUsage)
+- 메서드 5개 helper (appendMessageToActive/setActiveMessages/mutateActiveMessages/setActiveSettings/setActiveUsage)
+- **lifecycle (addPane/removePane/setActivePane/renamePane) + ClaudeStreamSession lifecycle은 AppModel 잔존**
+  — protocol 의존성 깊음, R3.4.2에서 분리 가능
+
+### R3.6 ObsidianVaultCoordinator (minimal)
+- 신규 `ObsidianVaultCoordinator.swift` (~60줄)
+- 14 state (vault/tree/selectedNote/searchQuery/fullTextEnabled/hits/edit/picker/disambig/favorites/recents)
+- noteIsDirty computed
+- **lifecycle (setupObsidianVault/watcher/searchTask)는 AppModel 잔존**
+
+### R3.7 TelegramCoordinator — 보류
+- public state surface 작음 (cokacdirImportError + telegramTokenStatus만)
+- 실제 lifecycle은 4 private session object (telegramBot/alertDispatcher/commandPump/sessionBridge)에 위임
+- coord 추출 ROI 낮음 — AppModel 잔존이 합리적
+- 향후 별도 protocol 정리 후 R3.7.2에서 재검토
+
+### R5.A Sheet mutual exclusion
+- 11개 sheet/alert binding이 같은 view에 동시 attach — race 가능 (audit M4)
+- AppModel.dismissAllSheets() — 모든 sheet/alert state 한 번에 클리어
+- AppModel.presentExclusiveSheet { setter } — 새 sheet 열기 전 dismiss 자동
+- 적용처: showFileSearchSheet, showShortcutHelp (programmatic 호출 모두)
+- 사용자 trigger (컨텍스트 메뉴 등)도 점진 적용 가능
+
+### R5.B F2 키 NSEvent local monitor
+- SwiftUI .onKeyPress가 F2 함수키 미지원 → NSEvent.addLocalMonitorForEvents (keyCode 120)
+- RootView.installF2Monitor() — view appear 시 install, disappear 시 remove
+- 가드: sheet/alert 활성 중이면 무시 (텍스트 입력 방해 방지)
+- 가드: inlineRenameTargetPath != nil이면 무시 (재진입 방지)
+- 가드: activeFileTab == nil이면 무시 (대상 없음)
+- 동작: appModel.beginInlineRename(activePath) → 이벤트 소비 (return nil)
+- ADR-041에서 "v1.3+ deferred" 명시했지만 이번 라운드에서 구현 (사용자 요청)
+
+### R5.C CommandBlock 버튼 발견성
+- copy/share/rerun 버튼이 hover일 때만 표시 → 항상 표시 (opacity 0.4) + hover 시 1.0
+- 사용자가 버튼 존재 인지 + 시각 노이즈 균형 (audit M3)
+
+### 결과
+- 신규 파일 5개 (App): WorkspaceFileManager / CommandRunnerCoordinator / DeliveryCoordinator / AgentPaneCoordinator / ObsidianVaultCoordinator
+- 수정 파일 3개: AppModel (facade pass-through 대량 추가) / RootView (F2 monitor + sheet exclusive) / CommandRunnerPane (always-visible buttons)
+- AppModel state 20+ 변수 → coord로 이전. AppModel 사이즈는 facade 늘어 큰 차이 없으나 **새 기능 추가 시 어느 coord에 갈지 명확**해짐
+- 호출자 변경 0건 (모두 facade computed pass-through)
+- 테스트 293/293 통과 (regression 0)
+- 빌드 6.65~7.36s clean
+
+### 알려진 한계 / 다음 라운드 (ADR-045+)
+- **R3.4.2**: AgentPane lifecycle (setActivePane/addPane/sendMessage)을 coord로 — ClaudeStreamSession protocol 의존성 정리 선행 필요
+- **R3.6.2**: Obsidian lifecycle (setupVault/watcher/searchTask)을 coord로 — VaultWatcher actor 정리
+- **R3.7**: Telegram bot/dispatcher/pump/bridge protocol 정리 후 coord 추출
+- **Sheet enum routing**: 현재 11개 boolean → 단일 enum 기반 routing (큰 refactor)
+- **Environment 주입 전환**: 모든 coord 추출 완료 후 facade 제거 + view에 Environment 주입 (prop drilling 영구 해소)
+
+### 재검토
+- F2 NSEvent monitor가 다른 키와 충돌 없는지 (다른 view의 F2 reservation 검토)
+- Sheet mutual exclusion이 사용자 의도 (예: sheet 닫고 새로 열기) 잘못 해석하지 않는지
+- coord 분리가 SwiftUI invalidation 영향 (Observation read-tracking이라 큰 영향 없을 것)
 
 ---
 

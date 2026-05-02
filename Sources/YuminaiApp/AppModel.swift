@@ -59,41 +59,82 @@ public final class AppModel {
     // 첨부파일 — sendMessage 시 prompt 앞에 `@<path>` 형식으로 prepend
     public var attachedFiles: [URL] = []
 
-    // Obsidian Vault
     public var inspectorTab: InspectorTab = .context
-    public var obsidianVault: ObsidianVault?
-    public var vaultTree: [VaultNode] = []
-    public var selectedNote: Note?
-    public var noteSearchQuery: String = ""
-    public var noteFullTextEnabled: Bool = false
-    public var noteFullTextHits: [SearchHit] = []
 
-    // 노트 편집
-    public var isEditingNote: Bool = false
-    public var editingDraft: String = ""
-    public var noteIsDirty: Bool { isEditingNote && editingDraft != (selectedNote?.body ?? "") }
-    public var externalChangeDetected: Bool = false
+    // ADR-042 R3.6 — ObsidianVaultCoordinator 추출 (state-only minimal). AppModel facade.
+    public let vault: ObsidianVaultCoordinator = ObsidianVaultCoordinator()
 
-    // NotePicker (Composer)
-    public var showNotePicker: Bool = false
-    public var notePickerQuery: String = ""
-
-    // Wiki disambig (B1)
-    public var disambigCandidates: [VaultNode] = []
-    public var disambigOriginalName: String = ""
-    public var showDisambigSheet: Bool = false
-
-    // Editor split mode (B4)
+    public var obsidianVault: ObsidianVault? {
+        get { vault.vault }
+        set { vault.vault = newValue }
+    }
+    public var vaultTree: [VaultNode] {
+        get { vault.tree }
+        set { vault.tree = newValue }
+    }
+    public var selectedNote: Note? {
+        get { vault.selectedNote }
+        set { vault.selectedNote = newValue }
+    }
+    public var noteSearchQuery: String {
+        get { vault.searchQuery }
+        set { vault.searchQuery = newValue }
+    }
+    public var noteFullTextEnabled: Bool {
+        get { vault.fullTextEnabled }
+        set { vault.fullTextEnabled = newValue }
+    }
+    public var noteFullTextHits: [SearchHit] {
+        get { vault.fullTextHits }
+        set { vault.fullTextHits = newValue }
+    }
+    public var isEditingNote: Bool {
+        get { vault.isEditing }
+        set { vault.isEditing = newValue }
+    }
+    public var editingDraft: String {
+        get { vault.editingDraft }
+        set { vault.editingDraft = newValue }
+    }
+    public var noteIsDirty: Bool { vault.noteIsDirty }
+    public var externalChangeDetected: Bool {
+        get { vault.externalChangeDetected }
+        set { vault.externalChangeDetected = newValue }
+    }
+    public var showNotePicker: Bool {
+        get { vault.showNotePicker }
+        set { vault.showNotePicker = newValue }
+    }
+    public var notePickerQuery: String {
+        get { vault.notePickerQuery }
+        set { vault.notePickerQuery = newValue }
+    }
+    public var disambigCandidates: [VaultNode] {
+        get { vault.disambigCandidates }
+        set { vault.disambigCandidates = newValue }
+    }
+    public var disambigOriginalName: String {
+        get { vault.disambigOriginalName }
+        set { vault.disambigOriginalName = newValue }
+    }
+    public var showDisambigSheet: Bool {
+        get { vault.showDisambigSheet }
+        set { vault.showDisambigSheet = newValue }
+    }
     public var editorSplitMode: EditorSplitMode = .editor
 
-    // 노트 생성 (B5)
-    public var showCreateNoteSheet: Bool = false
-
-    // Favorites (C2)
-    public var favoriteNotePaths: Set<String> = []
-
-    // Recents (C3) — LRU 10개
-    public var recentNotePaths: [String] = []
+    public var showCreateNoteSheet: Bool {
+        get { vault.showCreateNoteSheet }
+        set { vault.showCreateNoteSheet = newValue }
+    }
+    public var favoriteNotePaths: Set<String> {
+        get { vault.favorites }
+        set { vault.favorites = newValue }
+    }
+    public var recentNotePaths: [String] {
+        get { vault.recents }
+        set { vault.recents = newValue }
+    }
 
     // 도움말 sheet (C1)
     public var showShortcutHelp: Bool = false
@@ -135,46 +176,68 @@ public final class AppModel {
     private var lastDevServerRefresh: Date = .distantPast
 
     // Command Runner Pane (ADR-036 C4 Warp-style block UX 단순화)
-    public var showCommandRunnerPane: Bool = false
-    public var commandBlocks: [CommandRunner.CommandResult] = []
-    public var isCommandRunning: Bool = false
-    private let commandRunner = CommandRunner()
+    // ADR-042 R3.3 — CommandRunnerCoordinator 추출. AppModel facade.
+    public let commands: CommandRunnerCoordinator = CommandRunnerCoordinator()
 
-    // Workspace Files (ADR-037 D1+D2 + ADR-038 E2 multi-tab)
-    public var workspaceFileTree: [FileNode] = []
-    /// 열린 파일 tab들. 각 tab은 자체 draft + isEditing.
-    public var openFileTabs: [FileTab] = []
-    /// 활성 tab id (nil = 아무 tab도 없음).
-    public var activeFileTabId: UUID?
-    /// File search (Cmd+P, ADR-038 E3) 표시 여부
-    public var showFileSearchSheet: Bool = false
-    /// File CRUD sheet/alert (ADR-039 R3)
-    public var fileNameSheetIntent: FileNameSheetIntent?
-    public var fileDeleteConfirmation: FileDeleteConfirmation?
-    /// 다중 선택 (ADR-040 F3) — 트리에서 Cmd+Click으로 토글.
-    public var selectedFilePaths: Set<String> = []
-    /// inline rename mode인 path (트리 cell이 TextField로 전환).
-    public var inlineRenameTargetPath: String?
-    private var workspaceFileTreeActor: WorkspaceFileTree?
-
-    /// 활성 tab — UI에 표시되는 파일.
-    public var activeFileTab: FileTab? {
-        openFileTabs.first { $0.id == activeFileTabId }
+    public var showCommandRunnerPane: Bool {
+        get { commands.showPane }
+        set { commands.showPane = newValue }
+    }
+    public var commandBlocks: [CommandRunner.CommandResult] {
+        get { commands.blocks }
+        set { commands.blocks = newValue }
+    }
+    public var isCommandRunning: Bool {
+        get { commands.isRunning }
+        set { commands.isRunning = newValue }
     }
 
-    /// 활성 tab의 path (legacy alias for FilesPanel)
-    public var selectedFilePath: String? { activeFileTab?.path }
-    public var selectedFileContents: String? { activeFileTab?.savedContents }
-    public var isEditingWorkspaceFile: Bool { activeFileTab?.isEditing ?? false }
+    // ADR-042 R3.2 — WorkspaceFileManager 추출. AppModel은 facade 유지 (호출자 변경 X).
+    public let files: WorkspaceFileManager = WorkspaceFileManager()
+
+    // Facade pass-throughs
+    public var workspaceFileTree: [FileNode] {
+        get { files.tree }
+        set { files.tree = newValue }
+    }
+    public var openFileTabs: [FileTab] {
+        get { files.openTabs }
+        set { files.openTabs = newValue }
+    }
+    public var activeFileTabId: UUID? {
+        get { files.activeTabId }
+        set { files.activeTabId = newValue }
+    }
+    public var showFileSearchSheet: Bool {
+        get { files.showSearchSheet }
+        set { files.showSearchSheet = newValue }
+    }
+    public var fileNameSheetIntent: FileNameSheetIntent? {
+        get { files.nameSheetIntent }
+        set { files.nameSheetIntent = newValue }
+    }
+    public var fileDeleteConfirmation: FileDeleteConfirmation? {
+        get { files.deleteConfirmation }
+        set { files.deleteConfirmation = newValue }
+    }
+    public var selectedFilePaths: Set<String> {
+        get { files.selectedPaths }
+        set { files.selectedPaths = newValue }
+    }
+    public var inlineRenameTargetPath: String? {
+        get { files.inlineRenamePath }
+        set { files.inlineRenamePath = newValue }
+    }
+    public var activeFileTab: FileTab? { files.activeTab }
+    /// active tab의 path (legacy alias — ADR-042 R3.2 정리에도 호환을 위해 유지)
+    public var selectedFilePath: String? { files.activeTab?.path }
+    public var selectedFileContents: String? { files.activeTab?.savedContents }
+    public var isEditingWorkspaceFile: Bool { files.activeTab?.isEditing ?? false }
     public var workspaceFileDraft: String {
-        get { activeFileTab?.draft ?? "" }
-        set {
-            guard let id = activeFileTabId,
-                  let idx = openFileTabs.firstIndex(where: { $0.id == id }) else { return }
-            openFileTabs[idx].draft = newValue
-        }
+        get { files.activeDraft }
+        set { files.activeDraft = newValue }
     }
-    public var isWorkspaceFileDirty: Bool { activeFileTab?.isDirty ?? false }
+    public var isWorkspaceFileDirty: Bool { files.activeTab?.isDirty ?? false }
 
     // Delivery sheet (ADR-029 phase B)
     public var showDeliverySheet: Bool = false
@@ -186,13 +249,16 @@ public final class AppModel {
     // Multi-pane split layout (ADR-032 U4)
     public var paneSplitMode: PaneSplitMode = .single
 
-    // Agent chain state (ADR-034 A1) — pane→pane 자동 답장 추적
-    /// 현재 chain hop count (0 = 사용자 입력 시점, 1+ = 자동 답장 hop)
-    public var agentChainHops: Int = 0
-    /// chain에 방문한 pane id (같은 pane 재방문 방지)
-    public var agentChainVisited: Set<UUID> = []
-    /// chain이 활성 중인지 (UI banner 표시용)
-    public var agentChainActive: Bool { agentChainHops > 0 }
+    // Agent chain state (ADR-034 A1) — coord facade
+    public var agentChainHops: Int {
+        get { panes.chainHops }
+        set { panes.chainHops = newValue }
+    }
+    public var agentChainVisited: Set<UUID> {
+        get { panes.chainVisited }
+        set { panes.chainVisited = newValue }
+    }
+    public var agentChainActive: Bool { panes.chainActive }
 
     // Diff review state (ADR-027 phase A2/A3)
     public var pendingChanges: [ChangedFile] = []
@@ -200,26 +266,52 @@ public final class AppModel {
     public var hasPendingChanges: Bool { !pendingChanges.isEmpty }
 
     // Delivery loop state (ADR-029 phase B)
-    public var deliveryResults: [DeliveryResult] = []
-    public var isDeliveryRunning: Bool = false
-    /// 다음 sendMessage에서 prompt 앞에 prepend할 실패 컨텍스트.
-    public var pendingFailureFeedback: String = ""
+    // ADR-042 R3.5 — DeliveryCoordinator 추출. AppModel facade.
+    public let delivery: DeliveryCoordinator = DeliveryCoordinator()
 
-    // Multi-pane state (ADR-030, M1 phase C)
-    /// 현재 워크스페이스의 pane들. workspace 전환 시 갱신.
-    public var agentPanes: [AgentPane] = []
-    /// 활성 pane id — messages/session/usage가 이 pane의 state로 스왑됨.
-    public var activePaneId: UUID?
-    /// pane별 보존 상태 (비활성 pane의 conversation 유지).
+    public var deliveryResults: [DeliveryResult] {
+        get { delivery.results }
+        set { delivery.results = newValue }
+    }
+    public var isDeliveryRunning: Bool {
+        get { delivery.isRunning }
+        set { delivery.isRunning = newValue }
+    }
+    /// 다음 sendMessage에서 prompt 앞에 prepend할 실패 컨텍스트 (delivery로 위임).
+    public var pendingFailureFeedback: String {
+        get { delivery.pendingFailureFeedback }
+        set { delivery.pendingFailureFeedback = newValue }
+    }
+
+    // ADR-042 R3.4 — AgentPaneCoordinator 추출 (state holder만, lifecycle/streaming 잔존)
+    public let panes: AgentPaneCoordinator = AgentPaneCoordinator()
+
+    public var agentPanes: [AgentPane] {
+        get { panes.panes }
+        set { panes.panes = newValue }
+    }
+    public var activePaneId: UUID? {
+        get { panes.activeId }
+        set { panes.activeId = newValue }
+    }
+    /// pane별 보존 상태 (비활성 pane의 conversation 유지) — coord facade.
     /// active pane의 state는 self.messages / self.activeSettings / self.currentSessionUsage / currentClaudeSession에 직접 보유.
-    public var paneMessages: [UUID: [Message]] = [:]
-    public var paneSettings: [UUID: SessionSettings] = [:]
-    public var paneUsage: [UUID: UsageStats] = [:]
+    public var paneMessages: [UUID: [Message]] {
+        get { panes.messages }
+        set { panes.messages = newValue }
+    }
+    public var paneSettings: [UUID: SessionSettings] {
+        get { panes.settings }
+        set { panes.settings = newValue }
+    }
+    public var paneUsage: [UUID: UsageStats] {
+        get { panes.usage }
+        set { panes.usage = newValue }
+    }
     private var paneSessions: [UUID: any ClaudeStreamSession] = [:]
 
-    /// 활성 pane (UI 표시용 shortcut).
     public var activePane: AgentPane? {
-        agentPanes.first { $0.id == activePaneId }
+        panes.activePane
     }
 
     private var vaultWatcher: VaultWatcher?
@@ -1199,11 +1291,8 @@ public final class AppModel {
         let results = await runner.runIfConfigured(workspace: workspace, trigger: .turnComplete)
         isDeliveryRunning = false
 
-        // ADR-043 R4 — AppLimits.maxDeliveryResults 사용
-        deliveryResults.append(contentsOf: results)
-        if deliveryResults.count > AppLimits.maxDeliveryResults {
-            deliveryResults.removeFirst(deliveryResults.count - AppLimits.maxDeliveryResults)
-        }
+        // ADR-042 R3.5 — DeliveryCoordinator로 위임 (cap 일관성)
+        delivery.appendResults(results)
 
         // 실패 + autoFeedFailureToAgent → 다음 turn에 prepend
         if cfg.autoFeedFailureToAgent,
@@ -1253,259 +1342,68 @@ public final class AppModel {
         }
     }
 
-    /// Workspace 파일 트리 새로고침 (ADR-037 D1+D2).
+    // MARK: - 파일 시스템 facade — WorkspaceFileManager로 위임 (ADR-042 R3.2)
+
     public func refreshWorkspaceFileTree() async {
-        guard let workspace = currentWorkspace else {
-            workspaceFileTree = []
-            return
-        }
-        let actor: WorkspaceFileTree
-        if let existing = workspaceFileTreeActor, existing.rootURL.path == workspace.directoryPath {
-            actor = existing
-        } else {
-            actor = WorkspaceFileTree(rootURL: URL(fileURLWithPath: workspace.directoryPath))
-            workspaceFileTreeActor = actor
-        }
-        do {
-            workspaceFileTree = try await actor.tree()
-        } catch {
-            self.error = "파일 트리 로드 실패: \(error.localizedDescription)"
-        }
+        await files.refresh(workspace: currentWorkspace)
+        if let err = files.lastError { self.error = err; files.lastError = nil }
     }
 
-    /// Workspace 파일 선택 — 새 tab 추가 (이미 있으면 활성화). ADR-038 E2.
     public func selectWorkspaceFile(_ relativePath: String) async {
-        guard let actor = workspaceFileTreeActor else { return }
-        // 이미 열린 tab이면 활성화
-        if let existing = openFileTabs.first(where: { $0.path == relativePath }) {
-            activeFileTabId = existing.id
-            return
-        }
-        // 새 tab 추가 — read
-        do {
-            let contents = try await actor.read(relativePath)
-            let tab = FileTab(path: relativePath, savedContents: contents)
-            openFileTabs.append(tab)
-            activeFileTabId = tab.id
-            // ADR-043 R4 — AppLimits 사용 (magic number 추출)
-            if openFileTabs.count > AppLimits.maxFileTabs {
-                if let firstClean = openFileTabs.firstIndex(where: { !$0.isDirty && $0.id != tab.id }) {
-                    openFileTabs.remove(at: firstClean)
-                }
-            }
-        } catch {
-            self.error = error.localizedDescription
-        }
+        await files.selectFile(relativePath)
+        if let err = files.lastError { self.error = err; files.lastError = nil }
     }
 
-    /// Tab 활성화.
-    public func setActiveFileTab(_ tabId: UUID) {
-        guard openFileTabs.contains(where: { $0.id == tabId }) else { return }
-        activeFileTabId = tabId
-    }
-
-    /// Tab 닫기 — dirty면 reject (단순 안전).
-    /// active tab이 닫히면 같은 위치의 인접 tab으로 active 이동 (VSCode 패턴).
+    public func setActiveFileTab(_ tabId: UUID) { files.setActiveTab(tabId) }
     public func closeFileTab(_ tabId: UUID) {
-        guard let idx = openFileTabs.firstIndex(where: { $0.id == tabId }) else { return }
-        if openFileTabs[idx].isDirty {
-            self.error = "저장 안 된 변경이 있어요: \(openFileTabs[idx].displayName). 저장 또는 취소 후 닫으세요."
-            return
-        }
-        let wasActive = activeFileTabId == tabId
-        openFileTabs.remove(at: idx)
-        if wasActive {
-            // 같은 idx (오른쪽 tab) → 그것도 없으면 idx-1 (왼쪽 tab) → 그것도 없으면 nil
-            if idx < openFileTabs.count {
-                activeFileTabId = openFileTabs[idx].id
-            } else if idx > 0 {
-                activeFileTabId = openFileTabs[idx - 1].id
-            } else {
-                activeFileTabId = nil
-            }
-        }
+        files.closeTab(tabId)
+        if let err = files.lastError { self.error = err; files.lastError = nil }
     }
-
-    /// 모든 file tab 닫기 — 워크스페이스 전환 시 호출 (ADR-038 R2 polish).
-    /// dirty tab은 보존 (사용자 명시 close 필요) — VSCode "Close All" 동작과 다름:
-    /// Yuminai는 워크스페이스 격리가 우선이지만 unsaved 손실은 더 큰 비용.
-    public func closeAllFileTabs() {
-        let cleanIds = openFileTabs.filter { !$0.isDirty }.map(\.id)
-        for id in cleanIds {
-            closeFileTab(id)
-        }
-    }
-
-    /// 인접 tab으로 active 이동 (offset = +1 다음, -1 이전). 순환 (마지막→첫번째).
-    public func selectAdjacentFileTab(offset: Int) {
-        guard !openFileTabs.isEmpty else { return }
-        let currentIdx = activeFileTabId.flatMap { id in
-            openFileTabs.firstIndex(where: { $0.id == id })
-        } ?? 0
-        let count = openFileTabs.count
-        let nextIdx = ((currentIdx + offset) % count + count) % count
-        activeFileTabId = openFileTabs[nextIdx].id
-    }
-
-    /// 현재 active tab 닫기 — ⌘W 단축키 entry point.
-    public func closeActiveFileTab() {
-        guard let id = activeFileTabId else { return }
-        closeFileTab(id)
-    }
-
-    public func startEditingWorkspaceFile() {
-        guard let id = activeFileTabId,
-              let idx = openFileTabs.firstIndex(where: { $0.id == id }) else { return }
-        openFileTabs[idx].draft = openFileTabs[idx].savedContents
-        openFileTabs[idx].isEditing = true
-    }
-
+    public func closeAllFileTabs() { files.closeAllNonDirtyTabs() }
+    public func selectAdjacentFileTab(offset: Int) { files.selectAdjacentTab(offset: offset) }
+    public func closeActiveFileTab() { files.closeActiveTab() }
+    public func startEditingWorkspaceFile() { files.startEditing() }
     public func saveWorkspaceFile() async {
-        guard let id = activeFileTabId,
-              let idx = openFileTabs.firstIndex(where: { $0.id == id }),
-              let actor = workspaceFileTreeActor else { return }
-        let tab = openFileTabs[idx]
-        do {
-            try await actor.write(tab.path, contents: tab.draft)
-            openFileTabs[idx].savedContents = tab.draft
-            openFileTabs[idx].isEditing = false
-        } catch {
-            self.error = "파일 저장 실패: \(error.localizedDescription)"
-        }
+        await files.save()
+        if let err = files.lastError { self.error = err; files.lastError = nil }
     }
+    public func discardWorkspaceFileEdits() { files.discardEdits() }
 
-    public func discardWorkspaceFileEdits() {
-        guard let id = activeFileTabId,
-              let idx = openFileTabs.firstIndex(where: { $0.id == id }) else { return }
-        openFileTabs[idx].draft = openFileTabs[idx].savedContents
-        openFileTabs[idx].isEditing = false
-    }
-
-    // MARK: - File CRUD (ADR-039 R3)
-
-    /// 새 파일 생성 + 트리 refresh + 새 tab 자동 열기.
     public func createWorkspaceFile(at relativePath: String) async {
-        guard let actor = workspaceFileTreeActor else { return }
-        do {
-            let path = try await actor.createFile(relativePath)
-            await refreshWorkspaceFileTree()
-            await selectWorkspaceFile(path)
-        } catch {
-            self.error = error.localizedDescription
-        }
+        await files.createFile(at: relativePath)
+        if let err = files.lastError { self.error = err; files.lastError = nil }
     }
-
-    /// 새 폴더 생성 + 트리 refresh.
     public func createWorkspaceFolder(at relativePath: String) async {
-        guard let actor = workspaceFileTreeActor else { return }
-        do {
-            try await actor.createFolder(relativePath)
-            await refreshWorkspaceFileTree()
-        } catch {
-            self.error = error.localizedDescription
-        }
+        await files.createFolder(at: relativePath)
+        if let err = files.lastError { self.error = err; files.lastError = nil }
     }
-
-    /// 파일/폴더 이름 변경 + 트리 refresh + 열린 tab의 path 업데이트 (rename된 파일 또는 그 하위).
     public func renameWorkspaceNode(at relativePath: String, to newName: String) async {
-        guard let actor = workspaceFileTreeActor else { return }
-        do {
-            let newPath = try await actor.rename(relativePath, to: newName)
-            updateTabPathsForRename(oldPath: relativePath, newPath: newPath)
-            await refreshWorkspaceFileTree()
-        } catch {
-            self.error = error.localizedDescription
-        }
+        await files.renameNode(at: relativePath, to: newName)
+        if let err = files.lastError { self.error = err; files.lastError = nil }
     }
-
-    /// FileNameSheet 제출 핸들러 — intent에 따라 적절한 CRUD 호출.
     public func commitFileNameIntent(_ intent: FileNameSheetIntent, name: String) async {
-        switch intent {
-        case .newFile(let parent):
-            let path = parent.isEmpty ? name : "\(parent)/\(name)"
-            await createWorkspaceFile(at: path)
-        case .newFolder(let parent):
-            let path = parent.isEmpty ? name : "\(parent)/\(name)"
-            await createWorkspaceFolder(at: path)
-        case .rename(let path, _):
-            await renameWorkspaceNode(at: path, to: name)
-        }
+        await files.commitNameIntent(intent, name: name)
+        if let err = files.lastError { self.error = err; files.lastError = nil }
     }
-
-    /// 파일/폴더 삭제 + 트리 refresh + 영향받는 tab 강제 닫기 (dirty 무시 — 사용자가 명시 삭제).
     public func deleteWorkspaceNode(at relativePath: String, moveToTrash: Bool = true) async {
-        guard let actor = workspaceFileTreeActor else { return }
-        do {
-            try await actor.delete(relativePath, moveToTrash: moveToTrash)
-            closeTabsAffectedByPath(relativePath)
-            selectedFilePaths.remove(relativePath)
-            await refreshWorkspaceFileTree()
-        } catch {
-            self.error = error.localizedDescription
-        }
+        await files.deleteNode(at: relativePath, moveToTrash: moveToTrash)
+        if let err = files.lastError { self.error = err; files.lastError = nil }
     }
-
-    /// 파일/폴더 다른 부모 디렉토리로 이동 + tab path sync (ADR-040 F1).
     public func moveWorkspaceNode(at relativePath: String, to newRelativePath: String) async {
-        guard let actor = workspaceFileTreeActor else { return }
-        do {
-            let newPath = try await actor.move(relativePath, to: newRelativePath)
-            updateTabPathsForRename(oldPath: relativePath, newPath: newPath)
-            await refreshWorkspaceFileTree()
-        } catch {
-            self.error = error.localizedDescription
-        }
+        await files.moveNode(at: relativePath, to: newRelativePath)
+        if let err = files.lastError { self.error = err; files.lastError = nil }
     }
-
-    /// 다중 선택 일괄 삭제 (ADR-040 F3).
     public func deleteSelectedWorkspaceNodes(moveToTrash: Bool = true) async {
-        guard let actor = workspaceFileTreeActor, !selectedFilePaths.isEmpty else { return }
-        let paths = Array(selectedFilePaths)
-        do {
-            try await actor.deleteMany(paths, moveToTrash: moveToTrash)
-        } catch {
-            self.error = "일부 삭제 실패: \(error.localizedDescription)"
-        }
-        for path in paths {
-            closeTabsAffectedByPath(path)
-        }
-        selectedFilePaths.removeAll()
-        await refreshWorkspaceFileTree()
+        await files.deleteSelected(moveToTrash: moveToTrash)
+        if let err = files.lastError { self.error = err; files.lastError = nil }
     }
-
-    /// 트리 다중 선택 토글 (Cmd+Click).
-    public func toggleFileSelection(_ path: String) {
-        if selectedFilePaths.contains(path) {
-            selectedFilePaths.remove(path)
-        } else {
-            selectedFilePaths.insert(path)
-        }
-    }
-
-    public func clearFileSelection() {
-        selectedFilePaths.removeAll()
-    }
-
-    /// inline rename 시작 — 트리 cell이 TextField로 전환.
-    public func beginInlineRename(_ path: String) {
-        inlineRenameTargetPath = path
-    }
-
-    public func cancelInlineRename() {
-        inlineRenameTargetPath = nil
-    }
-
-    /// inline rename 제출 — 빈/유효성 검증 후 actor 호출.
+    public func toggleFileSelection(_ path: String) { files.toggleSelection(path) }
+    public func clearFileSelection() { files.clearSelection() }
+    public func beginInlineRename(_ path: String) { files.beginInlineRename(path) }
+    public func cancelInlineRename() { files.cancelInlineRename() }
     public func commitInlineRename(_ path: String, newName: String) async {
-        let trimmed = newName.trimmingCharacters(in: .whitespacesAndNewlines)
-        // 변경 없거나 빈 이름이면 cancel
-        guard !trimmed.isEmpty,
-              trimmed != (path as NSString).lastPathComponent else {
-            inlineRenameTargetPath = nil
-            return
-        }
-        await renameWorkspaceNode(at: path, to: trimmed)
-        inlineRenameTargetPath = nil
+        await files.commitInlineRename(path, newName: newName)
+        if let err = files.lastError { self.error = err; files.lastError = nil }
     }
 
     /// rename 후 imports 업데이트를 agent에게 위임 — 활성 chat에 prompt prepend (ADR-040 F5).
@@ -1524,45 +1422,7 @@ public final class AppModel {
         enqueueComposerPrefix(prompt)
     }
 
-    // MARK: - Tab sync helpers (ADR-039/040)
-
-    private func updateTabPathsForRename(oldPath: String, newPath: String) {
-        for idx in openFileTabs.indices {
-            let p = openFileTabs[idx].path
-            if p == oldPath {
-                openFileTabs[idx] = FileTab(
-                    id: openFileTabs[idx].id,
-                    path: newPath,
-                    savedContents: openFileTabs[idx].savedContents,
-                    draft: openFileTabs[idx].draft,
-                    isEditing: openFileTabs[idx].isEditing
-                )
-            } else if p.hasPrefix(oldPath + "/") {
-                let suffix = p.dropFirst(oldPath.count + 1)
-                openFileTabs[idx] = FileTab(
-                    id: openFileTabs[idx].id,
-                    path: "\(newPath)/\(suffix)",
-                    savedContents: openFileTabs[idx].savedContents,
-                    draft: openFileTabs[idx].draft,
-                    isEditing: openFileTabs[idx].isEditing
-                )
-            }
-        }
-    }
-
-    private func closeTabsAffectedByPath(_ relativePath: String) {
-        let affectedIds = openFileTabs
-            .filter { $0.path == relativePath || $0.path.hasPrefix(relativePath + "/") }
-            .map(\.id)
-        for id in affectedIds {
-            if let idx = openFileTabs.firstIndex(where: { $0.id == id }) {
-                openFileTabs.remove(at: idx)
-                if activeFileTabId == id {
-                    activeFileTabId = openFileTabs.last?.id
-                }
-            }
-        }
-    }
+    // ADR-042 R3.2 — Tab sync helpers는 WorkspaceFileManager 내부로 이동
 
     // MARK: - 다중 터미널 lifecycle (ADR-040 T1) — facade가 TerminalSessionCoordinator로 위임 (ADR-042 R3.1)
 
@@ -1645,50 +1505,26 @@ public final class AppModel {
         terminals.togglePane(workingDirectory: workspace.directoryPath)
     }
 
-    /// Command block stdout/stderr를 클립보드에 복사 (ADR-040 T8).
+    // MARK: - Command Runner facade — CommandRunnerCoordinator로 위임 (ADR-042 R3.3)
+
     public func copyCommandBlockOutput(_ text: String) {
-        #if canImport(AppKit)
-        NSPasteboard.general.clearContents()
-        NSPasteboard.general.setString(text, forType: .string)
-        #endif
+        commands.copyOutput(text)
     }
 
-    /// Command block을 agent 메시지에 첨부 — composer에 prepend (ADR-040 T8).
     public func shareCommandBlockToAgent(_ block: CommandRunner.CommandResult) {
-        // ADR-042 R1.C1 — stdout/stderr 무제한 prepend 방지 (build log 100K 토큰 폭발 위험)
-        // DeliveryResult.tail 패턴 재사용: stderr 50줄 + stdout 30줄 cap
-        let header = block.success
-            ? "[명령 결과 — exit \(block.exitCode)]"
-            : "[명령 실패 — exit \(block.exitCode)]"
-        var sections: [String] = [header, "$ \(block.command)"]
-        let stdoutTail = DeliveryResult.tail(block.stdout, lines: 30)
-        let stderrTail = DeliveryResult.tail(block.stderr, lines: 50)
-        if !stdoutTail.isEmpty { sections.append("--- stdout ---\n\(stdoutTail)") }
-        if !stderrTail.isEmpty { sections.append("--- stderr ---\n\(stderrTail)") }
-        let prefix = sections.joined(separator: "\n\n") + "\n\n"
+        let prefix = commands.buildShareToAgentPrefix(block)
         enqueueComposerPrefix(prefix)
     }
 
-    /// Command Runner — workspace dir에서 명령 실행 + block 누적 (ADR-036 C4).
     public func runCommand(_ command: String) async {
         guard let workspace = currentWorkspace else { return }
-        isCommandRunning = true
-        defer { isCommandRunning = false }
         let workingDir = URL(fileURLWithPath: workspace.directoryPath)
-        do {
-            let result = try await commandRunner.run(command: command, in: workingDir)
-            commandBlocks.append(result)
-            // ADR-043 R4 — AppLimits 사용
-            if commandBlocks.count > AppLimits.maxCommandBlocks {
-                commandBlocks.removeFirst(commandBlocks.count - AppLimits.maxCommandBlocks)
-            }
-        } catch {
-            self.error = "명령 실행 실패: \(error.localizedDescription)"
-        }
+        await commands.run(command, in: workingDir)
+        if let err = commands.lastError { self.error = err; commands.lastError = nil }
     }
 
     public func clearCommandBlocks() {
-        commandBlocks = []
+        commands.clear()
     }
 
     /// Dev server suggestions 로드 + live ping (ADR-036 C1).
@@ -1787,14 +1623,11 @@ public final class AppModel {
         isDeliveryRunning = true
         let result = await deliveryRunner.runOnce(workspace: workspace, kind: kind, command: command)
         isDeliveryRunning = false
-        deliveryResults.append(result)
-        if deliveryResults.count > AppLimits.maxDeliveryResults {
-            deliveryResults.removeFirst(deliveryResults.count - AppLimits.maxDeliveryResults)
-        }
+        delivery.appendResult(result)
     }
 
     public func clearDeliveryResults() {
-        deliveryResults = []
+        delivery.clear()
     }
 
     /// Workspace의 deliveryConfig 갱신 + 영속.
@@ -1858,6 +1691,31 @@ public final class AppModel {
     // MARK: - chat
 
     // MARK: - Composer prefix queue (ADR-042 R1.H7)
+
+    // MARK: - Sheet mutual exclusion (ADR-042 R5.A)
+
+    /// 모든 sheet/alert state를 한 번에 닫음 — 새 sheet 열기 전에 호출.
+    /// SwiftUI는 같은 view에 여러 sheet binding이 동시 true가 되면 동작 미정 — 이 helper로 강제 mutual exclusion.
+    public func dismissAllSheets() {
+        showCreateWorkspaceSheet = false
+        showUsageDashboard = false
+        showDisambigSheet = false
+        showCreateNoteSheet = false
+        showShortcutHelp = false
+        showFileSearchSheet = false
+        showDeliverySheet = false
+        fileNameSheetIntent = nil
+        fileDeleteConfirmation = nil
+        renameSheetPane = nil
+        terminalRenameTargetId = nil
+    }
+
+    /// 새 sheet/alert을 열기 전에 다른 sheet 모두 닫고 setter 실행.
+    /// 사용 예: `appModel.presentExclusiveSheet { $0.showFileSearchSheet = true }`
+    public func presentExclusiveSheet(_ setter: (AppModel) -> Void) {
+        dismissAllSheets()
+        setter(self)
+    }
 
     /// 외부 caller가 composer에 prefix 삽입을 요청할 때 사용. 사용자 입력은 절대 직접 mutation 하지 않음.
     /// Composer view가 onChange(of: pendingComposerPrefix)로 consume하고 즉시 nil 클리어.

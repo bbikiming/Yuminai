@@ -396,7 +396,9 @@ private struct CommandBlockView: View {
                 .truncationMode(.middle)
                 .textSelection(.enabled)
             Spacer()
-            if hovering {
+            // ADR-042 R5.C — hover-only → 항상 표시 (opacity 0.4 → hover 1.0).
+            // 발견성 ↑ + 시각 노이즈 균형 (사용자가 버튼 존재 알게 됨).
+            HStack(spacing: 4) {
                 Button { onCopyOutput(combinedOutput) } label: {
                     Image(systemName: "doc.on.doc")
                         .font(.system(size: 9))
@@ -419,6 +421,7 @@ private struct CommandBlockView: View {
                 .buttonStyle(.plain)
                 .help("같은 명령 재실행")
             }
+            .opacity(hovering ? 1.0 : 0.4)
             Text("\(block.durationMs)ms")
                 .font(Theme.Typography.micro)
                 .foregroundStyle(Theme.Color.textTertiary)
