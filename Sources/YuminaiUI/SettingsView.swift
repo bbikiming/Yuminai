@@ -409,7 +409,8 @@ public struct SettingsView: View {
                             hint: "한 사용자 turn 후 자동 답장이 몇 번까지 chain할 수 있는지. 같은 pane 재방문은 자동 차단."
                         )
                         Spacer()
-                        Stepper(value: $preferences.agentChainMaxHops, in: 1...5) {
+                        // ADR-042 R2.M20 — 5 hops은 토큰 폭발 위험 (각 hop 마다 응답 prepend 누적). 3으로 cap.
+                        Stepper(value: $preferences.agentChainMaxHops, in: 1...3) {
                             Text("\(preferences.agentChainMaxHops) hop").font(Theme.Typography.monoSmall)
                         }
                         .frame(width: 140)

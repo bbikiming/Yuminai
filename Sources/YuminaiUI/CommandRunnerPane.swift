@@ -146,7 +146,8 @@ public struct CommandRunnerPane: View {
                         .foregroundStyle(showSearch ? Theme.Color.accent : Theme.Color.textSecondary)
                 }
                 .buttonStyle(.plain)
-                .help("기록 검색 (T12)")
+                .keyboardShortcut("f", modifiers: .command) // ADR-042 R2.M20 — macOS 표준
+                .help("기록 검색 (⌘F)")
                 Button(action: onClear) {
                     Image(systemName: "trash")
                         .font(.system(size: 10))

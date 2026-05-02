@@ -161,7 +161,7 @@ public struct FilesPanel: View {
                     .font(Theme.Typography.small.weight(.medium))
                     .foregroundStyle(Theme.Color.text)
                 HelpHint(
-                    "워크스페이스 디렉토리의 파일 트리예요. .git/.build/node_modules 같은 자동 제외 폴더는 안 보여요. 파일 클릭 → 새 tab으로 열림. 여러 파일 동시 열기 가능 (max 10), ⌘P로 빠른 검색.",
+                    "워크스페이스 디렉토리의 파일 트리예요. .git/.build/node_modules 같은 자동 제외 폴더는 안 보여요.\n\n• 파일 클릭 → 새 tab으로 열림 (max 10)\n• ⌘P 파일 빠른 검색\n• ⌘+클릭 다중 선택 → 일괄 휴지통\n• 파일을 폴더 위로 drag-drop으로 이동\n• 우클릭 → 새 파일/이름 변경/삭제\n• ⌫ 키로 휴지통, ↩︎ 로 열기",
                     title: "파일 트리",
                     placement: .bottom
                 )
@@ -183,7 +183,7 @@ public struct FilesPanel: View {
                             .foregroundStyle(.red.opacity(0.85))
                     }
                     .buttonStyle(.plain)
-                    .help("선택 항목 일괄 휴지통 (⌫)")
+                    .help("선택 항목 일괄 휴지통으로 이동 (⌫)")
                 }
                 Button(action: { onRequestCreateFile("") }) {
                     Image(systemName: "doc.badge.plus")
@@ -360,7 +360,7 @@ public struct FilesPanel: View {
             icon: "doc.questionmark",
             title: "binary 파일이라 표시할 수 없어요",
             message: "이미지/오디오/실행 파일 등은 미리보기 X. ‘외부 IDE에서 열기’로 system default 앱으로 열 수 있어요.",
-            action: .init(label: "외부에서 열기", perform: { onOpenInExternalEditor(path) })
+            action: .init(label: "외부 IDE에서 열기", perform: { onOpenInExternalEditor(path) })
         )
         .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
@@ -659,7 +659,7 @@ private struct FileNodeRow: View {
         Button(role: .destructive) {
             onDelete(node.path, node.isFolder)
         } label: {
-            Label("휴지통으로 삭제", systemImage: "trash")
+            Label("휴지통으로 이동", systemImage: "trash")
         }
     }
 

@@ -43,7 +43,7 @@ struct RootView: View {
                 quickSwitchHotkeys  // ⌘1~9 invisible buttons
                 helpHotkey  // ⌘? invisible
                 fileSearchHotkey  // ⌘P invisible
-                fileTabHotkeys  // ⌘W close + ⌘⇧[/⌘⇧] tab nav
+                fileTabHotkeys  // ⌘⌥W close (ADR-042 R2.H8) + ⌘⇧[/⌘⇧] tab nav
                 terminalSessionHotkeys  // ⌃⇧T/⌃⇧W/⌃Tab/⌃⇧Tab (ADR-040)
             }
             .onAppear {
@@ -115,7 +115,7 @@ struct RootView: View {
             Alert(
                 title: Text(confirmation.title),
                 message: Text(confirmation.message),
-                primaryButton: .destructive(Text("휴지통으로")) {
+                primaryButton: .destructive(Text("휴지통으로 이동")) {
                     Task { await appModel.deleteWorkspaceNode(at: confirmation.path, moveToTrash: true) }
                     appModel.fileDeleteConfirmation = nil
                 },
@@ -448,10 +448,13 @@ struct RootView: View {
     /// ⌘W = active tab close / ⌘⇧] = 다음 tab / ⌘⇧[ = 이전 tab (ADR-038 R2).
     private var fileTabHotkeys: some View {
         ZStack {
+            // ADR-042 R2.H8 — ⌘W는 macOS 표준 (윈도우 close)에 양보.
+            // file tab close = ⌘⌥W (Option 추가) — VSCode와 동일 패턴은 아니지만 SwiftUI의
+            // standard close 충돌 방지가 우선. 사용자에겐 ShortcutHelpSheet에 명시.
             Button {
                 appModel.closeActiveFileTab()
             } label: { EmptyView() }
-                .keyboardShortcut("w", modifiers: .command)
+                .keyboardShortcut("w", modifiers: [.command, .option])
                 .opacity(0)
                 .frame(width: 0, height: 0)
                 .accessibilityHidden(true)
@@ -976,16 +979,51 @@ struct ChatPane: View {
                   let secondaryId = appModel.secondaryTerminalSessionId,
                   appModel.terminalSessions.contains(where: { $0.id == secondaryId }),
                   appModel.terminalSessions.count >= 2 {
-            // Split 모드 — 좌우 dual-pane (T14)
+            // Split 모드 — 좌우 dual-pane (T14) + ADR-042 R2.H12: badge로 primary/secondary 구분
             HSplitView {
-                terminalSessionsZStack(activeId: appModel.activeTerminalSessionId)
-                    .frame(minWidth: 200)
-                terminalSessionsZStack(activeId: secondaryId)
-                    .frame(minWidth: 200)
+                splitPaneContainer(
+                    activeId: appModel.activeTerminalSessionId,
+                    label: "Primary",
+                    isPrimary: true
+                )
+                .frame(minWidth: 200)
+                splitPaneContainer(
+                    activeId: secondaryId,
+                    label: "Secondary",
+                    isPrimary: false
+                )
+                .frame(minWidth: 200)
             }
         } else {
             terminalSessionsZStack(activeId: appModel.activeTerminalSessionId)
         }
+    }
+
+    /// ADR-042 R2.H12 — split mode 시 각 pane을 badge + accent border로 구분.
+    /// Primary는 accent border (사용자가 ⌃Tab으로 전환하는 대상), secondary는 borderSubtle.
+    @ViewBuilder
+    private func splitPaneContainer(activeId: UUID?, label: String, isPrimary: Bool) -> some View {
+        VStack(spacing: 0) {
+            HStack(spacing: 4) {
+                Text(label)
+                    .font(Theme.Typography.micro)
+                    .foregroundStyle(isPrimary ? Theme.Color.accent : Theme.Color.textTertiary)
+                if let activeId, let session = appModel.terminalSessions.first(where: { $0.id == activeId }) {
+                    Text("· \(session.label)")
+                        .font(Theme.Typography.micro)
+                        .foregroundStyle(Theme.Color.textTertiary)
+                }
+                Spacer()
+            }
+            .padding(.horizontal, 6)
+            .padding(.vertical, 2)
+            .background(Theme.Color.surface.opacity(0.4))
+            terminalSessionsZStack(activeId: activeId)
+        }
+        .overlay(
+            Rectangle()
+                .stroke(isPrimary ? Theme.Color.accent.opacity(0.6) : Theme.Color.borderSubtle, lineWidth: 1)
+        )
     }
 
     /// 모든 세션을 ZStack에 두고 active만 visible — 비활성 세션도 PTY data 흐름 유지
@@ -1014,9 +1052,11 @@ struct ChatPane: View {
 ///
 /// **상태 표시**:
 /// - `.idle`: 회색 terminal 아이콘
-/// - `.running`: 녹색 점 + 1.0초 pulse (작업 중)
+/// - `.running` (활성 세션): 녹색 점 + pulse (작업 중) — ADR-042 R2.H11: 활성 세션만 pulse
+/// - `.running` (비활성 세션): 정적 녹색 점 (시각 노이즈 감소)
 /// - `.completedRecently`: 녹색 체크 (방금 완료, 3초 후 idle)
 /// - `hasUnreadOutput` (비활성 세션): 주황 dot — "이 세션에 새 출력 있어요"
+/// - `accessibilityDisplayShouldReduceMotion=true` 시 모든 pulse 비활성화 (정적 dot)
 private struct TerminalSessionTabButton: View {
     let session: TerminalSession
     let isActive: Bool
@@ -1025,6 +1065,7 @@ private struct TerminalSessionTabButton: View {
     let onRequestRename: () -> Void
     let onRequestChangeDirectory: () -> Void
 
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var hovering = false
     @State private var pulse = false
 
@@ -1089,17 +1130,21 @@ private struct TerminalSessionTabButton: View {
                 .font(.system(size: 9))
                 .foregroundStyle(isActive ? Theme.Color.accent : Theme.Color.textTertiary)
         case .running:
-            // 펄스하는 녹색 점 — 작업 중
+            // ADR-042 R2.H11 — 활성 세션만 pulse (시각 노이즈 감소).
+            // 비활성 세션 + reduceMotion 시 정적 dot — 작업 중인 것은 알리되 산만하지 않게.
+            let shouldPulse = isActive && !reduceMotion
             ZStack {
-                Circle()
-                    .fill(Color.green.opacity(0.25))
-                    .frame(width: 12, height: 12)
-                    .scaleEffect(pulse ? 1.4 : 0.8)
-                    .opacity(pulse ? 0 : 0.8)
-                    .animation(
-                        .easeInOut(duration: 1.0).repeatForever(autoreverses: false),
-                        value: pulse
-                    )
+                if shouldPulse {
+                    Circle()
+                        .fill(Color.green.opacity(0.25))
+                        .frame(width: 12, height: 12)
+                        .scaleEffect(pulse ? 1.4 : 0.8)
+                        .opacity(pulse ? 0 : 0.8)
+                        .animation(
+                            .easeInOut(duration: 1.4).repeatForever(autoreverses: false),
+                            value: pulse
+                        )
+                }
                 Circle()
                     .fill(Color.green)
                     .frame(width: 6, height: 6)
@@ -1148,19 +1193,22 @@ struct EmptyWorkspaceView: View {
                     appModel.showShortcutHelp = true
                 }
             }
-            Text("⌘N · ⌘/")
+            Text("⌘N 새 워크스페이스 · ⌘/ 단축키 도움말")
                 .font(Theme.Typography.micro)
                 .foregroundStyle(Theme.Color.textTertiary)
 
-            // 시작 가이드 — 주요 단축키 / 기능 한 눈에
+            // ADR-042 R2.H9 — 시작 가이드 + v0.9+/v1.2+ 추가된 단축키 발견성 확보
             VStack(alignment: .leading, spacing: 4) {
                 quickTipRow(icon: "rectangle.split.2x1", text: "탭바 ‘+’로 Codex pane 추가, split 아이콘으로 동시에 두 pane 보기")
                 quickTipRow(icon: "arrowshape.turn.up.right", text: "Composer 우측 ‘위임’ 버튼으로 다른 pane에 자동 라우팅")
-                quickTipRow(icon: "terminal", text: "⌘⌥T 터미널, ⌘⌥I Inspector(컨텍스트·노트·변경+Delivery)")
+                quickTipRow(icon: "doc.text.magnifyingglass", text: "⌘P 파일 빠른 검색 (Cmd+P) — 트리에서 찾지 말고 이름으로 점프")
+                quickTipRow(icon: "terminal", text: "⌃⇧T 새 터미널 세션 / ⌃Tab 세션 전환 / ⌃⇧W 닫기")
+                quickTipRow(icon: "rectangle.stack", text: "⌘⌥T SwiftTerm 터미널, ⌘⌥I Inspector(컨텍스트·노트·변경+Delivery)")
+                quickTipRow(icon: "hand.tap", text: "트리에서 Cmd+클릭 다중 선택, 파일을 폴더에 drag-drop으로 이동")
                 quickTipRow(icon: "paperplane", text: "사이드바 우클릭 → 텔레그램 연결 / Delivery 자동화 설정")
             }
             .padding(.top, Theme.Spacing.lg)
-            .frame(maxWidth: 480)
+            .frame(maxWidth: 540)
 
             Spacer()
         }

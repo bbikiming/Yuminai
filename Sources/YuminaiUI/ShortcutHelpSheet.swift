@@ -179,6 +179,22 @@ public struct ShortcutHelpSheet: View {
             .init(label: "메시지 보내기", keys: ["⌘", "↵"]),
             .init(label: "응답 중단", keys: ["esc"])
         ]),
+        // ADR-042 R2.H9 — v0.9+/v1.2+ 추가된 단축키 일괄 노출
+        ShortcutCategory(title: "파일 트리/탭 (ADR-038~041)", shortcuts: [
+            .init(label: "파일 빠른 검색", keys: ["⌘", "P"]),
+            .init(label: "활성 파일 탭 닫기", keys: ["⌘", "⌥", "W"]),
+            .init(label: "다음 파일 탭", keys: ["⌘", "⇧", "]"]),
+            .init(label: "이전 파일 탭", keys: ["⌘", "⇧", "["]),
+            .init(label: "파일 row 삭제 (휴지통)", keys: ["⌫"]),
+            .init(label: "파일 다중 선택 토글", keys: ["⌘", "click"]),
+            .init(label: "파일 폴더로 이동", keys: ["drag", "drop"])
+        ]),
+        ShortcutCategory(title: "터미널 (ADR-040~041)", shortcuts: [
+            .init(label: "새 터미널 세션", keys: ["⌃", "⇧", "T"]),
+            .init(label: "활성 세션 닫기", keys: ["⌃", "⇧", "W"]),
+            .init(label: "다음 세션", keys: ["⌃", "Tab"]),
+            .init(label: "이전 세션", keys: ["⌃", "⇧", "Tab"])
+        ]),
         ShortcutCategory(title: "노트 편집", shortcuts: [
             .init(label: "저장", keys: ["⌘", "S"])
         ])
