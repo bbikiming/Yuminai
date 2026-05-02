@@ -30,6 +30,10 @@ public final class AppModel {
     public var currentSession: Session?
     public var messages: [Message] = []
     public var inputText: String = ""
+    /// ADR-042 R1.H7 — composer가 다음 render에 inputText에 prepend할 prefix queue.
+    /// 사용자 입력 mutation race 방지 — 외부(share/imports/mention/auto-chain)는 이 큐에 쌓고,
+    /// Composer가 onChange로 consume하면 자동 클리어. 사용자 textfield cursor jump/stale 위험 제거.
+    public var pendingComposerPrefix: String?
     public var isStreaming: Bool = false
     public var error: String?
 
@@ -1485,8 +1489,8 @@ public final class AppModel {
         프로젝트 전체에서 `\(oldPath)`를 참조하는 import / require / include 등을 찾아서 새 경로로 업데이트해주세요. 실제 파일 변경 전에 영향 범위를 먼저 보여주세요.
 
         """
-        // 활성 chat composer에 prepend (이미 있는 패턴)
-        inputText = prompt + inputText
+        // ADR-042 R1.H7 — 사용자 input mutation 대신 안전한 큐에 enqueue
+        enqueueComposerPrefix(prompt)
     }
 
     // MARK: - Tab sync helpers (ADR-039/040)
@@ -1681,14 +1685,18 @@ public final class AppModel {
 
     /// Command block을 agent 메시지에 첨부 — composer에 prepend (ADR-040 T8).
     public func shareCommandBlockToAgent(_ block: CommandRunner.CommandResult) {
+        // ADR-042 R1.C1 — stdout/stderr 무제한 prepend 방지 (build log 100K 토큰 폭발 위험)
+        // DeliveryResult.tail 패턴 재사용: stderr 50줄 + stdout 30줄 cap
         let header = block.success
             ? "[명령 결과 — exit \(block.exitCode)]"
             : "[명령 실패 — exit \(block.exitCode)]"
         var sections: [String] = [header, "$ \(block.command)"]
-        if !block.stdout.isEmpty { sections.append("--- stdout ---\n\(block.stdout)") }
-        if !block.stderr.isEmpty { sections.append("--- stderr ---\n\(block.stderr)") }
+        let stdoutTail = DeliveryResult.tail(block.stdout, lines: 30)
+        let stderrTail = DeliveryResult.tail(block.stderr, lines: 50)
+        if !stdoutTail.isEmpty { sections.append("--- stdout ---\n\(stdoutTail)") }
+        if !stderrTail.isEmpty { sections.append("--- stderr ---\n\(stderrTail)") }
         let prefix = sections.joined(separator: "\n\n") + "\n\n"
-        inputText = prefix + inputText
+        enqueueComposerPrefix(prefix)
     }
 
     /// Command Runner — workspace dir에서 명령 실행 + block 누적 (ADR-036 C4).
@@ -1879,6 +1887,36 @@ public final class AppModel {
 
     // MARK: - chat
 
+    // MARK: - Composer prefix queue (ADR-042 R1.H7)
+
+    /// 외부 caller가 composer에 prefix 삽입을 요청할 때 사용. 사용자 입력은 절대 직접 mutation 하지 않음.
+    /// Composer view가 onChange(of: pendingComposerPrefix)로 consume하고 즉시 nil 클리어.
+    /// 누적 호출 시 새 prefix가 기존 큐 위에 다시 prepend (가장 최근 액션이 가장 위).
+    public func enqueueComposerPrefix(_ prefix: String) {
+        if let existing = pendingComposerPrefix {
+            pendingComposerPrefix = prefix + existing
+        } else {
+            pendingComposerPrefix = prefix
+        }
+    }
+
+    /// Composer가 consume 후 호출. State 클리어.
+    public func consumeComposerPrefix() -> String? {
+        defer { pendingComposerPrefix = nil }
+        return pendingComposerPrefix
+    }
+
+    /// ADR-042 R1.H2 — sendMessage 직전 토큰 size 추정 (UTF-8 byte / 4 ≈ token).
+    /// 50KB 초과면 사용자 confirmation 요청 (return false면 send 취소).
+    public func warnIfOversizedPrompt(_ body: String) -> Bool {
+        let estimatedTokens = body.utf8.count / 4
+        if estimatedTokens > 50_000 {
+            self.error = "메시지가 매우 큽니다 (~\(estimatedTokens / 1000)K 토큰). 컨텍스트 윈도우를 빠르게 소모해요. 첨부 파일/명령 결과 share를 줄이세요."
+            return false
+        }
+        return true
+    }
+
     public func sendMessage() async {
         let trimmed = inputText.trimmingCharacters(in: .whitespacesAndNewlines)
         let hasAttachments = !attachedFiles.isEmpty
@@ -1955,9 +1993,51 @@ public final class AppModel {
         panel.prompt = "첨부"
         if panel.runModal() == .OK {
             for url in panel.urls where !attachedFiles.contains(url) {
+                // ADR-042 R1.H5 — 디렉토리 또는 1MB+ 파일 첨부 시 사용자 confirmation
+                // (CLI가 @<path>를 inline expand하므로 node_modules 같은 큰 디렉토리는 토큰 폭발 위험)
+                if shouldConfirmAttachment(url: url) {
+                    if !confirmLargeAttachment(url: url) { continue }
+                }
                 attachedFiles.append(url)
             }
         }
+    }
+
+    /// 첨부 size sniff. directory 또는 1MB+ 파일이면 true.
+    private func shouldConfirmAttachment(url: URL) -> Bool {
+        var isDir: ObjCBool = false
+        guard FileManager.default.fileExists(atPath: url.path, isDirectory: &isDir) else { return false }
+        if isDir.boolValue { return true }
+        if let attrs = try? FileManager.default.attributesOfItem(atPath: url.path),
+           let size = attrs[.size] as? Int, size > 1_000_000 {
+            return true
+        }
+        return false
+    }
+
+    /// NSAlert로 사용자 확인. 사용자 OK = true, 취소 = false.
+    private func confirmLargeAttachment(url: URL) -> Bool {
+        #if canImport(AppKit)
+        let alert = NSAlert()
+        var isDir: ObjCBool = false
+        FileManager.default.fileExists(atPath: url.path, isDirectory: &isDir)
+        if isDir.boolValue {
+            alert.messageText = "‘\(url.lastPathComponent)’ 폴더를 첨부할까요?"
+            alert.informativeText = "Claude Code는 폴더 안의 모든 파일을 읽으려고 시도해요. node_modules, .git, build 결과물 같은 큰 폴더는 컨텍스트를 매우 빠르게 소진합니다.\n\n진짜로 첨부하려면 ‘첨부’를, 아니면 ‘취소’를 눌러주세요."
+            alert.alertStyle = .warning
+        } else {
+            let attrs = (try? FileManager.default.attributesOfItem(atPath: url.path)) ?? [:]
+            let mb = Double((attrs[.size] as? Int) ?? 0) / (1024 * 1024)
+            alert.messageText = "‘\(url.lastPathComponent)’ 파일이 큽니다 (~\(String(format: "%.1f", mb))MB)"
+            alert.informativeText = "이 파일을 inline으로 첨부하면 컨텍스트의 큰 부분을 차지합니다. 정말 필요한 부분만 직접 인용하는 게 보통 더 좋아요."
+            alert.alertStyle = .informational
+        }
+        alert.addButton(withTitle: "첨부")
+        alert.addButton(withTitle: "취소")
+        return alert.runModal() == .alertFirstButtonReturn
+        #else
+        return true
+        #endif
     }
 
     public func removeAttachment(_ url: URL) {

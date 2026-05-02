@@ -32,7 +32,8 @@ public struct DeliveryConfig: Sendable, Codable, Hashable {
         lintCommand: String? = nil,
         autoRunOnTurnComplete: Bool = false,
         autoFeedFailureToAgent: Bool = true,
-        maxAttempts: Int = 3,
+        // ADR-042 R1.H6 — default 3 → 2 (3번째 실패는 사용자 개입이 효율적, 누적 토큰 절약)
+        maxAttempts: Int = 2,
         timeoutSeconds: Int = 300,
         customQuickCommands: [CustomQuickCommand] = []
     ) {
@@ -145,12 +146,38 @@ public struct DeliveryResult: Sendable, Equatable, Identifiable {
 
     private func timeoutSeconds() -> Int { durationMs / 1000 }
 
-    public static func tail(_ text: String, lines: Int) -> String {
+    /// ADR-042 R1.H6 — 줄 수 cap + byte budget cap (한 줄이 5KB 인 stack trace/JSON dump 폭발 방지).
+    /// 4KB byte budget 초과 시 마지막 N bytes로 추가 cap. tail end가 가장 진단적이므로 prefix 잘라냄.
+    public static func tail(_ text: String, lines: Int, byteBudget: Int = 4_096) -> String {
         let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return "" }
         let allLines = trimmed.split(separator: "\n", omittingEmptySubsequences: false)
-        guard allLines.count > lines else { return trimmed }
-        let tailed = allLines.suffix(lines).joined(separator: "\n")
-        return "...(앞부분 \(allLines.count - lines)줄 생략)\n\(tailed)"
+        var tailed: String
+        var truncatedLines = 0
+        if allLines.count > lines {
+            tailed = allLines.suffix(lines).joined(separator: "\n")
+            truncatedLines = allLines.count - lines
+        } else {
+            tailed = trimmed
+        }
+        // Byte budget — 한 줄이 매우 길거나 비ASCII 문자가 많을 때 추가 cap
+        if tailed.utf8.count > byteBudget {
+            // 끝에서부터 budget byte 만큼 보존 (진단 정보가 끝에 있음)
+            let utf8Bytes = Array(tailed.utf8)
+            let suffixBytes = utf8Bytes.suffix(byteBudget)
+            tailed = String(decoding: suffixBytes, as: UTF8.self)
+            // 첫 줄이 partial일 가능성 → 다음 newline까지 trim
+            if let firstNewline = tailed.firstIndex(of: "\n") {
+                tailed = String(tailed[tailed.index(after: firstNewline)...])
+            }
+            truncatedLines = max(truncatedLines, 1)
+        }
+        if truncatedLines > 0 {
+            let suffix = truncatedLines > 0 && allLines.count > lines
+                ? "(앞부분 \(truncatedLines)줄 생략)"
+                : "(앞부분 byte budget 초과로 생략)"
+            return "...\(suffix)\n\(tailed)"
+        }
+        return tailed
     }
 }

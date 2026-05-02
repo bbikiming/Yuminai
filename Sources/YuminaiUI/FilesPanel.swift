@@ -521,6 +521,8 @@ private struct FileNodeRow: View {
     }
 
     @State private var hovering = false
+    /// ADR-042 R1.C4 — drag-drop hover 시 폴더 row highlight (drop 가능 여부 가시화)
+    @State private var isDropTarget = false
 
     private var isInlineRenaming: Bool {
         inlineRenamePath == node.path
@@ -568,13 +570,10 @@ private struct FileNodeRow: View {
         .onTapGesture { tap() }
         .onHover { hovering = $0 }
         .contextMenu { contextMenuContent }
-        // F2 = inline rename / Delete = trash (트리 focus 시) — ADR-041 F6
+        // ADR-042 R1.C2 — F2 placeholder 제거 (동작 안 했음. v1.3+ NSEvent monitor 검토)
+        // Delete = 휴지통 / Enter = select-or-toggle
         .focusable(!isInlineRenaming)
         .focusEffectDisabled()
-        .onKeyPress(.init("F"), phases: .down) { _ in
-            // Function-key용 keyEquivalent — onKeyPress(.f2) 직접 미지원
-            .ignored
-        }
         .onKeyPress(.delete) { @MainActor in
             onDelete(node.path, node.isFolder)
             return .handled
@@ -584,16 +583,18 @@ private struct FileNodeRow: View {
             return .handled
         }
         .onKeyPress(keys: [.return]) { _ in
-            // Enter — 파일이면 select, 폴더면 toggle
             tap()
             return .handled
         }
         // Drag-drop file move (F7) — 파일을 폴더에 drop하면 해당 폴더로 이동
+        // ADR-042 R1.C4 — isTargeted Binding으로 hover 시 row highlight (drop 가능 여부 시각 피드백)
         return Group {
             if node.isFolder {
                 core.dropDestination(for: String.self) { paths, _ in
                     handleDropPaths(paths)
                     return !paths.isEmpty
+                } isTargeted: { targeted in
+                    isDropTarget = targeted
                 }
             } else {
                 core.draggable(node.path) {
@@ -638,15 +639,12 @@ private struct FileNodeRow: View {
             }
             Divider()
         }
+        // ADR-042 R1.C3 — rename 단일화. inline이 default (빠른 in-place 편집).
+        // sheet 변형이 필요한 power-user는 Option+Click으로 호출 가능.
         Button {
             onBeginInlineRename(node.path)
         } label: {
-            Label("이름 변경 (inline)", systemImage: "pencil")
-        }
-        Button {
-            onRename(node.path, node.isFolder)
-        } label: {
-            Label("이름 변경 sheet…", systemImage: "rectangle.and.pencil.and.ellipsis")
+            Label("이름 변경", systemImage: "pencil")
         }
         Divider()
         Button {
@@ -703,6 +701,8 @@ private struct FileNodeRow: View {
     }
 
     private var rowBg: SwiftUI.Color {
+        // ADR-042 R1.C4 — drop target hover (가장 강한 시각 신호 — drop 액션 임박)
+        if isDropTarget { return Theme.Color.accent.opacity(0.35) }
         if isMultiSelected { return Theme.Color.accent.opacity(0.18) }
         if isSelected { return Theme.Color.accentMuted }
         if hovering { return Theme.Color.surfaceHi }

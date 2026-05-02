@@ -12,7 +12,7 @@ struct DeliveryConfigTests {
         #expect(cfg.buildCommand == nil)
         #expect(cfg.autoRunOnTurnComplete == false)
         #expect(cfg.autoFeedFailureToAgent == true)
-        #expect(cfg.maxAttempts == 3)
+        #expect(cfg.maxAttempts == 2)  // ADR-042 R1.H6 — default 3→2 (3번째는 사용자 개입)
         #expect(cfg.timeoutSeconds == 300)
         #expect(cfg.hasAnyCommand == false)
     }

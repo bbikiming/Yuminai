@@ -705,6 +705,14 @@ struct ChatPane: View {
                         onClose: { appModel.showNotePicker = false }
                     )
                 }
+                // ADR-042 R1.H7 — pendingComposerPrefix 큐 consume.
+                // 외부(share/imports/auto-chain)가 enqueue하면 여기서 안전하게 inputText에 prepend.
+                // 사용자 입력은 절대 race되지 않음 (큐 consume 시점에만 합쳐짐).
+                .onChange(of: appModel.pendingComposerPrefix) { _, newValue in
+                    guard let prefix = newValue else { return }
+                    appModel.inputText = prefix + appModel.inputText
+                    appModel.pendingComposerPrefix = nil
+                }
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
