@@ -1252,9 +1252,18 @@ public final class AppModel {
             let category: AlertCategory = exitCode == 0 ? .workComplete : .workFailed
             let costStr = String(format: "$%.4f", currentSessionUsage.costUSD)
             let summary = "Workspace: \(workspaceName) (exit \(exitCode), \(costStr))"
-            let dispatcher = alertDispatcher
-            Task {
-                await dispatcher?.dispatch(category: category, message: summary)
+            // ADR-045 R1.H2 — bound workspace는 sessionBridge가 더 풍부한 완료 메시지 보냄.
+            // 중복 알림 방지: bound면 alertDispatcher skip (bridge가 처리), 아니면 dispatcher만.
+            let isBoundWorkspace = preferences.telegramBoundWorkspaceId == selectedWorkspaceId
+            if !isBoundWorkspace {
+                let dispatcher = alertDispatcher
+                Task {
+                    await dispatcher?.dispatch(category: category, message: summary)
+                }
+            } else if externalTurnCount > 0 {
+                // ADR-045 R2.H5 — 외부 turn 누적 비용 추적 (마지막 turn의 cost를 누적치에 추가)
+                // 외부 turn이 한 번이라도 발생했고 bound chain이 진행 중인 경우만 — 혼합 시나리오에서 over-counting 가능성 있으나 단순화 우선
+                externalTurnTotalCostUSD += currentSessionUsage.costUSD
             }
             // Checkpoint 종료 + 변경 캡처 + Delivery loop 자동 실행 (ADR-029)
             if let workspace = currentWorkspace {
@@ -2084,9 +2093,14 @@ public final class AppModel {
     }
 
     /// 워크스페이스를 텔레그램 제어 대상으로 설정. nil이면 해제.
+    /// ADR-045 R2.H3 — defaultChatId 인자: bind 호출한 chat을 자동으로 응답 default chat으로.
     /// Telegram 봇이 활성화돼 있으면 bridge를 즉시 갱신.
-    public func bindTelegramWorkspace(_ id: UUID?) async {
+    public func bindTelegramWorkspace(_ id: UUID?, defaultChatId: Int64? = nil) async {
         preferences.telegramBoundWorkspaceId = id
+        // bind 호출한 chat을 default response chat으로 (multi-chat 시 가장 자연스러움)
+        if let defaultChatId, id != nil {
+            preferences.telegramChatId = defaultChatId
+        }
         await savePreferences()
 
         // bridge 재구성
@@ -2103,19 +2117,43 @@ public final class AppModel {
         }
     }
 
-    /// /status 명령에 응답할 텍스트 생성.
+    /// ADR-045 R2.H3 — bridge에 외부 request chat_id 설정 (multi-chat).
+    public func setBridgeRequestChatId(_ chatId: Int64) async {
+        await sessionBridge?.setRequestChatId(chatId)
+    }
+
+    /// ADR-045 R2.H5 — 외부 turn 카운터 (cost 가시화용).
+    /// hour 단위로 reset되지 않고 누적 — /status에서 표시.
+    public var externalTurnCount: Int = 0
+    public var externalTurnTotalCostUSD: Double = 0
+
+    public func incrementExternalTurnCount() {
+        externalTurnCount += 1
+    }
+
+    /// /status 명령에 응답할 텍스트 생성. ADR-045 R2.H5 — 외부 turn 비용 + context % 가시화.
     public func telegramStatusSnapshot() -> String {
         let bound = boundWorkspaceName ?? "없음"
         let active = workspaces.first { $0.id == selectedWorkspaceId }?.name ?? "없음"
         let streamingTag = isStreaming ? "응답 중" : "대기 중"
-        let lines = [
+        let ctxPct = Int(currentContextUsage * 100)
+        let ctxWarn = ctxPct >= 70 ? " ⚠" : ""
+        let costStr = String(format: "$%.4f", currentSessionUsage.costUSD)
+        let externalCostStr = String(format: "$%.4f", externalTurnTotalCostUSD)
+        var lines = [
             "현재 상태:",
             "  · 연결된 워크스페이스: \(bound)",
             "  · 활성 워크스페이스: \(active)",
             "  · Claude: \(streamingTag)",
             "  · 모델: \(activeSettings.model.displayName)",
-            "  · 컨텍스트: \(Int(currentContextUsage * 100))%"
+            "  · 컨텍스트: \(ctxPct)%\(ctxWarn)",
+            "  · 현재 세션 비용: \(costStr)",
+            "  · 외부 turn 횟수: \(externalTurnCount) (누적 \(externalCostStr))"
         ]
+        if ctxPct >= 70 {
+            lines.append("")
+            lines.append("⚠ 컨텍스트가 70%를 넘어 새 세션을 시작하는 것이 좋아요.")
+        }
         return lines.joined(separator: "\n")
     }
 

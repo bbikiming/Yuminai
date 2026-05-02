@@ -42,6 +42,9 @@ public actor TelegramSessionBridge {
     private var turnStartedAt: Date?
     private var toolCount = 0
     private var lastFailureSent: Bool = false
+    /// ADR-045 R2.H3 — 외부 chat에서 명령 들어오면 그 chat을 응답 destination으로 (multi-chat).
+    /// nil이면 config.chatId fallback. .completed 후 자동 클리어.
+    private var requestChatId: Int64?
 
     public init(client: any TelegramClient, configuration: Configuration) {
         self.client = client
@@ -50,6 +53,11 @@ public actor TelegramSessionBridge {
 
     public func updateConfiguration(_ config: Configuration) {
         self.config = config
+    }
+
+    /// ADR-045 R2.H3 — 외부 chat에서 turn 시작 시 그 chat을 응답 대상으로.
+    public func setRequestChatId(_ chatId: Int64?) {
+        self.requestChatId = chatId
     }
 
     // MARK: - Lifecycle
@@ -75,8 +83,14 @@ public actor TelegramSessionBridge {
             guard config.forwardToolCalls else { return }
             toolCount += 1
             await flushAssistantBuffer()
-            let summary = Self.summarizeToolCall(name: name, input: input)
-            await send("🔧 \(summary)")
+            // ADR-045 R2.H1 — destructive tool은 prominent 알림 (사용자 /cancel 빠른 의사결정 지원)
+            if Self.isDestructiveToolCall(name: name, input: input) {
+                let summary = Self.summarizeToolCall(name: name, input: input, maxLen: 200)
+                await send("🚨 위험한 작업 감지 — \(summary)\n계속하지 않으려면 즉시 /cancel 보내세요.")
+            } else {
+                let summary = Self.summarizeToolCall(name: name, input: input)
+                await send("🔧 \(summary)")
+            }
         case .toolResult(let success, _):
             guard config.forwardToolCalls else { return }
             if !success {
@@ -97,6 +111,8 @@ public actor TelegramSessionBridge {
                 lastFailureSent = true
             }
             turnStartedAt = nil
+            // ADR-045 R2.H3 — turn 종료 시 request chat 클리어 (다음 turn은 다시 config.chatId or new request)
+            requestChatId = nil
         }
     }
 
@@ -153,7 +169,9 @@ public actor TelegramSessionBridge {
     }
 
     private func send(_ text: String) async {
-        _ = try? await client.send(text, to: config.chatId)
+        // ADR-045 R2.H3 — 외부 chat에서 turn 시작했으면 그 chat에 응답 (multi-chat).
+        let target = requestChatId ?? config.chatId
+        _ = try? await client.send(text, to: target)
     }
 
     // MARK: - Helpers
@@ -183,14 +201,36 @@ public actor TelegramSessionBridge {
         return chunks.filter { !$0.isEmpty }
     }
 
-    static func summarizeToolCall(name: String, input: String) -> String {
+    static func summarizeToolCall(name: String, input: String, maxLen: Int = 80) -> String {
         let trimmed = input.trimmingCharacters(in: .whitespacesAndNewlines)
         if trimmed.isEmpty {
             return name
         }
-        // input 첫 줄만 + 80자 cap
+        // input 첫 줄만 + maxLen 자 cap
         let firstLine = trimmed.split(separator: "\n").first.map(String.init) ?? trimmed
-        let capped = firstLine.count > 80 ? String(firstLine.prefix(80)) + "…" : firstLine
+        let capped = firstLine.count > maxLen ? String(firstLine.prefix(maxLen)) + "…" : firstLine
         return "\(name) — \(capped)"
+    }
+
+    /// ADR-045 R2.H1 — destructive tool 검출 (휴리스틱).
+    /// 이름 매칭 + Bash인 경우 input 키워드 검사.
+    static func isDestructiveToolCall(name: String, input: String) -> Bool {
+        let lowerName = name.lowercased()
+        let lowerInput = input.lowercased()
+        // 직접 destructive tool 이름
+        if lowerName == "bash" || lowerName == "shell" {
+            // 알려진 위험 패턴
+            let danger = [
+                "rm -rf", "rm -r ", "rm -fr",
+                "git reset --hard", "git push --force", "git push -f",
+                "git clean -fd", "git checkout --",
+                "drop table", "drop database", "truncate ",
+                "chmod -r 777", "kill -9",
+                "dd if=", " > /dev/sd", "mkfs",
+                "shutdown", "reboot ", "halt"
+            ]
+            return danger.contains { lowerInput.contains($0) }
+        }
+        return false
     }
 }

@@ -34,13 +34,23 @@ public struct IncomingTelegramMessage: Sendable, Hashable {
     public let chatId: Int64
     public let text: String?
     public let receivedAt: Date
+    /// ADR-045 — bot reflection 방지. true면 다른 봇이 보낸 메시지로 무시.
+    public let isFromBot: Bool
 
-    public init(updateId: Int64, userId: Int64, chatId: Int64, text: String?, receivedAt: Date = Date()) {
+    public init(
+        updateId: Int64,
+        userId: Int64,
+        chatId: Int64,
+        text: String?,
+        receivedAt: Date = Date(),
+        isFromBot: Bool = false
+    ) {
         self.updateId = updateId
         self.userId = userId
         self.chatId = chatId
         self.text = text
         self.receivedAt = receivedAt
+        self.isFromBot = isFromBot
     }
 }
 

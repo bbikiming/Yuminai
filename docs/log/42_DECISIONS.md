@@ -1,6 +1,116 @@
 # Decisions Log (ADR-lite)
 
-> 최신: ADR-044 (audit 후속 R3.2~R3.6 + R5 — 코디네이터 4개 추가 추출 + sheet 중첩 차단 + F2 inline rename)
+> 최신: ADR-045 (Telegram 통합 audit 기반 R1+R2 — 외부 vibe-coding 신뢰성 + 다중 chat + 비용 가시화)
+
+---
+
+## ADR-045 — Telegram 통합: 외부 vibe-coding 신뢰성 + 다중 chat + 비용 가시화
+
+- **날짜**: 2026-05-02
+- **상태**: Accepted
+- **결정**: 사용자 요구 "텔레그램으로 외부에서 효율적으로 바이브코딩"의 production minimum bar 달성. audit가 식별한 HIGH 5건 + 핵심 MEDIUM 일괄 처리
+
+### 컨텍스트
+사용자: "냉정하게 ux 점검. 외부에서 효율적으로 바이브코딩 확인하면서 진행할 수 있어야. 토큰 효율도 점검."
+
+audit 결과 (`code-reviewer` agent): "MVP 80% 가능하지만 신뢰성 20% 부족". HIGH 5건이 사용자 시나리오를 깨뜨림.
+
+### R1 — 즉시 fix (1-2시간)
+
+1. **H4 — 401/403/404 즉시 polling 중단** (`LiveTelegramBot.swift`)
+   - 이전: 모든 에러 5초 retry 무한 루프 → token revoke 시 401 폭주, 사용자는 이유 모름
+   - 이후: NSError code 401/403/404 시 polling 중단 + `fatalAuthError` 메시지 set (BotFather에서 새 토큰 발급 안내)
+   - 5xx/429 rate limit/network는 기존대로 backoff retry
+
+2. **H4-bonus — bot reflection 차단**
+   - `IncomingTelegramMessage.isFromBot: Bool` 추가 (parseUpdate에서 `from.is_bot` 검사)
+   - polling 루프 + command router가 `isFromBot=true` 메시지 차단
+
+3. **M2 — MarkdownV2 escape + plain text fallback**
+   - 이전: legacy "Markdown" + escape 없음 → `my_var` 같은 underscore에서 400 → 메시지 송신 실패 → 사용자 무응답
+   - 이후: 1차 MarkdownV2 (escape 적용) → 400 시 plain text fallback 자동 재시도
+   - `escapeMarkdownV2(_:)` — 18 reserved char escape, code block 페어 보존 (` ```...``` ` 내부는 escape 안 함)
+
+4. **M6 — polling cleanup race 종결**
+   - `stopPolling()`이 `pollingTask?.value` await + 1초 timeout — long-poll 진행 중인 task 완전 종료 보장
+   - unbind 후 stale 메시지 도착 시나리오 차단
+
+5. **H2 — alertDispatcher 중복 알림 skip**
+   - bound workspace인 경우 `alertDispatcher.dispatch` skip (sessionBridge가 풍부한 메시지 보냄)
+   - 한 turn 끝날 때 텔레그램 알림 1개 (이전 2개)
+
+6. **L6 — /start onboarding 분리**
+   - 이전: `/start`가 `/help` alias
+   - 이후: `/start`는 chat_id + 워크스페이스 개수 + 사용 절차 + ⚠ 주의사항 (PC confirm 없음, 외부 turn 비용 누적)
+   - Telegram convention 준수
+
+### R2 — Sprint 2 (3-5시간, ADR 필요)
+
+7. **H1 — destructive tool 프로미넌트 알림 + /cancel**
+   - 정확한 confirmation (tool block & wait)는 Claude Code CLI permission_mode 통합 필요 → v2.0+
+   - 단기 대응: `TelegramSessionBridge.isDestructiveToolCall(name:input:)` 휴리스틱 검출
+     - Bash + 위험 패턴: `rm -rf`, `git reset --hard`, `git push --force`, `drop table`, `chmod -r 777`, `dd if=`, `mkfs`, `shutdown` 등 13개
+   - destructive 검출 시 `🚨 위험한 작업 감지 — [tool] [input maxLen=200]\n계속하지 않으려면 즉시 /cancel 보내세요.`
+   - `summarizeToolCall`에 maxLen 매개변수 추가 (destructive는 200자, 일반은 80자)
+   - 사용자가 알림 받고 /cancel 보낼 시간 확보 (10초 정도, agent가 대화 turn 중이라 완료 전 cancel 가능)
+
+8. **H3 — multi-chat routing**
+   - 이전: `bridge.send` 항상 `config.chatId` (단일) — 그룹 chat에서 명령 → 응답은 1:1로 → 친구는 결과 못 봄
+   - 이후: `bridge.requestChatId: Int64?` 동적 override (CommandRouter가 incoming `message.chatId`로 set)
+     - `send(_:)`이 `requestChatId ?? config.chatId` 사용
+     - `.completed` 후 자동 클리어 (다음 turn은 다시 default 또는 새 request)
+   - `bindTelegramWorkspace(_:defaultChatId:)` — `/bind` 호출한 chat을 default response chat으로 자동 설정
+   - `setBridgeRequestChatId(_:)` AppModel facade
+
+9. **H5 — 외부 turn 비용 가시화**
+   - `AppModel.externalTurnCount: Int` + `externalTurnTotalCostUSD: Double` 누적
+   - `incrementExternalTurnCount()` — CommandRouter handlePlainText 시 호출
+   - `.completed` 시 bound workspace + external turn 발생했으면 `externalTurnTotalCostUSD += currentSessionUsage.costUSD` 누적
+   - `/status` 출력 확장:
+     - 컨텍스트: 70%+ ⚠ + "새 세션 시작하는 것이 좋아요" 안내
+     - 현재 세션 비용: $X.XXXX
+     - 외부 turn 횟수: N (누적 $X.XXXX)
+   - 사용자가 출퇴근 동안 비용 자각 가능
+
+### Bonus — 추가 명령
+
+10. **/use <name>** — 활성 워크스페이스만 변경 (bind 유지)
+    - 두 워크스페이스 번갈아 보고 싶을 때 매번 /bind 불필요
+11. **/diff** — `pendingDiff` chunked 전송 (3500자 cap, code block diff 형식)
+12. **/changes** — 변경 파일 목록 요약 (수정/추가/삭제 등 status label)
+13. **/list 강화** — `✈★` 두 마커 (bound + active) 동시 표시
+
+### 격리
+
+- LiveTelegramBot — Markdown escape + auth 가드 (Telegram protocol layer)
+- TelegramSessionBridge — destructive 검출 + multi-chat routing (대화 layer)
+- YuminaiCommandRouter — chat_id 전파 + 신규 명령 (라우팅 layer)
+- AppModel — 외부 turn 카운터 + bind facade (orchestration layer)
+
+### 결과
+
+- 수정 파일 5개:
+  - YuminaiCore/TelegramClient.swift — IncomingTelegramMessage.isFromBot
+  - YuminaiTelegram/LiveTelegramBot.swift — auth gate / escape / cleanup race / bot reflection
+  - YuminaiTelegram/TelegramSessionBridge.swift — multi-chat / destructive detection / requestChatId
+  - YuminaiApp/YuminaiCommandRouter.swift — /start /use /diff /changes + chat_id 전파
+  - YuminaiApp/AppModel.swift — bindTelegramWorkspace defaultChatId / setBridgeRequestChatId / external turn cost / alertDispatcher skip
+- 테스트 293/293 통과 (regression 0)
+- 빌드 4.91s clean
+
+### 알려진 한계 / 다음 라운드 (ADR-046+)
+
+- **destructive tool 진짜 block & wait**: Claude Code CLI permission_mode 통합 (v2.0+) — 현재는 휴리스틱 알림 + /cancel 패턴
+- **multi-chat 동시 사용자**: 같은 chat_id 내 동시 두 사용자가 명령 시 race 가능 (현재는 후자가 응답 destination override)
+- **chunk 분할 시 code block 페어**: `chunked(_:maxSize:)`가 ``` 카운트 보존하도록 (M7 deferred)
+- **cokacdir 동시 polling 충돌 감지** (M5): pgrep cokacdir 모달 — UI 작업
+- **외부 turn 별도 sub-session**: 컨텍스트 격리 옵션 (CLI resume 패턴) — v2.0+
+
+### 재검토
+
+- destructive 휴리스틱이 실제 위험 케이스를 잘 잡는지 (사용자 사용 데이터 후 패턴 추가)
+- /status에 표시되는 누적 비용이 실제 사용자 인지에 도움 되는지
+- multi-chat 시나리오 빈도 (대부분 1:1만 사용 가능성)
 
 ---
 

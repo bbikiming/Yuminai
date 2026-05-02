@@ -4,6 +4,28 @@
 
 ## [Unreleased] — 2026-05-02
 
+### Fixed / Added — Telegram 통합 audit R1+R2: 외부 vibe-coding 신뢰성 (ADR-045)
+
+**R1 (즉시 fix)**:
+- H4 401/403/404 즉시 polling 중단 (token revoke 감지) + bot reflection 차단 (`from.is_bot`)
+- M2 MarkdownV2 escape + plain text fallback (응답 누락 방지) + code block 페어 보존
+- M6 polling cleanup race — `pollingTask.value` await + 1초 timeout
+- H2 bound workspace alertDispatcher skip (sessionBridge가 풍부한 메시지로 대체) — 중복 알림 제거
+- L6 `/start` onboarding 분리 (chat_id + 워크스페이스 개수 + 사용 절차 + ⚠ 주의)
+
+**R2 (Sprint 2)**:
+- H1 destructive tool 휴리스틱 검출 (rm -rf / git reset / drop table 등 13개 패턴) → `🚨 위험한 작업 감지` 프로미넌트 알림 + `/cancel` 안내
+- H3 multi-chat routing — `bridge.requestChatId` 동적 override (CommandRouter가 incoming chat_id 전파). `/bind`가 호출 chat을 default response chat으로 자동 설정
+- H5 외부 turn 비용 가시화 — `externalTurnCount` + `externalTurnTotalCostUSD` 누적 추적, `/status`에서 컨텍스트 % + 70%↑ 경고 + 외부 turn 누적 비용 표시
+
+**Bonus 신규 명령**:
+- `/use <name>` — 활성 워크스페이스만 변경 (bind 유지) — 두 워크스페이스 번갈아 보기
+- `/diff` — pendingDiff chunked 전송 (3500자 cap, code block diff 형식)
+- `/changes` — 변경 파일 요약 (수정/추가/삭제 status)
+- `/list` 강화 — `✈★` 두 마커 (bound + active 동시 표시)
+
+테스트 293/293 통과 (regression 0). 빌드 4.91s clean.
+
 ### Refactored / Added — audit 후속 R3.2~R3.6 + R5: 코디네이터 4개 추가 + Sheet 상호배제 + F2 단축키 (ADR-044)
 
 **R3.2 WorkspaceFileManager** (큰 추출):
