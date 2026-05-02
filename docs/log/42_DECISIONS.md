@@ -1,6 +1,126 @@
 # Decisions Log (ADR-lite)
 
-> 최신: ADR-041 (v1.2+ R1 — 터미널 활동 시각화 + cwd 분리 + 영속화 + split, 트리 단축키/drag-drop, 명령 검색)
+> 최신: ADR-042 (audit 기반 R1+R2+R3 — 토큰 안전 + UX 일관성 + AppModel 코디네이터 분리 시작)
+
+---
+
+## ADR-042 — audit 기반 R1/R2/R3: 토큰 안전 + UX onboarding + 코디네이터 분리
+
+- **날짜**: 2026-05-02
+- **상태**: Accepted (R1, R2, R3.1 완료. R3.2~R3.7은 점진적 후속 라운드)
+- **결정**: 종합 점검(architecture+token+UX agent 3개 병렬) 결과 발견된 19개 이슈 중 13개를 R1/R2/R3.1 3 commit으로 일괄 처리. AppModel god-object 분리는 R3.1에서 TerminalSessionCoordinator 1개 prototype으로 시작 + 나머지 6개 coord는 spec만 작성
+
+- **컨텍스트**:
+  - 사용자 — "현재 구현된 버전에서 비효율적으로 토큰 소모/유기적 비효율 연결/UX 이슈 점검"
+  - 5개 라운드(ADR-037~041) 빠른 추가로 인한 부채 누적: AppModel 2226줄, RootView 1175줄, InspectorPanel 78개 init 파라미터
+  - 사용자 — "R1부터 하나하나 전부 자동으로 순차적으로 진행해서 마무리해"
+
+### R1 — 토큰 안전 + 사용자 마찰 즉시 해소 (commit c30f821)
+
+1. **C1 shareCommandBlockToAgent 토큰 폭발 차단**:
+   - 무제한 stdout/stderr prepend → `DeliveryResult.tail` 재사용 (stderr 50줄 + stdout 30줄 cap)
+   - **효과**: 100K 토큰 (Sonnet 200K window의 50%) → ~4K
+2. **C2 F2 placeholder 제거**: 동작 안 했던 `.onKeyPress(.init("F"))` 핸들러 삭제
+3. **C3 rename 컨텍스트 메뉴 단일화**: "이름 변경 (inline)" + "이름 변경 sheet…" 두 개 → 단일 "이름 변경" (Hick's law 위배 해소)
+4. **C4 Drop target hover highlight**: `dropDestination(isTargeted:)` Binding + `@State isDropTarget` + `rowBg accent.opacity(0.35)` (drop 가능 폴더 명확)
+5. **H5 디렉토리 첨부 confirmation**: `openAttachmentPicker`에서 디렉토리 또는 1MB+ 파일 시 NSAlert (node_modules 실수 첨부 폭발 방지)
+6. **H6 Auto-fix loop 토큰 절약**:
+   - `DeliveryConfig.maxAttempts` default 3 → 2
+   - `DeliveryResult.tail`에 `byteBudget: 4_096` 추가 (한 줄 5KB stack trace 폭발 방지)
+7. **H7 pendingComposerPrefix queue 패턴 (가장 임팩트 큼)**:
+   - `AppModel.pendingComposerPrefix: String?` queue state
+   - `enqueueComposerPrefix(_:)` — 외부 caller가 사용. 누적 시 stack-style prepend
+   - RootView Composer에 `.onChange(of: pendingComposerPrefix)` — 안전 소비 후 nil
+   - `inputText = prefix + inputText` 직접 mutation 패턴 제거 → cursor jump/race 해소
+
+### R2 — UX onboarding + 단축키 일관성 + 시각 노이즈 감소 (commit d41a808)
+
+8. **H8 ⌘W → ⌘⌥W**: file tab close가 macOS 표준 윈도우 close에 양보. ShortcutHelpSheet 명시
+9. **H9 EmptyWorkspaceView 단축키 안내 확장**: 4 → 7 quickTipRow (⌘P, ⌃⇧T, ⌃Tab, Cmd+클릭, drag-drop 등)
+10. **H10 FilesPanel HelpHint 확장**: 단일 줄 → 6 bullet point (다중 선택/drag-drop/단축키 모두 명시)
+11. **H11 Pulse 활성 세션만 + reduceMotion**:
+    - `@Environment(\.accessibilityReduceMotion)` 체크
+    - `shouldPulse = isActive && !reduceMotion` — 비활성 세션은 정적 dot
+    - pulse duration 1.0초 → 1.4초 (덜 산만)
+12. **H12 Split secondary pane badge + border**: `splitPaneContainer` wrapper — Primary/Secondary label badge + accent vs borderSubtle border + 세션 라벨 표시
+13. **M20 ⌘F CommandRunner 검색 단축키**: `.keyboardShortcut("f", modifiers: .command)` 토글
+14. **LOW polish 일괄**:
+    - `agentChainMaxHops` Stepper 1...5 → 1...3 (토큰 폭발 cap)
+    - 한국어 라벨 통일 ("휴지통으로 / 휴지통으로 삭제" → "휴지통으로 이동")
+    - "외부에서 열기" → "외부 IDE에서 열기" 통일
+    - ShortcutHelpSheet에 v0.9+/v1.2+ 추가된 모든 단축키 노출 (신규 카테고리 2개)
+
+### R3.1 — TerminalSessionCoordinator 추출 (god-object 분해 1단계)
+
+15. **AppModel god-object 분리 시작**:
+    - 신규 `Sources/YuminaiApp/TerminalSessionCoordinator.swift` (190줄) — `@MainActor @Observable` child
+    - 7개 state + 13 메서드를 응집 (lifecycle / cwd / activity / split / persistence / 워크스페이스 전환)
+    - **Facade 패턴 유지**: AppModel은 `terminals` 보유 + 기존 호출자 API (showTerminalPane, terminalSessions 등)는 computed pass-through. **호출자 변경 0건**
+    - AppModel L97-L210 state → 코드 ~150줄 감소
+    - 사이드 효과 정리: `close()`에 secondary cleanup, `clearAll()`에 전체 reset 응집
+16. **AppModel 메서드 위임**:
+    - `createTerminalSession`/`closeTerminalSession`/`renameTerminalSession`/`updateTerminalActivity` 등 13 메서드가 `terminals.foo()` 호출 + persist trigger만 facade
+    - NSOpenPanel UI는 facade가 책임 (coord는 pure state logic)
+
+### R3.2~R3.7 — Spec (점진적 후속 라운드, 별도 PR)
+
+| Coord | 추출 대상 (현 AppModel 줄 범위) | 우선순위 |
+|---|---|---|
+| **R3.2 WorkspaceFileManager** | tree + tabs + selection + inline rename + CRUD (L123-157, L1221-1530) | HIGH (다음 PR) |
+| **R3.3 CommandRunnerCoordinator** | blocks + isRunning + share/copy (L117-121, L1700-1770) | MEDIUM |
+| **R3.4 AgentPaneCoordinator** | agentPanes + paneMessages + chain (L188-203, L717-941) | HIGH (chain 복잡) |
+| **R3.5 DeliveryCoordinator** | delivery loop + checkpoint (L182-186, L1170-1220) | MEDIUM |
+| **R3.6 ObsidianVaultCoordinator** | vault + notes (L59-93, L316-625) | LOW (이미 isolated) |
+| **R3.7 TelegramCoordinator** | bot/dispatcher/pump/bridge (L36-41, L2046-2225) | LOW |
+
+각 coord 추출 시 동일 패턴 (Facade computed pass-through)으로 호출자 변경 최소화. 모든 coord 추출 완료 후 facade 제거 + Environment 주입 전환 검토 (ADR-043+).
+
+### 격리
+
+- TerminalSessionCoordinator: YuminaiCore 의존 없음 (TerminalSession 모델만). UI 의존 X
+- AppModel facade: 호출자 호환성 유지를 위한 얇은 layer
+- 새 코드 패턴 정착: 향후 coord는 같은 shape (`@MainActor @Observable` + pure state logic)
+
+### 단순화 ROI 분석
+
+| 항목 | 가치 | 비용 | ROI |
+|---|---|---|---|
+| R1.C1 shareCommand tail | 95 (토큰 폭발 차단) | 5분 | 압도 |
+| R1.H7 prefix queue | 90 (race condition 영구 차단) | 30분 | 압도 |
+| R1.H6 maxAttempts=2 | 70 (토큰 절약 + 사용자 개입 효율) | 5분 | 압도 |
+| R2.H9/H10 onboarding | 80 (발견성 결손 해소) | 30분 | 압도 |
+| R2.H11 pulse 활성만 | 60 (시각 노이즈 감소) | 15분 | 양호 |
+| R3.1 TerminalCoord | 75 (god-object 분해 시작) | 2시간 | 양호 |
+
+### 결과
+
+- **신규 파일 1개 (App)**: TerminalSessionCoordinator.swift (190줄)
+- **수정 파일 9개**:
+  - YuminaiApp/AppModel.swift — facade pass-through + 13 메서드 위임 + enqueueComposerPrefix
+  - YuminaiApp/RootView.swift — pendingPrefix consume + ⌘⌥W + EmptyWorkspaceView 확장 + splitPaneContainer + 한국어 라벨
+  - YuminaiUI/FilesPanel.swift — F2 placeholder 제거 + rename 단일화 + drop hover + HelpHint 확장 + 라벨 통일
+  - YuminaiUI/CommandRunnerPane.swift — ⌘F 단축키
+  - YuminaiUI/SettingsView.swift — agentChainMaxHops 1...3 cap
+  - YuminaiUI/ShortcutHelpSheet.swift — 신규 단축키 카테고리 2개
+  - YuminaiCore/DeliveryConfig.swift — maxAttempts default 2 + tail byteBudget
+  - Tests/YuminaiCoreTests/DeliveryConfigTests.swift — assert 동기화
+
+- **테스트**: 293/293 통과 (regression 0)
+- **빌드**: R1 7.63s / R2 5.76s / R3.1 7.39s clean
+
+### 알려진 한계 / 다음 라운드
+
+- R3.2~R3.7 코디네이터 6개 점진 추출 (각 별도 PR)
+- ADR-043 R4: max 5 hard limit / persist await / transition 응집 / sheet enum / completedRecently dot fallback
+- F2 키 NSEvent monitor (v1.3+)
+- LSP imports update (v2.0+)
+- 터미널 hibernation (v2.0+)
+
+### 재검토
+
+- R3.1 facade 패턴이 점진적 분리에 적합한지 (호출자 변경 0이므로 OK)
+- Coord 분리 후 SwiftUI invalidation 영향 (Observation read-tracking이라 큰 문제 없을 것)
+- 토큰 절약 효과 정량 측정 — `xcrun xctrace`로 turn별 stdin payload bytes
 
 ---
 

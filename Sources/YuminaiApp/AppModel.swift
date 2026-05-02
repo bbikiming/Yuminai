@@ -98,18 +98,34 @@ public final class AppModel {
     // 도움말 sheet (C1)
     public var showShortcutHelp: Bool = false
 
-    // Terminal pane toggle (ADR-027 phase A) + 다중 세션 (ADR-040 T1)
-    public var showTerminalPane: Bool = false
-    /// 다중 터미널 세션 — 워크스페이스 별 N개. 빈 배열이면 첫 활성화 시 자동 1개 생성.
-    public var terminalSessions: [TerminalSession] = []
-    /// 활성 세션 id (탭 바에서 highlight + TerminalPane 표시).
-    public var activeTerminalSessionId: UUID?
-    /// 터미널 라벨 변경 sheet (id 기반 — TerminalSession.id).
-    public var terminalRenameTargetId: UUID?
-    /// Split 모드 — 좌우 dual-pane 동시 표시 (ADR-041 T14).
-    /// active = left, secondary = right. 두 번째는 사용자가 명시 선택 (default = active 다음).
-    public var terminalSplitEnabled: Bool = false
-    public var secondaryTerminalSessionId: UUID?
+    // ADR-042 R3.1 — TerminalSessionCoordinator 추출. AppModel은 facade 유지 (호출자 변경 X).
+    public let terminals: TerminalSessionCoordinator = TerminalSessionCoordinator()
+
+    // Facade pass-throughs — 기존 호출자 (RootView 등) 변경 없이 동작
+    public var showTerminalPane: Bool {
+        get { terminals.showPane }
+        set { terminals.showPane = newValue }
+    }
+    public var terminalSessions: [TerminalSession] {
+        get { terminals.sessions }
+        set { terminals.sessions = newValue }
+    }
+    public var activeTerminalSessionId: UUID? {
+        get { terminals.activeSessionId }
+        set { terminals.activeSessionId = newValue }
+    }
+    public var terminalRenameTargetId: UUID? {
+        get { terminals.renameTargetId }
+        set { terminals.renameTargetId = newValue }
+    }
+    public var terminalSplitEnabled: Bool {
+        get { terminals.splitEnabled }
+        set { terminals.splitEnabled = newValue }
+    }
+    public var secondaryTerminalSessionId: UUID? {
+        get { terminals.secondarySessionId }
+        set { terminals.secondarySessionId = newValue }
+    }
 
     // Preview pane (ADR-034 A4 + ADR-036 C1 live ping)
     public var showPreviewPane: Bool = false
@@ -769,18 +785,10 @@ public final class AppModel {
     /// activity는 .idle로 리셋, hasUnreadOutput=false. process는 SwiftTerm view spawn 시 새로.
     public func restoreTerminalSessionsFromWorkspace() {
         guard let workspace = currentWorkspace else {
-            terminalSessions = []
-            activeTerminalSessionId = nil
+            terminals.clearAll()
             return
         }
-        // 새 워크스페이스의 영속된 세션으로 교체 — fresh activity state
-        terminalSessions = workspace.savedTerminalSessions.map { saved in
-            var s = saved
-            s.activity = .idle
-            s.hasUnreadOutput = false
-            return s
-        }
-        activeTerminalSessionId = terminalSessions.first?.id
+        terminals.restore(from: workspace.savedTerminalSessions)
     }
 
     /// 현재 terminalSessions를 workspace에 영속 (ADR-041 T13).
@@ -1533,58 +1541,29 @@ public final class AppModel {
         }
     }
 
-    // MARK: - 다중 터미널 lifecycle (ADR-040 T1)
+    // MARK: - 다중 터미널 lifecycle (ADR-040 T1) — facade가 TerminalSessionCoordinator로 위임 (ADR-042 R3.1)
 
-    /// 새 터미널 세션 추가 + 활성화. 워크스페이스 path 자동.
     public func createTerminalSession(label: String? = nil) {
         guard let workspace = currentWorkspace else { return }
-        let nextLabel = label ?? TerminalSession.defaultLabel(index: terminalSessions.count)
-        let session = TerminalSession(
-            label: nextLabel,
-            workingDirectory: workspace.directoryPath
-        )
-        terminalSessions.append(session)
-        activeTerminalSessionId = session.id
-        // max 10 — overflow는 가장 오래된 것 삭제
-        if terminalSessions.count > 10 {
-            terminalSessions.removeFirst()
-        }
+        terminals.createSession(workingDirectory: workspace.directoryPath, label: label)
         persistCurrentTerminalSessions()
     }
 
     public func setActiveTerminalSession(_ id: UUID) {
-        guard terminalSessions.contains(where: { $0.id == id }) else { return }
-        activeTerminalSessionId = id
-        markTerminalSessionRead(id)
+        terminals.setActive(id)
     }
 
-    /// 세션 close — 활성이 닫히면 인접 세션으로 이동.
     public func closeTerminalSession(_ id: UUID) {
-        guard let idx = terminalSessions.firstIndex(where: { $0.id == id }) else { return }
-        let wasActive = activeTerminalSessionId == id
-        terminalSessions.remove(at: idx)
-        if wasActive {
-            if idx < terminalSessions.count {
-                activeTerminalSessionId = terminalSessions[idx].id
-            } else if idx > 0 {
-                activeTerminalSessionId = terminalSessions[idx - 1].id
-            } else {
-                activeTerminalSessionId = nil
-            }
-        }
-        // 마지막 세션 close → pane 자동 닫기
-        if terminalSessions.isEmpty {
-            showTerminalPane = false
-        }
+        terminals.close(id)
         persistCurrentTerminalSessions()
     }
 
     public func closeActiveTerminalSession() {
-        guard let id = activeTerminalSessionId else { return }
-        closeTerminalSession(id)
+        terminals.closeActive()
+        persistCurrentTerminalSessions()
     }
 
-    /// 터미널 cwd 변경 sheet 트리거 — NSOpenPanel folder picker (ADR-041 T11).
+    /// NSOpenPanel folder picker로 cwd 변경 — UI dialog는 facade가 책임 (coord는 pure logic).
     public func requestTerminalDirectoryChange(_ id: UUID) {
         guard let session = terminalSessions.first(where: { $0.id == id }) else { return }
         #if canImport(AppKit)
@@ -1601,78 +1580,46 @@ public final class AppModel {
         #endif
     }
 
-    /// 터미널 cwd 변경 — view에서 cd 명령 자동 전송 (TerminalPane.updateNSView).
     public func changeTerminalDirectory(_ id: UUID, to newPath: String) {
-        guard let idx = terminalSessions.firstIndex(where: { $0.id == id }) else { return }
-        terminalSessions[idx].workingDirectory = newPath
+        terminals.changeDirectory(id, to: newPath)
         persistCurrentTerminalSessions()
     }
 
-    /// PTY 활동 변화 — TerminalPane callback (ADR-041 T10).
-    /// 비활성 세션이 running으로 전환되면 hasUnreadOutput=true (사용자에게 알림).
     public func updateTerminalActivity(_ id: UUID, _ activity: TerminalSession.Activity) {
-        guard let idx = terminalSessions.firstIndex(where: { $0.id == id }) else { return }
-        let wasActive = activeTerminalSessionId == id
-        terminalSessions[idx].activity = activity
-        // 비활성 세션의 활동은 알림 dot
-        if !wasActive && activity == .running {
-            terminalSessions[idx].hasUnreadOutput = true
-        }
+        terminals.updateActivity(id, activity)
     }
 
-    /// 사용자가 세션을 active로 보면 unread 해제.
     public func markTerminalSessionRead(_ id: UUID) {
-        guard let idx = terminalSessions.firstIndex(where: { $0.id == id }) else { return }
-        terminalSessions[idx].hasUnreadOutput = false
+        terminals.markRead(id)
     }
 
     public func renameTerminalSession(_ id: UUID, to newLabel: String) {
-        let trimmed = newLabel.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !trimmed.isEmpty,
-              let idx = terminalSessions.firstIndex(where: { $0.id == id }) else { return }
-        terminalSessions[idx].label = trimmed
+        terminals.rename(id, to: newLabel)
         persistCurrentTerminalSessions()
     }
 
-    /// Split 모드 토글 — secondary는 active 다음 세션 자동 선택.
     public func toggleTerminalSplit() {
-        terminalSplitEnabled.toggle()
-        if terminalSplitEnabled, secondaryTerminalSessionId == nil {
-            // active와 다른 세션 자동 선택
-            if terminalSessions.count >= 2,
-               let activeIdx = terminalSessions.firstIndex(where: { $0.id == activeTerminalSessionId }) {
-                let nextIdx = (activeIdx + 1) % terminalSessions.count
-                secondaryTerminalSessionId = terminalSessions[nextIdx].id
-            } else if terminalSessions.count == 1 {
-                // 두 번째 세션 자동 생성
-                createTerminalSession()
-                secondaryTerminalSessionId = terminalSessions.last?.id
-            }
+        guard let workspace = currentWorkspace else {
+            terminals.splitEnabled.toggle()
+            return
         }
+        terminals.toggleSplit(workingDirectory: workspace.directoryPath)
     }
 
     public func setSecondaryTerminalSession(_ id: UUID) {
-        guard terminalSessions.contains(where: { $0.id == id }) else { return }
-        secondaryTerminalSessionId = id
-        markTerminalSessionRead(id)
+        terminals.setSecondary(id)
     }
 
     public func selectAdjacentTerminalSession(offset: Int) {
-        guard !terminalSessions.isEmpty else { return }
-        let currentIdx = activeTerminalSessionId.flatMap { id in
-            terminalSessions.firstIndex(where: { $0.id == id })
-        } ?? 0
-        let count = terminalSessions.count
-        let nextIdx = ((currentIdx + offset) % count + count) % count
-        activeTerminalSessionId = terminalSessions[nextIdx].id
+        terminals.selectAdjacent(offset: offset)
     }
 
-    /// 터미널 pane 토글 + 첫 세션 자동 생성.
     public func toggleTerminalPane() {
-        showTerminalPane.toggle()
-        if showTerminalPane && terminalSessions.isEmpty {
-            createTerminalSession()
+        guard let workspace = currentWorkspace else {
+            terminals.showPane.toggle()
+            return
         }
+        terminals.togglePane(workingDirectory: workspace.directoryPath)
     }
 
     /// Command block stdout/stderr를 클립보드에 복사 (ADR-040 T8).

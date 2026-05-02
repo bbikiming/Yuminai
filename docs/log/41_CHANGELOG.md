@@ -4,6 +4,40 @@
 
 ## [Unreleased] — 2026-05-02
 
+### Refactored — audit 기반 R3.1: TerminalSessionCoordinator 추출 (god-object 분해 시작) (ADR-042)
+
+- 신규 `Sources/YuminaiApp/TerminalSessionCoordinator.swift` (190줄, `@MainActor @Observable`)
+- 7개 state + 13 메서드를 응집 (lifecycle / cwd / activity / split / persistence / 워크스페이스 전환)
+- AppModel은 `terminals` 보유 + 기존 호출자 API computed pass-through (호출자 변경 0건)
+- `close()`/`clearAll()`에 secondary cleanup, split state 자동 리셋 등 사이드 효과 응집
+- ADR-042 R3.2~R3.7 spec: WorkspaceFileManager / CommandRunnerCoordinator / AgentPaneCoordinator / DeliveryCoordinator / ObsidianVaultCoordinator / TelegramCoordinator (점진적 후속 라운드)
+
+### Fixed — audit 기반 R2: UX onboarding + 단축키 일관성 + 시각 노이즈 감소 (ADR-042 R2)
+
+- ⌘W → ⌘⌥W (file tab close가 macOS 표준 윈도우 close 양보)
+- EmptyWorkspaceView quickTipRow 4 → 7 (⌘P/⌃⇧T/⌃Tab/Cmd+클릭/drag-drop 등 신규 단축키 노출)
+- FilesPanel HelpHint 단일 줄 → 6 bullet point (다중 선택/drag-drop/⌫/↩︎ 모두 명시)
+- TerminalSessionTabButton: 활성 세션만 pulse + `accessibilityReduceMotion` 체크 + duration 1.0→1.4초 (시각 노이즈 감소)
+- splitPaneContainer wrapper — Primary/Secondary label badge + accent vs borderSubtle border + 활성 세션 라벨
+- ⌘F CommandRunner 검색 단축키 (macOS 표준)
+- agentChainMaxHops Stepper 1...5 → 1...3 (토큰 폭발 cap)
+- 한국어 라벨 통일 ("휴지통으로 이동", "외부 IDE에서 열기")
+- ShortcutHelpSheet에 v0.9+/v1.2+ 모든 단축키 노출 (파일 트리/탭, 터미널 카테고리)
+
+### Fixed — audit 기반 R1: 토큰 안전 + 사용자 마찰 즉시 해소 (ADR-042 R1)
+
+- **C1 토큰 폭발 차단**: `shareCommandBlockToAgent` 무제한 stdout/stderr → `DeliveryResult.tail` (50/30줄). 100K → ~4K 토큰
+- **C2 F2 placeholder 제거**: 동작 안 했던 `.onKeyPress(.init("F"))` 핸들러 삭제
+- **C3 rename 메뉴 단일화**: "이름 변경 (inline)" + "이름 변경 sheet…" → "이름 변경" (Hick's law)
+- **C4 Drop target hover highlight**: `dropDestination(isTargeted:)` Binding + `@State isDropTarget` + `rowBg accent.opacity(0.35)`
+- **H5 디렉토리 첨부 confirmation**: NSAlert 경고 (디렉토리 또는 1MB+ 파일)
+- **H6 Auto-fix loop 절약**: `maxAttempts` default 3→2, `tail` byteBudget 4KB cap
+- **H7 pendingComposerPrefix queue 패턴**:
+  - AppModel.pendingComposerPrefix Optional state
+  - enqueueComposerPrefix 누적 시 stack-style prepend
+  - RootView Composer.onChange consume + 클리어
+  - `inputText = prefix + inputText` 직접 mutation 5곳 → 안전 큐 사용 (cursor jump/race 해소)
+
 ### Added — v1.2+ R1: 터미널 활동 시각화 + cwd/split/영속 + 트리 단축키/drag-drop (ADR-041)
 
 사용자: "v1.2+ 후보 항목들 검수+레퍼런스+검증+구현 / 좌측 터미널 세션 알림 아이콘+애니메이션"
