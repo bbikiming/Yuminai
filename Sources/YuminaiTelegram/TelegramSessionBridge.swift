@@ -45,11 +45,12 @@ public actor TelegramSessionBridge {
     /// ADR-045 R2.H3 — 외부 chat에서 명령 들어오면 그 chat을 응답 destination으로 (multi-chat).
     /// nil이면 config.chatId fallback. .completed 후 자동 클리어.
     private var requestChatId: Int64?
-    /// **ADR-055 #2** — turn 단위 streaming message id 추적.
-    /// 짧은 응답은 한 메시지에 누적 갱신 (edit) — 메시지 수 ↓ + Telegram rate limit 절약.
+    /// **ADR-055 #2 + ADR-056 Phase 1** — turn 단위 streaming message id + 누적 텍스트.
+    /// editMessageText는 전체 텍스트로 교체하므로 caller가 누적된 전체를 보내야 함.
     private var streamingMessageId: Int64?
-    /// edit 누적이 가능한 max size (Telegram 4096 한도).
-    /// 이 크기 넘으면 새 메시지로 split.
+    private var streamingAccumulated: String = ""
+    /// edit 누적이 가능한 max size (Telegram 4096 한도, 안전 마진).
+    /// 이 크기 넘으면 새 메시지로 split + 새 streaming session 시작.
     private static let editAccumulatedMax = 3500
 
     public init(client: any TelegramClient, configuration: Configuration) {
@@ -74,8 +75,9 @@ public actor TelegramSessionBridge {
         turnStartedAt = Date()
         toolCount = 0
         lastFailureSent = false
-        // ADR-055 #2 — 새 turn마다 streaming message id reset (이전 turn의 message edit X)
+        // ADR-055 #2 + ADR-056 Phase 1 — 새 turn마다 streaming session reset
         streamingMessageId = nil
+        streamingAccumulated = ""
         let preview = String(userText.prefix(100))
         await send("▶ 시작 — \(config.workspaceName)\n> \(preview)")
     }
@@ -91,10 +93,21 @@ public actor TelegramSessionBridge {
             guard config.forwardToolCalls else { return }
             toolCount += 1
             await flushAssistantBuffer()
-            // ADR-045 R2.H1 — destructive tool은 prominent 알림 (사용자 /cancel 빠른 의사결정 지원)
+            // ADR-045 R2.H1 + ADR-056 Phase 2 — destructive tool 알림에 inline keyboard
             if Self.isDestructiveToolCall(name: name, input: input) {
                 let summary = Self.summarizeToolCall(name: name, input: input, maxLen: 200)
-                await send("🚨 위험한 작업 감지 — \(summary)\n계속하지 않으려면 즉시 /cancel 보내세요.")
+                let target = requestChatId ?? config.chatId
+                let buttons = [[
+                    InlineButton(text: "🛑 중단 (cancel)", callbackData: "cancel"),
+                    InlineButton(text: "📊 상태", callbackData: "status")
+                ]]
+                _ = try? await client.sendWithKeyboard(
+                    "🚨 위험한 작업 감지 — \(summary)\n버튼으로 즉시 결정하세요.",
+                    to: target,
+                    buttons: buttons
+                )
+                streamingMessageId = nil  // 새 메시지로 시작했으니 streaming session 재시작
+                streamingAccumulated = ""
             } else {
                 let summary = Self.summarizeToolCall(name: name, input: input)
                 await send("🔧 \(summary)")
@@ -113,7 +126,20 @@ public actor TelegramSessionBridge {
             let elapsed = turnStartedAt.map { Date().timeIntervalSince($0) } ?? 0
             let elapsedStr = String(format: "%.1fs", elapsed)
             if exitCode == 0 {
-                await send("✅ 완료 (\(elapsedStr), 도구 \(toolCount)회)")
+                // ADR-056 Phase 2 — 완료 알림에 [diff] [status] [cost] 버튼
+                let target = requestChatId ?? config.chatId
+                let buttons = [[
+                    InlineButton(text: "📋 diff", callbackData: "diff"),
+                    InlineButton(text: "📊 status", callbackData: "status"),
+                    InlineButton(text: "💰 cost", callbackData: "cost")
+                ]]
+                _ = try? await client.sendWithKeyboard(
+                    "✅ 완료 (\(elapsedStr), 도구 \(toolCount)회)",
+                    to: target,
+                    buttons: buttons
+                )
+                streamingMessageId = nil
+                streamingAccumulated = ""
             } else if !lastFailureSent {
                 await send("❌ 실패 — exit \(exitCode) (\(elapsedStr))")
                 lastFailureSent = true
@@ -213,52 +239,54 @@ public actor TelegramSessionBridge {
         let text = assistantBuffer
         guard !text.isEmpty else { return }
         assistantBuffer = ""
-        // ADR-055 #2 — edit-in-place로 메시지 수 절감 (rate limit 절약 + 가독성)
-        // 첫 chunk는 새 메시지로 send → message id 기억 → 다음 chunk는 edit
-        // 누적 size가 editAccumulatedMax 넘으면 새 메시지로 split (Telegram 4096 한도)
-        let chunks = Self.chunked(text, maxSize: config.maxChunkSize)
-        for (idx, chunk) in chunks.enumerated() {
-            if idx == 0 {
-                // 첫 chunk → 새 메시지 (또는 기존 streamingMessage 갱신)
-                await sendOrEdit(chunk, replaceExisting: false)
-            } else {
-                // 후속 chunk → 기존 streaming message에 누적 (가능하면 edit, 아니면 새 메시지)
-                await sendOrEdit(chunk, replaceExisting: false)
-            }
-        }
+        // ADR-056 Phase 1 — 진짜 edit-in-place 누적
+        // 1. accumulated + new text가 max 이내 → editMessageText로 한 메시지 갱신
+        // 2. 넘으면 → 현재 메시지 마무리 + 새 메시지로 분리 (split)
+        await appendStreaming(text)
     }
 
-    /// **ADR-055 #2** — text를 streaming message에 edit (가능 시) 또는 새 메시지로 send.
-    /// 누적 size가 한도 넘으면 새 메시지로 split.
-    private func sendOrEdit(_ text: String, replaceExisting: Bool) async {
+    /// **ADR-056 Phase 1** — 진짜 edit-in-place: accumulated 텍스트에 추가 후
+    /// 한도 이내면 editMessageText로 갱신, 넘으면 새 메시지로 split.
+    private func appendStreaming(_ chunk: String) async {
         let target = requestChatId ?? config.chatId
-        if let msgId = streamingMessageId, !replaceExisting {
-            // 기존 메시지에 append: edit으로 갱신
-            // (Telegram edit은 전체 텍스트로 교체이므로 caller가 append된 전체를 보내야 함 →
-            //  단순화: 이번 chunk만 새 메시지로 send. 누적 edit은 향후 ADR-056에서 advanced)
-            // → 현재 단계 minimal: 새 메시지로 send + streamingMessageId 갱신
+        let combined = streamingAccumulated + chunk
+
+        // 누적이 한도 이내 + streaming session 있음 → edit
+        if let msgId = streamingMessageId, combined.count <= Self.editAccumulatedMax {
             do {
-                let sent = try await client.send(text, to: target)
-                streamingMessageId = sent.messageId
+                try await client.edit(messageId: msgId, in: target, text: combined)
+                streamingAccumulated = combined
+                return
             } catch {
-                // edit 실패 → 새 메시지 fallback
-                _ = try? await client.send(text, to: target)
+                // edit 실패 — 새 메시지로 fallback
+                streamingMessageId = nil
+                streamingAccumulated = ""
             }
-        } else {
-            // 새 메시지로 send + id 기억
+        }
+
+        // streaming session 없음 또는 한도 초과 → 새 메시지로 시작
+        // 한도 초과 시 chunked 분할
+        let chunks = Self.chunked(chunk, maxSize: config.maxChunkSize)
+        for piece in chunks {
             do {
-                let sent = try await client.send(text, to: target)
+                let sent = try await client.send(piece, to: target)
+                // 첫 piece는 새 streaming session으로 등록 (다음 chunk는 edit으로 누적)
                 streamingMessageId = sent.messageId
+                streamingAccumulated = piece
             } catch {
-                // silent fail — Telegram API 오류는 main flow 차단 X
+                // silent fail
             }
         }
     }
 
     private func send(_ text: String) async {
         // ADR-045 R2.H3 — 외부 chat에서 turn 시작했으면 그 chat에 응답 (multi-chat).
+        // ADR-056 Phase 1 — 별개 메시지 send (status / tool / completion 등)는 streaming session 깨고 새로 시작.
         let target = requestChatId ?? config.chatId
         _ = try? await client.send(text, to: target)
+        // streaming session reset — 다음 assistant text가 새 message로 시작
+        streamingMessageId = nil
+        streamingAccumulated = ""
     }
 
     // MARK: - Helpers

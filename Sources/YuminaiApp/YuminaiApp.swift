@@ -150,6 +150,17 @@ struct SettingsContainer: View {
             },
             onImportFromCokacdir: {
                 Task { await appModel.loadCokacdirBots() }
+            },
+            // ADR-056 Phase 5 — Routing learning panel
+            routingLearningSnapshot: appModel.routingLearningSnapshot,
+            onUnmuteKeyword: { kw in
+                Task { await appModel.unmuteKeyword(kw) }
+            },
+            onAddCustomKeyword: { kw, kind in
+                Task { await appModel.addCustomRoutingKeyword(kw, taskKind: kind) }
+            },
+            onRemoveCustomKeyword: { kw, kind in
+                Task { await appModel.removeCustomRoutingKeyword(kw, taskKind: kind) }
             }
         )
         .onChange(of: appModel.preferences) { _, _ in

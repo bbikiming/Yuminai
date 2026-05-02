@@ -4,6 +4,54 @@
 
 ## [Unreleased] — 2026-05-02
 
+### Added — Telegram 통합 마무리: 6 phases (ADR-056)
+
+**Phase 1: 진짜 edit-in-place (editMessageText accumulation)**
+- TelegramSessionBridge.streamingAccumulated 추가 (turn 단위 누적 텍스트)
+- appendStreaming(_:): 누적 ≤ 3500자 + msgId 있음 → editMessageText / 초과 → 새 split
+- send() 호출 시 streaming session reset (assistant text만 누적)
+
+**Phase 2: Telegram inline keyboard buttons**
+- TelegramClient.sendWithKeyboard + InlineButton 추가
+- IncomingTelegramMessage.callbackData (callback_query update)
+- LiveTelegramBot: reply_markup.inline_keyboard JSON, getUpdates allowed_updates에 callback_query 추가
+- destructive tool: [🛑 중단] [📊 상태] 버튼
+- 완료 알림: [📋 diff] [📊 status] [💰 cost] 버튼
+- YuminaiCommandRouter.handleCallback (cancel/diff/status/cost/task:run/rehearse)
+
+**Phase 3: 컨텍스트 ≥70% 자동 push (하루 1회)**
+- AppModel.lastContextWarnDate + maybeAutoPushContextWarning()
+- completed 이벤트 후 자동 push (사용자가 매번 /status 안 물어도)
+
+**Phase 4: per-day cost cap**
+- AppPreferences.dailyBudgetUSD (default nil = 무제한)
+- AppModel.todayCostUSD + todayCostDate (자정 자동 reset)
+- isDailyBudgetExhausted() — 도달 시 외부 turn 차단 (PC turn은 그대로)
+- /budget 확장: /budget turn|day <USD>, /budget [turn|day] off, backward compat
+
+**Phase 5: Settings에 Routing learning panel**
+- Sources/YuminaiUI/RoutingLearningPanel.swift 신설:
+  - Muted keywords (chip 형태, ✕로 unmute)
+  - Cancel 학습 진행 (ProgressView 0→3)
+  - 사용자 정의 keyword (TaskKind picker + 입력 + 추가/삭제)
+- SettingsView에 "Routing 학습" tab 추가
+- AppModel: unmuteKeyword/addCustomRoutingKeyword/removeCustomRoutingKeyword
+
+**Phase 6: Telegram /tasks /walkthrough /rehearse**
+- /tasks: TaskGraph 조회 (번호 + 상태 + agent)
+- /walkthrough <번호>: 진행 entry step별 텍스트
+- /rehearse <번호> <claude|codex>: 다른 모델로 launch (결과는 자동 forward)
+
+### 빌드/테스트 결과
+- swift build → Build complete! (10.47s)
+- swift test → 411/411 passed (87 suites)
+
+### 새 / 수정 파일
+- 새 파일: RoutingLearningPanel.swift
+- 수정: AppModel, AppPreferences, TelegramClient, TelegramSessionBridge, LiveTelegramBot, MockTelegramBot, YuminaiCommandRouter, YuminaiApp, SettingsView
+
+---
+
 ### Added — Audit 정밀 수정: HIGH 4 + 토큰 효율 6/6 항목 10/10 (ADR-055)
 
 **HIGH 1: ChildClaudeProcess에 ProjectProfile inject**

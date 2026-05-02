@@ -2406,6 +2406,8 @@ public final class AppModel {
                 } else {
                     costTracker.add(.main, usd: cost)
                 }
+                // ADR-056 Phase 4 — daily cost 누적 (자정 reset)
+                accumulateDailyCost(cost)
             }
         case .completed(let exitCode):
             isStreaming = false
@@ -2423,6 +2425,8 @@ public final class AppModel {
             }
             // ADR-049 Phase 4 — pending decomposition 응답 자동 parse
             tryParseDecompositionResult()
+            // ADR-056 Phase 3 — 컨텍스트 70%+ 자동 push (하루 1회 cap)
+            maybeAutoPushContextWarning()
             let workspaceName = workspaces.first { $0.id == selectedWorkspaceId }?.name ?? "?"
             let category: AlertCategory = exitCode == 0 ? .workComplete : .workFailed
             let costStr = String(format: "$%.4f", currentSessionUsage.costUSD)
@@ -3408,6 +3412,64 @@ public final class AppModel {
     public var externalTurnStartCostSnapshot: Double = 0
     /// **ADR-055 HIGH 4** — 현재 turn이 외부(Telegram)에서 시작됐는지.
     public var isExternalTurn: Bool = false
+    /// **ADR-056 Phase 4** — daily cost 누적 (자정 reset). dailyBudgetUSD 도달 시 외부 차단.
+    public var todayCostUSD: Double = 0
+    public var todayCostDate: Date = Date()
+    /// **ADR-056 Phase 3** — 컨텍스트 70% 자동 push 알림 cap (하루 1회).
+    /// 마지막 push 일자 — 같은 날에 두 번 push 안 함.
+    public var lastContextWarnDate: Date?
+
+    /// **ADR-056 Phase 5** — Routing learning UI helpers (Settings panel용).
+    public func unmuteKeyword(_ keyword: String) async {
+        await routingLearningStore.setMuted(keyword, muted: false)
+        routingLearningSnapshot = await routingLearningStore.snapshot()
+    }
+
+    public func addCustomRoutingKeyword(_ keyword: String, taskKind: String) async {
+        await routingLearningStore.addCustomKeyword(keyword, for: taskKind)
+        routingLearningSnapshot = await routingLearningStore.snapshot()
+    }
+
+    public func removeCustomRoutingKeyword(_ keyword: String, taskKind: String) async {
+        await routingLearningStore.removeCustomKeyword(keyword, for: taskKind)
+        routingLearningSnapshot = await routingLearningStore.snapshot()
+    }
+
+    /// **ADR-056 Phase 4** — daily cost 누적. 날짜 바뀌면 reset.
+    public func accumulateDailyCost(_ cost: Double) {
+        let cal = Calendar.current
+        if !cal.isDate(todayCostDate, inSameDayAs: Date()) {
+            // 새 날짜 — reset
+            todayCostUSD = 0
+            todayCostDate = Date()
+        }
+        todayCostUSD += cost
+    }
+
+    /// **ADR-056 Phase 4** — daily budget cap 도달 여부 (외부 turn 차단용).
+    public func isDailyBudgetExhausted() -> Bool {
+        guard let cap = preferences.dailyBudgetUSD else { return false }
+        return todayCostUSD >= cap
+    }
+
+    /// **ADR-056 Phase 3** — 컨텍스트 70%+ 시 Telegram 자동 push (하루 1회).
+    /// completed 이벤트 후 호출.
+    public func maybeAutoPushContextWarning() {
+        let pct = currentContextUsage
+        guard pct >= 0.70 else { return }
+        // 같은 날 이미 push했으면 skip
+        let cal = Calendar.current
+        if let last = lastContextWarnDate, cal.isDate(last, inSameDayAs: Date()) {
+            return
+        }
+        // bound bridge 있으면 push
+        guard let bridge = sessionBridge else { return }
+        let pctInt = Int(pct * 100)
+        let model = activeSettings.model.displayName
+        let msg = "⚠ 컨텍스트 \(pctInt)% (\(model)) — 새 세션 시작 권장.\n• PC에서 새 세션 만들기\n• 또는 /reset 비슷한 작업 (현재는 PC만)"
+        Task { await bridge.sendNotice(msg) }
+        lastContextWarnDate = Date()
+    }
 
     public func incrementExternalTurnCount() {
         externalTurnCount += 1

@@ -27,6 +27,12 @@ public struct SettingsView: View {
     public let onSelectCodexBinary: () -> Void
     public let onImportFromCokacdir: () -> Void
 
+    /// **ADR-056 Phase 5** — Routing learning panel용 snapshot + callbacks.
+    public let routingLearningSnapshot: RoutingLearningStore.Snapshot
+    public let onUnmuteKeyword: (String) -> Void
+    public let onAddCustomKeyword: (String, String) -> Void
+    public let onRemoveCustomKeyword: (String, String) -> Void
+
     public init(
         preferences: Binding<AppPreferences>,
         anthropicKeyStatus: SecretStatus,
@@ -38,7 +44,11 @@ public struct SettingsView: View {
         onTestTelegramSend: @escaping () -> Void,
         onSelectClaudeBinary: @escaping () -> Void,
         onSelectCodexBinary: @escaping () -> Void = {},
-        onImportFromCokacdir: @escaping () -> Void = {}
+        onImportFromCokacdir: @escaping () -> Void = {},
+        routingLearningSnapshot: RoutingLearningStore.Snapshot = RoutingLearningStore.Snapshot(mutedKeywords: [], cancelCounts: [:], customKeywords: [:]),
+        onUnmuteKeyword: @escaping (String) -> Void = { _ in },
+        onAddCustomKeyword: @escaping (String, String) -> Void = { _, _ in },
+        onRemoveCustomKeyword: @escaping (String, String) -> Void = { _, _ in }
     ) {
         self._preferences = preferences
         self.anthropicKeyStatus = anthropicKeyStatus
@@ -51,6 +61,10 @@ public struct SettingsView: View {
         self.onSelectClaudeBinary = onSelectClaudeBinary
         self.onSelectCodexBinary = onSelectCodexBinary
         self.onImportFromCokacdir = onImportFromCokacdir
+        self.routingLearningSnapshot = routingLearningSnapshot
+        self.onUnmuteKeyword = onUnmuteKeyword
+        self.onAddCustomKeyword = onAddCustomKeyword
+        self.onRemoveCustomKeyword = onRemoveCustomKeyword
     }
 
     public var body: some View {
@@ -65,9 +79,33 @@ public struct SettingsView: View {
                 .tabItem { Label("텔레그램", systemImage: "paperplane") }
             anthropicTab
                 .tabItem { Label("Anthropic", systemImage: "key") }
+            // ADR-056 Phase 5 — Routing learning tab
+            routingLearningTab
+                .tabItem { Label("Routing 학습", systemImage: "brain.head.profile") }
         }
         .frame(minWidth: 640, idealWidth: 720, maxWidth: 880,
                minHeight: 480, idealHeight: 560, maxHeight: 760)
+    }
+
+    /// **ADR-056 Phase 5** — Routing learning tab.
+    private var routingLearningTab: some View {
+        Form {
+            Section {
+                RoutingLearningPanel(
+                    snapshot: routingLearningSnapshot,
+                    onUnmute: onUnmuteKeyword,
+                    onAddCustom: onAddCustomKeyword,
+                    onRemoveCustom: onRemoveCustomKeyword
+                )
+            } header: {
+                Text("Routing 자동 학습 (ADR-055/056)")
+            } footer: {
+                Text("자동 routing이 잘못 판단했다고 cancel하면 해당 keyword가 기록됩니다. 3회 도달 시 자동 mute. 사용자 정의 keyword는 base보다 우선 매칭됩니다.")
+                    .font(Theme.Typography.micro)
+                    .foregroundStyle(Theme.Color.textSecondary)
+            }
+        }
+        .padding()
     }
 
     // MARK: - 일반

@@ -25,6 +25,21 @@ public final actor MockTelegramBot: TelegramClient {
         )
     }
 
+    /// **ADR-056 Phase 2** — keyboard 첨부 메시지. mock은 단순 send + button 정보 log.
+    public private(set) var sentKeyboardLog: [(text: String, chatId: Int64, buttons: [[InlineButton]])] = []
+    public func sendWithKeyboard(
+        _ text: String,
+        to chatId: Int64,
+        buttons: [[InlineButton]]
+    ) async throws -> SentTelegramMessage {
+        sentLog.append((text, chatId))
+        sentKeyboardLog.append((text, chatId, buttons))
+        return SentTelegramMessage(
+            messageId: Int64.random(in: 1...1_000_000),
+            chatId: chatId
+        )
+    }
+
     public func edit(messageId: Int64, in chatId: Int64, text: String) async throws {
         editLog.append((messageId, chatId, text))
     }

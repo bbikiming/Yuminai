@@ -23,6 +23,10 @@ public final class YuminaiCommandRouter: TelegramCommandRouter, @unchecked Senda
     public func handle(_ message: IncomingTelegramMessage) async -> String? {
         // ADR-045 R1.H4 — bot reflection 차단 (allowlist 통과해도 추가 가드)
         guard !message.isFromBot else { return nil }
+        // ADR-056 Phase 2 — callback_query (inline keyboard 클릭) 처리
+        if let cb = message.callbackData {
+            return await handleCallback(cb, requestChatId: message.chatId)
+        }
         guard let raw = message.text?.trimmingCharacters(in: .whitespacesAndNewlines),
               !raw.isEmpty
         else {
@@ -33,6 +37,32 @@ public final class YuminaiCommandRouter: TelegramCommandRouter, @unchecked Senda
             return await handleCommand(raw, requestChatId: message.chatId)
         }
         return await handlePlainText(raw, requestChatId: message.chatId)
+    }
+
+    /// **ADR-056 Phase 2** — inline keyboard callback handler.
+    /// callbackData 형식: "cmd:arg" (예: "cancel" / "diff" / "task:run:<uuid>" / "rehearse:<taskId>:claude")
+    private func handleCallback(_ data: String, requestChatId: Int64) async -> String? {
+        let parts = data.split(separator: ":", maxSplits: 2).map(String.init)
+        guard let command = parts.first else { return nil }
+        switch command {
+        case "cancel":
+            return await cancelCommand()
+        case "diff":
+            return await diffCommand()
+        case "status":
+            return await statusCommand()
+        case "cost":
+            return await costCommand()
+        case "task" where parts.count >= 3 && parts[1] == "run":
+            return await runTaskByIdCommand(parts[2])
+        case "rehearse" where parts.count >= 3:
+            // rehearse:<taskId>:<claude|codex>
+            let taskId = parts[1]
+            let agentRaw = parts[2]
+            return await rehearseCommand("\(taskId) \(agentRaw)")
+        default:
+            return "알 수 없는 callback: \(data)"
+        }
     }
 
     // MARK: - Commands
@@ -81,6 +111,15 @@ public final class YuminaiCommandRouter: TelegramCommandRouter, @unchecked Senda
         case "/budget":
             // ADR-055 #6 — 일일 cost cap 설정 (보호)
             return await budgetCommand(arg)
+        case "/tasks":
+            // ADR-056 Phase 6 — TaskGraph 조회 + 실행 (inline keyboard로 ▶ 실행)
+            return await tasksCommand()
+        case "/walkthrough":
+            // ADR-056 Phase 6 — 완료 task의 walk-through (외부 회고)
+            return await walkthroughCommand(arg)
+        case "/rehearse":
+            // ADR-056 Phase 6 — 다른 모델로 리허설 launch
+            return await rehearseCommand(arg)
         default:
             return "알 수 없는 명령: \(cmd)\n/help로 사용 가능한 명령을 확인해요."
         }
@@ -264,37 +303,186 @@ public final class YuminaiCommandRouter: TelegramCommandRouter, @unchecked Senda
         """
     }
 
-    /// **ADR-055 #6** — 일일 cost cap 설정 (외부 사용자 비용 보호).
+    /// **ADR-055 #6 + ADR-056 Phase 4** — per-turn + per-day cost cap.
+    /// /budget                    — 현재 status
+    /// /budget turn <USD|off>     — per-turn cap (LiveClaudeAdapter --max-budget-usd)
+    /// /budget day <USD|off>      — per-day cap (외부 turn 차단)
+    /// /budget <USD>              — backward compat: per-turn cap
     private func budgetCommand(_ arg: String) async -> String? {
         guard let model = appModel else { return "Yuminai 연결 안 됨" }
-        if arg.isEmpty {
-            // 현재 budget 표시
-            let current = await MainActor.run { model.preferences.defaultSessionSettings.maxBudgetUSD }
-            let snapshot = await MainActor.run { model.costTracker.snapshot() }
-            let pct = current.map { Int(snapshot.total / $0 * 100) } ?? 0
-            return """
-            💼 현재 budget: \(current.map { "$\(String(format: "%.4f", $0))" } ?? "(미설정)")
-            현재 사용: $\(String(format: "%.4f", snapshot.total)) (\(pct)%)
+        let parts = arg.split(separator: " ").map(String.init)
 
-            사용법: /budget <USD> — 예: /budget 5.0
-                    /budget off  — budget cap 해제
+        if parts.isEmpty {
+            // 현재 두 cap 모두 표시
+            let perTurn = await MainActor.run { model.preferences.defaultSessionSettings.maxBudgetUSD }
+            let perDay = await MainActor.run { model.preferences.dailyBudgetUSD }
+            let snapshot = await MainActor.run { model.costTracker.snapshot() }
+            let todayCost = await MainActor.run { model.todayCostUSD }
+            let dayPct = perDay.map { Int(todayCost / $0 * 100) } ?? 0
+            return """
+            💼 Budget status:
+              · per-turn cap: \(perTurn.map { "$\(String(format: "%.4f", $0))" } ?? "(미설정)")
+              · per-day cap:  \(perDay.map { "$\(String(format: "%.4f", $0))" } ?? "(미설정)") (오늘 \(dayPct)%)
+              · 오늘 사용: $\(String(format: "%.4f", todayCost))
+              · 세션 total: $\(String(format: "%.4f", snapshot.total))
+
+            사용법:
+              /budget turn <USD>  — per-turn cap (LLM에 직접 전달)
+              /budget day <USD>   — per-day cap (외부 turn 차단)
+              /budget turn off    — per-turn cap 해제
+              /budget day off     — per-day cap 해제
             """
         }
-        if arg.lowercased() == "off" {
-            await MainActor.run {
-                model.preferences.defaultSessionSettings.maxBudgetUSD = nil
+
+        // /budget turn|day <value>
+        if parts.count >= 2 {
+            let scope = parts[0].lowercased()
+            let value = parts[1].lowercased()
+            switch scope {
+            case "turn":
+                if value == "off" {
+                    await MainActor.run { model.preferences.defaultSessionSettings.maxBudgetUSD = nil }
+                    await model.savePreferences()
+                    return "💼 per-turn cap 해제됨."
+                }
+                guard let v = Double(value), v > 0 else { return "잘못된 값: ‘\(value)’" }
+                await MainActor.run { model.preferences.defaultSessionSettings.maxBudgetUSD = v }
+                await model.savePreferences()
+                return "💼 per-turn cap: $\(String(format: "%.4f", v)). 다음 spawn부터."
+            case "day":
+                if value == "off" {
+                    await MainActor.run { model.preferences.dailyBudgetUSD = nil }
+                    await model.savePreferences()
+                    return "💼 per-day cap 해제됨."
+                }
+                guard let v = Double(value), v > 0 else { return "잘못된 값: ‘\(value)’" }
+                await MainActor.run { model.preferences.dailyBudgetUSD = v }
+                await model.savePreferences()
+                return "💼 per-day cap: $\(String(format: "%.4f", v))/일 (자정 reset). 도달 시 외부 turn 차단."
+            default:
+                break
             }
+        }
+
+        // backward compat: /budget <USD>  → per-turn
+        let single = parts[0].lowercased()
+        if single == "off" {
+            await MainActor.run { model.preferences.defaultSessionSettings.maxBudgetUSD = nil }
             await model.savePreferences()
-            return "💼 Budget cap 해제됨. 모든 turn 무제한 진행."
+            return "💼 per-turn cap 해제됨. (per-day 별도)"
         }
-        guard let value = Double(arg), value > 0 else {
-            return "잘못된 값: ‘\(arg)’ — 양수 USD를 입력하세요. 예: /budget 5.0"
+        guard let value = Double(single), value > 0 else {
+            return "잘못된 값: ‘\(single)’\n사용법: /budget turn <USD> / /budget day <USD>"
         }
-        await MainActor.run {
-            model.preferences.defaultSessionSettings.maxBudgetUSD = value
-        }
+        await MainActor.run { model.preferences.defaultSessionSettings.maxBudgetUSD = value }
         await model.savePreferences()
-        return "💼 Budget cap 설정: $\(String(format: "%.4f", value))/turn. 다음 spawn부터 적용."
+        return "💼 per-turn cap: $\(String(format: "%.4f", value)) (per-day는 별도 — /budget day <USD>)"
+    }
+
+    /// **ADR-056 Phase 6** — TaskGraph 조회 + 실행 안내 (inline keyboard로 ▶ 실행).
+    private func tasksCommand() async -> String? {
+        guard let model = appModel else { return "Yuminai 연결 안 됨" }
+        let tasks = await MainActor.run { model.harness.tasks }
+        guard !tasks.isEmpty else {
+            return "현재 task가 없어요. /decompose <설명> 으로 task 추가하세요."
+        }
+        var lines = ["📋 TaskGraph (\(tasks.count)):"]
+        for (i, task) in tasks.enumerated() {
+            let icon: String = {
+                switch task.status {
+                case .pending: return "⏳"
+                case .running: return "▶️"
+                case .completed: return "✅"
+                case .failed: return "❌"
+                }
+            }()
+            let agent = task.assignedAgent?.shortLabel ?? "?"
+            lines.append("\(i + 1). \(icon) [\(agent)] \(task.title)")
+        }
+        lines.append("")
+        lines.append("/rehearse <번호> <claude|codex> — 다른 모델로 리허설")
+        lines.append("/walkthrough <번호> — 완료 task의 진행 과정 회고")
+        return lines.joined(separator: "\n")
+    }
+
+    /// **ADR-056 Phase 6** — task 번호 → 실행 (active session으로 dispatch).
+    private func runTaskByIdCommand(_ idStr: String) async -> String? {
+        guard let model = appModel,
+              let uuid = UUID(uuidString: idStr) else {
+            return "잘못된 task ID: \(idStr)"
+        }
+        await model.runHarnessTask(uuid)
+        return "▶ task 실행 시작"
+    }
+
+    /// **ADR-056 Phase 6** — 완료 task의 walk-through 텍스트 응답.
+    private func walkthroughCommand(_ arg: String) async -> String? {
+        guard let model = appModel else { return "Yuminai 연결 안 됨" }
+        guard !arg.isEmpty else {
+            return "사용법: /walkthrough <task 번호>\n/tasks로 번호 확인."
+        }
+        guard let idx = Int(arg) else {
+            return "task 번호는 숫자로: /walkthrough 1"
+        }
+        let task: HarnessTask? = await MainActor.run {
+            let tasks = model.harness.tasks
+            guard idx >= 1 && idx <= tasks.count else { return nil }
+            return tasks[idx - 1]
+        }
+        guard let t = task else {
+            return "task #\(idx)를 찾을 수 없어요."
+        }
+        let entries: [ConversationEntry] = await MainActor.run {
+            let log = model.harness.conversationLog
+            if !t.entryRefs.isEmpty {
+                return log.filter { t.entryRefs.contains($0.id) }
+            }
+            return log.filter { $0.timestamp >= t.createdAt }
+        }
+        if entries.isEmpty {
+            return "[\(t.title)] 진행 entry가 없어요. (status=\(t.status.rawValue))"
+        }
+        var lines = ["📖 Walk-through — \(t.title) (status=\(t.status.rawValue))"]
+        for (i, entry) in entries.enumerated() {
+            let role: String = {
+                switch entry.role {
+                case .user: return "👤"
+                case .agent: return "🤖[\(entry.agentKind?.shortLabel ?? "?")]"
+                case .system: return "ℹ️"
+                }
+            }()
+            let snippet = String(entry.content.prefix(150))
+            lines.append("\nStep \(i + 1) \(role)\n\(snippet)\(entry.content.count > 150 ? "…" : "")")
+        }
+        if let output = t.output, !output.isEmpty {
+            lines.append("\n\n📤 결과: \(output.prefix(300))")
+        }
+        return lines.joined(separator: "\n")
+    }
+
+    /// **ADR-056 Phase 6** — 완료 task를 다른 모델로 리허설.
+    /// 사용법: /rehearse <task번호> <claude|codex>
+    private func rehearseCommand(_ arg: String) async -> String? {
+        guard let model = appModel else { return "Yuminai 연결 안 됨" }
+        let parts = arg.split(separator: " ").map(String.init)
+        guard parts.count >= 2,
+              let idx = Int(parts[0]) else {
+            return "사용법: /rehearse <task번호> <claude|codex>\n예: /rehearse 1 codex\n/tasks로 번호 확인."
+        }
+        let agentStr = parts[1].lowercased()
+        guard let agent = AgentKind(rawValue: agentStr) ?? AgentKind.allCases.first(where: { $0.shortLabel.lowercased() == agentStr }) else {
+            return "알 수 없는 모델: ‘\(parts[1])’\n사용 가능: claude, codex"
+        }
+        let taskId: UUID? = await MainActor.run {
+            let tasks = model.harness.tasks
+            guard idx >= 1 && idx <= tasks.count else { return nil }
+            return tasks[idx - 1].id
+        }
+        guard let id = taskId else {
+            return "task #\(idx)를 찾을 수 없어요."
+        }
+        await model.launchRehearsal(taskId: id, agent: agent)
+        return "🔄 리허설 시작 — \(agent.shortLabel) (결과는 자동 forward)"
     }
 
     /// ADR-049 Phase 4 — 큰 task를 LLM 호출로 sub-task 분해.
@@ -342,6 +530,18 @@ public final class YuminaiCommandRouter: TelegramCommandRouter, @unchecked Senda
         case .boundMissing:
             return "연결된 워크스페이스를 찾을 수 없어요. /unbind 후 다시 /bind 해주세요."
         case .ready(let boundId, let needsSwitch):
+            // ADR-056 Phase 4 — daily budget cap 도달 시 외부 turn 차단 (PC turn은 그대로)
+            let exhausted = await MainActor.run { model.isDailyBudgetExhausted() }
+            if exhausted {
+                let cap = await MainActor.run { model.preferences.dailyBudgetUSD ?? 0 }
+                let used = await MainActor.run { model.todayCostUSD }
+                return """
+                💼 오늘 budget cap 도달 — 외부 turn 차단됨.
+                  · cap: $\(String(format: "%.4f", cap))
+                  · 사용: $\(String(format: "%.4f", used))
+                  · 자정에 자동 reset / 또는 /budget off로 해제 / /budget <USD>로 증액
+                """
+            }
             if needsSwitch {
                 await model.selectWorkspace(boundId)
             }
@@ -392,7 +592,12 @@ public final class YuminaiCommandRouter: TelegramCommandRouter, @unchecked Senda
     /model <name> — 모델 전환 (claude/codex/auto/status)
     /decompose <설명> — 큰 task를 sub-task로 LLM 자동 분해 (격리 호출, 결과 자동 forward)
     /cost         — 5 buckets 비용 분리 (main/decomp/rehearsal/parallel/routing)
-    /budget [USD] — 일일 cost cap 설정 (off로 해제)
+    /budget [USD] — per-turn cost cap 설정 (off로 해제)
+
+    📋 Task 컨트롤 (ADR-056):
+    /tasks         — TaskGraph 조회 (번호 포함)
+    /walkthrough <번호> — 완료 task의 진행 회고 (text 응답)
+    /rehearse <번호> <claude|codex> — 다른 모델로 리허설 launch
 
     /start        — 처음 사용자용 안내
     /help         — 이 도움말

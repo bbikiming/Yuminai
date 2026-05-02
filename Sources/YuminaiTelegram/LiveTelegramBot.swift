@@ -71,6 +71,53 @@ public final actor LiveTelegramBot: TelegramClient {
         return SentTelegramMessage(messageId: messageId, chatId: chatId)
     }
 
+    /// **ADR-056 Phase 2** — inline keyboard 첨부 메시지.
+    /// reply_markup.inline_keyboard 필드로 전달 — 사용자가 클릭하면 callback_query update.
+    public func sendWithKeyboard(
+        _ text: String,
+        to chatId: Int64,
+        buttons: [[InlineButton]]
+    ) async throws -> SentTelegramMessage {
+        do {
+            return try await sendWithKeyboardInternal(text: text, to: chatId, buttons: buttons, parseMode: "MarkdownV2", escape: true)
+        } catch let nsError as NSError where nsError.domain == "TelegramBot" && nsError.code == 400 {
+            return try await sendWithKeyboardInternal(text: text, to: chatId, buttons: buttons, parseMode: nil, escape: false)
+        }
+    }
+
+    private func sendWithKeyboardInternal(
+        text: String,
+        to chatId: Int64,
+        buttons: [[InlineButton]],
+        parseMode: String?,
+        escape: Bool
+    ) async throws -> SentTelegramMessage {
+        let url = baseURL.appendingPathComponent("sendMessage")
+        var request = URLRequest(url: url)
+        request.httpMethod = "POST"
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        // inline_keyboard: [[ {text, callback_data} ]]
+        let keyboard = buttons.map { row in
+            row.map { ["text": $0.text, "callback_data": $0.callbackData] }
+        }
+        let replyMarkup: [String: Any] = ["inline_keyboard": keyboard]
+        var body: [String: Any] = [
+            "chat_id": chatId,
+            "text": escape ? Self.escapeMarkdownV2(text) : text,
+            "reply_markup": replyMarkup
+        ]
+        if let parseMode { body["parse_mode"] = parseMode }
+        request.httpBody = try JSONSerialization.data(withJSONObject: body)
+
+        let (data, response) = try await session.data(for: request)
+        try validate(response: response, data: data)
+
+        let json = try JSONSerialization.jsonObject(with: data) as? [String: Any]
+        let result = json?["result"] as? [String: Any]
+        let messageId = LiveTelegramBot.coerceInt64(result?["message_id"]) ?? 0
+        return SentTelegramMessage(messageId: messageId, chatId: chatId)
+    }
+
     public func edit(messageId: Int64, in chatId: Int64, text: String) async throws {
         do {
             try await editInternal(messageId: messageId, in: chatId, text: text, parseMode: "MarkdownV2", escape: true)
@@ -209,7 +256,8 @@ public final actor LiveTelegramBot: TelegramClient {
         components?.queryItems = [
             URLQueryItem(name: "offset", value: String(offset)),
             URLQueryItem(name: "timeout", value: "30"),
-            URLQueryItem(name: "allowed_updates", value: "[\"message\"]")
+            // ADR-056 Phase 2 — message + callback_query (inline keyboard 클릭) 모두 받음
+            URLQueryItem(name: "allowed_updates", value: "[\"message\",\"callback_query\"]")
         ]
         guard let url = components?.url else {
             throw URLError(.badURL)
@@ -241,8 +289,27 @@ public final actor LiveTelegramBot: TelegramClient {
     }
 
     private static func parseUpdate(_ raw: [String: Any]) -> IncomingTelegramMessage? {
-        guard let updateId = coerceInt64(raw["update_id"]),
-              let message = raw["message"] as? [String: Any],
+        guard let updateId = coerceInt64(raw["update_id"]) else { return nil }
+        // ADR-056 Phase 2 — callback_query (inline keyboard 버튼 클릭) 처리
+        if let callback = raw["callback_query"] as? [String: Any],
+           let from = callback["from"] as? [String: Any],
+           let userId = coerceInt64(from["id"]),
+           let message = callback["message"] as? [String: Any],
+           let chat = message["chat"] as? [String: Any],
+           let chatId = coerceInt64(chat["id"]) {
+            let isBot = (from["is_bot"] as? Bool) ?? false
+            let callbackData = callback["data"] as? String
+            return IncomingTelegramMessage(
+                updateId: updateId,
+                userId: userId,
+                chatId: chatId,
+                text: nil,  // callback은 text 없음
+                isFromBot: isBot,
+                callbackData: callbackData
+            )
+        }
+        // 일반 message
+        guard let message = raw["message"] as? [String: Any],
               let from = message["from"] as? [String: Any],
               let userId = coerceInt64(from["id"]),
               let chat = message["chat"] as? [String: Any],

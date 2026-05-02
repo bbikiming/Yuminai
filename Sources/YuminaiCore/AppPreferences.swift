@@ -50,6 +50,9 @@ public struct AppPreferences: Sendable, Codable, Hashable {
     /// ADR-052 — Multi-agent 병렬 실행 활성. **default false** (Cognition 권고: parallel = fragile).
     /// 켜면 TaskGraph의 disjoint task를 두 pane에서 동시 실행 가능.
     public var multiAgentParallelEnabled: Bool
+    /// **ADR-056 Phase 4** — per-day cost cap (USD). nil이면 무제한.
+    /// 도달 시 외부 turn은 차단 (PC turn은 그대로). 매일 자정 reset.
+    public var dailyBudgetUSD: Double?
     /// pane 응답에 `@<other>` mention이 있으면 자동으로 다음 turn dispatch (ADR-034 A1).
     /// **default OFF** — 무한 루프 위험, 명시적 토글 필요.
     public var agentChainEnabled: Bool
@@ -81,6 +84,7 @@ public struct AppPreferences: Sendable, Codable, Hashable {
         routingLogRawPrompts: Bool = false,
         routingLogRetentionDays: Int = 7,
         multiAgentParallelEnabled: Bool = false,
+        dailyBudgetUSD: Double? = nil,
         agentChainEnabled: Bool = false,
         agentChainMaxHops: Int = 1,
         fontSizeOffset: Int = 0,
@@ -108,6 +112,7 @@ public struct AppPreferences: Sendable, Codable, Hashable {
         self.routingLogRawPrompts = routingLogRawPrompts
         self.routingLogRetentionDays = routingLogRetentionDays
         self.multiAgentParallelEnabled = multiAgentParallelEnabled
+        self.dailyBudgetUSD = dailyBudgetUSD
         self.agentChainEnabled = agentChainEnabled
         self.agentChainMaxHops = agentChainMaxHops
         self.fontSizeOffset = fontSizeOffset
@@ -139,6 +144,7 @@ public struct AppPreferences: Sendable, Codable, Hashable {
         self.routingLogRawPrompts = try c.decodeIfPresent(Bool.self, forKey: .routingLogRawPrompts) ?? false
         self.routingLogRetentionDays = try c.decodeIfPresent(Int.self, forKey: .routingLogRetentionDays) ?? 7
         self.multiAgentParallelEnabled = try c.decodeIfPresent(Bool.self, forKey: .multiAgentParallelEnabled) ?? false
+        self.dailyBudgetUSD = try c.decodeIfPresent(Double.self, forKey: .dailyBudgetUSD)
         self.agentChainEnabled = try c.decodeIfPresent(Bool.self, forKey: .agentChainEnabled) ?? false
         self.agentChainMaxHops = try c.decodeIfPresent(Int.self, forKey: .agentChainMaxHops) ?? 1
         self.fontSizeOffset = try c.decodeIfPresent(Int.self, forKey: .fontSizeOffset) ?? 0

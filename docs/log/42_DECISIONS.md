@@ -1,6 +1,106 @@
 # Decisions Log (ADR-lite)
 
-> 최신: ADR-055 (Audit 기반 정밀 수정 — HIGH 4개 + 토큰 효율 6/6 항목 10/10)
+> 최신: ADR-056 (Telegram 마무리 — edit-in-place + inline keyboards + per-day budget + 자동 push + Routing 학습 UI + 새 명령)
+
+---
+
+## ADR-056 — Telegram 통합 마무리: 6 phases (edit-in-place / keyboards / 70% push / per-day cap / learning UI / 새 명령)
+
+- **날짜**: 2026-05-02
+- **상태**: Accepted
+- **결정**: ADR-055에서 식별된 다음 라운드 후보 6개 모두 한 번에 구현
+
+### 컨텍스트
+사용자: "다음 후보 모두 진행해 줘. 자동 커밋도 좋고 텔래그램 기능 업그레이드도 좋아"
+
+ADR-055 trailing notes의 6개 후보:
+1. 진짜 edit-in-place (editMessageText accumulation)
+2. Telegram inline keyboard buttons
+3. 컨텍스트 ≥70% 자동 push (하루 1회 cap)
+4. per-day cost cap
+5. Settings에 routing learning panel
+6. Telegram /tasks · /walkthrough · /rehearse 명령
+
+### 결정
+
+#### Phase 1: 진짜 edit-in-place (Telegram 메시지 1개에 누적)
+- `TelegramSessionBridge.streamingAccumulated: String` 추가 — 누적 텍스트 보존
+- `appendStreaming(_:)` helper:
+  - 누적 ≤ 3500자 + streamingMessageId 있음 → `client.edit(messageId:in:text:)` 으로 갱신
+  - 한도 초과 → 새 메시지로 split + 새 streaming session
+- `send()` 호출 시 streaming session reset (status / tool / 완료 알림은 별도 메시지)
+- 영향: 짧은 응답은 한 메시지에 누적 → Telegram rate limit 절약 + 가독성 ↑
+
+#### Phase 2: Telegram inline keyboard buttons
+- `TelegramClient.sendWithKeyboard(_:to:buttons:)` 추가 (protocol)
+- `InlineButton(text:callbackData:)` struct
+- `IncomingTelegramMessage.callbackData: String?` 추가 (callback_query에서 들어옴)
+- LiveTelegramBot:
+  - `sendWithKeyboardInternal` (reply_markup.inline_keyboard JSON)
+  - `parseUpdate`에 callback_query branch
+  - `getUpdates`의 allowed_updates에 `"callback_query"` 추가
+- TelegramSessionBridge:
+  - destructive tool 감지 시: [🛑 중단] [📊 상태] 버튼 첨부
+  - 완료 알림에: [📋 diff] [📊 status] [💰 cost] 버튼 첨부
+- YuminaiCommandRouter:
+  - `handleCallback(_:requestChatId:)` — cancel / diff / status / cost / task:run / rehearse 처리
+
+#### Phase 3: 컨텍스트 ≥70% 자동 push (하루 1회 cap)
+- AppModel `lastContextWarnDate: Date?` 추가
+- `maybeAutoPushContextWarning()` — completed 이벤트 후 호출
+  - context ≥70% + 같은 날 push 없음 + bridge 있음 → push
+  - 일자 기록 (lastContextWarnDate)
+- 사용자가 매번 /status 안 물어도 자동 알림
+
+#### Phase 4: per-day cost cap (외부 turn 차단)
+- AppPreferences `dailyBudgetUSD: Double?` 추가 (default nil = 무제한)
+- AppModel:
+  - `todayCostUSD` + `todayCostDate` (자정 자동 reset)
+  - `accumulateDailyCost(_:)` — usage 이벤트에서 호출
+  - `isDailyBudgetExhausted()` — 도달 여부
+- YuminaiCommandRouter:
+  - 외부 turn 시작 시 `isDailyBudgetExhausted()` 체크 → 도달 시 차단 + 안내
+  - `/budget` 명령 확장: `/budget turn <USD>`, `/budget day <USD>`, `/budget [turn|day] off`
+  - backward compat: `/budget <USD>` → per-turn
+
+#### Phase 5: Settings에 Routing learning panel
+- `Sources/YuminaiUI/RoutingLearningPanel.swift` 신설:
+  - Muted Keywords 섹션 (chip 형태, ✕로 unmute)
+  - Cancel 학습 진행 (ProgressView 0/3 → 3/3)
+  - 사용자 정의 Keywords (TaskKind picker + 입력 + 추가/삭제)
+- SettingsView에 "Routing 학습" tab 추가 (brain.head.profile 아이콘)
+- AppModel:
+  - `unmuteKeyword`, `addCustomRoutingKeyword`, `removeCustomRoutingKeyword` helpers
+- YuminaiApp.swift: 새 4개 props 전달
+
+#### Phase 6: Telegram /tasks /walkthrough /rehearse
+- `/tasks`: TaskGraph 조회 (번호 + 상태 + agent 표시)
+- `/walkthrough <번호>`: task의 진행 entry를 step별로 텍스트 응답
+- `/rehearse <번호> <claude|codex>`: 다른 모델로 리허설 launch (결과는 ADR-055 HIGH 3로 자동 forward)
+
+### 적용 결과
+```
+swift build              → Build complete! (10.47s)
+swift test               → 411/411 passed (87 suites — ADR-055 tests 그대로)
+새 파일                  → 1 (RoutingLearningPanel.swift)
+수정 파일                → 7 (AppModel, AppPreferences, TelegramClient, TelegramSessionBridge, LiveTelegramBot, MockTelegramBot, YuminaiCommandRouter, YuminaiApp, SettingsView)
+```
+
+### 트레이드오프
+
+- **Edit-in-place + send 혼합**: streaming session은 assistant text만, status/tool/완료는 새 메시지. send() 호출이 streaming session을 깨므로 text가 다시 들어오면 새 메시지부터 → 사용자가 인지 가능한 자연스러운 분리
+- **Inline keyboard data는 64 bytes 한도**: callback_data에 task UUID 그대로 넣어도 36자라 OK. 더 긴 정보 필요하면 별도 mapping 필요
+- **per-day budget 자정 reset의 timezone**: Calendar.current 기준 — 사용자 local timezone에 자동 맞춤
+- **컨텍스트 70% push 하루 1회 cap**: 사용자가 새 세션 후 다시 70% 도달해도 같은 날엔 안 알림. 너무 빈번한 알림 방지 우선
+- **Settings tab 추가**: 6 → 7개 tab. 더 늘면 sidebar style로 변경 검토
+
+### 향후 (ADR-057 후보)
+- inline keyboard에 진짜 callback acknowledgment (answerCallbackQuery로 ✓ 표시 — 현재는 silent)
+- per-day budget 자정 push 알림 ("오늘 cap reset 됐어요")
+- Routing learning에 weight 기반 (binary mute보다 부드러운 가중치)
+- TelegramSessionBridge 멀티 chat ↔ 멀티 워크스페이스 binding
+- /tasks에도 inline keyboard로 ▶ 실행 버튼 (현재는 텍스트만)
+- 컨텍스트 70%+ 시 자동 새 세션 시작 옵션
 
 ---
 
