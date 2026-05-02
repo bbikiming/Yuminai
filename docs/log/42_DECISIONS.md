@@ -1,6 +1,69 @@
 # Decisions Log (ADR-lite)
 
-> 최신: ADR-064 (EWMA forecast + heatmap + activity gauge + CSV streaming + routing trend)
+> 최신: ADR-065 (Holt-Winters + anomaly + Markdown export + chat detail)
+
+---
+
+## ADR-065 — 고급 분석 + 상세 view + 다양한 export (5 phases)
+
+- **날짜**: 2026-05-03
+- **상태**: Accepted
+
+### 결정
+
+#### Phase 1: Holt-Winters seasonal forecast
+- `UsageForecaster.holtWintersForecast(_:seasonLength:alpha:beta:gamma:steps:)`
+- alpha (level) + beta (trend) + gamma (seasonal) 분리 — additive model
+- 충분한 데이터 (2 cycle 이상) 필요
+- 24h cycle (hourly daily seasonal) 권장
+
+#### Phase 3: Z-score anomaly detection
+- `UsageForecaster.detectAnomalies(_:threshold:)`
+- mean ± stddev 기반, threshold 기본 2.0
+- `Anomaly` struct: index + value + zScore + direction (high/low)
+- ChatDetailSheet에 통합 (spike vs drop 구분)
+
+#### Phase 4: Markdown table export
+- `CSVExporter.formatMarkdown(headers:rows:)` (GFM table)
+- pipe escape (`\|`) + newline → `<br>`
+- `exportChatStatsMarkdown / exportCommandStatsMarkdown`
+- `exportTelegramUsageReportMarkdown` — 종합 report (header + summary + sections)
+- TelegramUsageDashboard 메뉴: CSV section + Markdown section 분리
+
+#### Phase 5: Chat Detail Sheet (activity gauge 클릭)
+- `Sources/YuminaiUI/ChatDetailSheet.swift` (680×600)
+- 4 sections:
+  - Summary card (turns / cost / input / output / last activity)
+  - Workspace Usage (donut SectorMark)
+  - Forecast (EWMA + Holt-Winters 동시)
+  - Anomalies (z-score 기반)
+- TelegramUsageDashboard.chatActivityRow → Button + chevron
+- selectedChatForDetail @State + .sheet(item:)
+
+#### Phase 2: chat별 individual forecast
+- ChatDetailSheet.forecastSection: EWMA (red dot) + Holt-Winters (purple text) 동시 표시
+- chatHourlyBuckets 입력 (현재는 전체 hourly — 향후 chat별 분리)
+
+### 적용 결과
+```
+swift build              → Build complete! (13.41s)
+swift test               → 478/478 passed (98 suites, +10 new)
+새 파일                  → 1 (ChatDetailSheet.swift)
+수정 파일                → 4 (UsageForecaster, CSVExporter, TelegramUsageDashboard)
+```
+
+### 트레이드오프
+- **Holt-Winters는 additive only**: multiplicative seasonal은 향후. 작은 값에서 부정확 가능.
+- **anomaly threshold 2.0 hardcoded**: 사용자 정의 가능하게 하려면 Settings 추가.
+- **chat별 hourly buckets은 현재 전체 공유**: 진짜 chat별 분리는 store 변경 필요 (향후).
+- **Markdown export는 String 누적**: streaming은 향후.
+
+### 향후 (ADR-066 후보)
+- chat별 hourly buckets 분리 (store 확장)
+- anomaly threshold Settings UI
+- multiplicative seasonal Holt-Winters
+- chart export to SVG (vector)
+- forecast 신뢰 구간 (confidence interval) 표시
 
 ---
 

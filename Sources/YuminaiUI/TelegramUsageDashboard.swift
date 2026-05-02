@@ -38,6 +38,8 @@ public struct TelegramUsageDashboard: View {
     @State private var timeRange: TimeRange = .last7d
     /// **ADR-063 Phase 2** — daily vs hourly view 토글
     @State private var aggregationMode: AggregationMode = .hourly
+    /// **ADR-065 Phase 5** — 클릭된 chat detail sheet
+    @State private var selectedChatForDetail: ChatUsageStats?
 
     public enum TimeRange: String, CaseIterable, Identifiable {
         case last24h = "24h"
@@ -94,6 +96,8 @@ public struct TelegramUsageDashboard: View {
             controlsBar
             Divider()
             ScrollView {
+                let _ = selectedChatForDetail  // suppress unused
+
                 VStack(alignment: .leading, spacing: Theme.Spacing.lg) {
                     summaryCards
                     hourlyTurnsChart
@@ -114,6 +118,16 @@ public struct TelegramUsageDashboard: View {
         }
         .frame(width: 880, height: 720)
         .background(Theme.Color.bg)
+        // ADR-065 Phase 5 — Chat detail sheet
+        .sheet(item: $selectedChatForDetail) { chat in
+            ChatDetailSheet(
+                chatStats: chat,
+                workspaceIdToName: workspaceIdToName,
+                workspaceLabel: chatIdToWorkspaceName[String(chat.chatId)],
+                chatHourlyBuckets: snapshot.hourlyBuckets,  // 전체 hourly (chat 별 분리는 이후 enhancement)
+                onClose: { selectedChatForDetail = nil }
+            )
+        }
     }
 
     /// **ADR-063 Phase 3** — 시간 범위 + aggregation mode picker.
@@ -140,14 +154,21 @@ public struct TelegramUsageDashboard: View {
                 .frame(width: 140)
             }
             Spacer()
-            // ADR-063 Phase 4 — CSV export
+            // ADR-063 Phase 4 + ADR-065 Phase 4 — CSV + Markdown export
             Menu {
-                Button("Chat Stats → CSV") { exportCSV(.chatStats) }
-                Button("Command Stats → CSV") { exportCSV(.commandStats) }
-                Button("Hourly Buckets → CSV") { exportCSV(.hourly) }
-                Button("Daily Buckets → CSV") { exportCSV(.daily) }
+                Section("CSV") {
+                    Button("Chat Stats → CSV") { exportCSV(.chatStats) }
+                    Button("Command Stats → CSV") { exportCSV(.commandStats) }
+                    Button("Hourly Buckets → CSV") { exportCSV(.hourly) }
+                    Button("Daily Buckets → CSV") { exportCSV(.daily) }
+                }
+                Section("Markdown (ADR-065)") {
+                    Button("전체 Report → Markdown") { exportMarkdown(.fullReport) }
+                    Button("Chat Stats → Markdown") { exportMarkdown(.chatStats) }
+                    Button("Command Stats → Markdown") { exportMarkdown(.commandStats) }
+                }
             } label: {
-                Label("CSV 내보내기", systemImage: "tablecells")
+                Label("내보내기", systemImage: "square.and.arrow.up")
                     .font(Theme.Typography.small)
             }
             .menuStyle(.borderlessButton)
@@ -481,33 +502,51 @@ public struct TelegramUsageDashboard: View {
         } else {
             VStack(alignment: .leading, spacing: 4) {
                 ForEach(Array(sorted), id: \.chatId) { chat in
-                    HStack(spacing: 8) {
-                        Text(chatLabel(for: chat.chatId))
-                            .font(Theme.Typography.small)
-                            .foregroundStyle(Theme.Color.text)
-                            .frame(width: 200, alignment: .leading)
-                            .lineLimit(1)
-                        let elapsed = Date().timeIntervalSince(chat.lastUsedAt)
-                        let pct = activityFreshness(elapsed: elapsed)
-                        GeometryReader { geo in
-                            ZStack(alignment: .leading) {
-                                RoundedRectangle(cornerRadius: 3)
-                                    .fill(Theme.Color.surfaceHi)
-                                RoundedRectangle(cornerRadius: 3)
-                                    .fill(activityColor(pct))
-                                    .frame(width: geo.size.width * pct)
-                            }
-                        }
-                        .frame(height: 10)
-                        Text(formatElapsed(elapsed))
-                            .font(Theme.Typography.monoSmall)
-                            .foregroundStyle(activityColor(pct))
-                            .frame(width: 80, alignment: .trailing)
+                    Button {
+                        // ADR-065 Phase 5 — 클릭 시 chat detail
+                        selectedChatForDetail = chat
+                    } label: {
+                        chatActivityRow(chat: chat)
                     }
+                    .buttonStyle(.plain)
                 }
             }
             .padding(.vertical, 4)
         }
+    }
+
+    @ViewBuilder
+    private func chatActivityRow(chat: ChatUsageStats) -> some View {
+        HStack(spacing: 8) {
+            Text(chatLabel(for: chat.chatId))
+                .font(Theme.Typography.small)
+                .foregroundStyle(Theme.Color.text)
+                .frame(width: 200, alignment: .leading)
+                .lineLimit(1)
+            let elapsed = Date().timeIntervalSince(chat.lastUsedAt)
+            let pct = activityFreshness(elapsed: elapsed)
+            GeometryReader { geo in
+                ZStack(alignment: .leading) {
+                    RoundedRectangle(cornerRadius: 3)
+                        .fill(Theme.Color.surfaceHi)
+                    RoundedRectangle(cornerRadius: 3)
+                        .fill(activityColor(pct))
+                        .frame(width: geo.size.width * pct)
+                }
+            }
+            .frame(height: 10)
+            Text(formatElapsed(elapsed))
+                .font(Theme.Typography.monoSmall)
+                .foregroundStyle(activityColor(pct))
+                .frame(width: 80, alignment: .trailing)
+            // ADR-065 Phase 5 — 클릭 hint
+            Image(systemName: "chevron.right")
+                .font(.system(size: 10))
+                .foregroundStyle(Theme.Color.textTertiary)
+        }
+        .padding(.horizontal, 4)
+        .padding(.vertical, 2)
+        .contentShape(Rectangle())
     }
 
     /// 마지막 활동으로부터 경과 시간 → freshness ratio (1.0 = 방금, 0.0 = 일주일+).
@@ -747,6 +786,34 @@ public struct TelegramUsageDashboard: View {
 
     private enum CSVKind {
         case chatStats, commandStats, hourly, daily
+    }
+
+    /// **ADR-065 Phase 4** — Markdown export 종류.
+    private enum MarkdownKind {
+        case fullReport, chatStats, commandStats
+    }
+
+    @MainActor
+    private func exportMarkdown(_ kind: MarkdownKind) {
+        let md: String
+        let suggestedName: String
+        switch kind {
+        case .fullReport:
+            md = CSVExporter.exportTelegramUsageReportMarkdown(snapshot: snapshot)
+            suggestedName = "telegram-usage-report.md"
+        case .chatStats:
+            md = CSVExporter.exportChatStatsMarkdown(Array(snapshot.chatStats.values))
+            suggestedName = "telegram-chat-stats.md"
+        case .commandStats:
+            md = CSVExporter.exportCommandStatsMarkdown(snapshot.commandStats)
+            suggestedName = "telegram-command-stats.md"
+        }
+        let panel = NSSavePanel()
+        panel.allowedContentTypes = [.text]
+        panel.nameFieldStringValue = suggestedName
+        if panel.runModal() == .OK, let url = panel.url {
+            try? md.write(to: url, atomically: true, encoding: .utf8)
+        }
     }
 
     @MainActor

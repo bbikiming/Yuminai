@@ -22,6 +22,83 @@ public enum CSVExporter {
         return output
     }
 
+    // MARK: - ADR-065 Phase 4 — Markdown table export
+
+    /// **ADR-065 Phase 4** — Markdown table 형식 export.
+    /// GitHub-flavored Markdown table (header + separator + rows).
+    /// pipe (|)는 자동 escape (`\|`).
+    public static func formatMarkdown(headers: [String], rows: [[String]]) -> String {
+        // 헤더 line
+        var output = "| " + headers.map(escapeMarkdownCell).joined(separator: " | ") + " |\n"
+        // separator (---)
+        output += "|" + String(repeating: " --- |", count: headers.count) + "\n"
+        // rows
+        for row in rows {
+            output += "| " + row.map(escapeMarkdownCell).joined(separator: " | ") + " |\n"
+        }
+        return output
+    }
+
+    /// Markdown cell escape (pipe + newline).
+    public static func escapeMarkdownCell(_ field: String) -> String {
+        field
+            .replacingOccurrences(of: "|", with: "\\|")
+            .replacingOccurrences(of: "\n", with: "<br>")
+    }
+
+    /// **ADR-065 Phase 4** — chat stats markdown table.
+    public static func exportChatStatsMarkdown(_ stats: [ChatUsageStats]) -> String {
+        let headers = ["Chat ID", "Turns", "Cost (USD)", "Input Tokens", "Output Tokens", "Last Used"]
+        let formatter = ISO8601DateFormatter()
+        let rows = stats.sorted { $0.turnCount > $1.turnCount }.map { s in
+            [
+                String(s.chatId),
+                String(s.turnCount),
+                String(format: "$%.6f", s.totalCostUSD),
+                String(s.totalInputTokens),
+                String(s.totalOutputTokens),
+                formatter.string(from: s.lastUsedAt)
+            ]
+        }
+        return formatMarkdown(headers: headers, rows: rows)
+    }
+
+    public static func exportCommandStatsMarkdown(_ stats: [String: Int]) -> String {
+        let headers = ["Command", "Count"]
+        let rows = stats.sorted { $0.value > $1.value }.map { [$0.key, String($0.value)] }
+        return formatMarkdown(headers: headers, rows: rows)
+    }
+
+    /// **ADR-065 Phase 4** — comprehensive Telegram usage report (multi-section).
+    /// Summary + chat stats + command stats를 한 markdown document로.
+    public static func exportTelegramUsageReportMarkdown(
+        snapshot: TelegramUsageStore.Snapshot,
+        generatedAt: Date = Date()
+    ) -> String {
+        let formatter = ISO8601DateFormatter()
+        var output = "# Yuminai Telegram Usage Report\n\n"
+        output += "**Generated**: \(formatter.string(from: generatedAt))\n\n"
+        output += "## Summary\n\n"
+        output += "- **Total Turns**: \(snapshot.totalTurns)\n"
+        output += "- **Total Cost**: $\(String(format: "%.6f", snapshot.totalCostUSD))\n"
+        output += "- **Total Commands**: \(snapshot.totalCommands)\n"
+        output += "- **Active Chats**: \(snapshot.chatStats.count)\n\n"
+        output += "## Chat Stats\n\n"
+        if snapshot.chatStats.isEmpty {
+            output += "_(no chat data)_\n\n"
+        } else {
+            output += exportChatStatsMarkdown(Array(snapshot.chatStats.values))
+            output += "\n"
+        }
+        output += "## Command Stats\n\n"
+        if snapshot.commandStats.isEmpty {
+            output += "_(no command data)_\n\n"
+        } else {
+            output += exportCommandStatsMarkdown(snapshot.commandStats)
+        }
+        return output
+    }
+
     // MARK: - ADR-064 Phase 3 — Streaming write (대용량 안전)
 
     /// **ADR-064 Phase 3** — streaming write: 메모리에 전체 string 만들지 않고 row 단위로 disk write.

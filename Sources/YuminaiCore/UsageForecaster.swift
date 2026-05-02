@@ -75,4 +75,84 @@ public enum UsageForecaster {
             }
         }
     }
+
+    // MARK: - ADR-065 Phase 1 — Holt-Winters (additive seasonal forecast)
+
+    /// **ADR-065 Phase 1** — Holt-Winters additive: level + trend + seasonal 분리.
+    /// alpha (level), beta (trend), gamma (seasonal) — 모두 0~1.
+    /// seasonLength: 주기 (예: hourly 데이터 → 24 hours/day cycle).
+    public static func holtWintersForecast(
+        _ values: [Double],
+        seasonLength: Int = 24,
+        alpha: Double = 0.3,
+        beta: Double = 0.1,
+        gamma: Double = 0.1,
+        steps: Int = 1
+    ) -> [Double]? {
+        // 충분한 데이터: 최소 2 cycle
+        guard values.count >= 2 * seasonLength else { return nil }
+
+        // initial level: 첫 cycle 평균
+        let firstCycle = Array(values.prefix(seasonLength))
+        var level = firstCycle.reduce(0, +) / Double(seasonLength)
+        // initial trend: cycle 평균의 차이 / seasonLength
+        let secondCycle = Array(values.dropFirst(seasonLength).prefix(seasonLength))
+        let secondAvg = secondCycle.reduce(0, +) / Double(seasonLength)
+        var trend = (secondAvg - level) / Double(seasonLength)
+        // initial seasonal: 첫 cycle / level
+        var seasonal = firstCycle.map { $0 - level }
+
+        // update for remaining samples
+        for i in seasonLength..<values.count {
+            let s = seasonal[i % seasonLength]
+            let prevLevel = level
+            level = alpha * (values[i] - s) + (1 - alpha) * (prevLevel + trend)
+            trend = beta * (level - prevLevel) + (1 - beta) * trend
+            seasonal[i % seasonLength] = gamma * (values[i] - level) + (1 - gamma) * s
+        }
+
+        // forecast N steps
+        var forecasts: [Double] = []
+        for h in 1...steps {
+            let s = seasonal[(values.count + h - 1) % seasonLength]
+            forecasts.append(level + Double(h) * trend + s)
+        }
+        return forecasts
+    }
+
+    // MARK: - ADR-065 Phase 3 — Z-score anomaly detection
+
+    /// **ADR-065 Phase 3** — Z-score 기반 anomaly detection.
+    /// 각 sample의 z = (x - mean) / stddev. |z| > threshold면 anomaly.
+    public static func detectAnomalies(_ values: [Double], threshold: Double = 2.0) -> [Anomaly] {
+        guard values.count >= 3 else { return [] }
+        let mean = values.reduce(0, +) / Double(values.count)
+        let variance = values.map { pow($0 - mean, 2) }.reduce(0, +) / Double(values.count)
+        let stddev = sqrt(variance)
+        guard stddev > 0.0001 else { return [] }
+        var anomalies: [Anomaly] = []
+        for (idx, v) in values.enumerated() {
+            let z = (v - mean) / stddev
+            if abs(z) > threshold {
+                anomalies.append(Anomaly(index: idx, value: v, zScore: z))
+            }
+        }
+        return anomalies
+    }
+
+    public struct Anomaly: Sendable, Hashable, Identifiable {
+        public let id = UUID()
+        public let index: Int
+        public let value: Double
+        public let zScore: Double
+
+        public var direction: AnomalyDirection {
+            zScore > 0 ? .high : .low
+        }
+    }
+
+    public enum AnomalyDirection: String, Sendable, Hashable {
+        case high  // 평균보다 매우 높음 (spike)
+        case low   // 평균보다 매우 낮음 (drop)
+    }
 }

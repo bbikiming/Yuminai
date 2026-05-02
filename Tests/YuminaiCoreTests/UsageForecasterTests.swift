@@ -67,6 +67,103 @@ struct UsageForecasterTests {
         #expect(UsageForecaster.Trend.down.icon == "arrow.down.right")
         #expect(UsageForecaster.Trend.flat.icon == "arrow.right")
     }
+
+    // MARK: - ADR-065 Phase 1: Holt-Winters
+
+    @Test("Holt-Winters: 충분치 않은 데이터 → nil")
+    func hwInsufficient() {
+        // seasonLength=24, 2*24=48개 미만
+        let result = UsageForecaster.holtWintersForecast([1.0, 2.0, 3.0], seasonLength: 24)
+        #expect(result == nil)
+    }
+
+    @Test("Holt-Winters: seasonal 패턴 forecast")
+    func hwSeasonal() {
+        // sine wave 시뮬레이션 (24-period)
+        var values: [Double] = []
+        for i in 0..<48 {
+            values.append(10 + 5 * sin(Double(i) * .pi / 12))
+        }
+        let result = UsageForecaster.holtWintersForecast(values, seasonLength: 24, steps: 5)
+        #expect(result != nil)
+        #expect(result?.count == 5)
+    }
+
+    // MARK: - ADR-065 Phase 3: Anomaly detection
+
+    @Test("Anomaly: 정상 분포는 anomaly 없음")
+    func anomalyNormal() {
+        let values = [1.0, 1.1, 0.9, 1.0, 1.05, 0.95, 1.0]
+        let anomalies = UsageForecaster.detectAnomalies(values)
+        #expect(anomalies.isEmpty)
+    }
+
+    @Test("Anomaly: spike 감지 (high)")
+    func anomalySpike() {
+        let values = [1.0, 1.0, 1.0, 1.0, 1.0, 100.0, 1.0, 1.0, 1.0]
+        let anomalies = UsageForecaster.detectAnomalies(values)
+        #expect(!anomalies.isEmpty)
+        #expect(anomalies.first?.direction == .high)
+        #expect(anomalies.first?.value == 100.0)
+    }
+
+    @Test("Anomaly: 데이터 부족 (< 3) → 빈 배열")
+    func anomalyTooSmall() {
+        let anomalies = UsageForecaster.detectAnomalies([1.0, 100.0])
+        #expect(anomalies.isEmpty)
+    }
+
+    @Test("Anomaly: stddev 0이면 빈 배열")
+    func anomalyConstant() {
+        let anomalies = UsageForecaster.detectAnomalies([5.0, 5.0, 5.0, 5.0])
+        #expect(anomalies.isEmpty)
+    }
+}
+
+@Suite("CSVExporter Markdown export (ADR-065 Phase 4)")
+struct MarkdownExportTests {
+    @Test("formatMarkdown: 기본 table")
+    func basicTable() {
+        let md = CSVExporter.formatMarkdown(
+            headers: ["A", "B"],
+            rows: [["1", "2"], ["3", "4"]]
+        )
+        #expect(md.contains("| A | B |"))
+        #expect(md.contains("| --- | --- |"))
+        #expect(md.contains("| 1 | 2 |"))
+    }
+
+    @Test("formatMarkdown: pipe escape")
+    func pipeEscape() {
+        let md = CSVExporter.formatMarkdown(
+            headers: ["text"],
+            rows: [["a|b"]]
+        )
+        #expect(md.contains("a\\|b"))
+    }
+
+    @Test("formatMarkdown: newline → <br>")
+    func newlineEscape() {
+        let md = CSVExporter.formatMarkdown(
+            headers: ["text"],
+            rows: [["line1\nline2"]]
+        )
+        #expect(md.contains("line1<br>line2"))
+    }
+
+    @Test("exportTelegramUsageReportMarkdown: section 구조")
+    func reportStructure() {
+        let snap = TelegramUsageStore.Snapshot(
+            chatStats: [:],
+            commandStats: [:],
+            hourlyBuckets: []
+        )
+        let md = CSVExporter.exportTelegramUsageReportMarkdown(snapshot: snap)
+        #expect(md.contains("# Yuminai Telegram Usage Report"))
+        #expect(md.contains("## Summary"))
+        #expect(md.contains("## Chat Stats"))
+        #expect(md.contains("## Command Stats"))
+    }
 }
 
 @Suite("CSVExporter streaming write (ADR-064 Phase 3)")

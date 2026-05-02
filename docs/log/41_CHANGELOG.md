@@ -4,6 +4,49 @@
 
 ## [Unreleased] — 2026-05-03
 
+### Added — ADR-065 고급 분석 + 상세 view + 다양한 export (5 phases)
+
+**Phase 1 — Holt-Winters seasonal forecast**
+- UsageForecaster.holtWintersForecast (alpha + beta + gamma additive)
+- 24h cycle 권장, 2 cycle 이상 데이터 필요
+
+**Phase 3 — Z-score anomaly detection**
+- detectAnomalies(_:threshold:) (default 2.0)
+- Anomaly struct + AnomalyDirection (high/low)
+
+**Phase 4 — Markdown table export**
+- CSVExporter.formatMarkdown (GFM)
+- exportChatStatsMarkdown / exportCommandStatsMarkdown
+- exportTelegramUsageReportMarkdown (종합 report)
+- 메뉴에 CSV/Markdown section 분리
+
+**Phase 5 — Chat Detail Sheet (클릭)**
+- Sources/YuminaiUI/ChatDetailSheet.swift (680×600)
+- 4 sections: Summary / Workspace Donut / Forecast / Anomalies
+- activity gauge row → Button (chevron icon)
+
+**Phase 2 — chat별 individual forecast (UI)**
+- ChatDetailSheet.forecastSection: EWMA (red point) + Holt-Winters (purple)
+
+### Tests added (+10)
+- Holt-Winters: insufficient data, seasonal pattern
+- Anomaly: normal/spike/too small/constant stddev
+- Markdown: basic table, pipe escape, newline, report structure
+
+### 빌드/테스트 결과
+- swift build → Build complete! (13.41s)
+- swift test → 478/478 passed (98 suites)
+
+### 새 파일
+- ChatDetailSheet.swift
+
+### 수정 파일
+- UsageForecaster (Holt-Winters + Anomaly)
+- CSVExporter (Markdown 4 helpers)
+- TelegramUsageDashboard (selectedChatForDetail + chat row Button + Markdown menu)
+
+---
+
 ### Added — ADR-064 Telegram Dashboard 고급 시각화 + 대용량 export (5 phases)
 
 **Phase 5 — EWMA forecast helper**
