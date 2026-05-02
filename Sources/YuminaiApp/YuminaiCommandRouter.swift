@@ -239,11 +239,18 @@ public final class YuminaiCommandRouter: TelegramCommandRouter, @unchecked Senda
             await model.setBridgeRequestChatId(requestChatId)
             // ADR-045 R2.H5 — 외부 turn 카운터 증가
             await model.incrementExternalTurnCount()
+            // ADR-046 — 외부 turn은 plan-mode 강제 (telegramRemoteRequiresPlan=true 시).
+            // 1 turn 만 적용하고 자동 복원 — 사용자가 plan 검토 후 후속 turn으로 승인.
+            let restoreSettings = await model.applyRemotePlanModeIfNeeded()
             await MainActor.run { model.inputText = text }
             // mention 우선 — `@codex` 같은 텍스트면 다른 pane으로 dispatch (ADR-031 T2)
             let dispatched = await model.tryDispatchMention()
             if !dispatched {
                 await model.sendMessage()
+            }
+            // turn 종료 후 plan-mode 복원 (다음 turn은 다시 default)
+            if let restore = restoreSettings {
+                await model.scheduleSettingsRestore(restore)
             }
             // bridge가 응답 forwarding하므로 여기서는 nil
             return nil

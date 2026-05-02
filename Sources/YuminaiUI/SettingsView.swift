@@ -392,6 +392,36 @@ public struct SettingsView: View {
                 } header: {
                     Text("알림 정책")
                 }
+
+                // ADR-046 — 외부 turn 안전장치
+                Section {
+                    Toggle(isOn: $preferences.telegramRemoteRequiresPlan) {
+                        LabelWithHint(
+                            "외부 turn은 Plan 모드 강제",
+                            hint: "지하철에서 모바일로 명령 보낼 때 destructive 작업(rm, git reset 등)이 PC confirmation 없이 실행되지 않게 1턴 동안 plan-mode로 강제합니다. agent가 계획만 보여주면 사용자가 ‘진행해 줘’로 명시 승인."
+                        )
+                    }
+                    Toggle(isOn: $preferences.telegramShowCostInline) {
+                        LabelWithHint(
+                            "비용 가시화 (/status)",
+                            hint: "외부 turn 횟수 + 누적 비용 + 컨텍스트 % 를 /status 응답에 포함. 70%↑ 컨텍스트는 새 세션 권장 안내."
+                        )
+                    }
+                    Toggle(isOn: $preferences.telegramForwardAssistant) {
+                        LabelWithHint(
+                            "Assistant 응답 forward",
+                            hint: "Claude 응답 본문을 chunk로 텔레그램에 자동 전송. 끄면 알림(완료/에러)만 도착."
+                        )
+                    }
+                    Toggle(isOn: $preferences.telegramForwardToolCalls) {
+                        LabelWithHint(
+                            "Tool 호출 요약 forward",
+                            hint: "🔧 Bash / Edit / Write 등 도구 사용을 텔레그램에 표시. 위험 작업(rm -rf 등)은 🚨 알림으로 강조."
+                        )
+                    }
+                } header: {
+                    Text("외부 사용 안전")
+                }
             }
 
             // Agent chain (ADR-034 A1)

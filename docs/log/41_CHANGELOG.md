@@ -4,6 +4,17 @@
 
 ## [Unreleased] — 2026-05-02
 
+### Fixed / Added — Telegram 잔여 audit + plan-mode 안전장치 (ADR-046)
+
+- **M7 chunked code block 페어 보존** — ``` 카운트 검사 후 닫고 다음 chunk 재오픈 + 언어 표식 보존. 긴 diff 응답이 Markdown 파싱 실패 X
+- **M3 tool summary 풍부화** — Bash/Edit/Write/Read/Grep/WebFetch JSON parse 후 분기. Edit는 `Edit Foo.swift (-3 +5)\n  preview` 형식
+- **M5 cokacdir 동시 polling 충돌 감지** — `pgrep -x cokacdir` + NSAlert 경고
+- **AppPreferences 신규** — `telegramRemoteRequiresPlan` (default ON) + `telegramShowCostInline` (default ON) + Codable backward-compat
+- **외부 turn plan-mode 강제** — `applyRemotePlanModeIfNeeded` + `scheduleSettingsRestore`. 외부 turn 시작 시 1턴만 plan-mode 강제, 종료 후 자동 복원. agent가 계획만 보여주고 사용자가 후속 turn으로 명시 승인 → destructive 진짜 block의 가장 안전한 우회
+- **SettingsView "외부 사용 안전" 섹션** — 4 toggle (plan-mode/비용가시화/assistant forward/tool forward) + HelpHint
+
+테스트 293/293 통과 (regression 0). 빌드 6.72s clean.
+
 ### Fixed / Added — Telegram 통합 audit R1+R2: 외부 vibe-coding 신뢰성 (ADR-045)
 
 **R1 (즉시 fix)**:

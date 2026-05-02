@@ -1,6 +1,86 @@
 # Decisions Log (ADR-lite)
 
-> 최신: ADR-045 (Telegram 통합 audit 기반 R1+R2 — 외부 vibe-coding 신뢰성 + 다중 chat + 비용 가시화)
+> 최신: ADR-046 (Telegram audit 잔여 — code block 페어 / tool summary 풍부화 / cokacdir 충돌 / plan-mode 강제)
+
+---
+
+## ADR-046 — Telegram 잔여 audit 항목 + plan-mode 안전장치
+
+- **날짜**: 2026-05-02
+- **상태**: Accepted
+- **결정**: ADR-045 후속 — audit MEDIUM 잔여 (M3, M5, M7) + 사용자 안전 핵심 (외부 turn plan-mode 강제) 일괄
+
+### 변경
+
+1. **M7 — chunked code block 페어 보존** (`TelegramSessionBridge.chunked`)
+   - 이전: 단순 줄바꿈/공백 분할 — ` ``` ` 페어가 두 chunk에 갈리면 Markdown 파싱 실패
+   - 이후: 각 piece의 ``` 카운트 검사 → 홀수면 현재 chunk에 ``` 닫기 + 다음 chunk 시작에 ```언어 재오픈
+   - `extractLastFenceLanguage(_:)` — 마지막 fence의 언어 표식 추출 후 보존
+
+2. **M3 — tool call summary 풍부화** (`TelegramSessionBridge.summarizeToolCall`)
+   - 이전: 모든 tool 첫 줄 + 80자 cap — Edit인지 Write인지, 어느 파일인지 알기 어려움
+   - 이후: JSON 입력 parse 후 tool 종류별 분기:
+     - Bash: command (개행 → 공백)
+     - Edit: `Edit Foo.swift (-3 +5)\n  preview` (변경 줄 수 + 첫 줄)
+     - Write: `Write Foo.swift (12줄 새 작성)\n  preview`
+     - Read/Grep/Glob/WebFetch: 대상 path/pattern/url
+     - Fallback: 기존 첫 줄 + maxLen
+   - 모바일 사용자가 30초 내 위험 평가 가능
+
+3. **M5 — cokacdir 동시 polling 충돌 감지** (`AppModel.applyCokacdirBot`)
+   - 이전: 같은 토큰으로 cokacdir + Yuminai 동시 polling 시 메시지 절반씩 분산 — 코드 주석에만 명시
+   - 이후: `pgrep -x cokacdir` 검출 → NSAlert 경고 ("진행" / "취소" 선택)
+   - `isCokacdirRunning()` private helper
+
+4. **AppPreferences 신규 옵션 (ADR-046)**
+   - `telegramRemoteRequiresPlan: Bool = true` — 외부 turn은 plan-mode 강제
+   - `telegramShowCostInline: Bool = true` — /status에 누적 비용 표시
+   - **Backward compat**: `init(from decoder:)` 커스텀 구현 — 기존 JSON에 새 필드 없으면 default
+
+5. **External turn plan-mode 강제** (`AppModel.applyRemotePlanModeIfNeeded`)
+   - 외부 turn 시작 시 active settings의 permissionMode를 `.plan`으로 1회 강제
+   - 원래 설정은 caller가 받아 보관 (`scheduleSettingsRestore`)
+   - Plan turn 종료 후 (max 5분 wait) 원래 설정으로 자동 복원
+   - bridge에 사용자 안내: "🛡 외부 turn — Plan 모드. 결과 확인 후 ‘진행해 줘’로 승인"
+   - **destructive 진짜 block의 가장 안전한 우회 — Claude가 plan만 제시, 실행은 후속 turn 사용자 명시 승인 필요**
+
+6. **SettingsView "외부 사용 안전" 섹션** (`SettingsView`)
+   - 4개 toggle:
+     - 외부 turn은 Plan 모드 강제 (default ON)
+     - 비용 가시화 (default ON)
+     - Assistant 응답 forward (기존, 노출만)
+     - Tool 호출 요약 forward (기존, 노출만)
+   - HelpHint로 각 toggle 의미 명확화
+
+### 격리
+
+- TelegramSessionBridge: chunked + summarizeToolCall (대화 layer)
+- AppModel: cokacdir 검출 + plan-mode 적용 (orchestration layer)
+- AppPreferences: 신규 옵션 + Codable 호환
+- SettingsView: 신규 안전 섹션
+
+### 결과
+
+- 수정 파일 4개:
+  - YuminaiTelegram/TelegramSessionBridge.swift — chunked + summarizeToolCall
+  - YuminaiCore/AppPreferences.swift — 2 신규 + Codable backward-compat
+  - YuminaiApp/AppModel.swift — applyRemotePlanModeIfNeeded + scheduleSettingsRestore + isCokacdirRunning
+  - YuminaiApp/YuminaiCommandRouter.swift — handlePlainText에서 plan-mode 적용 + 복원
+  - YuminaiUI/SettingsView.swift — "외부 사용 안전" 섹션
+- 테스트 293/293 통과 (regression 0)
+- 빌드 6.72s clean (incremental 2.36s)
+
+### 알려진 한계 / 다음 라운드
+
+- **plan-mode 정확한 turn boundary**: 현재는 isStreaming 폴링으로 turn 종료 감지 — turn id 기반이 더 정확. v2.0+
+- **Multi-chat 그룹 시나리오 동시 사용자**: 같은 chat에서 두 사용자 동시 명령 race
+- **destructive 진짜 block & wait**: plan-mode가 우회 — Claude Code permission_mode 직접 통합 (CLI option 변경 필요) 시 진짜 가능
+
+### 재검토
+
+- plan-mode 강제로 외부 사용자 워크플로 마찰 (매번 2 turn) vs 안전성 — 사용자 선호도
+- M5 cokacdir 검출이 다른 봇 충돌도 감지하는지 (현재 cokacdir만)
+- M3 tool summary가 실제 모바일에서 가독성 충분한지
 
 ---
 

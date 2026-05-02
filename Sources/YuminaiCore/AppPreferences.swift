@@ -22,6 +22,12 @@ public struct AppPreferences: Sendable, Codable, Hashable {
     public var telegramForwardAssistant: Bool
     /// 텔레그램으로 도구 호출 요약을 forward할지 여부.
     public var telegramForwardToolCalls: Bool
+    /// ADR-046 — 외부 (텔레그램에서 시작된) turn은 plan-mode 강제로 destructive 작업 confirm 요구.
+    /// **default true** (안전 기본값) — 외부 사용자는 PC confirm 모달을 못 보므로 plan을 보고 후속 turn으로 승인해야 안전.
+    public var telegramRemoteRequiresPlan: Bool
+    /// ADR-046 — 외부 turn 알림에 누적 비용/컨텍스트 표시 여부 (status banner).
+    /// **default true** — 비용 자각 ↑.
+    public var telegramShowCostInline: Bool
     /// pane 응답에 `@<other>` mention이 있으면 자동으로 다음 turn dispatch (ADR-034 A1).
     /// **default OFF** — 무한 루프 위험, 명시적 토글 필요.
     public var agentChainEnabled: Bool
@@ -44,6 +50,8 @@ public struct AppPreferences: Sendable, Codable, Hashable {
         telegramBoundWorkspaceId: UUID? = nil,
         telegramForwardAssistant: Bool = true,
         telegramForwardToolCalls: Bool = true,
+        telegramRemoteRequiresPlan: Bool = true,
+        telegramShowCostInline: Bool = true,
         agentChainEnabled: Bool = false,
         agentChainMaxHops: Int = 1,
         fontSizeOffset: Int = 0,
@@ -62,10 +70,36 @@ public struct AppPreferences: Sendable, Codable, Hashable {
         self.telegramBoundWorkspaceId = telegramBoundWorkspaceId
         self.telegramForwardAssistant = telegramForwardAssistant
         self.telegramForwardToolCalls = telegramForwardToolCalls
+        self.telegramRemoteRequiresPlan = telegramRemoteRequiresPlan
+        self.telegramShowCostInline = telegramShowCostInline
         self.agentChainEnabled = agentChainEnabled
         self.agentChainMaxHops = agentChainMaxHops
         self.fontSizeOffset = fontSizeOffset
         self.showInspectorByDefault = showInspectorByDefault
+    }
+
+    // ADR-046 — 신규 필드 backward-compat: 기존 JSON에 없으면 default 적용
+    public init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        self.claudeBinaryPath = try c.decodeIfPresent(String.self, forKey: .claudeBinaryPath) ?? AppPreferences.detectClaudeBinaryPath()
+        self.codexBinaryPath = try c.decodeIfPresent(String.self, forKey: .codexBinaryPath) ?? AppPreferences.detectCodexBinaryPath()
+        self.defaultSessionSettings = try c.decodeIfPresent(SessionSettings.self, forKey: .defaultSessionSettings) ?? .default
+        self.editPreferences = try c.decodeIfPresent(EditPreferences.self, forKey: .editPreferences) ?? .default
+        self.obsidianVaultPath = try c.decodeIfPresent(String.self, forKey: .obsidianVaultPath)
+        self.telegramEnabled = try c.decodeIfPresent(Bool.self, forKey: .telegramEnabled) ?? false
+        self.telegramAllowedUserIds = try c.decodeIfPresent([Int64].self, forKey: .telegramAllowedUserIds) ?? []
+        self.telegramChatId = try c.decodeIfPresent(Int64.self, forKey: .telegramChatId)
+        self.telegramAlertPolicy = try c.decodeIfPresent(TelegramAlertPolicy.self, forKey: .telegramAlertPolicy) ?? .default
+        self.telegramSourceLabel = try c.decodeIfPresent(String.self, forKey: .telegramSourceLabel)
+        self.telegramBoundWorkspaceId = try c.decodeIfPresent(UUID.self, forKey: .telegramBoundWorkspaceId)
+        self.telegramForwardAssistant = try c.decodeIfPresent(Bool.self, forKey: .telegramForwardAssistant) ?? true
+        self.telegramForwardToolCalls = try c.decodeIfPresent(Bool.self, forKey: .telegramForwardToolCalls) ?? true
+        self.telegramRemoteRequiresPlan = try c.decodeIfPresent(Bool.self, forKey: .telegramRemoteRequiresPlan) ?? true
+        self.telegramShowCostInline = try c.decodeIfPresent(Bool.self, forKey: .telegramShowCostInline) ?? true
+        self.agentChainEnabled = try c.decodeIfPresent(Bool.self, forKey: .agentChainEnabled) ?? false
+        self.agentChainMaxHops = try c.decodeIfPresent(Int.self, forKey: .agentChainMaxHops) ?? 1
+        self.fontSizeOffset = try c.decodeIfPresent(Int.self, forKey: .fontSizeOffset) ?? 0
+        self.showInspectorByDefault = try c.decodeIfPresent(Bool.self, forKey: .showInspectorByDefault) ?? false
     }
 
     /// `claude` CLI의 가능성 높은 위치들을 순서대로 시도해 첫 번째 존재하는 경로 반환.

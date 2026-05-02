@@ -2054,6 +2054,20 @@ public final class AppModel {
 
     /// 선택한 cokacdir 봇의 토큰을 keychain에 저장 + chatId/허용 user 자동 설정.
     public func applyCokacdirBot(_ bot: CokacdirBot, chatId: Int64) async {
+        // ADR-046 M5 — cokacdir 프로세스가 동시 실행 중이면 같은 토큰 polling 충돌 → 메시지 절반씩 분산
+        // pgrep으로 검출 후 사용자에게 경고 (사용자 결정에 따라 진행 또는 취소)
+        if isCokacdirRunning() {
+            let alert = NSAlert()
+            alert.messageText = "cokacdir이 실행 중이에요"
+            alert.informativeText = "cokacdir 프로세스가 같은 텔레그램 토큰으로 polling하면 메시지가 절반씩 분산됩니다 (Telegram getUpdates는 first-poll-wins).\n\nYuminai에서 사용하기 전에 cokacdir을 종료해주세요."
+            alert.alertStyle = .warning
+            alert.addButton(withTitle: "그래도 진행")
+            alert.addButton(withTitle: "취소")
+            if alert.runModal() != .alertFirstButtonReturn {
+                cokacdirImportError = "사용자 취소: cokacdir 종료 후 다시 시도하세요."
+                return
+            }
+        }
         do {
             try await keychainStore.set(bot.token, for: KeychainKey.telegramBotToken)
             telegramTokenStatus = .set
@@ -2068,6 +2082,26 @@ public final class AppModel {
             showCokacdirImportSheet = false
         } catch {
             cokacdirImportError = "토큰 저장 실패: \(error.localizedDescription)"
+        }
+    }
+
+    /// ADR-046 M5 — pgrep으로 cokacdir 프로세스 검출.
+    /// 실패 시 false (충돌 가능성 무시) — 사용성이 우선.
+    private func isCokacdirRunning() -> Bool {
+        let process = Process()
+        process.executableURL = URL(fileURLWithPath: "/usr/bin/pgrep")
+        process.arguments = ["-x", "cokacdir"]  // exact match
+        let pipe = Pipe()
+        process.standardOutput = pipe
+        process.standardError = Pipe()
+        do {
+            try process.run()
+            process.waitUntilExit()
+            // pgrep은 매치 발견 시 exit 0, 없으면 1
+            return process.terminationStatus == 0
+        } catch {
+            // pgrep 실행 실패 (권한/path 문제) — 검출 포기
+            return false
         }
     }
 
@@ -2120,6 +2154,39 @@ public final class AppModel {
     /// ADR-045 R2.H3 — bridge에 외부 request chat_id 설정 (multi-chat).
     public func setBridgeRequestChatId(_ chatId: Int64) async {
         await sessionBridge?.setRequestChatId(chatId)
+    }
+
+    /// ADR-046 — 외부 turn 시작 시 plan-mode 강제 (preferences.telegramRemoteRequiresPlan=true 시).
+    /// 반환: 복원할 원래 설정 (nil이면 강제 안 함). caller가 turn 종료 후 scheduleSettingsRestore 호출.
+    public func applyRemotePlanModeIfNeeded() -> SessionSettings? {
+        guard preferences.telegramRemoteRequiresPlan else { return nil }
+        let original = activeSettings
+        guard original.permissionMode != .plan else { return nil }  // 이미 plan
+        // plan mode로 1 turn 강제
+        var planned = original
+        planned.permissionMode = .plan
+        activeSettings = planned
+        // bridge에 사용자 안내
+        let bridgeRef = sessionBridge
+        Task {
+            await bridgeRef?.sendNotice("🛡 외부 turn — Plan 모드로 실행됩니다. 결과 확인 후 ‘진행해 줘’로 승인하세요.\n(설정에서 `telegramRemoteRequiresPlan` 끄면 비활성화)")
+        }
+        return original
+    }
+
+    /// 외부 turn 종료 후 settings 복원 (turn 1개 후).
+    public func scheduleSettingsRestore(_ original: SessionSettings) async {
+        // 다음 .completed 이벤트 후 복원 — 단순화: 짧은 delay 후 복원 (race 가능성 낮음)
+        // 더 정확한 방법: turn id 추적 후 정확히 그 turn 끝에서 복원. v2.0+에서 검토.
+        Task { @MainActor in
+            // 활성 turn이 끝날 때까지 대기 (max 5분)
+            let start = Date()
+            while isStreaming, Date().timeIntervalSince(start) < 300 {
+                try? await Task.sleep(for: .milliseconds(500))
+            }
+            // 복원
+            self.activeSettings = original
+        }
     }
 
     /// ADR-045 R2.H5 — 외부 turn 카운터 (cost 가시화용).

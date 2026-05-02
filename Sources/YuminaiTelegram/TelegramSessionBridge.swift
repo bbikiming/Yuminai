@@ -177,13 +177,16 @@ public actor TelegramSessionBridge {
     // MARK: - Helpers
 
     /// 텍스트를 maxSize 이하 chunk로 분할. 가능하면 줄바꿈 경계에서 자른다.
+    /// ADR-046 M7 — code block (``` ... ```) 페어 보존: 분할 시 ``` 카운트가 홀수면
+    /// 다음 chunk 시작 시 같은 언어 표식으로 다시 열고, 현재 chunk는 ```로 닫는다.
     static func chunked(_ text: String, maxSize: Int) -> [String] {
         guard text.count > maxSize else { return [text] }
         var chunks: [String] = []
         var remaining = text[text.startIndex..<text.endIndex]
+        var carryOver: String = ""  // 이전 chunk가 code block을 열어둔 채 끝났으면 다음 chunk 시작에 ```lang 추가
         while !remaining.isEmpty {
             if remaining.count <= maxSize {
-                chunks.append(String(remaining))
+                chunks.append(carryOver + String(remaining))
                 break
             }
             let cutoffIdx = remaining.index(remaining.startIndex, offsetBy: maxSize)
@@ -192,8 +195,22 @@ public actor TelegramSessionBridge {
             let breakIdx = remaining.range(of: "\n", options: .backwards, range: scanRange)?.lowerBound
                 ?? remaining.range(of: " ", options: .backwards, range: scanRange)?.lowerBound
                 ?? cutoffIdx
-            let piece = remaining[remaining.startIndex..<breakIdx]
-            chunks.append(String(piece).trimmingCharacters(in: .whitespacesAndNewlines))
+            let piece = String(remaining[remaining.startIndex..<breakIdx])
+                .trimmingCharacters(in: .whitespacesAndNewlines)
+            // 이번 piece의 ``` 페어 검사 — 홀수면 닫고, 다음 piece에 다시 열어야 함
+            let combinedPiece = carryOver + piece
+            let codeFenceCount = combinedPiece.components(separatedBy: "```").count - 1
+            if codeFenceCount % 2 == 1 {
+                // 현재 piece에 ``` 닫기 추가
+                chunks.append(combinedPiece + "\n```")
+                // 다음 piece 시작 시 ```언어 (또는 단순 ```)로 재오픈
+                // 마지막 ``` 다음의 언어 표식 추출 (예: "```swift\n..." → "swift")
+                let lang = extractLastFenceLanguage(combinedPiece)
+                carryOver = "```\(lang)\n"
+            } else {
+                chunks.append(combinedPiece)
+                carryOver = ""
+            }
             // breakIdx 다음으로 이동 (구분자 skip)
             let next = remaining.index(after: breakIdx)
             remaining = remaining[next..<remaining.endIndex]
@@ -201,15 +218,78 @@ public actor TelegramSessionBridge {
         return chunks.filter { !$0.isEmpty }
     }
 
+    /// 마지막 ``` 직후의 언어 표식 추출. 없으면 "" (단순 ```).
+    private static func extractLastFenceLanguage(_ text: String) -> String {
+        guard let lastFenceRange = text.range(of: "```", options: .backwards) else { return "" }
+        let afterFence = text[lastFenceRange.upperBound...]
+        // 첫 줄의 비공백 문자가 언어 표식
+        let firstLine = afterFence.split(separator: "\n", maxSplits: 1).first.map(String.init) ?? ""
+        let lang = firstLine.trimmingCharacters(in: .whitespaces)
+        return lang
+    }
+
+    /// ADR-046 M3 — tool 종류별 풍부한 summary.
+    /// Bash → command, Edit/Write → 파일경로 + 첫줄, Read/Grep → 대상 path.
+    /// 일반 input은 첫 줄 + maxLen cap.
     static func summarizeToolCall(name: String, input: String, maxLen: Int = 80) -> String {
         let trimmed = input.trimmingCharacters(in: .whitespacesAndNewlines)
         if trimmed.isEmpty {
             return name
         }
-        // input 첫 줄만 + maxLen 자 cap
+        let lower = name.lowercased()
+        // JSON input parse 시도 — Claude Code tool input은 JSON 객체
+        if let data = trimmed.data(using: .utf8),
+           let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any] {
+            switch lower {
+            case "bash", "shell":
+                if let cmd = json["command"] as? String {
+                    return "\(name) — \(truncate(cmd.replacingOccurrences(of: "\n", with: " "), max: maxLen))"
+                }
+            case "edit":
+                let path = (json["file_path"] as? String) ?? "?"
+                let oldStr = (json["old_string"] as? String) ?? ""
+                let newStr = (json["new_string"] as? String) ?? ""
+                let oldLines = oldStr.split(separator: "\n").count
+                let newLines = newStr.split(separator: "\n").count
+                let fileName = (path as NSString).lastPathComponent
+                let preview = newStr.split(separator: "\n").first.map(String.init) ?? ""
+                let firstLine = truncate(preview, max: 50)
+                return "\(name) \(fileName) (-\(oldLines) +\(newLines))\n  \(firstLine)"
+            case "write":
+                let path = (json["file_path"] as? String) ?? "?"
+                let content = (json["content"] as? String) ?? ""
+                let lines = content.split(separator: "\n").count
+                let fileName = (path as NSString).lastPathComponent
+                let preview = content.split(separator: "\n").first.map(String.init) ?? ""
+                return "\(name) \(fileName) (\(lines)줄 새 작성)\n  \(truncate(preview, max: 50))"
+            case "read":
+                if let path = json["file_path"] as? String {
+                    return "\(name) \((path as NSString).lastPathComponent)"
+                }
+            case "grep":
+                let pattern = (json["pattern"] as? String) ?? "?"
+                let path = (json["path"] as? String) ?? ""
+                let pathSuffix = path.isEmpty ? "" : " in \((path as NSString).lastPathComponent)"
+                return "\(name) /\(truncate(pattern, max: 40))/\(pathSuffix)"
+            case "glob":
+                if let pattern = json["pattern"] as? String {
+                    return "\(name) \(truncate(pattern, max: maxLen))"
+                }
+            case "webfetch", "websearch":
+                if let url = (json["url"] as? String) ?? (json["query"] as? String) {
+                    return "\(name) \(truncate(url, max: maxLen))"
+                }
+            default:
+                break
+            }
+        }
+        // Fallback — 첫 줄 + maxLen
         let firstLine = trimmed.split(separator: "\n").first.map(String.init) ?? trimmed
-        let capped = firstLine.count > maxLen ? String(firstLine.prefix(maxLen)) + "…" : firstLine
-        return "\(name) — \(capped)"
+        return "\(name) — \(truncate(firstLine, max: maxLen))"
+    }
+
+    private static func truncate(_ text: String, max: Int) -> String {
+        text.count > max ? String(text.prefix(max)) + "…" : text
     }
 
     /// ADR-045 R2.H1 — destructive tool 검출 (휴리스틱).
