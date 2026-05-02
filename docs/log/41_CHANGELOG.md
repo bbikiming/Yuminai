@@ -4,6 +4,53 @@
 
 ## [Unreleased] — 2026-05-02
 
+### Added — Harness Engineering Phase 1+2: 다중 모델 오케스트레이션 foundation (ADR-047)
+
+Antigravity-style harness 도입 — 다양한 LLM 모델을 단일 워크스페이스 컨텍스트에서 오가도록.
+
+**Phase 1 — Core types** (`Sources/YuminaiCore/HarnessTypes.swift`):
+- `ConversationEntry` — 모든 모델이 참조하는 timeline entry (id/timestamp/role/agentKind/content/attachments/taskId/tokenCount)
+  - role: user / agent / system (handoff prompt)
+- `TaskKind` enum (planning/codeGeneration/codeReview/refactoring/debugging/longContextSearch/generalChat/unknown)
+- `ModelCapabilityMatrix`:
+  - `recommend(for:)` — task → AgentKind 추천 (Codex는 codeGen만, 나머지는 Claude)
+  - `inferTaskKind(from:)` — 사용자 텍스트 keyword 분석 (한국어 + 영어)
+  - `strengthSummary(for:)` — 모델별 한 줄 강점 (handoff prompt에 포함)
+- `HandoffPromptBuilder` — 모델 전환 catch-up prompt 생성
+  - 최근 N entries verbatim + 이전은 요약
+  - 토큰 예산 (default 4K) 초과 시 요약 섹션 자동 제거
+  - 새 모델 instruction (강점 강조) 포함
+- `HarnessTask` + `TaskStatus` — task graph 단위 (id/title/desc/status/assignedAgent/dependencies/output/entryRefs)
+  - `isReady(allTasks:)` — 의존성 모두 completed면 실행 가능
+
+**Phase 2 — HarnessOrchestrator** (`Sources/YuminaiApp/HarnessOrchestrator.swift`, `@MainActor @Observable`):
+- conversationLog 관리 (append user/agent/system, resetForWorkspace)
+- TaskGraph 관리 (addTask/updateTaskStatus/removeTask/readyTasks)
+- 모델 추천 (`recommendAgent(for:)` + `inferTaskKind(for:)`)
+- handoff prompt 생성 (`buildHandoffPrompt(targetModel:currentTaskId:)`)
+- telemetry (`estimatedTotalTokens`, `agentResponseCounts`)
+
+**AppModel 통합** (호출자 변경 0건):
+- `appModel.harness: HarnessOrchestrator` facade
+- `sendMessage()`에서 user entry 자동 기록
+- `handle(.text)` chunk 누적 → `.completed` 시 agent entry로 flush (turn 단위)
+- `transitionToWorkspace()`에서 `harness.resetForWorkspace()` 호출
+
+**Phase 3+ 미구현 (spec)**:
+- 자동 routing (사용자 입력 → recommend → pane 자동 전환)
+- Handoff prompt 자동 inject (새 pane 첫 메시지로)
+- TaskGraph 자동 분해 (큰 task → sub-task LLM 호출)
+- Multi-agent 동시 작업
+- HarnessUI (단일 conversation view + agent badge + TaskGraph mini-map)
+
+**테스트 24 신규 (293→317 통과)**:
+- ConversationEntryTests (3): user/agent/Codable round-trip
+- ModelCapabilityMatrixTests (8): 모델 추천 / 한국어/영어 keyword / strength summary
+- HandoffPromptBuilderTests (7): 빈/소형/대형 log / 강점 포함 / task 포함 / token estimate / 예산 초과
+- HarnessTaskTests (5): default / 의존성 체크 / no-dep ready / non-pending not ready / Codable
+
+빌드 7.27s clean.
+
 ### Fixed / Added — Telegram 잔여 audit + plan-mode 안전장치 (ADR-046)
 
 - **M7 chunked code block 페어 보존** — ``` 카운트 검사 후 닫고 다음 chunk 재오픈 + 언어 표식 보존. 긴 diff 응답이 Markdown 파싱 실패 X

@@ -1,6 +1,148 @@
 # Decisions Log (ADR-lite)
 
-> 최신: ADR-046 (Telegram audit 잔여 — code block 페어 / tool summary 풍부화 / cokacdir 충돌 / plan-mode 강제)
+> 최신: ADR-047 (Harness Engineering — 다중 모델 오케스트레이션 + SharedConversationLog + Handoff)
+
+---
+
+## ADR-047 — Harness Engineering: 다중 모델 오케스트레이션 (Antigravity-style)
+
+- **날짜**: 2026-05-02
+- **상태**: Accepted (Phase 1 + 2 minimal 구현, Phase 3-5는 spec)
+- **결정**: Antigravity-style harness 도입. 다양한 LLM 모델 (Claude Code / Codex / 향후 Gemini, GPT)을 단일 워크스페이스 컨텍스트에서 자연스럽게 오가며, 사용자가 모델 차이를 의식하지 않고 task에 집중
+
+### 컨텍스트
+사용자: "안티그래비티처럼 하네스 엔지니어링을 설계해 줘. 다양한 모델들을 오가면서 컨텍스트와 대화 흐름을 놓치지 않도록"
+
+**Antigravity 핵심 패턴 (참조)**:
+- Manager 모드: 사용자가 supervisor, agents가 worker
+- 멀티 에이전트 동시 작업
+- Walk-through 형식 결과 리뷰
+- 모델 간 transparent 전환
+
+**기존 Yuminai 구조** (ADR-026, ADR-030, ADR-034):
+- `AgentPane`: pane 단위 (Claude/Codex 각자)
+- mention dispatch: pane → pane 명시 전환
+- agent chain: 자동 chain hops (max 3)
+- 세션 분리: 각 pane 자체 ClaudeStreamSession
+
+**문제**:
+- pane이 분리돼 있어 context도 분리 — Claude가 본 정보를 Codex가 모름
+- 모델 전환이 mention 형식 (`@codex 이거 코딩해줘`) — 자연스럽지 않음
+- task 단위 추적 부재 — 큰 task의 sub-step이 어디까지 됐는지 fragmented
+
+### Harness 핵심 컨셉
+
+**"하나의 대화, 여러 모델"** — 사용자는 단일 대화창에서 task를 던지고, harness가 routing/handoff를 투명하게 관리.
+
+### 핵심 구성요소
+
+#### 1. SharedConversationLog (Core)
+모든 모델이 동일하게 참조하는 timeline.
+```swift
+public struct ConversationEntry: Identifiable, Sendable, Codable {
+    let id: UUID
+    let timestamp: Date
+    let role: Role  // .user / .agent / .system
+    let agentKind: AgentKind?  // 누가 응답했는지 (sender = .agent일 때)
+    let content: String
+    let attachments: [String]
+    let taskId: UUID?  // TaskGraph 노드 참조
+    let tokenCount: Int?
+}
+```
+- Append-only + indexed by task/agent
+- 영속 (SwiftData) — 워크스페이스 별 단일 log
+- 모델 전환 시 이 log를 기반으로 handoff prompt 생성
+
+#### 2. ModelCapabilityMatrix (Core)
+Task 종류 → 추천 모델 매핑.
+```swift
+public enum TaskKind {
+    case planning           // → Claude (reasoning 강함)
+    case codeGeneration     // → Codex (code-focused)
+    case codeReview         // → Claude
+    case refactoring        // → Claude
+    case debugging          // → Claude
+    case longContextSearch  // → Gemini (향후)
+    case generalChat        // → Claude (default)
+}
+```
+- 사용자 hint (`/model claude`) 또는 keyword 분석으로 자동 routing
+- Manual override 우선
+
+#### 3. HandoffPromptBuilder (Core)
+모델 전환 시 catch-up prompt 생성.
+- 입력: SharedLog 최근 N entries + 현재 task + target model
+- 출력: 압축된 system context + 새 instruction
+- 토큰 예산 (default 4K) 내 압축 — 오래된 entry는 요약, 최근 N개는 전체 보존
+- 모델별 strength 강조 (예: Codex로 갈 때 "이전에 Claude가 분석한 코드를 implement해주세요")
+
+#### 4. TaskGraph (Core)
+task 단위 + 의존성 + agent 할당 추적.
+```swift
+public struct HarnessTask: Identifiable, Sendable, Codable {
+    let id: UUID
+    let title: String
+    let description: String
+    var status: TaskStatus  // .pending / .running / .completed / .failed
+    var assignedAgent: AgentKind?
+    var dependencies: [UUID]
+    var output: String?  // 결과 요약
+    var entryRefs: [UUID]  // SharedLog entry 참조
+}
+```
+- 사용자가 큰 task 입력 → orchestrator가 sub-task 분해 (Phase 4+) 또는 사용자 manual
+- DAG 시각화 (Phase 5 UI)
+
+#### 5. HarnessOrchestrator (App)
+사용자 메시지 → routing → handoff → 응답 → log update.
+- 기존 AgentPaneCoordinator를 wrapper
+- 사용자 입력 → ModelCapabilityMatrix로 추천 model 결정 → 자동 또는 수동 선택
+- 모델 전환 시 HandoffPromptBuilder로 system context 생성 → 새 pane 활성화
+- 응답을 SharedConversationLog에 기록 + TaskGraph 업데이트
+
+#### 6. HarnessUI (UI, Phase 5)
+- 단일 conversation view (모든 모델 응답이 한 timeline)
+- agent badge (어느 모델이 응답했는지)
+- TaskGraph mini-map (sidebar 또는 inspector)
+- 모델 수동 override 버튼 (`/model claude` 명령 또는 dropdown)
+
+### 점진적 구현 단계
+
+| Phase | 범위 | 라운드 |
+|---|---|---|
+| **1** | Core types (ConversationEntry, ModelCapabilityMatrix, HandoffPromptBuilder, HarnessTask) + 단위 테스트 | **이번 라운드** |
+| **2** | HarnessOrchestrator skeleton (App layer) — 기존 AgentPane wrap, log append, 자동 routing 미적용 | **이번 라운드** |
+| 3 | 자동 routing — ModelCapabilityMatrix 적용, 사용자 입력 keyword 분석 | 다음 라운드 |
+| 4 | TaskGraph 자동 분해 — 큰 task → sub-task, dependency 관리 | v2.0 |
+| 5 | HarnessUI — 단일 conversation view + TaskGraph mini-map + agent badge | v2.0 |
+
+### Phase 1 + 2 구현 결정
+
+이번 라운드는 **foundation만**:
+- Core types 정의 + 테스트 (compile-tested + behavior-tested)
+- HarnessOrchestrator는 skeleton (실제 routing은 Phase 3에서) — 기존 AgentPaneCoordinator 위에 facade
+- SharedConversationLog는 메모리 only (영속화는 Phase 4)
+- 기존 호출자 변경 0건 — 기존 multi-pane이 그대로 동작 + harness는 추가 기능
+
+### 격리
+
+- Core: 모든 model/task/log 타입 — UI/App 의존성 없음
+- App: HarnessOrchestrator — AgentPaneCoordinator + SharedLog 통합
+- UI: 향후 Phase 5에서 단일 conversation view
+
+### 알려진 한계 / 다음 라운드
+
+- Phase 1+2는 foundation만 — 실제 사용자 visible 변화 없음 (Phase 3+ 부터)
+- Codex CLI는 자체 session resume 패턴 — handoff prompt가 Codex session에 어떻게 inject될지 검토 필요 (Phase 3)
+- Gemini/GPT 통합은 별도 adapter 작성 필요 — 현재 Claude/Codex만
+- TaskGraph 자동 분해는 LLM 호출 비용 — Phase 4에서 비용 trade-off 검토
+
+### 재검토
+
+- 사용자가 manual model 선택 vs 자동 routing 어느 것 선호하는지
+- HandoffPromptBuilder 토큰 예산 4K 적정성 (긴 대화에서 정보 손실 vs 비용)
+- 기존 mention dispatch (ADR-031 T2) 와 harness routing의 충돌 — orchestrator가 둘 다 활용
 
 ---
 

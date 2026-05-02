@@ -286,6 +286,11 @@ public final class AppModel {
     // ADR-042 R3.4 — AgentPaneCoordinator 추출 (state holder만, lifecycle/streaming 잔존)
     public let panes: AgentPaneCoordinator = AgentPaneCoordinator()
 
+    /// ADR-047 Phase 2 — Harness 오케스트레이션 (다중 모델 컨텍스트 통합).
+    /// 현재 Phase는 SharedConversationLog 기록 + 추천 모델 reads. 자동 routing은 Phase 3+.
+    /// 호출자 변경 0건 — 기존 multi-pane이 그대로 동작 + harness는 추가 기능.
+    public let harness: HarnessOrchestrator = HarnessOrchestrator()
+
     public var agentPanes: [AgentPane] {
         get { panes.panes }
         set { panes.panes = newValue }
@@ -897,6 +902,8 @@ public final class AppModel {
         // 3) 새 workspace의 file tree + terminal session 복원
         await refreshWorkspaceFileTree()
         restoreTerminalSessionsFromWorkspace()
+        // 4) ADR-047 — harness conversation log reset (워크스페이스 별 분리)
+        harness.resetForWorkspace()
         // 향후 추가: dev server suggestions refresh, mention scope reset 등
     }
 
@@ -1221,10 +1228,16 @@ public final class AppModel {
         isStreaming = false
     }
 
+    /// ADR-047 Phase 2 — turn 단위 agent 응답 누적 buffer.
+    /// .text chunk 마다 누적하고 .completed 시 SharedLog에 단일 entry로 기록.
+    private var harnessAgentBuffer: String = ""
+
     private func handle(_ event: ClaudeEvent) {
         switch event {
         case .text(let text):
             appendMessage(role: .assistant, content: text)
+            // ADR-047 Phase 2 — agent 응답을 turn 단위로 buffer (.completed에서 flush)
+            harnessAgentBuffer.append(text)
         case .toolCall(let name, _):
             appendMessage(role: .tool, content: "Tool: \(name)")
         case .toolResult(let success, let output):
@@ -1248,6 +1261,16 @@ public final class AppModel {
             }
         case .completed(let exitCode):
             isStreaming = false
+            // ADR-047 Phase 2 — turn 끝났으면 buffer를 SharedLog에 agent entry로 기록
+            if !harnessAgentBuffer.isEmpty {
+                let agentKind = currentWorkspace?.agentKind ?? .claude
+                harness.appendAgent(
+                    harnessAgentBuffer,
+                    agentKind: agentKind,
+                    tokenCount: currentSessionUsage.outputTokens
+                )
+                harnessAgentBuffer = ""
+            }
             let workspaceName = workspaces.first { $0.id == selectedWorkspaceId }?.name ?? "?"
             let category: AlertCategory = exitCode == 0 ? .workComplete : .workFailed
             let costStr = String(format: "$%.4f", currentSessionUsage.costUSD)
@@ -1786,6 +1809,10 @@ public final class AppModel {
         try? await sessionStore.append(userMsg)
         currentSessionUsage.messageCount += 1
         allTimeUsage.messageCount += 1
+
+        // ADR-047 Phase 2 — SharedConversationLog에 user entry 기록 (다중 모델 컨텍스트 보존용)
+        let attachmentPaths = attachedFiles.map(\.path)
+        harness.appendUser(bodyForUser, attachments: attachmentPaths)
 
         inputText = ""
         attachedFiles = []  // 송신 후 자동 클리어
