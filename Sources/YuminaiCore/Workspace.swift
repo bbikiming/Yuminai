@@ -19,6 +19,8 @@ public struct Workspace: Sendable, Identifiable, Hashable {
     /// 영속된 panes 메타. workspace 재진입 시 복원 (ADR-031, T1).
     /// 빈 배열이면 AppModel이 default primary 1개 자동 생성. session/messages는 복원 X (메타만).
     public let savedPanes: [AgentPane]
+    /// 영속된 터미널 세션들 (ADR-041 T13). 라벨 + cwd만 복원 — process는 새로 spawn.
+    public let savedTerminalSessions: [TerminalSession]
 
     public init(
         id: UUID = UUID(),
@@ -30,7 +32,8 @@ public struct Workspace: Sendable, Identifiable, Hashable {
         isArchived: Bool = false,
         agentKind: AgentKind = .default,
         deliveryConfig: DeliveryConfig = .disabled,
-        savedPanes: [AgentPane] = []
+        savedPanes: [AgentPane] = [],
+        savedTerminalSessions: [TerminalSession] = []
     ) {
         self.id = id
         self.name = name
@@ -42,51 +45,43 @@ public struct Workspace: Sendable, Identifiable, Hashable {
         self.agentKind = agentKind
         self.deliveryConfig = deliveryConfig
         self.savedPanes = savedPanes
+        self.savedTerminalSessions = savedTerminalSessions
     }
 
     /// agentKind만 다른 새 인스턴스 반환 (불변성 유지).
     public func with(agentKind: AgentKind) -> Workspace {
         Workspace(
-            id: id,
-            name: name,
-            directoryPath: directoryPath,
-            createdAt: createdAt,
-            lastOpenedAt: lastOpenedAt,
-            harnessTemplate: harnessTemplate,
-            isArchived: isArchived,
-            agentKind: agentKind,
-            deliveryConfig: deliveryConfig,
-            savedPanes: savedPanes
+            id: id, name: name, directoryPath: directoryPath, createdAt: createdAt,
+            lastOpenedAt: lastOpenedAt, harnessTemplate: harnessTemplate,
+            isArchived: isArchived, agentKind: agentKind, deliveryConfig: deliveryConfig,
+            savedPanes: savedPanes, savedTerminalSessions: savedTerminalSessions
         )
     }
 
     public func with(deliveryConfig: DeliveryConfig) -> Workspace {
         Workspace(
-            id: id,
-            name: name,
-            directoryPath: directoryPath,
-            createdAt: createdAt,
-            lastOpenedAt: lastOpenedAt,
-            harnessTemplate: harnessTemplate,
-            isArchived: isArchived,
-            agentKind: agentKind,
-            deliveryConfig: deliveryConfig,
-            savedPanes: savedPanes
+            id: id, name: name, directoryPath: directoryPath, createdAt: createdAt,
+            lastOpenedAt: lastOpenedAt, harnessTemplate: harnessTemplate,
+            isArchived: isArchived, agentKind: agentKind, deliveryConfig: deliveryConfig,
+            savedPanes: savedPanes, savedTerminalSessions: savedTerminalSessions
         )
     }
 
     public func with(savedPanes: [AgentPane]) -> Workspace {
         Workspace(
-            id: id,
-            name: name,
-            directoryPath: directoryPath,
-            createdAt: createdAt,
-            lastOpenedAt: lastOpenedAt,
-            harnessTemplate: harnessTemplate,
-            isArchived: isArchived,
-            agentKind: agentKind,
-            deliveryConfig: deliveryConfig,
-            savedPanes: savedPanes
+            id: id, name: name, directoryPath: directoryPath, createdAt: createdAt,
+            lastOpenedAt: lastOpenedAt, harnessTemplate: harnessTemplate,
+            isArchived: isArchived, agentKind: agentKind, deliveryConfig: deliveryConfig,
+            savedPanes: savedPanes, savedTerminalSessions: savedTerminalSessions
+        )
+    }
+
+    public func with(savedTerminalSessions: [TerminalSession]) -> Workspace {
+        Workspace(
+            id: id, name: name, directoryPath: directoryPath, createdAt: createdAt,
+            lastOpenedAt: lastOpenedAt, harnessTemplate: harnessTemplate,
+            isArchived: isArchived, agentKind: agentKind, deliveryConfig: deliveryConfig,
+            savedPanes: savedPanes, savedTerminalSessions: savedTerminalSessions
         )
     }
 }

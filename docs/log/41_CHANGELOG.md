@@ -4,6 +4,73 @@
 
 ## [Unreleased] — 2026-05-02
 
+### Added — v1.2+ R1: 터미널 활동 시각화 + cwd/split/영속 + 트리 단축키/drag-drop (ADR-041)
+
+사용자: "v1.2+ 후보 항목들 검수+레퍼런스+검증+구현 / 좌측 터미널 세션 알림 아이콘+애니메이션"
+
+ADR-040 v1.2+ deferred 6개 + 사용자 명시 요청 (T10 활동 표시) 일괄.
+
+**T10. 터미널 활동 상태 + 애니메이션 (사용자 명시 요청)**:
+- `TerminalSession.Activity` enum: idle/running/completedRecently
+- `TerminalSession.hasUnreadOutput` Bool — 비활성 세션의 새 출력 알림
+- `ActivityAwareTerminalView: LocalProcessTerminalView` subclass — `dataReceived` override로 PTY 흐름 hook
+  - 데이터 도착 → `.running` + 1.2초 timer
+  - timer 만료 → `.completedRecently` (1.5초) → `.idle`
+  - `@unchecked Sendable` + `MainActor.assumeIsolated` (NSView main-thread bound)
+- `TerminalSessionTabButton`:
+  - `.idle`: 회색 terminal SF Symbol
+  - `.running`: 녹색 점 + ZStack pulse 애니메이션 (1.0초 repeat, scale + opacity)
+  - `.completedRecently`: `checkmark.circle.fill` 녹색
+  - 비활성 세션 unread: 주황 5pt circle dot
+- 모든 세션 ZStack — 비활성도 PTY data 흐름 유지 (활동 감지 핵심, iTerm2/Warp 패턴)
+
+**T11. 터미널 cwd 분리 + 변경 sheet**:
+- AppModel `requestTerminalDirectoryChange(_:)` — NSOpenPanel folder picker
+- `changeTerminalDirectory(_:to:)` — TerminalSession.workingDirectory 변경
+- TerminalPane.updateNSView가 cd 명령 자동 전송 (기존 매커니즘)
+- 컨텍스트 메뉴 "디렉토리 변경…" 추가
+
+**T12. 명령 history 검색**:
+- CommandRunnerPane header에 magnifyingglass 토글 (active 시 fill)
+- `searchBar` — TextField + match count + 닫기 버튼
+- `filteredBlocks` — command/stdout/stderr substring case-insensitive
+- 빈 결과 EmptyState
+
+**T13. 터미널 세션 영속화 (SwiftData)**:
+- `Workspace.savedTerminalSessions: [TerminalSession]`
+- `WorkspaceModel.terminalSessionsJSON: Data?`
+- `TerminalSession` Codable 제외: activity / hasUnreadOutput (UI 상태)
+  - `private enum CodingKeys`로 명시
+- AppModel `persistCurrentTerminalSessions()` 자동 호출:
+  - create/close/rename/changeDirectory
+- AppModel `restoreTerminalSessionsFromWorkspace()` — `.task(id: selectedWorkspaceId)` 훅
+- 워크스페이스 reload 시 라벨/cwd 복원, activity는 fresh `.idle`
+
+**T14. 터미널 split (HSplitView dual-pane)**:
+- AppModel `terminalSplitEnabled: Bool` + `secondaryTerminalSessionId: UUID?`
+- AppModel `toggleTerminalSplit()` — 자동 secondary 선택 (active 다음 세션, 없으면 새로)
+- RootView header에 split 토글 버튼 (`rectangle.split.2x1` icon)
+- HSplitView wrapper — 좌(active) | 우(secondary) 동시 표시
+- 단순화: 좌우만, 2-pane만, nested X (NSSplitView wrap 보류)
+
+**F6. 트리 단축키 (F2/Delete)**:
+- `.focusable(!isInlineRenaming)` + `.focusEffectDisabled()`
+- `.onKeyPress(.delete)` / `.deleteForward` → `onDelete` (휴지통)
+- `.onKeyPress(.return)` → 파일 select / 폴더 toggle
+- F2: SwiftUI 미지원 → 컨텍스트 메뉴 "이름 변경 (inline)" 유지
+
+**F7. Drag-drop file move**:
+- 파일 row `.draggable(node.path)` — String 자동 transferable + drag preview
+- 폴더 row `.dropDestination(for: String.self)` → `onMoveFile(oldPath, newPath)`
+- 같은 부모 noop, 자기 자신 drop noop
+- AppModel `moveWorkspaceNode(at:to:)` 호출 (ADR-040 F1 활용)
+
+**테스트 7 신규 (286→293 통과)**:
+- TerminalSessionActivityTests (4): default activity / mutable / Codable 제외 / raw value
+- WorkspaceTerminalPersistenceTests (3): default empty / with(savedTerminalSessions) / 다른 with(_:) 보존
+
+빌드 6.81s clean. 외부 dependency 추가 없음.
+
 ### Added — v1.1+ R1: File CRUD 확장 + 다중 터미널 강화 (ADR-040)
 
 사용자: "v1.1+로 미룬 항목들도 모두 구현해줘 / 다중 터미널 기능을 최대한 강화"

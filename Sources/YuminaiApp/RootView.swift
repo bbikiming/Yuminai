@@ -306,6 +306,9 @@ struct RootView: View {
                     onCancelInlineRename: { appModel.cancelInlineRename() },
                     onAskAgentToUpdateImports: { oldPath, newPath in
                         appModel.askAgentToUpdateImports(oldPath: oldPath, newPath: newPath)
+                    },
+                    onMoveFile: { oldPath, newPath in
+                        Task { await appModel.moveWorkspaceNode(at: oldPath, to: newPath) }
                     }
                 )
                 .task(id: appModel.selectedWorkspaceId) {
@@ -313,6 +316,8 @@ struct RootView: View {
                     // dirty tab은 보존 — 사용자 명시 close 필요.
                     appModel.closeAllFileTabs()
                     await appModel.refreshWorkspaceFileTree()
+                    // 터미널 세션 영속 복원 (ADR-041 T13).
+                    appModel.restoreTerminalSessionsFromWorkspace()
                 }
                 .transition(.move(edge: .trailing).combined(with: .opacity))
             }
@@ -892,6 +897,16 @@ struct ChatPane: View {
             .buttonStyle(.plain)
             .help("새 터미널 세션 (⌃⇧T)")
             Button {
+                appModel.toggleTerminalSplit()
+            } label: {
+                Image(systemName: appModel.terminalSplitEnabled ? "rectangle.split.2x1.fill" : "rectangle.split.2x1")
+                    .font(.system(size: 11, weight: .medium))
+                    .foregroundStyle(appModel.terminalSplitEnabled ? Theme.Color.accent : Theme.Color.textSecondary)
+            }
+            .buttonStyle(.plain)
+            .disabled(appModel.terminalSessions.count < 1)
+            .help("좌우 split 토글 (T14)")
+            Button {
                 if let id = appModel.activeTerminalSessionId {
                     terminalReloadTriggers[id] = UUID()
                 }
@@ -929,7 +944,8 @@ struct ChatPane: View {
                         isActive: session.id == appModel.activeTerminalSessionId,
                         onSelect: { appModel.setActiveTerminalSession(session.id) },
                         onClose: { appModel.closeTerminalSession(session.id) },
-                        onRequestRename: { appModel.terminalRenameTargetId = session.id }
+                        onRequestRename: { appModel.terminalRenameTargetId = session.id },
+                        onRequestChangeDirectory: { appModel.requestTerminalDirectoryChange(session.id) }
                     )
                 }
             }
@@ -941,43 +957,83 @@ struct ChatPane: View {
 
     @ViewBuilder
     private func terminalActiveSessionContent(path: String) -> some View {
-        if let activeId = appModel.activeTerminalSessionId,
-           let session = appModel.terminalSessions.first(where: { $0.id == activeId }) {
-            // 각 세션 별로 ID로 view를 lock — id 변경 시 NSView 재생성
-            let trigger = terminalReloadTriggers[activeId] ?? activeId
-            TerminalPane(workingDirectory: session.workingDirectory)
-                .id(trigger)
-        } else {
+        if appModel.terminalSessions.isEmpty {
             EmptyStateHint(
                 icon: "terminal",
                 title: "활성 터미널 세션이 없어요",
                 message: "위 ‘+’ 버튼이나 ⌃⇧T로 새 세션을 만드세요."
             )
             .frame(maxWidth: .infinity, maxHeight: .infinity)
+        } else if appModel.terminalSplitEnabled,
+                  let secondaryId = appModel.secondaryTerminalSessionId,
+                  appModel.terminalSessions.contains(where: { $0.id == secondaryId }),
+                  appModel.terminalSessions.count >= 2 {
+            // Split 모드 — 좌우 dual-pane (T14)
+            HSplitView {
+                terminalSessionsZStack(activeId: appModel.activeTerminalSessionId)
+                    .frame(minWidth: 200)
+                terminalSessionsZStack(activeId: secondaryId)
+                    .frame(minWidth: 200)
+            }
+        } else {
+            terminalSessionsZStack(activeId: appModel.activeTerminalSessionId)
+        }
+    }
+
+    /// 모든 세션을 ZStack에 두고 active만 visible — 비활성 세션도 PTY data 흐름 유지
+    /// (활동 감지 + 백그라운드 작업 표시를 위해 필수). Split 모드에서는 두 ZStack이 각 active를 가리킴.
+    @ViewBuilder
+    private func terminalSessionsZStack(activeId: UUID?) -> some View {
+        ZStack {
+            ForEach(appModel.terminalSessions) { session in
+                let isActive = session.id == activeId
+                let trigger = terminalReloadTriggers[session.id] ?? session.id
+                TerminalPane(
+                    workingDirectory: session.workingDirectory,
+                    onActivityChanged: { activity in
+                        appModel.updateTerminalActivity(session.id, activity)
+                    }
+                )
+                .id(trigger)
+                .opacity(isActive ? 1 : 0)
+                .allowsHitTesting(isActive)
+            }
         }
     }
 }
 
-/// 터미널 세션 탭 버튼 — FileTabButton 패턴 동일.
+/// 터미널 세션 탭 버튼 — FileTabButton 패턴 + 활동 indicator + pulse 애니메이션 (ADR-041 T10).
+///
+/// **상태 표시**:
+/// - `.idle`: 회색 terminal 아이콘
+/// - `.running`: 녹색 점 + 1.0초 pulse (작업 중)
+/// - `.completedRecently`: 녹색 체크 (방금 완료, 3초 후 idle)
+/// - `hasUnreadOutput` (비활성 세션): 주황 dot — "이 세션에 새 출력 있어요"
 private struct TerminalSessionTabButton: View {
     let session: TerminalSession
     let isActive: Bool
     let onSelect: () -> Void
     let onClose: () -> Void
     let onRequestRename: () -> Void
+    let onRequestChangeDirectory: () -> Void
 
     @State private var hovering = false
+    @State private var pulse = false
 
     var body: some View {
         Button(action: onSelect) {
             HStack(spacing: 6) {
-                Image(systemName: "terminal")
-                    .font(.system(size: 9))
-                    .foregroundStyle(isActive ? Theme.Color.accent : Theme.Color.textTertiary)
+                activityIcon
                 Text(session.label)
                     .font(Theme.Typography.micro)
                     .foregroundStyle(isActive ? Theme.Color.text : Theme.Color.textSecondary)
                     .lineLimit(1)
+                if session.hasUnreadOutput && !isActive {
+                    Circle()
+                        .fill(Color.orange)
+                        .frame(width: 5, height: 5)
+                        .help("새 출력이 있어요")
+                }
                 if hovering || isActive {
                     Button(action: onClose) {
                         Image(systemName: "xmark")
@@ -1004,6 +1060,8 @@ private struct TerminalSessionTabButton: View {
         .onHover { hovering = $0 }
         .contextMenu {
             Button("이름 변경", action: onRequestRename)
+            Button("디렉토리 변경…", action: onRequestChangeDirectory)
+            Divider()
             Button(role: .destructive, action: onClose) {
                 Label("세션 닫기", systemImage: "xmark")
             }
@@ -1011,6 +1069,48 @@ private struct TerminalSessionTabButton: View {
         .simultaneousGesture(
             TapGesture(count: 2).onEnded { onRequestRename() }
         )
+        .onAppear { pulse = true }
+        .help(activityHelp)
+    }
+
+    @ViewBuilder
+    private var activityIcon: some View {
+        switch session.activity {
+        case .idle:
+            Image(systemName: "terminal")
+                .font(.system(size: 9))
+                .foregroundStyle(isActive ? Theme.Color.accent : Theme.Color.textTertiary)
+        case .running:
+            // 펄스하는 녹색 점 — 작업 중
+            ZStack {
+                Circle()
+                    .fill(Color.green.opacity(0.25))
+                    .frame(width: 12, height: 12)
+                    .scaleEffect(pulse ? 1.4 : 0.8)
+                    .opacity(pulse ? 0 : 0.8)
+                    .animation(
+                        .easeInOut(duration: 1.0).repeatForever(autoreverses: false),
+                        value: pulse
+                    )
+                Circle()
+                    .fill(Color.green)
+                    .frame(width: 6, height: 6)
+            }
+            .frame(width: 12, height: 12)
+        case .completedRecently:
+            Image(systemName: "checkmark.circle.fill")
+                .font(.system(size: 10))
+                .foregroundStyle(.green)
+                .transition(.scale.combined(with: .opacity))
+        }
+    }
+
+    private var activityHelp: String {
+        switch session.activity {
+        case .idle: return "유휴 — 명령 대기 중"
+        case .running: return "작업 중 — PTY 출력 흐르는 중"
+        case .completedRecently: return "방금 완료"
+        }
     }
 }
 

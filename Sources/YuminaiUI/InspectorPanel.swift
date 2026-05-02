@@ -79,6 +79,7 @@ public struct InspectorPanel: View {
     public let onCommitInlineRename: (String, String) -> Void
     public let onCancelInlineRename: () -> Void
     public let onAskAgentToUpdateImports: (String, String) -> Void
+    public let onMoveFile: (String, String) -> Void
 
     // Diff review (ADR-027 phase A3)
     public let pendingChanges: [ChangedFile]
@@ -178,7 +179,8 @@ public struct InspectorPanel: View {
         onBeginInlineRename: @escaping (String) -> Void = { _ in },
         onCommitInlineRename: @escaping (String, String) -> Void = { _, _ in },
         onCancelInlineRename: @escaping () -> Void = {},
-        onAskAgentToUpdateImports: @escaping (String, String) -> Void = { _, _ in }
+        onAskAgentToUpdateImports: @escaping (String, String) -> Void = { _, _ in },
+        onMoveFile: @escaping (String, String) -> Void = { _, _ in }
     ) {
         self._tab = tab
         self.usage = usage
@@ -258,6 +260,7 @@ public struct InspectorPanel: View {
         self.onCommitInlineRename = onCommitInlineRename
         self.onCancelInlineRename = onCancelInlineRename
         self.onAskAgentToUpdateImports = onAskAgentToUpdateImports
+        self.onMoveFile = onMoveFile
     }
 
     public var body: some View {
@@ -352,7 +355,8 @@ public struct InspectorPanel: View {
                 onBeginInlineRename: onBeginInlineRename,
                 onCommitInlineRename: onCommitInlineRename,
                 onCancelInlineRename: onCancelInlineRename,
-                onAskAgentToUpdateImports: onAskAgentToUpdateImports
+                onAskAgentToUpdateImports: onAskAgentToUpdateImports,
+                onMoveFile: onMoveFile
             )
             .frame(maxWidth: .infinity, maxHeight: .infinity)
         case .changes:

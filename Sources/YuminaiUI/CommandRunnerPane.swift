@@ -21,6 +21,8 @@ public struct CommandRunnerPane: View {
     public let onShareToAgent: (CommandRunner.CommandResult) -> Void
 
     @State private var draft: String = ""
+    @State private var searchQuery: String = ""
+    @State private var showSearch: Bool = false
 
     public init(
         workingDirectory: String,
@@ -50,12 +52,54 @@ public struct CommandRunnerPane: View {
             if !quickCommands.isEmpty {
                 quickCommandRow
             }
+            if showSearch {
+                searchBar
+            }
             FlatHDivider()
             blockList
             FlatHDivider()
             inputBar
         }
         .background(Theme.Color.bg)
+    }
+
+    private var searchBar: some View {
+        HStack(spacing: 6) {
+            Image(systemName: "magnifyingglass")
+                .font(.system(size: 10))
+                .foregroundStyle(Theme.Color.textSecondary)
+            TextField("명령/출력 검색…", text: $searchQuery)
+                .textFieldStyle(.plain)
+                .font(Theme.Typography.monoSmall)
+            if !searchQuery.isEmpty {
+                Text("\(filteredBlocks.count)/\(blocks.count) 매치")
+                    .font(Theme.Typography.micro)
+                    .foregroundStyle(Theme.Color.textTertiary)
+            }
+            Button {
+                searchQuery = ""
+                showSearch = false
+            } label: {
+                Image(systemName: "xmark")
+                    .font(.system(size: 9))
+                    .foregroundStyle(Theme.Color.textSecondary)
+            }
+            .buttonStyle(.plain)
+            .help("검색 닫기")
+        }
+        .padding(.horizontal, Theme.Spacing.md)
+        .padding(.vertical, 4)
+        .background(Theme.Color.surface.opacity(0.6))
+    }
+
+    private var filteredBlocks: [CommandRunner.CommandResult] {
+        let q = searchQuery.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        guard !q.isEmpty else { return blocks }
+        return blocks.filter { b in
+            b.command.lowercased().contains(q)
+                || b.stdout.lowercased().contains(q)
+                || b.stderr.lowercased().contains(q)
+        }
     }
 
     @ViewBuilder
@@ -96,6 +140,13 @@ public struct CommandRunnerPane: View {
             }
             Spacer()
             if !blocks.isEmpty {
+                Button { showSearch.toggle() } label: {
+                    Image(systemName: showSearch ? "magnifyingglass.circle.fill" : "magnifyingglass")
+                        .font(.system(size: 10))
+                        .foregroundStyle(showSearch ? Theme.Color.accent : Theme.Color.textSecondary)
+                }
+                .buttonStyle(.plain)
+                .help("기록 검색 (T12)")
                 Button(action: onClear) {
                     Image(systemName: "trash")
                         .font(.system(size: 10))
@@ -119,6 +170,7 @@ public struct CommandRunnerPane: View {
 
     @ViewBuilder
     private var blockList: some View {
+        let visible = filteredBlocks
         if blocks.isEmpty {
             EmptyStateHint(
                 icon: "terminal",
@@ -126,11 +178,18 @@ public struct CommandRunnerPane: View {
                 message: "아래 입력창에 명령을 입력하고 ⌘Return으로 실행하세요. 결과가 block으로 기록됩니다."
             )
             .frame(maxHeight: .infinity)
+        } else if visible.isEmpty {
+            EmptyStateHint(
+                icon: "questionmark.circle",
+                title: "‘\(searchQuery)’와 매치되는 결과가 없어요",
+                message: "검색어를 줄이거나 ⨯로 검색을 닫으세요."
+            )
+            .frame(maxHeight: .infinity)
         } else {
             ScrollViewReader { proxy in
                 ScrollView {
                     VStack(spacing: 4) {
-                        ForEach(blocks) { block in
+                        ForEach(visible) { block in
                             CommandBlockView(
                                 block: block,
                                 onRerun: onRun,

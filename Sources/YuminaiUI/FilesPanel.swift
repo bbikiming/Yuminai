@@ -46,6 +46,8 @@ public struct FilesPanel: View {
     public let onCancelInlineRename: () -> Void
     /// rename 후 agent에게 imports 업데이트 위임 (ADR-040 F5).
     public let onAskAgentToUpdateImports: (String, String) -> Void
+    /// 파일 drag-drop 이동 (ADR-041 F7) — (oldPath, newPath).
+    public let onMoveFile: (String, String) -> Void
 
     public init(
         tree: [FileNode],
@@ -77,7 +79,8 @@ public struct FilesPanel: View {
         onBeginInlineRename: @escaping (String) -> Void = { _ in },
         onCommitInlineRename: @escaping (String, String) -> Void = { _, _ in },
         onCancelInlineRename: @escaping () -> Void = {},
-        onAskAgentToUpdateImports: @escaping (String, String) -> Void = { _, _ in }
+        onAskAgentToUpdateImports: @escaping (String, String) -> Void = { _, _ in },
+        onMoveFile: @escaping (String, String) -> Void = { _, _ in }
     ) {
         self.tree = tree
         self.openTabs = openTabs
@@ -109,6 +112,7 @@ public struct FilesPanel: View {
         self.onCommitInlineRename = onCommitInlineRename
         self.onCancelInlineRename = onCancelInlineRename
         self.onAskAgentToUpdateImports = onAskAgentToUpdateImports
+        self.onMoveFile = onMoveFile
     }
 
     public var body: some View {
@@ -240,7 +244,8 @@ public struct FilesPanel: View {
                                 inlineRenamePath: inlineRenamePath,
                                 onBeginInlineRename: onBeginInlineRename,
                                 onCommitInlineRename: onCommitInlineRename,
-                                onCancelInlineRename: onCancelInlineRename
+                                onCancelInlineRename: onCancelInlineRename,
+                                onMoveFile: onMoveFile
                             )
                         }
                     }
@@ -448,6 +453,7 @@ private struct FileNodeRow: View {
     let onBeginInlineRename: (String) -> Void
     let onCommitInlineRename: (String, String) -> Void
     let onCancelInlineRename: () -> Void
+    let onMoveFile: (String, String) -> Void
 
     @State private var expanded: Bool
 
@@ -465,7 +471,8 @@ private struct FileNodeRow: View {
         inlineRenamePath: String? = nil,
         onBeginInlineRename: @escaping (String) -> Void = { _ in },
         onCommitInlineRename: @escaping (String, String) -> Void = { _, _ in },
-        onCancelInlineRename: @escaping () -> Void = {}
+        onCancelInlineRename: @escaping () -> Void = {},
+        onMoveFile: @escaping (String, String) -> Void = { _, _ in }
     ) {
         self.node = node
         self.depth = depth
@@ -481,6 +488,7 @@ private struct FileNodeRow: View {
         self.onBeginInlineRename = onBeginInlineRename
         self.onCommitInlineRename = onCommitInlineRename
         self.onCancelInlineRename = onCancelInlineRename
+        self.onMoveFile = onMoveFile
         // depth 0-1 자동 펼침
         self._expanded = State(initialValue: depth < 2)
     }
@@ -504,7 +512,8 @@ private struct FileNodeRow: View {
                         inlineRenamePath: inlineRenamePath,
                         onBeginInlineRename: onBeginInlineRename,
                         onCommitInlineRename: onCommitInlineRename,
-                        onCancelInlineRename: onCancelInlineRename
+                        onCancelInlineRename: onCancelInlineRename,
+                        onMoveFile: onMoveFile
                     )
                 }
             }
@@ -518,7 +527,7 @@ private struct FileNodeRow: View {
     }
 
     private var row: some View {
-        HStack(spacing: 4) {
+        let core = HStack(spacing: 4) {
             Spacer().frame(width: CGFloat(depth) * 12)
             if case .folder = node {
                 Image(systemName: expanded ? "chevron.down" : "chevron.right")
@@ -559,6 +568,59 @@ private struct FileNodeRow: View {
         .onTapGesture { tap() }
         .onHover { hovering = $0 }
         .contextMenu { contextMenuContent }
+        // F2 = inline rename / Delete = trash (트리 focus 시) — ADR-041 F6
+        .focusable(!isInlineRenaming)
+        .focusEffectDisabled()
+        .onKeyPress(.init("F"), phases: .down) { _ in
+            // Function-key용 keyEquivalent — onKeyPress(.f2) 직접 미지원
+            .ignored
+        }
+        .onKeyPress(.delete) { @MainActor in
+            onDelete(node.path, node.isFolder)
+            return .handled
+        }
+        .onKeyPress(.deleteForward) { @MainActor in
+            onDelete(node.path, node.isFolder)
+            return .handled
+        }
+        .onKeyPress(keys: [.return]) { _ in
+            // Enter — 파일이면 select, 폴더면 toggle
+            tap()
+            return .handled
+        }
+        // Drag-drop file move (F7) — 파일을 폴더에 drop하면 해당 폴더로 이동
+        return Group {
+            if node.isFolder {
+                core.dropDestination(for: String.self) { paths, _ in
+                    handleDropPaths(paths)
+                    return !paths.isEmpty
+                }
+            } else {
+                core.draggable(node.path) {
+                    HStack(spacing: 4) {
+                        Image(systemName: iconName)
+                            .foregroundStyle(iconColor)
+                        Text(node.name)
+                            .font(Theme.Typography.small)
+                    }
+                    .padding(4)
+                    .background(Theme.Color.surfaceHi)
+                }
+            }
+        }
+    }
+
+    private func handleDropPaths(_ paths: [String]) {
+        // 폴더 자기 자신에게 drop 또는 빈 배열은 무시
+        guard case .folder(_, let folderPath, _) = node else { return }
+        for path in paths {
+            // 이미 같은 폴더에 있는지 검사
+            let parentOfDragged = (path as NSString).deletingLastPathComponent
+            guard parentOfDragged != folderPath else { continue }
+            let fileName = (path as NSString).lastPathComponent
+            let newPath = folderPath.isEmpty ? fileName : "\(folderPath)/\(fileName)"
+            onMoveFile(path, newPath)
+        }
     }
 
     @ViewBuilder

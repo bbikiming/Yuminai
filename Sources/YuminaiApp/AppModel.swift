@@ -102,6 +102,10 @@ public final class AppModel {
     public var activeTerminalSessionId: UUID?
     /// 터미널 라벨 변경 sheet (id 기반 — TerminalSession.id).
     public var terminalRenameTargetId: UUID?
+    /// Split 모드 — 좌우 dual-pane 동시 표시 (ADR-041 T14).
+    /// active = left, secondary = right. 두 번째는 사용자가 명시 선택 (default = active 다음).
+    public var terminalSplitEnabled: Bool = false
+    public var secondaryTerminalSessionId: UUID?
 
     // Preview pane (ADR-034 A4 + ADR-036 C1 live ping)
     public var showPreviewPane: Bool = false
@@ -755,6 +759,36 @@ public final class AppModel {
             paneUsage[primary.id] = .zero
             persistCurrentPanes()
         }
+    }
+
+    /// 워크스페이스 전환 시 영속된 터미널 세션 복원 (ADR-041 T13).
+    /// activity는 .idle로 리셋, hasUnreadOutput=false. process는 SwiftTerm view spawn 시 새로.
+    public func restoreTerminalSessionsFromWorkspace() {
+        guard let workspace = currentWorkspace else {
+            terminalSessions = []
+            activeTerminalSessionId = nil
+            return
+        }
+        // 새 워크스페이스의 영속된 세션으로 교체 — fresh activity state
+        terminalSessions = workspace.savedTerminalSessions.map { saved in
+            var s = saved
+            s.activity = .idle
+            s.hasUnreadOutput = false
+            return s
+        }
+        activeTerminalSessionId = terminalSessions.first?.id
+    }
+
+    /// 현재 terminalSessions를 workspace에 영속 (ADR-041 T13).
+    /// activity/hasUnreadOutput는 Codable 제외 (영속 X). label/cwd/createdAt만 보존.
+    public func persistCurrentTerminalSessions() {
+        guard let workspace = currentWorkspace else { return }
+        let updated = workspace.with(savedTerminalSessions: terminalSessions)
+        if let idx = workspaces.firstIndex(where: { $0.id == workspace.id }) {
+            workspaces[idx] = updated
+        }
+        let store = workspaceStore
+        Task { try? await store.update(updated) }
     }
 
     /// 현재 agentPanes를 workspace.savedPanes로 영속 (자동 호출).
@@ -1511,11 +1545,13 @@ public final class AppModel {
         if terminalSessions.count > 10 {
             terminalSessions.removeFirst()
         }
+        persistCurrentTerminalSessions()
     }
 
     public func setActiveTerminalSession(_ id: UUID) {
         guard terminalSessions.contains(where: { $0.id == id }) else { return }
         activeTerminalSessionId = id
+        markTerminalSessionRead(id)
     }
 
     /// 세션 close — 활성이 닫히면 인접 세션으로 이동.
@@ -1536,6 +1572,7 @@ public final class AppModel {
         if terminalSessions.isEmpty {
             showTerminalPane = false
         }
+        persistCurrentTerminalSessions()
     }
 
     public func closeActiveTerminalSession() {
@@ -1543,11 +1580,77 @@ public final class AppModel {
         closeTerminalSession(id)
     }
 
+    /// 터미널 cwd 변경 sheet 트리거 — NSOpenPanel folder picker (ADR-041 T11).
+    public func requestTerminalDirectoryChange(_ id: UUID) {
+        guard let session = terminalSessions.first(where: { $0.id == id }) else { return }
+        #if canImport(AppKit)
+        let panel = NSOpenPanel()
+        panel.canChooseDirectories = true
+        panel.canChooseFiles = false
+        panel.allowsMultipleSelection = false
+        panel.directoryURL = URL(fileURLWithPath: session.workingDirectory)
+        panel.title = "터미널 디렉토리 변경"
+        panel.message = "‘\(session.label)’ 세션의 새 작업 디렉토리를 선택하세요"
+        if panel.runModal() == .OK, let url = panel.url {
+            changeTerminalDirectory(id, to: url.path)
+        }
+        #endif
+    }
+
+    /// 터미널 cwd 변경 — view에서 cd 명령 자동 전송 (TerminalPane.updateNSView).
+    public func changeTerminalDirectory(_ id: UUID, to newPath: String) {
+        guard let idx = terminalSessions.firstIndex(where: { $0.id == id }) else { return }
+        terminalSessions[idx].workingDirectory = newPath
+        persistCurrentTerminalSessions()
+    }
+
+    /// PTY 활동 변화 — TerminalPane callback (ADR-041 T10).
+    /// 비활성 세션이 running으로 전환되면 hasUnreadOutput=true (사용자에게 알림).
+    public func updateTerminalActivity(_ id: UUID, _ activity: TerminalSession.Activity) {
+        guard let idx = terminalSessions.firstIndex(where: { $0.id == id }) else { return }
+        let wasActive = activeTerminalSessionId == id
+        terminalSessions[idx].activity = activity
+        // 비활성 세션의 활동은 알림 dot
+        if !wasActive && activity == .running {
+            terminalSessions[idx].hasUnreadOutput = true
+        }
+    }
+
+    /// 사용자가 세션을 active로 보면 unread 해제.
+    public func markTerminalSessionRead(_ id: UUID) {
+        guard let idx = terminalSessions.firstIndex(where: { $0.id == id }) else { return }
+        terminalSessions[idx].hasUnreadOutput = false
+    }
+
     public func renameTerminalSession(_ id: UUID, to newLabel: String) {
         let trimmed = newLabel.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty,
               let idx = terminalSessions.firstIndex(where: { $0.id == id }) else { return }
         terminalSessions[idx].label = trimmed
+        persistCurrentTerminalSessions()
+    }
+
+    /// Split 모드 토글 — secondary는 active 다음 세션 자동 선택.
+    public func toggleTerminalSplit() {
+        terminalSplitEnabled.toggle()
+        if terminalSplitEnabled, secondaryTerminalSessionId == nil {
+            // active와 다른 세션 자동 선택
+            if terminalSessions.count >= 2,
+               let activeIdx = terminalSessions.firstIndex(where: { $0.id == activeTerminalSessionId }) {
+                let nextIdx = (activeIdx + 1) % terminalSessions.count
+                secondaryTerminalSessionId = terminalSessions[nextIdx].id
+            } else if terminalSessions.count == 1 {
+                // 두 번째 세션 자동 생성
+                createTerminalSession()
+                secondaryTerminalSessionId = terminalSessions.last?.id
+            }
+        }
+    }
+
+    public func setSecondaryTerminalSession(_ id: UUID) {
+        guard terminalSessions.contains(where: { $0.id == id }) else { return }
+        secondaryTerminalSessionId = id
+        markTerminalSessionRead(id)
     }
 
     public func selectAdjacentTerminalSession(offset: Int) {

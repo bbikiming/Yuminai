@@ -22,6 +22,9 @@ public final class WorkspaceModel {
     /// `[AgentPane]` JSON 직렬화 — workspace 재진입 시 panes 복원 (ADR-031, T1).
     /// nil/decode 실패 시 빈 배열 → AppModel이 default primary 1개 자동 생성.
     public var panesJSON: Data?
+    /// `[TerminalSession]` JSON 직렬화 — workspace 재진입 시 터미널 세션 복원 (ADR-041 T13).
+    /// 라벨/cwd만 복원 — process는 새로 spawn (zsh 새 인스턴스).
+    public var terminalSessionsJSON: Data?
 
     public init(
         id: UUID,
@@ -33,7 +36,8 @@ public final class WorkspaceModel {
         isArchived: Bool = false,
         agentKindRaw: String? = nil,
         deliveryConfigJSON: Data? = nil,
-        panesJSON: Data? = nil
+        panesJSON: Data? = nil,
+        terminalSessionsJSON: Data? = nil
     ) {
         self.id = id
         self.name = name
@@ -45,6 +49,7 @@ public final class WorkspaceModel {
         self.agentKindRaw = agentKindRaw
         self.deliveryConfigJSON = deliveryConfigJSON
         self.panesJSON = panesJSON
+        self.terminalSessionsJSON = terminalSessionsJSON
     }
 
     public convenience init(from core: Workspace) {
@@ -58,7 +63,8 @@ public final class WorkspaceModel {
             isArchived: core.isArchived,
             agentKindRaw: core.agentKind.rawValue,
             deliveryConfigJSON: try? JSONEncoder().encode(core.deliveryConfig),
-            panesJSON: try? JSONEncoder().encode(core.savedPanes)
+            panesJSON: try? JSONEncoder().encode(core.savedPanes),
+            terminalSessionsJSON: try? JSONEncoder().encode(core.savedTerminalSessions)
         )
     }
 
@@ -77,6 +83,13 @@ public final class WorkspaceModel {
         } else {
             panes = []
         }
+        let terminals: [TerminalSession]
+        if let data = terminalSessionsJSON,
+           let decoded = try? JSONDecoder().decode([TerminalSession].self, from: data) {
+            terminals = decoded
+        } else {
+            terminals = []
+        }
         return Workspace(
             id: id,
             name: name,
@@ -87,7 +100,8 @@ public final class WorkspaceModel {
             isArchived: isArchived,
             agentKind: agentKindRaw.flatMap(AgentKind.init(rawValue:)) ?? .default,
             deliveryConfig: delivery,
-            savedPanes: panes
+            savedPanes: panes,
+            savedTerminalSessions: terminals
         )
     }
 }

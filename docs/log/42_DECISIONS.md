@@ -1,6 +1,115 @@
 # Decisions Log (ADR-lite)
 
-> 최신: ADR-040 (v1.1+ R1 — File CRUD 확장 + 다중 터미널 강화)
+> 최신: ADR-041 (v1.2+ R1 — 터미널 활동 시각화 + cwd 분리 + 영속화 + split, 트리 단축키/drag-drop, 명령 검색)
+
+---
+
+## ADR-041 — v1.2+ R1: 터미널 UX 강화 (활동 표시/cwd 분리/영속/split) + 트리 UX (단축키/drag-drop) + 명령 history 검색
+
+- **날짜**: 2026-05-02
+- **상태**: Accepted
+- **결정**: ADR-040 v1.2+ deferred 6개 항목 일괄 + 사용자 명시 요청 "터미널 세션 활동 상태 표시/애니메이션" — T10/T11/T13/T14 (터미널) + F6/F7 (트리) + T12 (명령 검색). LSP imports는 v2.0+로 명시 보류
+- **컨텍스트**:
+  - 사용자 — "v1.2+ 후보 항목들 하나하나 검수해서 기획+레퍼런스+검증+구현 / 좌측 터미널 세션 알림 아이콘+애니메이션 추가"
+  - ADR-040의 다중 터미널은 "어떤 세션이 작업 중인지" 시각 신호 부재 — 사용자가 백그라운드 작업 진행 모름 (UX 핵심 결손)
+  - file CRUD는 마우스 의존 — 키보드 단축키 (F2/Delete) 부재로 macOS 표준 IDE 경험 미달
+- **레퍼런스 검증**:
+  - **iTerm2/Warp 활동 indicator**: 탭에 색 점/체크 표시 (running=청록 점, success=녹색 체크, fail=빨강 X). Yuminai 채택: pulse 녹색 점 (running) / 녹색 체크 (recent done) / 주황 dot (background unread)
+  - **OSC 133 semantic prompts**: VT100 표준, iTerm2/Warp가 prompt detection에 사용. 단점: zsh 기본 미지원, starship/p10k 사용자만 가능. → 휴리스틱 우선 (PTY data 흐름 1.2초 timeout)
+  - **SwiftTerm `LocalProcessTerminalView`**: `dataReceived(slice:)` `open` method — subclass override로 PTY 출력 흐름 hook 가능. 검증: SwiftTerm 1.2.x 소스 확인
+  - **SwiftUI `.onKeyPress(.delete)`**: macOS 14+ — Yuminai macOS 26 OK. `.focusable()` 필수
+  - **SwiftUI `.draggable(item:)` / `.dropDestination(for:)`**: macOS 13+. String 타입 transferable 자동 지원
+  - **NSWorkspace.recycle**: 이미 ADR-040에서 도입됨 (휴지통)
+  - **HSplitView dual-pane**: SwiftUI 기본 — 단순한 좌우 분할 가능. 더 복잡한 nested split은 NSSplitView wrap 필요 (보류)
+- **각 결정**:
+  ### T10 터미널 활동 상태 + 애니메이션 (사용자 명시 요청)
+  1. **휴리스틱 활동 감지**:
+     - `ActivityAwareTerminalView: LocalProcessTerminalView` subclass — `dataReceived` override
+     - PTY 데이터 도착 → `.running` 표시 + 1.2초 timer
+     - timer 만료 시 → `.completedRecently` (1.5초) → `.idle`
+     - **합리화 검증**: OSC 133이 100% 정확하지만 zsh 기본 미지원 + zshrc 수정 부담 → 휴리스틱이 80% 케이스에 충분 + 즉시 동작
+  2. **상태별 시각**:
+     - `.idle`: 회색 terminal SF Symbol
+     - `.running`: 녹색 점 + ZStack pulse (1.0초 repeat, scale + opacity)
+     - `.completedRecently`: `checkmark.circle.fill` 녹색 (3초 후 idle 전환)
+     - **알림 dot**: 비활성 세션이 running으로 전환 시 `hasUnreadOutput=true` → 주황 5pt circle. 사용자가 active 전환 시 자동 read mark
+  3. **모든 세션을 ZStack에 두기 (iTerm2/Warp 표준)**:
+     - 비활성 세션도 PTY data가 흘러야 활동 감지 가능 → 모든 세션 view를 ZStack에 두고 active만 `opacity(1)` + `allowsHitTesting(true)`
+     - 메모리 비용: max 10 세션 × zsh process — 일반 사용 OK
+  4. **동시성**: `ActivityAwareTerminalView`는 `@unchecked Sendable` (NSView main-thread bound) + state mutation은 `MainActor.assumeIsolated`. dataReceived는 SwiftTerm이 main에서 호출하지만 안전하게 hop
+  ### T11 터미널 cwd 분리
+  5. **NSOpenPanel folder picker** — 컨텍스트 메뉴 "디렉토리 변경…"
+  6. **TerminalSession.workingDirectory 변경** → `TerminalPane.updateNSView`가 `cd` 명령 자동 전송 (기존 매커니즘)
+  7. **세션 별 다른 cwd**: 같은 워크스페이스 내에서도 세션마다 다른 디렉토리 — 모놀리포 sub-project 작업에 유용
+  ### T12 명령 history 검색
+  8. **CommandRunnerPane 검색 토글** — header에 magnifyingglass 버튼 (active 시 fill 변형)
+  9. **검색 범위**: command 텍스트 + stdout + stderr (case-insensitive substring)
+  10. **결과 표시**: "X/Y 매치" 카운트 + 빈 결과 EmptyState
+  11. **단순화**: regex/필터 다중 조건 보류 — substring 매칭이 80% 케이스 충분
+  ### T13 터미널 세션 영속화
+  12. **WorkspaceModel.terminalSessionsJSON: Data?** 추가 (SwiftData @Model)
+  13. **TerminalSession Codable 제외 필드**: activity / hasUnreadOutput (UI 상태) — `private enum CodingKeys`로 명시. 영속 = id/label/cwd/createdAt만
+  14. **자동 persist 트리거**: create/close/rename/changeDirectory 시 `persistCurrentTerminalSessions()`
+  15. **워크스페이스 전환 시 복원**: `restoreTerminalSessionsFromWorkspace()` — `.task(id: selectedWorkspaceId)` 훅에서 호출. activity는 fresh `.idle`
+  ### T14 터미널 split (좌우 dual-pane)
+  16. **`terminalSplitEnabled: Bool` + `secondaryTerminalSessionId: UUID?`** 토글 state
+  17. **HSplitView wrapper** — split mode 시 좌(active)/우(secondary) 동시 표시
+  18. **단순화**: 좌우만 (상하 X), 2-pane만 (3+ X), nested split X — NSSplitView wrap 비용 회피하면서 80% 가치 (테스트 ↔ git 작업 동시 보기)
+  19. **자동 secondary 선택**: split 토글 시 active 다음 세션 자동, 없으면 새 세션 생성
+  ### F6 트리 단축키
+  20. **`.focusable()` + `.onKeyPress(.delete)` / `.deleteForward`** → `onDelete(휴지통)`
+  21. **`.onKeyPress(.return)`** → 파일이면 select, 폴더면 toggle expand
+  22. **F2 키**: SwiftUI `.onKeyPress(.f2)` 직접 미지원 — 컨텍스트 메뉴 "이름 변경 (inline)"으로 대체. v1.3+에서 NSEvent monitor 검토
+  23. **focusEffectDisabled()**: 트리 cell focus ring 시각 노이즈 제거
+  ### F7 Drag-drop file move
+  24. **파일 row `.draggable(node.path)`** — String 자동 transferable
+  25. **폴더 row `.dropDestination(for: String.self)`** — drop 시 `onMoveFile(oldPath, newPath)` 호출
+  26. **자동 검증**: 같은 부모면 noop, 폴더 자기 자신 drop도 noop
+  27. **agent 위임 X**: drag-drop은 의도가 명확 (사용자 직접 동작) — agent prompt 자동 생성 없음
+- **단순화 ROI 분석**:
+  - **T10 활동 상태**: 가치 95 (사용자 명시 요청 + UX 결손 해소), 비용 1.2인일 (subclass + animation + ZStack 패턴) — ROI 압도
+  - **T11 cwd 분리**: 가치 60 (모놀리포 워크플로), 비용 0.3인일 — ROI 압도
+  - **T12 history 검색**: 가치 50 (50개 cap이라 manual scroll 가능하지만 검색이 빠름), 비용 0.4인일 — ROI 양호
+  - **T13 영속화**: 가치 75 (워크스페이스 reload 시 컨텍스트 보존), 비용 0.5인일 (Codable 이미 준비됨) — ROI 압도
+  - **T14 split**: 가치 60 (테스트+git 동시), 비용 0.4인일 (HSplitView wrapper만) — ROI 양호
+  - **F6 단축키**: 가치 70 (macOS 표준 IDE), 비용 0.2인일 — ROI 압도
+  - **F7 drag-drop**: 가치 55 (Finder 친화), 비용 0.3인일 — ROI 양호
+- **격리**:
+  - Core: TerminalSession.Activity enum + Codable 제외 / Workspace.savedTerminalSessions
+  - Persistence: WorkspaceModel.terminalSessionsJSON (single Data column)
+  - UI: ActivityAwareTerminalView (SwiftTerm wrap 내부) / FilesPanel.FileNodeRow (drag/drop/key)
+  - App: AppModel multi-terminal lifecycle 확장 / RootView ZStack + HSplitView 패턴
+- **외부 의존성 정책**: 새 dep 없음. SwiftTerm 기존 사용 + AppKit (NSOpenPanel/NSPasteboard) + SwiftUI 표준
+- **알려진 한계 / v1.3+**:
+  - **F2 키 inline rename**: SwiftUI `.onKeyPress(.f2)` 미지원 → NSEvent local monitor 필요 (v1.3+)
+  - **상하 split + nested split**: NSSplitView wrap 필요 (큰 작업)
+  - **Drag visual feedback**: dropDestination hover hint 단순 — Finder식 폴더 highlight는 더 polish 필요
+  - **명령 검색 regex**: substring만 — regex/glob은 사용자 신호 후
+  - **세션 복제** (cwd + 환경 변수 그대로 새 세션) — 별 ROI
+  - **세션 백그라운드 알림 (macOS Notification Center)**: 백그라운드 작업 완료 시 OS 알림. 권한 + Privacy.plist + 사용자 설정 필요 — 조사 후 v1.3+
+  - **OSC 133 정확 detection**: SwiftTerm OSC handler 확장 — zsh prompt에 자동 inject 옵션
+  - **LSP imports update (F5 진짜 LSP)**: 수 주 작업 — agent 위임으로 충분 가능성 검증된 후 v2.0+
+- **결과**:
+  - 신규 파일 1개 (Test): TerminalSessionActivityTests.swift
+  - 수정 파일 8개:
+    - YuminaiCore/TerminalSession.swift — Activity enum + hasUnreadOutput + CodingKeys 제외
+    - YuminaiCore/Workspace.swift — savedTerminalSessions + with(_:) 메서드 + 다른 with(_:) 모두에 propagate
+    - YuminaiPersistence/WorkspaceModel.swift — terminalSessionsJSON
+    - YuminaiUI/TerminalPane.swift — ActivityAwareTerminalView subclass + onActivityChanged
+    - YuminaiUI/FilesPanel.swift — onMoveFile + .draggable/.dropDestination + .onKeyPress
+    - YuminaiUI/InspectorPanel.swift — onMoveFile forwarding
+    - YuminaiUI/CommandRunnerPane.swift — searchBar + filteredBlocks
+    - YuminaiApp/AppModel.swift — 7 신규 메서드 (cwd/activity/persist/restore/split)
+    - YuminaiApp/RootView.swift — TerminalSessionTabButton activity icon + ZStack/HSplitView + split 토글 버튼
+  - **테스트 7 신규 (286→293 통과)**:
+    - TerminalSessionActivityTests (4): default activity / mutable / Codable 제외 / raw value
+    - WorkspaceTerminalPersistenceTests (3): default empty / with(savedTerminalSessions) / 다른 with(_:) 보존
+  - 빌드 6.81s clean
+- **재검토**:
+  - 활동 휴리스틱 정확도 (긴 명령 = 1.2초보다 오래 걸림 → 다시 running 잡힘. 짧은 echo도 잘 잡히는지)
+  - Split 모드 사용 빈도 vs 다중 인스턴스 빠른 전환만으로 충분한지
+  - 트리 Delete 키가 실수 삭제 유발하는지 (휴지통이라 복구 가능하지만 마찰 추적)
+  - drag-drop 사용 빈도 — Cmd+Click multi-select + 컨텍스트 메뉴 vs drag
 
 ---
 
