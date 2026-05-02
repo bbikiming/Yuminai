@@ -4,6 +4,43 @@
 
 ## [Unreleased] — 2026-05-02
 
+### Added — UX 마감: Rehearsal Diff + ChildProcess progress + Routing log stats (ADR-054)
+
+**1. Rehearsal Diff View** (Promptfoo row-per-turn 패턴):
+- `Sources/YuminaiCore/TextDiff.swift`: LCS line diff
+  - `DiffLine` (kind, originalLineNum, replayLineNum)
+  - `DiffResult` (lines, addedCount/removedCount/sameCount, changeRatio, summary())
+  - `lineDiff(original:replay:maxLines:)` 알고리즘 (default 1000 lines)
+- RehearsalSheet `ViewMode` picker: sideBySide / diff
+- diff view: line-by-line color (green=added, red=removed, gray=same) + 줄번호 + change ratio bar
+
+**2. ChildClaudeProcess Progress Badges**:
+- `Sources/YuminaiCore/ChildClaudeProcess.swift` `ChildProcessProgress` struct (id, purpose, agentRaw, startedAt, status, purposeContext)
+- `Sources/YuminaiUI/ChildProcessBadge.swift`: 진행 중 spinner + 색상 by purpose (decomp=blue, rehearsal=orange, parallel=purple)
+- AppModel `activeChildProcesses: [ChildProcessProgress]` + `registerChildProcess` / `completeChildProcess` (3초 자동 prune)
+- decomposeUserTask / launchRehearsal / runReadyTasksInParallel — 호출 시 register, 결과 시 complete
+- RootView `chatArea` 상단에 `ChildProcessBadge` 표시 (Linear/Cursor "background task" 패턴)
+
+**3. Routing Log Statistics Tab** (Honeycomb BubbleUp 패턴):
+- RoutingDecisionLogSheet `SheetTab` (browse / stats) picker
+- stats tab: 5개 분포 cards
+  - Outcome (applied/cancelled/skipped/failed)
+  - Selected Agent (applied만)
+  - Task Kind
+  - Keyword 빈도 Top 10
+  - Fingerprint 빈도 Top 10 (2회 이상)
+- 각 row: ProgressView bar + count (%)
+
+### Tests added (+13)
+- `TextDiffTests.swift` (10): identical/empty/addition/removal/replacement/changeRatio/summary/maxLines
+- `ChildProcessProgressTests.swift` (3): elapsedSeconds, status transitions, Codable round-trip
+
+### 빌드/테스트 결과
+- `swift build` → Build complete! (10.45s)
+- `swift test` → 396/396 passed (84 suites, ~0.07s)
+
+---
+
 ### Added — ChildClaudeProcess: ADR-052 stub 3개를 진짜 LLM 호출로 통합 (ADR-053)
 
 **1. Core 추상화** — `Sources/YuminaiCore/ChildClaudeProcess.swift`:

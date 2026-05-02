@@ -80,6 +80,46 @@ public struct ChildProcessOutput: Sendable, Hashable {
     }
 }
 
+// MARK: - ChildProcessProgress (ADR-054)
+
+/// 진행 중인 ChildClaudeProcess의 observable state.
+/// AppModel.activeChildProcesses에 등록 → UI가 spinner/badge 표시.
+public struct ChildProcessProgress: Identifiable, Sendable, Hashable, Codable {
+    public let id: UUID
+    public let purpose: ChildProcessPurpose
+    public let agentRaw: String
+    public let startedAt: Date
+    public let purposeContext: String  // 예: "task ‘Refactor core’ 분해"
+    public var status: Status
+
+    public enum Status: String, Sendable, Hashable, Codable {
+        case starting
+        case running
+        case completed
+        case failed
+    }
+
+    public init(
+        id: UUID = UUID(),
+        purpose: ChildProcessPurpose,
+        agentRaw: String,
+        startedAt: Date = Date(),
+        purposeContext: String,
+        status: Status = .starting
+    ) {
+        self.id = id
+        self.purpose = purpose
+        self.agentRaw = agentRaw
+        self.startedAt = startedAt
+        self.purposeContext = purposeContext
+        self.status = status
+    }
+
+    public func elapsedSeconds(now: Date = Date()) -> Int {
+        Int(now.timeIntervalSince(startedAt))
+    }
+}
+
 // MARK: - Mock (테스트용)
 
 /// 테스트/preview용 mock — 실제 process spawn 없이 즉시 fixed 응답 반환.

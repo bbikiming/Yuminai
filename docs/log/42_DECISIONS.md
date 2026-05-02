@@ -1,6 +1,87 @@
 # Decisions Log (ADR-lite)
 
-> 최신: ADR-053 (ChildClaudeProcess — ADR-052 stub 3개를 진짜 LLM 호출로 통합)
+> 최신: ADR-054 (Rehearsal Diff View + ChildProcess progress badges + Routing log statistics)
+
+---
+
+## ADR-054 — UX 마감: Rehearsal Diff View + ChildProcess progress + Routing log statistics
+
+- **날짜**: 2026-05-02
+- **상태**: Accepted
+- **결정**: ADR-053으로 격리된 호출이 가능해졌으나 사용자가 결과를 비교/모니터링하기 어려움. 3개 UX layer 추가.
+
+### 컨텍스트
+ADR-053 완료 후 인지된 갭:
+1. **Rehearsal 결과를 단순 텍스트 비교**로만 표시 — 어디가 달라졌는지 한눈에 안 보임
+2. **ChildProcess가 백그라운드에서 실행 중**임을 사용자가 모름 (10-30초 걸리는데 진행 표시 X)
+3. **Routing log가 결정 1개씩만** 보여주고, 전체 패턴 (어느 모델이 더 많이 routing 됐는지 등) 분석 X
+
+### 결정
+
+#### 1. Rehearsal Diff View (Promptfoo row-per-turn 패턴)
+- `Sources/YuminaiCore/TextDiff.swift`
+  - `lineDiff(original:replay:maxLines:)` — LCS 기반 line-level diff
+  - `DiffLine` (kind: same/added/removed, originalLineNum, replayLineNum)
+  - `DiffResult` (lines, addedCount, removedCount, sameCount, changeRatio)
+  - `summary()` → "+12 -8 / 50 same (변화 16.7%)"
+- RehearsalSheet: `ViewMode` picker (sideBySide / diff)
+  - sideBySide: 기존 view (원본 + 리허설 두 블록)
+  - diff: line-by-line 색칠 (green=added, red=removed, gray=same) + 줄번호 + change ratio bar (green<20% / yellow<50% / orange)
+- Promptfoo의 web UI matrix view 차용 (https://www.promptfoo.dev/docs/configuration/guide/)
+
+#### 2. ChildClaudeProcess Progress Badges
+- `Sources/YuminaiCore/ChildClaudeProcess.swift`
+  - `ChildProcessProgress` struct: id + purpose + agentRaw + startedAt + purposeContext + status (starting/running/completed/failed)
+  - `elapsedSeconds(now:)` helper
+- `Sources/YuminaiUI/ChildProcessBadge.swift`
+  - 진행 중: ProgressView spinner + purpose label + context + elapsed seconds
+  - 완료: green checkmark, 실패: red xmark
+  - 색상 by purpose: decomposition=blue / rehearsal=orange / parallel=purple / routing=gray
+- AppModel:
+  - `var activeChildProcesses: [ChildProcessProgress]`
+  - `registerChildProcess(purpose:agent:context:) -> UUID` / `completeChildProcess(_:status:)` (3초 후 자동 prune)
+  - decompose / rehearsal / parallel 호출 시 진행/완료 상태 업데이트
+- RootView chatArea 상단에 `ChildProcessBadge` 표시 (Linear/Cursor "background task" 패턴 차용)
+
+#### 3. Routing Log Statistics Tab (BubbleUp-style aggregation)
+- RoutingDecisionLogSheet에 `SheetTab` (browse / stats) picker 추가
+- stats tab에 5개 분포 view (Honeycomb BubbleUp 패턴):
+  - Outcome 분포 (applied/cancelled/skipped/failed %)
+  - Selected Agent 분포 (applied만)
+  - Task Kind 분포
+  - Keyword 빈도 Top 10
+  - Fingerprint 빈도 Top 10 (2회 이상만 — 반복 패턴)
+- 각 row: label + ProgressView bar + count (pct%)
+- 출처: Honeycomb high-cardinality observability (https://docs.honeycomb.io/get-started/basics/observability/concepts/high-cardinality/)
+
+### 적용 결과
+```
+swift build              → Build complete! (10.45s)
+swift test               → 396/396 passed (84 suites, +13 new tests)
+새 파일                  → 3 (TextDiff.swift, ChildProcessBadge.swift, TextDiffTests.swift)
+수정 파일                → 5 (RehearsalSheet, RoutingDecisionLogSheet, ChildClaudeProcess, AppModel, RootView)
+```
+
+### 트레이드오프
+
+- **TextDiff: LCS O(n*m) 알고리즘**:
+  큰 텍스트(수만 줄)는 메모리 폭발 위험 → `maxLines: Int = 1000` cap.
+  caller가 적절히 truncate 권장. Myers diff (O(N)) 도입은 ADR-055 후보.
+- **ChildProcessBadge 자동 prune 3초**:
+  완료/실패 결과를 3초만 보여줌 — 사용자가 정확한 비용을 보려면 RoutingLog/RehearsalSheet에서 확인.
+  3초가 너무 짧으면 후속에서 extend.
+- **Routing log statistics in-memory**:
+  Aggregation은 in-memory `decisions` 배열 위에서 매번 계산. 100k+ records면 성능 저하 → 향후 cache.
+  현재 single-user 환경에서 100k는 10년치 사용량.
+- **Diff view truncation**:
+  500 lines cap은 일반 LLM 응답에는 충분. 장문 응답은 잘림 안내 필요 (현재 silent).
+
+### 향후 (ADR-055 후보)
+- Myers diff (O(N)) — 큰 텍스트 처리 + side-by-side word-level diff
+- ChildProcess streaming events (현재는 collect-then-return) — 진행 % 표시
+- per-pane git worktree 자동 분기 (Devin VM-isolation, ADR-053에서 deferred)
+- Rehearsal "Promote to main" 기능 (rehearsal 결과를 main conversation에 import)
+- Keyword 미스 분석 — "이 keyword에서 routing이 자주 cancelled" 통계 → 추천 룰 수정
 
 ---
 

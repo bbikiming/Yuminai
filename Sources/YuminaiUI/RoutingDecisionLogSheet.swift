@@ -21,6 +21,13 @@ public struct RoutingDecisionLogSheet: View {
     @State private var selectedRecord: RoutingDecisionRecord?
     @State private var showRawPrompt: Bool = false
     @State private var filterOutcome: FilterOutcome = .all
+    @State private var sheetTab: SheetTab = .browse
+
+    enum SheetTab: String, CaseIterable, Identifiable {
+        case browse = "결정 탐색"
+        case stats = "통계 / 요약"
+        var id: String { rawValue }
+    }
 
     public init(
         decisions: [RoutingDecisionRecord],
@@ -67,12 +74,19 @@ public struct RoutingDecisionLogSheet: View {
         VStack(spacing: 0) {
             header
             Divider()
-            HStack(spacing: 0) {
-                timelinePane
-                    .frame(width: 280)
-                Divider()
-                detailPane
-                    .frame(maxWidth: .infinity)
+            tabPicker
+            Divider()
+            switch sheetTab {
+            case .browse:
+                HStack(spacing: 0) {
+                    timelinePane
+                        .frame(width: 280)
+                    Divider()
+                    detailPane
+                        .frame(maxWidth: .infinity)
+                }
+            case .stats:
+                statsPane
             }
             Divider()
             footer
@@ -84,6 +98,124 @@ public struct RoutingDecisionLogSheet: View {
                 selectedRecord = decisions.first
             }
         }
+    }
+
+    private var tabPicker: some View {
+        HStack {
+            Picker("Tab", selection: $sheetTab) {
+                ForEach(SheetTab.allCases) { tab in
+                    Text(tab.rawValue).tag(tab)
+                }
+            }
+            .pickerStyle(.segmented)
+            .frame(width: 320)
+            Spacer()
+        }
+        .padding(.horizontal, Theme.Spacing.lg)
+        .padding(.vertical, 6)
+    }
+
+    /// ADR-054 — Routing log 통계 view (BubbleUp-style aggregation)
+    private var statsPane: some View {
+        ScrollView {
+            VStack(alignment: .leading, spacing: Theme.Spacing.lg) {
+                statsCard(title: "Outcome 분포", rows: outcomeStats)
+                statsCard(title: "Selected Agent 분포 (적용된 routing만)", rows: agentStats)
+                statsCard(title: "Task Kind 분포", rows: taskKindStats)
+                statsCard(title: "Keyword 빈도 (Top 10)", rows: keywordStats)
+                statsCard(title: "Fingerprint 빈도 (반복되는 같은 종류 task)", rows: fingerprintStats)
+            }
+            .padding(Theme.Spacing.lg)
+        }
+    }
+
+    private struct StatRow: Identifiable {
+        let id = UUID()
+        let label: String
+        let count: Int
+        let pct: Double
+    }
+
+    private func statsCard(title: String, rows: [StatRow]) -> some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Text(title)
+                .font(Theme.Typography.body.weight(.semibold))
+                .foregroundStyle(Theme.Color.text)
+            if rows.isEmpty {
+                Text("(데이터 없음)")
+                    .font(Theme.Typography.small)
+                    .foregroundStyle(Theme.Color.textTertiary)
+            } else {
+                ForEach(rows) { row in
+                    statRow(row)
+                }
+            }
+        }
+        .padding(Theme.Spacing.md)
+        .background(Theme.Color.surface)
+        .clipShape(RoundedRectangle(cornerRadius: Theme.Radius.md))
+    }
+
+    private func statRow(_ row: StatRow) -> some View {
+        HStack(spacing: 8) {
+            Text(row.label)
+                .font(Theme.Typography.small)
+                .foregroundStyle(Theme.Color.text)
+                .frame(width: 200, alignment: .leading)
+                .lineLimit(1)
+            ProgressView(value: row.pct)
+                .frame(maxWidth: .infinity)
+            Text("\(row.count) (\(Int(row.pct * 100))%)")
+                .font(Theme.Typography.monoSmall)
+                .foregroundStyle(Theme.Color.textSecondary)
+                .frame(width: 80, alignment: .trailing)
+        }
+    }
+
+    private var outcomeStats: [StatRow] {
+        let total = max(1, decisions.count)
+        let groups = Dictionary(grouping: decisions, by: \.outcome).mapValues(\.count)
+        return groups
+            .sorted { $0.value > $1.value }
+            .map { StatRow(label: $0.key.rawValue, count: $0.value, pct: Double($0.value) / Double(total)) }
+    }
+
+    private var agentStats: [StatRow] {
+        let applied = decisions.filter { $0.outcome == .applied }
+        let total = max(1, applied.count)
+        let groups = Dictionary(grouping: applied, by: \.selectedAgentRaw).mapValues(\.count)
+        return groups
+            .sorted { $0.value > $1.value }
+            .map { StatRow(label: $0.key, count: $0.value, pct: Double($0.value) / Double(total)) }
+    }
+
+    private var taskKindStats: [StatRow] {
+        let total = max(1, decisions.count)
+        let groups = Dictionary(grouping: decisions, by: \.taskKindRaw).mapValues(\.count)
+        return groups
+            .sorted { $0.value > $1.value }
+            .map { StatRow(label: $0.key, count: $0.value, pct: Double($0.value) / Double(total)) }
+    }
+
+    private var keywordStats: [StatRow] {
+        let withKeyword = decisions.compactMap { $0.matchedKeyword }
+        let total = max(1, withKeyword.count)
+        var counts: [String: Int] = [:]
+        for kw in withKeyword { counts[kw, default: 0] += 1 }
+        return counts
+            .sorted { $0.value > $1.value }
+            .prefix(10)
+            .map { StatRow(label: "‘\($0.key)’", count: $0.value, pct: Double($0.value) / Double(total)) }
+    }
+
+    private var fingerprintStats: [StatRow] {
+        let total = max(1, decisions.count)
+        let groups = Dictionary(grouping: decisions, by: \.taskFingerprint).mapValues(\.count)
+        return groups
+            .sorted { $0.value > $1.value }
+            .filter { $0.value >= 2 }  // 2회 이상만 표시 (반복 패턴)
+            .prefix(10)
+            .map { StatRow(label: $0.key, count: $0.value, pct: Double($0.value) / Double(total)) }
     }
 
     // MARK: - Header

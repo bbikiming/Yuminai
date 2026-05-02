@@ -920,17 +920,21 @@ struct ChatPane: View {
     /// chat 영역 — split mode에 따라 1 pane (active) 또는 2 panes (active + secondary).
     @ViewBuilder
     private var chatArea: some View {
-        // ADR-051 — Inline mode: 메인 chat을 통째로 HarnessConversationView로 교체
-        if appModel.preferences.harnessInlineModeEnabled {
-            HarnessConversationView(
-                entries: appModel.harness.conversationLog,
-                estimatedTotalTokens: appModel.harness.estimatedTotalTokens,
-                agentResponseCounts: appModel.harness.agentResponseCounts,
-                sessionCostUSD: appModel.currentSessionUsage.costUSD,
-                onShowHelp: { appModel.presentExclusiveSheet { $0.showHarnessHelp = true } }
-            )
-        } else {
-            traditionalChatArea
+        VStack(spacing: 0) {
+            // ADR-054 — 진행 중인 ChildProcess (decomposition/rehearsal/parallel) badge
+            ChildProcessBadge(processes: appModel.activeChildProcesses)
+            // ADR-051 — Inline mode: 메인 chat을 통째로 HarnessConversationView로 교체
+            if appModel.preferences.harnessInlineModeEnabled {
+                HarnessConversationView(
+                    entries: appModel.harness.conversationLog,
+                    estimatedTotalTokens: appModel.harness.estimatedTotalTokens,
+                    agentResponseCounts: appModel.harness.agentResponseCounts,
+                    sessionCostUSD: appModel.currentSessionUsage.costUSD,
+                    onShowHelp: { appModel.presentExclusiveSheet { $0.showHarnessHelp = true } }
+                )
+            } else {
+                traditionalChatArea
+            }
         }
     }
 

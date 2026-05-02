@@ -323,6 +323,10 @@ public final class AppModel {
     /// Aider architect_coder.py + Cline SubagentRunStats 패턴.
     public let costTracker: CostTracker = CostTracker()
 
+    /// ADR-054 — 진행 중인 ChildClaudeProcess (decomposition/rehearsal/parallel) progress.
+    /// UI가 spinner/badge 표시. 완료/실패 시 자동 prune (3초 후).
+    public var activeChildProcesses: [ChildProcessProgress] = []
+
     /// ADR-052 — Command Palette pin/recent store (VSCode/Raycast 패턴).
     public let palettePinStore: PalettePinStore = PalettePinStore()
     /// in-memory cache (UI binding) — async store에서 snapshot으로 sync
@@ -1245,6 +1249,13 @@ public final class AppModel {
         if let child = childProcess {
             harness.appendSystem("⚡ BSP barrier dispatch — Pane 1 = active session, Pane 2 = child process (\(secondaryPane.agentKind.shortLabel))")
 
+            // ADR-054 — UI progress 등록
+            let progressId = registerChildProcess(
+                purpose: .parallel,
+                agent: secondaryPane.agentKind,
+                context: "Pane 2 ‘\(secondary.title)’ 병렬"
+            )
+
             // async let으로 두 호출 동시 진행 (LangGraph BSP superstep 패턴)
             async let primaryDone: Void = runHarnessTask(primary.id)
             async let secondaryOutput: ChildProcessOutput = {
@@ -1287,6 +1298,7 @@ public final class AppModel {
 
             // Pane 2 결과를 SharedLog + task에 반영
             if result.exitCode == 0 {
+                completeChildProcess(progressId, status: .completed)
                 harness.updateTaskStatus(secondary.id, .completed, output: result.resultText)
                 costTracker.add(.parallel, usd: result.costUSD)
                 harness.appendAgent(
@@ -1297,6 +1309,7 @@ public final class AppModel {
                 )
                 harness.appendSystem("✓ Pane 2 (\(secondaryPane.agentKind.shortLabel)) 완료 — \(result.durationMs)ms, $\(String(format: "%.4f", result.costUSD))")
             } else {
+                completeChildProcess(progressId, status: .failed)
                 harness.updateTaskStatus(secondary.id, .failed, output: result.resultText)
                 // Devin coordinator 권고: 한 쪽 실패 시 다른 쪽 pause + user prompt (silent kill 금지)
                 harness.appendSystem("⚠ Pane 2 실패 — Pane 1 결과는 보존. user 검토 후 결정")
@@ -1312,6 +1325,38 @@ public final class AppModel {
 
     /// ADR-053 — CostTracker.Bucket에 parallel 추가가 안 됐으면 routing으로 fallback.
     /// (Bucket enum 확장은 ADR-053 doc 참조)
+
+    // MARK: - ADR-054 ChildProcess progress helpers
+
+    /// ChildClaudeProcess 시작 시 등록 — UI에 spinner 표시.
+    @discardableResult
+    public func registerChildProcess(
+        purpose: ChildProcessPurpose,
+        agent: AgentKind,
+        context: String
+    ) -> UUID {
+        let progress = ChildProcessProgress(
+            purpose: purpose,
+            agentRaw: agent.rawValue,
+            purposeContext: context,
+            status: .running
+        )
+        activeChildProcesses.append(progress)
+        return progress.id
+    }
+
+    /// ChildClaudeProcess 완료 시 status update + 3초 후 prune.
+    public func completeChildProcess(_ id: UUID, status: ChildProcessProgress.Status) {
+        guard let idx = activeChildProcesses.firstIndex(where: { $0.id == id }) else { return }
+        activeChildProcesses[idx].status = status
+        // 3초 후 자동 prune (사용자가 결과 확인할 시간)
+        Task { [weak self] in
+            try? await Task.sleep(for: .seconds(3))
+            await MainActor.run {
+                self?.activeChildProcesses.removeAll { $0.id == id }
+            }
+        }
+    }
 
     /// ADR-050 Phase 6 — TaskGraph "▶ 실행" 액션. ready task를 active pane에 dispatch.
     /// 1. task.assignedAgent로 pane 전환 (있으면)
@@ -1705,6 +1750,12 @@ public final class AppModel {
         // ADR-053 — childProcess가 있으면 진짜 격리된 호출, 없으면 fallback
         if let child = childProcess {
             harness.appendSystem("📋 Task 분해 호출 (격리된 child process — 메인 cache 0 영향)")
+            // ADR-054 — UI progress 등록
+            let progressId = registerChildProcess(
+                purpose: .decomposition,
+                agent: workspace.agentKind,
+                context: "‘\(userRequest.prefix(40))…’ 분해"
+            )
             do {
                 let output = try await child.runOnce(
                     prompt: prompt,
@@ -1713,6 +1764,7 @@ public final class AppModel {
                     purpose: .decomposition,
                     timeoutSeconds: 60
                 )
+                completeChildProcess(progressId, status: .completed)
                 // 정확한 cost 추적
                 costTracker.add(.decomposition, usd: output.costUSD)
                 harness.appendSystem("✓ 분해 완료 (\(output.durationMs)ms, $\(String(format: "%.4f", output.costUSD)))")
@@ -1729,6 +1781,7 @@ public final class AppModel {
                 persistCurrentHarnessState()
                 return parsed.count
             } catch {
+                completeChildProcess(progressId, status: .failed)
                 self.error = "Decomposition 호출 실패: \(error.localizedDescription)"
                 return 0
             }
@@ -2099,6 +2152,13 @@ public final class AppModel {
             rehearsalsByTask[taskId]?[idx] = run
         }
 
+        // ADR-054 — UI progress 등록
+        let progressId = registerChildProcess(
+            purpose: .rehearsal,
+            agent: agent,
+            context: "‘\(task.title)’ 리허설 (\(agent.shortLabel))"
+        )
+
         // rehearsal prompt — task 컨텍스트 + 원본 결과 비교 요청
         let rehearsalPrompt = buildRehearsalPrompt(
             task: task,
@@ -2115,6 +2175,7 @@ public final class AppModel {
                 purpose: .rehearsal,
                 timeoutSeconds: 120
             )
+            completeChildProcess(progressId, status: .completed)
             costTracker.add(.rehearsal, usd: output.costUSD)
             run.status = .completed
             run.completedAt = Date()
@@ -2126,6 +2187,7 @@ public final class AppModel {
             }
             error = "✓ 리허설 완료: \(agent.shortLabel) (\(output.durationMs)ms, $\(String(format: "%.4f", output.costUSD)))"
         } catch {
+            completeChildProcess(progressId, status: .failed)
             run.status = .failed
             run.completedAt = Date()
             run.errorMessage = error.localizedDescription

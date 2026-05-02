@@ -24,6 +24,13 @@ public struct RehearsalSheet: View {
 
     @State private var selectedReplayAgent: AgentKind = .claude
     @State private var selectedRunId: UUID?
+    @State private var viewMode: ViewMode = .sideBySide
+
+    enum ViewMode: String, CaseIterable, Identifiable {
+        case sideBySide = "원본 vs 리허설"
+        case diff = "Diff (line-by-line)"
+        var id: String { rawValue }
+    }
 
     public init(
         task: HarnessTask,
@@ -158,17 +165,85 @@ public struct RehearsalSheet: View {
 
     @ViewBuilder
     private var detailPane: some View {
-        ScrollView {
-            VStack(alignment: .leading, spacing: Theme.Spacing.lg) {
-                originalSection
-                if let runId = selectedRunId, let run = rehearsals.first(where: { $0.id == runId }) {
-                    Divider()
-                    rehearsalResultSection(run)
-                }
-                metadataSection
+        VStack(spacing: 0) {
+            // ADR-054 — view mode picker (only show when run selected for diff)
+            if selectedRunId != nil, let _ = rehearsals.first(where: { $0.id == selectedRunId }) {
+                viewModePicker
             }
-            .padding(Theme.Spacing.lg)
+            ScrollView {
+                VStack(alignment: .leading, spacing: Theme.Spacing.lg) {
+                    if viewMode == .diff, let runId = selectedRunId, let run = rehearsals.first(where: { $0.id == runId }) {
+                        diffSection(run)
+                    } else {
+                        originalSection
+                        if let runId = selectedRunId, let run = rehearsals.first(where: { $0.id == runId }) {
+                            Divider()
+                            rehearsalResultSection(run)
+                        }
+                    }
+                    metadataSection
+                }
+                .padding(Theme.Spacing.lg)
+            }
         }
+    }
+
+    private var viewModePicker: some View {
+        HStack {
+            Picker("View", selection: $viewMode) {
+                ForEach(ViewMode.allCases) { m in
+                    Text(m.rawValue).tag(m)
+                }
+            }
+            .pickerStyle(.segmented)
+            .frame(width: 320)
+            Spacer()
+        }
+        .padding(.horizontal, Theme.Spacing.lg)
+        .padding(.vertical, 6)
+        .background(Theme.Color.surface)
+    }
+
+    /// ADR-054 — Promptfoo row-per-turn diff matrix view
+    private func diffSection(_ run: RehearsalRun) -> some View {
+        let original = task.output ?? task.description
+        let replay = run.resultText ?? "(결과 없음)"
+        let diff = TextDiff.lineDiff(original: original, replay: replay, maxLines: 500)
+
+        return VStack(alignment: .leading, spacing: 8) {
+            HStack {
+                Text("Diff — \(diff.summary())")
+                    .font(Theme.Typography.body.weight(.semibold))
+                    .foregroundStyle(Theme.Color.text)
+                Spacer()
+                changeRatioBar(diff.changeRatio)
+            }
+            VStack(spacing: 1) {
+                ForEach(Array(diff.lines.enumerated()), id: \.offset) { _, line in
+                    DiffLineRow(line: line)
+                }
+            }
+            .padding(8)
+            .background(Theme.Color.surface)
+            .clipShape(RoundedRectangle(cornerRadius: Theme.Radius.sm))
+        }
+    }
+
+    private func changeRatioBar(_ ratio: Double) -> some View {
+        let percent = Int(ratio * 100)
+        let color: Color = percent < 20 ? .green : (percent < 50 ? .yellow : .orange)
+        return HStack(spacing: 4) {
+            Image(systemName: "chart.bar.fill")
+                .font(.system(size: 10))
+                .foregroundStyle(color)
+            Text("변화 \(percent)%")
+                .font(Theme.Typography.micro)
+                .foregroundStyle(color)
+        }
+        .padding(.horizontal, 6)
+        .padding(.vertical, 2)
+        .background(color.opacity(0.12))
+        .clipShape(RoundedRectangle(cornerRadius: 4))
     }
 
     private var originalSection: some View {
@@ -296,6 +371,80 @@ public struct RehearsalSheet: View {
                 .keyboardShortcut(.escape, modifiers: [])
         }
         .padding(Theme.Spacing.md)
+    }
+}
+
+/// ADR-054 — DiffLine row (line-by-line view).
+private struct DiffLineRow: View {
+    let line: TextDiff.DiffLine
+
+    var body: some View {
+        HStack(alignment: .top, spacing: 6) {
+            // line numbers (original / replay)
+            Text(originalLineLabel)
+                .font(Theme.Typography.monoSmall)
+                .foregroundStyle(Theme.Color.textTertiary)
+                .frame(width: 32, alignment: .trailing)
+            Text(replayLineLabel)
+                .font(Theme.Typography.monoSmall)
+                .foregroundStyle(Theme.Color.textTertiary)
+                .frame(width: 32, alignment: .trailing)
+            // marker
+            Text(marker)
+                .font(Theme.Typography.monoSmall.weight(.bold))
+                .foregroundStyle(markerColor)
+                .frame(width: 14, alignment: .center)
+            // line text
+            Text(line.text.isEmpty ? " " : line.text)
+                .font(Theme.Typography.monoSmall)
+                .foregroundStyle(textColor)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .textSelection(.enabled)
+        }
+        .padding(.horizontal, 4)
+        .padding(.vertical, 1)
+        .background(backgroundColor)
+        .clipShape(RoundedRectangle(cornerRadius: 2))
+    }
+
+    private var originalLineLabel: String {
+        line.originalLineNum.map(String.init) ?? "·"
+    }
+
+    private var replayLineLabel: String {
+        line.replayLineNum.map(String.init) ?? "·"
+    }
+
+    private var marker: String {
+        switch line.kind {
+        case .same: return " "
+        case .added: return "+"
+        case .removed: return "-"
+        }
+    }
+
+    private var markerColor: Color {
+        switch line.kind {
+        case .same: return Theme.Color.textTertiary
+        case .added: return .green
+        case .removed: return .red
+        }
+    }
+
+    private var textColor: Color {
+        switch line.kind {
+        case .same: return Theme.Color.textSecondary
+        case .added: return Theme.Color.text
+        case .removed: return Theme.Color.text
+        }
+    }
+
+    private var backgroundColor: Color {
+        switch line.kind {
+        case .same: return Color.clear
+        case .added: return Color.green.opacity(0.08)
+        case .removed: return Color.red.opacity(0.08)
+        }
     }
 }
 
