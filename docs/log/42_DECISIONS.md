@@ -1,6 +1,125 @@
 # Decisions Log (ADR-lite)
 
-> 최신: ADR-061 (SwiftUI Charts 8개 통합 dashboard + workspace cache + 자동 unmute + binding audit)
+> 최신: ADR-062 (Charts 확장 + Telegram Usage Dashboard 신규 — 사용자 요청)
+
+---
+
+## ADR-062 — Charts 확장 + Telegram Usage Dashboard (사용자 신규 요청)
+
+- **날짜**: 2026-05-03
+- **상태**: Accepted
+- **결정**: ADR-061 deferred 5 phase + 사용자 요청 Telegram 사용 통계 dashboard
+
+### 컨텍스트
+사용자: "다음 라운드 기능도 하나하나 명확하게 동작하도록 기획해서 구현해. 그리고 텔레그램과의 연동 기능을 얼마나 이용했고 얼마나 토큰이 소모됐는지 볼 수 있는 대시보드 기능을 추가해 줘"
+→ ADR-061 deferred 5 phase + 신규 Telegram dashboard 합쳐 6 phase
+
+### 결정
+
+#### Phase 1: 차트 시간 범위 picker (1h/6h/24h/7d)
+- ChartsDashboard에 `TimeRange` enum + `@State timeRange`
+- Picker (segmented) — 1시간 / 6시간 / 24시간 / 7일
+- `filteredCacheTrend` + `filteredRoutingDecisions` computed (cutoff 기반 filter)
+- 모든 cache/routing chart가 filtered 데이터 사용
+- 표시 데이터 수 안내 (cache N · routing M)
+
+#### Phase 2: workspace별 cache hit chart
+- `workspaceCacheChart` 신규 chart (8 → 9 charts)
+- workspaceId별 sample 그룹화 + ratio 계산
+- horizontal BarMark + color (green > 50% > yellow > 20% > orange)
+- annotation: "75% (1.2K tok)" 형식
+- workspaceNames 매핑 (UUID → name)
+
+#### Phase 3: chat binding audit log viewer sheet
+- `Sources/YuminaiUI/ChatBindingAuditLogSheet.swift` (720×540)
+- `AuditEntryRow`: action icon (bind=link.circle.fill / unbind=link.badge.plus / rebind=arrow.triangle.2.circlepath.circle.fill)
+- color: green / red / orange
+- chat ID + workspace name + user ID + timestamp 표시
+- empty state hint
+- ⌘K Palette 진입점
+
+#### Phase 4: routing learning history chart
+- `routingLearningHistoryChart` (8 → 10 charts)
+- 시간 순 정렬 후 applied/cancelled 누적 count 계산
+- 2개 LineMark (series별) — applied=green, cancelled=orange
+- `interpolationMethod(.stepEnd)` (누적 차트는 step 더 적절)
+- chart legend 표시
+
+#### Phase 5: chart PNG export
+- ChartsDashboard footer에 "PNG 내보내기" 버튼
+- `ImageRenderer` 활용 (SwiftUI snapshot)
+- scale 2.0 (Retina)
+- NSSavePanel로 사용자가 저장 위치 선택
+- yuminai-charts-{timestamp}.png
+
+#### Phase 6 (사용자 요청): Telegram Usage Dashboard
+- `Sources/YuminaiCore/TelegramUsageStore.swift` (actor + UserDefaults JSON):
+  - `chatStats: [String: ChatUsageStats]` — chat별 turnCount + cost + tokens + lastUsed
+  - `commandStats: [String: Int]` — 명령별 빈도
+  - `hourlyBuckets: [HourlyUsageBucket]` — 7일 hourly trend
+  - `recordTurnStart` / `recordTurnComplete` / `recordCommand`
+  - `clear()` API
+- AppModel:
+  - `telegramUsageStore` + `telegramUsageSnapshot`
+  - `recordTelegramTurnStart/Complete/Command` helpers
+  - `loadTelegramUsage` (bootstrap) + `clearTelegramUsage`
+  - `telegramChatIdToWorkspaceName()` UI label helper
+  - usage event handler에서 외부 turn delta cost 시 chat-specific record
+- YuminaiCommandRouter:
+  - `handleCommand` 첫 줄에 `recordTelegramCommand`
+  - `handlePlainText`에 `recordTelegramTurnStart`
+- `Sources/YuminaiUI/TelegramUsageDashboard.swift` (880×700, 6 charts):
+  1. **Summary cards** (4): 총 turn / 총 cost / 총 token / 총 명령
+  2. **Hourly Turn Count** (BarMark)
+  3. **Hourly Cost Trend** (LineMark + AreaMark, $YY axis)
+  4. **Chat Ranking** (horizontal BarMark Top 10)
+  5. **Command Frequency** (BarMark Top 10)
+  6. **Token Breakdown** (Stacked BarMark, input vs output)
+- ⌘K Palette 진입점
+
+### 적용 결과
+```
+swift build              → Build complete! (23.36s)
+swift test               → 442/442 passed (92 suites, +6 new)
+새 파일                  → 3 (TelegramUsageStore.swift, TelegramUsageDashboard.swift, ChatBindingAuditLogSheet.swift)
+새 테스트                → 1 (TelegramUsageStoreTests.swift, 6 tests)
+수정 파일                → 4 (AppModel, YuminaiCommandRouter, ChartsDashboard, RootView)
+```
+
+### Charts API 사용 종류 (이번 + 이전 누적)
+
+| API | ADR-061 | ADR-062 |
+|-----|---------|---------|
+| LineMark | ✓ | ✓ (routing history step) |
+| AreaMark | ✓ | ✓ (telegram cost) |
+| BarMark | ✓ | ✓ (telegram turns/commands) |
+| BarMark stacked (position:by) | ✓ | ✓ (telegram tokens) |
+| BarMark horizontal | ✓ | ✓ (telegram chat ranking) |
+| SectorMark (donut) | ✓ |  |
+| RectangleMark | ✓ |  |
+| interpolationMethod(.catmullRom) | ✓ |  |
+| interpolationMethod(.stepEnd) |  | ✓ (누적 line) |
+| chartXScale(domain:) |  | ✓ (workspace cache 0~1) |
+| chartYScale(domain:) | ✓ |  |
+| chartLegend | ✓ | ✓ |
+| chartXAxis(.hidden) | ✓ |  |
+| annotation | ✓ | ✓ |
+
+### 트레이드오프
+
+- **시간 범위 picker는 client-side filter**: 데이터 자체는 7일 cap. 더 긴 범위는 향후 별도.
+- **PNG export는 ImageRenderer 사용**: 모든 chart를 한 PNG로 — 큰 이미지 (920×3000+). 개별 chart 별도 export는 향후.
+- **TelegramUsageStore disk persist**: UserDefaults JSON. SwiftData 도입 시 별도 entity로 마이그레이션 가능.
+- **chat-specific cost 누적은 outer scope에서 chatId 캡처**: handle event는 chatId 모름 → preferences.telegramChatId 사용 (default chat). Multi-chat에서 정확하지 않을 수 있음 — 향후 turn별 chatId 추적 필요.
+- **command record는 모든 명령**: /help, /list 같은 가벼운 명령도 카운트. 무거운 명령만 보고 싶으면 filter.
+
+### 향후 (ADR-063 후보)
+- 개별 chart PNG export (각 chart 옆 ⤓ 버튼)
+- TelegramUsageStore에 daily aggregation (hourly bucket 병합)
+- workspace별 chat usage 분리
+- TelegramUsageDashboard에 시간 범위 picker
+- chart export to CSV
+- Chat usage forecast (간단한 trend 예측)
 
 ---
 

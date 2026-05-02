@@ -236,6 +236,10 @@ public final class AppModel {
     public var showRoutingLog: Bool = false
     /// **ADR-061 Phase 1** — SwiftUI Charts dashboard sheet
     public var showChartsDashboard: Bool = false
+    /// **ADR-062 Phase 6** — Telegram usage dashboard sheet
+    public var showTelegramUsageDashboard: Bool = false
+    /// **ADR-062 Phase 3** — Chat binding audit log viewer sheet
+    public var showChatBindingAuditLog: Bool = false
     /// ADR-052 — Walk-through rehearsal sheet 대상 task id (nil이면 닫힘)
     public var rehearsalTaskId: UUID?
     public var selectedFilePaths: Set<String> {
@@ -495,6 +499,8 @@ public final class AppModel {
         routingLearningSnapshot = await routingLearningStore.snapshot()
         // ADR-060 Phase 1 — workspace daily cost 복원 (앱 재시작 보존)
         await loadPersistedDailyCosts()
+        // ADR-062 Phase 6 — Telegram usage snapshot 로드
+        await loadTelegramUsage()
     }
 
     // MARK: - Obsidian Vault
@@ -1177,6 +1183,30 @@ public final class AppModel {
             shortcut: nil,
             perform: { [weak self] in
                 self?.presentExclusiveSheet { $0.showChartsDashboard = true }
+            }
+        ))
+        // ADR-062 Phase 6 — Telegram Usage Dashboard
+        actions.append(PaletteAction(
+            actionId: "sheet.telegram.usage",
+            category: "Sheet",
+            title: "Telegram 사용 통계",
+            subtitle: "외부 turn / 토큰 / chat / 명령 빈도 시각화",
+            icon: "paperplane.circle.fill",
+            shortcut: nil,
+            perform: { [weak self] in
+                self?.presentExclusiveSheet { $0.showTelegramUsageDashboard = true }
+            }
+        ))
+        // ADR-062 Phase 3 — Chat Binding Audit Log Viewer
+        actions.append(PaletteAction(
+            actionId: "sheet.chat.audit",
+            category: "Sheet",
+            title: "Chat Binding Audit Log",
+            subtitle: "bind/unbind/rebind 이력 회고",
+            icon: "doc.text.magnifyingglass",
+            shortcut: nil,
+            perform: { [weak self] in
+                self?.presentExclusiveSheet { $0.showChatBindingAuditLog = true }
             }
         ))
 
@@ -2559,11 +2589,27 @@ public final class AppModel {
                 }
             } else if isExternalTurn {
                 // ADR-055 HIGH 4 — 외부 turn cost를 정확히 추적 (delta only).
-                //   이전 버그: `currentSessionUsage.costUSD` 전체를 매번 누적 → N배 over-counting
-                //   수정: turn 시작 시 cost snapshot → 종료 시 차이만 누적
                 let delta = currentSessionUsage.costUSD - externalTurnStartCostSnapshot
                 if delta > 0 {
                     externalTurnTotalCostUSD += delta
+                }
+                // ADR-062 Phase 6 — chat-specific 통계도 record
+                if let bridge = sessionBridge,
+                   let bound = preferences.telegramBoundWorkspaceId,
+                   selectedWorkspaceId == bound {
+                    let chatId = preferences.telegramChatId ?? 0
+                    let store = telegramUsageStore
+                    let inputTok = currentSessionUsage.inputTokens
+                    let outputTok = currentSessionUsage.outputTokens
+                    Task { @MainActor in
+                        await self.recordTelegramTurnComplete(
+                            chatId: chatId,
+                            costUSD: delta,
+                            inputTokens: inputTok,
+                            outputTokens: outputTok
+                        )
+                    }
+                    _ = bridge  // suppress warning
                 }
                 externalTurnStartCostSnapshot = currentSessionUsage.costUSD
                 isExternalTurn = false  // turn 종료
@@ -3036,6 +3082,8 @@ public final class AppModel {
         showRoutingLog = false
         rehearsalTaskId = nil
         showChartsDashboard = false
+        showTelegramUsageDashboard = false
+        showChatBindingAuditLog = false
     }
 
     /// 새 sheet/alert을 열기 전에 다른 sheet 모두 닫고 setter 실행.
@@ -3559,6 +3607,12 @@ public final class AppModel {
     public let chatBindingAuditLog: ChatBindingAuditLog = ChatBindingAuditLog()
     /// **ADR-061 Phase 4** — UI binding용 cache
     public var chatBindingAuditEntries: [ChatBindingAuditEntry] = []
+    /// **ADR-062 Phase 6** — Telegram 사용 통계 store (사용자 신규 요청).
+    public let telegramUsageStore: TelegramUsageStore = TelegramUsageStore()
+    /// UI binding용 snapshot
+    public var telegramUsageSnapshot: TelegramUsageStore.Snapshot = TelegramUsageStore.Snapshot(
+        chatStats: [:], commandStats: [:], hourlyBuckets: []
+    )
     /// **ADR-056 Phase 3** — 컨텍스트 70% 자동 push 알림 cap (하루 1회).
     /// 마지막 push 일자 — 같은 날에 두 번 push 안 함.
     public var lastContextWarnDate: Date?
@@ -3731,6 +3785,50 @@ public final class AppModel {
         // ADR-055 HIGH 4 — turn 시작 시 cost snapshot
         externalTurnStartCostSnapshot = currentSessionUsage.costUSD
         isExternalTurn = true
+    }
+
+    /// **ADR-062 Phase 6** — Telegram turn 시작/종료 시 usage store 기록 helper.
+    /// caller: YuminaiCommandRouter.handlePlainText (turn 시작 시 chatId 알 수 있음).
+    public func recordTelegramTurnStart(chatId: Int64) async {
+        await telegramUsageStore.recordTurnStart(chatId: chatId)
+        telegramUsageSnapshot = await telegramUsageStore.snapshot()
+    }
+
+    public func recordTelegramTurnComplete(chatId: Int64, costUSD: Double, inputTokens: Int, outputTokens: Int) async {
+        await telegramUsageStore.recordTurnComplete(
+            chatId: chatId,
+            costUSD: costUSD,
+            inputTokens: inputTokens,
+            outputTokens: outputTokens
+        )
+        telegramUsageSnapshot = await telegramUsageStore.snapshot()
+    }
+
+    public func recordTelegramCommand(_ command: String) async {
+        await telegramUsageStore.recordCommand(command)
+        telegramUsageSnapshot = await telegramUsageStore.snapshot()
+    }
+
+    /// bootstrap에서 호출.
+    public func loadTelegramUsage() async {
+        telegramUsageSnapshot = await telegramUsageStore.snapshot()
+    }
+
+    /// **ADR-062 Phase 6** — Telegram 통계 초기화.
+    public func clearTelegramUsage() async {
+        await telegramUsageStore.clear()
+        telegramUsageSnapshot = await telegramUsageStore.snapshot()
+    }
+
+    /// **ADR-062 Phase 6** — chatId → workspace name (UI 라벨용).
+    public func telegramChatIdToWorkspaceName() -> [String: String] {
+        var result: [String: String] = [:]
+        for (chatKey, wsId) in preferences.telegramChatBindings {
+            if let ws = workspaces.first(where: { $0.id == wsId }) {
+                result[chatKey] = ws.name
+            }
+        }
+        return result
     }
 
     /// /status 명령에 응답할 텍스트 생성. ADR-045 R2.H5 — 외부 turn 비용 + context % 가시화.

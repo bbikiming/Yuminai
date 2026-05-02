@@ -80,6 +80,10 @@ public final class YuminaiCommandRouter: TelegramCommandRouter, @unchecked Senda
         let arg = split.count > 1
             ? String(split[1]).trimmingCharacters(in: .whitespacesAndNewlines)
             : ""
+        // ADR-062 Phase 6 — 명령 사용 통계 record
+        if let model = appModel {
+            await model.recordTelegramCommand(cmd)
+        }
 
         switch cmd {
         case "/bind":
@@ -634,6 +638,8 @@ public final class YuminaiCommandRouter: TelegramCommandRouter, @unchecked Senda
             await model.setBridgeRequestChatId(requestChatId)
             // ADR-045 R2.H5 — 외부 turn 카운터 증가
             await model.incrementExternalTurnCount()
+            // ADR-062 Phase 6 — chat별 turn 카운트 record
+            await model.recordTelegramTurnStart(chatId: requestChatId)
             // ADR-046 — 외부 turn은 plan-mode 강제 (telegramRemoteRequiresPlan=true 시).
             // 1 turn 만 적용하고 자동 복원 — 사용자가 plan 검토 후 후속 turn으로 승인.
             let restoreSettings = await model.applyRemotePlanModeIfNeeded()

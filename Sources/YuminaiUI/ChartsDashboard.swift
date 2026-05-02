@@ -1,5 +1,6 @@
 import SwiftUI
 import Charts
+import AppKit
 import YuminaiCore
 
 /// **ADR-061 Phase 1** — 통합 SwiftUI Charts dashboard.
@@ -22,7 +23,38 @@ public struct ChartsDashboard: View {
     public let routingDecisions: [RoutingDecisionRecord]
     public let workspaceCosts: [(workspaceName: String, costUSD: Double)]
     public let currentSessionUsage: UsageStats
+    /// **ADR-062 Phase 2** — workspace ID → name (workspace별 cache hit chart label)
+    public let workspaceNames: [UUID: String]
     public let onClose: () -> Void
+
+    /// **ADR-062 Phase 1** — 시간 범위 filter
+    @State private var timeRange: TimeRange = .last24h
+
+    public enum TimeRange: String, CaseIterable, Identifiable {
+        case last1h = "1시간"
+        case last6h = "6시간"
+        case last24h = "24시간"
+        case last7d = "7일"
+        public var id: String { rawValue }
+        public var hours: Int {
+            switch self {
+            case .last1h: return 1
+            case .last6h: return 6
+            case .last24h: return 24
+            case .last7d: return 7 * 24
+            }
+        }
+    }
+
+    private var filteredCacheTrend: [CacheHitSample] {
+        let cutoff = Date().addingTimeInterval(-Double(timeRange.hours) * 3600)
+        return cacheTrend.filter { $0.timestamp >= cutoff }
+    }
+
+    private var filteredRoutingDecisions: [RoutingDecisionRecord] {
+        let cutoff = Date().addingTimeInterval(-Double(timeRange.hours) * 3600)
+        return routingDecisions.filter { $0.timestamp >= cutoff }
+    }
 
     public init(
         costSnapshot: CostTracker.Snapshot,
@@ -30,6 +62,7 @@ public struct ChartsDashboard: View {
         routingDecisions: [RoutingDecisionRecord],
         workspaceCosts: [(workspaceName: String, costUSD: Double)],
         currentSessionUsage: UsageStats,
+        workspaceNames: [UUID: String] = [:],
         onClose: @escaping () -> Void
     ) {
         self.costSnapshot = costSnapshot
@@ -37,6 +70,7 @@ public struct ChartsDashboard: View {
         self.routingDecisions = routingDecisions
         self.workspaceCosts = workspaceCosts
         self.currentSessionUsage = currentSessionUsage
+        self.workspaceNames = workspaceNames
         self.onClose = onClose
     }
 
@@ -44,13 +78,17 @@ public struct ChartsDashboard: View {
         VStack(spacing: 0) {
             header
             Divider()
+            timeRangePicker
+            Divider()
             ScrollView {
                 VStack(alignment: .leading, spacing: Theme.Spacing.lg) {
                     cacheHitTrendChart
                     costBreakdownChart
                     cacheVolumeStackedChart
+                    workspaceCacheChart  // ADR-062 Phase 2
                     routingOutcomeDonut
                     routingTimelineHeatmap
+                    routingLearningHistoryChart  // ADR-062 Phase 4
                     workspaceCostChart
                     tokenUsageChart
                     cacheCostSavingsChart
@@ -62,6 +100,27 @@ public struct ChartsDashboard: View {
         }
         .frame(width: 920, height: 700)
         .background(Theme.Color.bg)
+    }
+
+    /// **ADR-062 Phase 1** — 시간 범위 picker.
+    private var timeRangePicker: some View {
+        HStack {
+            Text("시간 범위:")
+                .font(Theme.Typography.small)
+                .foregroundStyle(Theme.Color.textSecondary)
+            Picker("", selection: $timeRange) {
+                ForEach(TimeRange.allCases) { range in
+                    Text(range.rawValue).tag(range)
+                }
+            }
+            .pickerStyle(.segmented)
+            .frame(width: 320)
+            Spacer()
+            Text("표시 데이터: cache \(filteredCacheTrend.count) · routing \(filteredRoutingDecisions.count)")
+                .font(Theme.Typography.micro)
+                .foregroundStyle(Theme.Color.textTertiary)
+        }
+        .padding(Theme.Spacing.md)
     }
 
     // MARK: - Header / Footer
@@ -86,6 +145,10 @@ public struct ChartsDashboard: View {
 
     private var footer: some View {
         HStack {
+            // ADR-062 Phase 5 — PNG export 버튼
+            FlatButton("PNG 내보내기", icon: "square.and.arrow.up", variant: .secondary) {
+                exportChartsToPNG()
+            }
             Spacer()
             FlatButton("닫기", variant: .primary) { onClose() }
                 .keyboardShortcut(.escape, modifiers: [])
@@ -93,14 +156,48 @@ public struct ChartsDashboard: View {
         .padding(Theme.Spacing.md)
     }
 
+    /// **ADR-062 Phase 5** — SwiftUI ImageRenderer로 chart 영역 PNG 저장.
+    @MainActor
+    private func exportChartsToPNG() {
+        // 모든 chart를 한 번에 렌더링 (ScrollView 안의 contents)
+        let snapshotView = VStack(alignment: .leading, spacing: Theme.Spacing.lg) {
+            cacheHitTrendChart
+            costBreakdownChart
+            workspaceCacheChart
+            routingOutcomeDonut
+            routingLearningHistoryChart
+            workspaceCostChart
+            tokenUsageChart
+            cacheCostSavingsChart
+        }
+        .padding(Theme.Spacing.lg)
+        .frame(width: 880)
+        .background(Theme.Color.bg)
+
+        let renderer = ImageRenderer(content: snapshotView)
+        renderer.scale = 2.0  // Retina
+        guard let nsImage = renderer.nsImage,
+              let tiff = nsImage.tiffRepresentation,
+              let bitmap = NSBitmapImageRep(data: tiff),
+              let png = bitmap.representation(using: .png, properties: [:])
+        else { return }
+
+        let panel = NSSavePanel()
+        panel.allowedContentTypes = [.png]
+        panel.nameFieldStringValue = "yuminai-charts-\(Date().timeIntervalSince1970).png"
+        if panel.runModal() == .OK, let url = panel.url {
+            try? png.write(to: url)
+        }
+    }
+
     // MARK: - 1. Cache Hit Trend (LineMark + AreaMark)
 
     private var cacheHitTrendChart: some View {
-        chartSection(title: "1. Cache Hit Ratio (시계열, hourly)", subtitle: "ADR-060 Phase 4 trend") {
-            if cacheTrend.isEmpty {
+        chartSection(title: "1. Cache Hit Ratio (시계열, hourly)", subtitle: "ADR-060 Phase 4 trend · 시간 범위 filter 적용") {
+            if filteredCacheTrend.isEmpty {
                 emptyHint("아직 cache hit 데이터 없음 — /decompose 또는 rehearsal 실행하면 누적")
             } else {
-                Chart(cacheTrend) { sample in
+                Chart(filteredCacheTrend) { sample in
                     LineMark(
                         x: .value("Time", sample.timestamp),
                         y: .value("Hit Ratio", sample.hitRatio)
@@ -194,7 +291,59 @@ public struct ChartsDashboard: View {
         }
     }
 
-    // MARK: - 4. Routing Outcome Donut
+    // MARK: - ADR-062 Phase 2: Workspace Cache Hit Chart
+
+    @ViewBuilder
+    private var workspaceCacheChart: some View {
+        chartSection(title: "4. Workspace별 Cache Hit Ratio (ADR-062 Phase 2)", subtitle: "어떤 프로젝트에서 cache 효과가 좋은지") {
+            // workspaceId별 sample 그룹화 + ratio 계산
+            let grouped = Dictionary(grouping: filteredCacheTrend.compactMap { sample -> (UUID, CacheHitSample)? in
+                guard let wsId = sample.workspaceId else { return nil }
+                return (wsId, sample)
+            }, by: { $0.0 })
+            let wsRatios: [(name: String, ratio: Double, totalRead: Int)] = grouped.compactMap { (wsId, samples) in
+                let totalRead = samples.reduce(0) { $0 + $1.1.readTokens }
+                let totalUncached = samples.reduce(0) { $0 + $1.1.uncachedInputTokens }
+                let total = totalRead + totalUncached
+                guard total > 0 else { return nil }
+                let name = workspaceNames[wsId] ?? wsId.uuidString.prefix(8) + "…"
+                let ratio = Double(totalRead) / Double(total)
+                return (name: String(name), ratio: ratio, totalRead: totalRead)
+            }.sorted { $0.ratio > $1.ratio }
+            if wsRatios.isEmpty {
+                emptyHint("workspace cache 데이터 없음 (워크스페이스에서 격리 호출 시 누적)")
+            } else {
+                Chart {
+                    ForEach(Array(wsRatios.enumerated()), id: \.offset) { _, item in
+                        BarMark(
+                            x: .value("Ratio", item.ratio),
+                            y: .value("Workspace", item.name)
+                        )
+                        .foregroundStyle(item.ratio > 0.5 ? Color.green : (item.ratio > 0.2 ? Color.yellow : Color.orange))
+                        .annotation(position: .trailing) {
+                            Text("\(Int(item.ratio * 100))% (\(item.totalRead.formattedShort) tok)")
+                                .font(.caption2)
+                                .foregroundStyle(Theme.Color.textSecondary)
+                        }
+                    }
+                }
+                .chartXScale(domain: 0...1)
+                .chartXAxis {
+                    AxisMarks(position: .bottom) { value in
+                        AxisValueLabel {
+                            if let v = value.as(Double.self) {
+                                Text("\(Int(v * 100))%")
+                                    .font(.caption2)
+                            }
+                        }
+                    }
+                }
+                .frame(height: CGFloat(wsRatios.count * 32 + 40))
+            }
+        }
+    }
+
+    // MARK: - 5. Routing Outcome Donut
 
     @ViewBuilder
     private var routingOutcomeDonut: some View {
@@ -257,6 +406,46 @@ public struct ChartsDashboard: View {
                 }
                 .chartXAxis(.hidden)
                 .frame(height: 120)
+            }
+        }
+    }
+
+    // MARK: - ADR-062 Phase 4: Routing Learning History Chart
+
+    private var routingLearningHistoryChart: some View {
+        chartSection(title: "7. Routing 결정 시간 추이 (ADR-062 Phase 4)", subtitle: "applied vs cancelled 시간순 누적 line chart") {
+            if filteredRoutingDecisions.isEmpty {
+                emptyHint("routing 기록 없음")
+            } else {
+                // 시간 순으로 정렬 (오래된 → 최근), 누적 카운트 계산
+                let sorted = filteredRoutingDecisions.sorted { $0.timestamp < $1.timestamp }
+                var appliedCum = 0
+                var cancelCum = 0
+                let timelineData: [(time: Date, applied: Int, cancelled: Int)] = sorted.map { record in
+                    if record.outcome == .applied { appliedCum += 1 }
+                    if record.outcome == .cancelled { cancelCum += 1 }
+                    return (time: record.timestamp, applied: appliedCum, cancelled: cancelCum)
+                }
+                Chart {
+                    ForEach(Array(timelineData.enumerated()), id: \.offset) { _, point in
+                        LineMark(
+                            x: .value("Time", point.time),
+                            y: .value("Cumulative", point.applied),
+                            series: .value("Type", "Applied")
+                        )
+                        .foregroundStyle(Color.green)
+                        .interpolationMethod(.stepEnd)
+                        LineMark(
+                            x: .value("Time", point.time),
+                            y: .value("Cumulative", point.cancelled),
+                            series: .value("Type", "Cancelled")
+                        )
+                        .foregroundStyle(Color.orange)
+                        .interpolationMethod(.stepEnd)
+                    }
+                }
+                .chartLegend(position: .top)
+                .frame(height: 180)
             }
         }
     }

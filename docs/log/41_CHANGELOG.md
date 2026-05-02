@@ -4,6 +4,64 @@
 
 ## [Unreleased] — 2026-05-03
 
+### Added — ADR-062 Charts 확장 + Telegram Usage Dashboard (사용자 신규 요청)
+
+**Phase 6 (사용자 요청) — Telegram Usage Dashboard**
+- Sources/YuminaiCore/TelegramUsageStore.swift (actor + UserDefaults):
+  - chatStats: chat별 turn/cost/tokens/lastUsed
+  - commandStats: 명령별 빈도
+  - hourlyBuckets: 7일 hourly trend
+  - recordTurnStart / recordTurnComplete / recordCommand / clear
+- Sources/YuminaiUI/TelegramUsageDashboard.swift (880×700, 6 charts):
+  1. Summary cards (4): 총 turn/cost/token/명령
+  2. Hourly Turn Count (BarMark)
+  3. Hourly Cost Trend (LineMark + AreaMark)
+  4. Chat Ranking (horizontal BarMark Top 10)
+  5. Command Frequency (BarMark Top 10)
+  6. Token Breakdown (Stacked BarMark)
+- AppModel: store 통합, helpers, usage event 시 chat-specific cost record
+- YuminaiCommandRouter: 명령/turn record 통합
+- ⌘K Palette: sheet.telegram.usage 진입점
+
+**Phase 1 — 차트 시간 범위 picker**
+- ChartsDashboard.TimeRange enum (1h/6h/24h/7d)
+- Picker (segmented)
+- filteredCacheTrend + filteredRoutingDecisions
+
+**Phase 2 — workspace별 cache hit chart**
+- workspaceCacheChart (workspaceId별 그룹화)
+- color by ratio (green > 50% > yellow > 20% > orange)
+- horizontal BarMark + annotation
+
+**Phase 3 — chat binding audit log viewer**
+- Sources/YuminaiUI/ChatBindingAuditLogSheet.swift (720×540)
+- AuditEntryRow with action icon + color
+- ⌘K Palette: sheet.chat.audit
+
+**Phase 4 — routing learning history chart**
+- routingLearningHistoryChart (applied vs cancelled 누적)
+- 2 LineMark series + interpolationMethod(.stepEnd)
+
+**Phase 5 — chart PNG export**
+- ChartsDashboard footer 'PNG 내보내기' 버튼
+- ImageRenderer (scale 2.0 Retina)
+- NSSavePanel
+
+### Tests added (+6)
+- TelegramUsageStoreTests: turnStart, turnComplete, command freq, hourly bucket, clear, prefix auto
+
+### 빌드/테스트 결과
+- swift build → Build complete! (23.36s)
+- swift test → 442/442 passed (92 suites)
+
+### 새 파일
+- TelegramUsageStore.swift, TelegramUsageDashboard.swift, ChatBindingAuditLogSheet.swift, TelegramUsageStoreTests.swift
+
+### 수정 파일
+- AppModel, YuminaiCommandRouter, ChartsDashboard, RootView
+
+---
+
 ### Added — ADR-061 SwiftUI Charts 8개 통합 dashboard + 4 phases
 
 **Phase 1 — SwiftUI Charts 통합 Dashboard (8 charts)**

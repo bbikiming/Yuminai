@@ -209,9 +209,30 @@ struct RootView: View {
                     return (workspaceName: ws.name, costUSD: cost)
                 },
                 currentSessionUsage: appModel.currentSessionUsage,
+                workspaceNames: Dictionary(uniqueKeysWithValues: appModel.workspaces.map { ($0.id, $0.name) }),
                 onClose: { appModel.showChartsDashboard = false }
             )
             .task { await appModel.refreshCacheTrendSnapshot() }
+        }
+        // ADR-062 Phase 6 — Telegram Usage Dashboard (사용자 신규 요청)
+        .sheet(isPresented: $bindable.showTelegramUsageDashboard) {
+            TelegramUsageDashboard(
+                snapshot: appModel.telegramUsageSnapshot,
+                chatIdToWorkspaceName: appModel.telegramChatIdToWorkspaceName(),
+                onClose: { appModel.showTelegramUsageDashboard = false },
+                onClearStats: { Task { await appModel.clearTelegramUsage() } }
+            )
+            .task { await appModel.loadTelegramUsage() }
+        }
+        // ADR-062 Phase 3 — Chat Binding Audit Log Viewer
+        .sheet(isPresented: $bindable.showChatBindingAuditLog) {
+            ChatBindingAuditLogSheet(
+                entries: appModel.chatBindingAuditEntries,
+                onClose: { appModel.showChatBindingAuditLog = false }
+            )
+            .task {
+                appModel.chatBindingAuditEntries = await appModel.chatBindingAuditLog.recent(limit: 100)
+            }
         }
         // ADR-052 — Walk-through rehearsal sheet (다른 모델로 재실행)
         .sheet(item: rehearsalBinding) { task in
