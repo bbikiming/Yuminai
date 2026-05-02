@@ -41,11 +41,16 @@ public actor TelegramUsageStore {
     // MARK: - Recording
 
     /// turn 시작 시 호출 — chat별 + hourly bucket 카운트.
-    public func recordTurnStart(chatId: Int64) {
+    /// **ADR-063 Phase 5** — workspaceId 추가 (chat별 workspace 사용 분포).
+    public func recordTurnStart(chatId: Int64, workspaceId: UUID? = nil) {
         let key = String(chatId)
         var stats = chatStats[key] ?? ChatUsageStats(chatId: chatId)
         stats.turnCount += 1
         stats.lastUsedAt = Date()
+        // ADR-063 Phase 5 — workspace 사용 분포 누적
+        if let wsId = workspaceId {
+            stats.workspaceUsageCounts[wsId.uuidString, default: 0] += 1
+        }
         chatStats[key] = stats
         // hourly bucket
         upsertHourlyBucket { $0.turnCount += 1 }
@@ -72,6 +77,25 @@ public actor TelegramUsageStore {
             bucket.outputTokens += outputTokens
         }
         persist()
+    }
+
+    /// **ADR-063 Phase 2** — hourly buckets를 daily로 병합.
+    /// 7일 hourly 데이터를 일별 1 record로 묶음 (long-term trend).
+    public func dailyAggregation() -> [DailyUsageBucket] {
+        let cal = Calendar.current
+        let grouped = Dictionary(grouping: hourlyBuckets) { sample in
+            cal.startOfDay(for: sample.timestamp)
+        }
+        return grouped.map { (day, samples) in
+            var daily = DailyUsageBucket(date: day)
+            for s in samples {
+                daily.turnCount += s.turnCount
+                daily.costUSD += s.costUSD
+                daily.inputTokens += s.inputTokens
+                daily.outputTokens += s.outputTokens
+            }
+            return daily
+        }.sorted { $0.date < $1.date }
     }
 
     /// 명령 실행 시 호출 (router에서).
@@ -144,9 +168,26 @@ public struct ChatUsageStats: Codable, Sendable, Hashable, Identifiable {
     public var totalInputTokens: Int = 0
     public var totalOutputTokens: Int = 0
     public var lastUsedAt: Date = Date()
+    /// **ADR-063 Phase 5** — workspace UUID(string) → 해당 chat이 그 workspace 사용한 turn 수.
+    /// 어떤 chat이 어느 workspace를 가장 많이 사용했는지 분석용.
+    public var workspaceUsageCounts: [String: Int] = [:]
 
     public init(chatId: Int64) {
         self.chatId = chatId
+    }
+}
+
+/// **ADR-063 Phase 2** — 일 단위 사용량 (hourly buckets aggregation).
+public struct DailyUsageBucket: Codable, Sendable, Hashable, Identifiable {
+    public var id: Date { date }
+    public let date: Date
+    public var turnCount: Int = 0
+    public var costUSD: Double = 0
+    public var inputTokens: Int = 0
+    public var outputTokens: Int = 0
+
+    public init(date: Date) {
+        self.date = date
     }
 }
 

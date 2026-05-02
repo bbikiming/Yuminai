@@ -1,5 +1,6 @@
 import SwiftUI
 import Charts
+import AppKit
 import YuminaiCore
 
 /// **ADR-062 Phase 6** — 사용자 신규 요청.
@@ -13,21 +14,71 @@ import YuminaiCore
 /// 4. chat별 사용량 (horizontal BarMark + ranking)
 /// 5. 명령별 사용 빈도 (BarMark Top 10)
 /// 6. 토큰 분리 (input vs output, BarMark stacked)
+/// **ADR-063 Phase 5** — workspace × chat usage chart datum.
+private struct WorkspaceUsageDatum: Identifiable, Hashable {
+    let id = UUID()
+    let chatLabel: String
+    let workspaceName: String
+    let count: Int
+}
+
 public struct TelegramUsageDashboard: View {
     public let snapshot: TelegramUsageStore.Snapshot
+    public let dailyBuckets: [DailyUsageBucket]
     /// chat ID → workspace name (UI 라벨 보강용)
     public let chatIdToWorkspaceName: [String: String]
+    /// **ADR-063 Phase 5** — workspace UUID(string) → name
+    public let workspaceIdToName: [String: String]
     public let onClose: () -> Void
     public let onClearStats: () -> Void
 
+    /// **ADR-063 Phase 3** — 시간 범위 filter
+    @State private var timeRange: TimeRange = .last7d
+    /// **ADR-063 Phase 2** — daily vs hourly view 토글
+    @State private var aggregationMode: AggregationMode = .hourly
+
+    public enum TimeRange: String, CaseIterable, Identifiable {
+        case last24h = "24h"
+        case last3d = "3일"
+        case last7d = "7일"
+        public var id: String { rawValue }
+        public var hours: Int {
+            switch self {
+            case .last24h: return 24
+            case .last3d: return 72
+            case .last7d: return 168
+            }
+        }
+    }
+
+    public enum AggregationMode: String, CaseIterable, Identifiable {
+        case hourly = "시간별"
+        case daily = "일별"
+        public var id: String { rawValue }
+    }
+
+    private var filteredHourly: [HourlyUsageBucket] {
+        let cutoff = Date().addingTimeInterval(-Double(timeRange.hours) * 3600)
+        return snapshot.hourlyBuckets.filter { $0.timestamp >= cutoff }
+    }
+
+    private var filteredDaily: [DailyUsageBucket] {
+        let cutoff = Date().addingTimeInterval(-Double(timeRange.hours) * 3600)
+        return dailyBuckets.filter { $0.date >= cutoff }
+    }
+
     public init(
         snapshot: TelegramUsageStore.Snapshot,
+        dailyBuckets: [DailyUsageBucket] = [],
         chatIdToWorkspaceName: [String: String],
+        workspaceIdToName: [String: String] = [:],
         onClose: @escaping () -> Void,
         onClearStats: @escaping () -> Void
     ) {
         self.snapshot = snapshot
+        self.dailyBuckets = dailyBuckets
         self.chatIdToWorkspaceName = chatIdToWorkspaceName
+        self.workspaceIdToName = workspaceIdToName
         self.onClose = onClose
         self.onClearStats = onClearStats
     }
@@ -35,6 +86,8 @@ public struct TelegramUsageDashboard: View {
     public var body: some View {
         VStack(spacing: 0) {
             header
+            Divider()
+            controlsBar
             Divider()
             ScrollView {
                 VStack(alignment: .leading, spacing: Theme.Spacing.lg) {
@@ -44,14 +97,55 @@ public struct TelegramUsageDashboard: View {
                     chatRankingChart
                     commandFrequencyChart
                     tokenBreakdownChart
+                    workspaceUsagePerChatChart  // ADR-063 Phase 5
                 }
                 .padding(Theme.Spacing.lg)
             }
             Divider()
             footer
         }
-        .frame(width: 880, height: 700)
+        .frame(width: 880, height: 720)
         .background(Theme.Color.bg)
+    }
+
+    /// **ADR-063 Phase 3** — 시간 범위 + aggregation mode picker.
+    private var controlsBar: some View {
+        HStack(spacing: 16) {
+            HStack(spacing: 6) {
+                Text("기간:")
+                    .font(Theme.Typography.small)
+                    .foregroundStyle(Theme.Color.textSecondary)
+                Picker("", selection: $timeRange) {
+                    ForEach(TimeRange.allCases) { r in Text(r.rawValue).tag(r) }
+                }
+                .pickerStyle(.segmented)
+                .frame(width: 200)
+            }
+            HStack(spacing: 6) {
+                Text("집계:")
+                    .font(Theme.Typography.small)
+                    .foregroundStyle(Theme.Color.textSecondary)
+                Picker("", selection: $aggregationMode) {
+                    ForEach(AggregationMode.allCases) { m in Text(m.rawValue).tag(m) }
+                }
+                .pickerStyle(.segmented)
+                .frame(width: 140)
+            }
+            Spacer()
+            // ADR-063 Phase 4 — CSV export
+            Menu {
+                Button("Chat Stats → CSV") { exportCSV(.chatStats) }
+                Button("Command Stats → CSV") { exportCSV(.commandStats) }
+                Button("Hourly Buckets → CSV") { exportCSV(.hourly) }
+                Button("Daily Buckets → CSV") { exportCSV(.daily) }
+            } label: {
+                Label("CSV 내보내기", systemImage: "tablecells")
+                    .font(Theme.Typography.small)
+            }
+            .menuStyle(.borderlessButton)
+            .frame(width: 140)
+        }
+        .padding(Theme.Spacing.md)
     }
 
     // MARK: - Header / Footer
@@ -142,53 +236,60 @@ public struct TelegramUsageDashboard: View {
 
     // MARK: - 2. Hourly Turn Count (BarMark)
 
+    @ViewBuilder
     private var hourlyTurnsChart: some View {
-        chartSection(title: "시간별 외부 turn 횟수", subtitle: "최근 7일, hourly bucket") {
-            if snapshot.hourlyBuckets.isEmpty {
-                emptyHint("Telegram 외부 turn 사용 시작하면 누적")
-            } else {
-                Chart(snapshot.hourlyBuckets) { bucket in
-                    BarMark(
-                        x: .value("Time", bucket.timestamp),
-                        y: .value("Turns", bucket.turnCount)
-                    )
-                    .foregroundStyle(Color.blue.opacity(0.7))
+        let title = aggregationMode == .hourly ? "시간별 외부 turn 횟수" : "일별 외부 turn 횟수"
+        chartSection(title: title, subtitle: "ADR-063 Phase 2/3 — \(timeRange.rawValue) range, \(aggregationMode.rawValue) 집계", chartId: "hourly_turns") {
+            if aggregationMode == .hourly {
+                if filteredHourly.isEmpty {
+                    emptyHint("Telegram 외부 turn 사용 시작하면 누적")
+                } else {
+                    Chart(filteredHourly) { bucket in
+                        BarMark(x: .value("Time", bucket.timestamp), y: .value("Turns", bucket.turnCount))
+                            .foregroundStyle(Color.blue.opacity(0.7))
+                    }
+                    .frame(height: 160)
                 }
-                .frame(height: 160)
+            } else {
+                if filteredDaily.isEmpty {
+                    emptyHint("일별 데이터 없음")
+                } else {
+                    Chart(filteredDaily) { bucket in
+                        BarMark(x: .value("Date", bucket.date), y: .value("Turns", bucket.turnCount))
+                            .foregroundStyle(Color.blue.opacity(0.7))
+                    }
+                    .frame(height: 160)
+                }
             }
         }
     }
 
     // MARK: - 3. Hourly Cost (LineMark + AreaMark)
 
+    @ViewBuilder
     private var hourlyCostChart: some View {
-        chartSection(title: "시간별 누적 비용", subtitle: "외부 turn cost 추이") {
-            if snapshot.hourlyBuckets.isEmpty {
+        chartSection(title: "누적 비용 trend", subtitle: "ADR-063 Phase 3 — \(timeRange.rawValue) range", chartId: "hourly_cost") {
+            let buckets: [(date: Date, cost: Double)] = aggregationMode == .hourly
+                ? filteredHourly.map { ($0.timestamp, $0.costUSD) }
+                : filteredDaily.map { ($0.date, $0.costUSD) }
+            if buckets.isEmpty {
                 emptyHint("아직 cost 발생 없음")
             } else {
-                Chart(snapshot.hourlyBuckets) { bucket in
-                    LineMark(
-                        x: .value("Time", bucket.timestamp),
-                        y: .value("Cost", bucket.costUSD)
-                    )
-                    .foregroundStyle(Color.green)
-                    .interpolationMethod(.catmullRom)
-                    AreaMark(
-                        x: .value("Time", bucket.timestamp),
-                        y: .value("Cost", bucket.costUSD)
-                    )
-                    .foregroundStyle(LinearGradient(
-                        colors: [Color.green.opacity(0.3), Color.green.opacity(0)],
-                        startPoint: .top, endPoint: .bottom
-                    ))
-                    .interpolationMethod(.catmullRom)
+                Chart {
+                    ForEach(Array(buckets.enumerated()), id: \.offset) { _, b in
+                        LineMark(x: .value("Time", b.date), y: .value("Cost", b.cost))
+                            .foregroundStyle(Color.green)
+                            .interpolationMethod(.catmullRom)
+                        AreaMark(x: .value("Time", b.date), y: .value("Cost", b.cost))
+                            .foregroundStyle(LinearGradient(colors: [Color.green.opacity(0.3), Color.green.opacity(0)], startPoint: .top, endPoint: .bottom))
+                            .interpolationMethod(.catmullRom)
+                    }
                 }
                 .chartYAxis {
                     AxisMarks(position: .leading) { value in
                         AxisValueLabel {
                             if let v = value.as(Double.self) {
-                                Text("$\(String(format: "%.4f", v))")
-                                    .font(.caption2)
+                                Text("$\(String(format: "%.4f", v))").font(.caption2)
                             }
                         }
                     }
@@ -201,7 +302,7 @@ public struct TelegramUsageDashboard: View {
     // MARK: - 4. Chat Ranking (horizontal bar)
 
     private var chatRankingChart: some View {
-        chartSection(title: "Chat별 사용량 ranking", subtitle: "turn count + cost 별") {
+        chartSection(title: "Chat별 사용량 ranking", subtitle: "turn count + cost 별", chartId: "chat_ranking") {
             let sorted = snapshot.chatStats.values.sorted { $0.turnCount > $1.turnCount }.prefix(10)
             if sorted.isEmpty {
                 emptyHint("chat 사용 기록 없음")
@@ -237,7 +338,7 @@ public struct TelegramUsageDashboard: View {
     // MARK: - 5. Command Frequency (BarMark Top 10)
 
     private var commandFrequencyChart: some View {
-        chartSection(title: "명령 사용 빈도 (Top 10)", subtitle: "/decompose, /tasks, /rehearse 등") {
+        chartSection(title: "명령 사용 빈도 (Top 10)", subtitle: "/decompose, /tasks, /rehearse 등", chartId: "command_freq") {
             let sorted = snapshot.commandStats.sorted { $0.value > $1.value }.prefix(10)
             if sorted.isEmpty {
                 emptyHint("명령 사용 없음")
@@ -264,7 +365,7 @@ public struct TelegramUsageDashboard: View {
     // MARK: - 6. Token Breakdown (Stacked BarMark per hour)
 
     private var tokenBreakdownChart: some View {
-        chartSection(title: "토큰 사용 (input vs output)", subtitle: "시간별 stacked bar") {
+        chartSection(title: "토큰 사용 (input vs output)", subtitle: "시간별 stacked bar", chartId: "token_breakdown") {
             if snapshot.hourlyBuckets.isEmpty {
                 emptyHint("토큰 사용 없음")
             } else {
@@ -292,19 +393,75 @@ public struct TelegramUsageDashboard: View {
 
     // MARK: - Helpers
 
+    /// **ADR-063 Phase 5** — chat별 어떤 workspace를 가장 많이 사용했는지 stacked bar.
+    private var workspaceUsagePerChatChart: some View {
+        chartSection(title: "Chat × Workspace 사용 분포", subtitle: "ADR-063 Phase 5 — chat별 workspace 멀티 사용", chartId: "chat_workspace") {
+            workspaceUsageContent
+        }
+    }
+
+    @ViewBuilder
+    private var workspaceUsageContent: some View {
+        let data: [WorkspaceUsageDatum] = snapshot.chatStats.values.flatMap { chat -> [WorkspaceUsageDatum] in
+            chat.workspaceUsageCounts.map { (wsKey, count) in
+                let wsName = workspaceIdToName[wsKey] ?? String(wsKey.prefix(8)) + "…"
+                return WorkspaceUsageDatum(
+                    chatLabel: chatLabel(for: chat.chatId),
+                    workspaceName: wsName,
+                    count: count
+                )
+            }
+        }
+        if data.isEmpty {
+            emptyHint("workspace × chat 데이터 없음 (외부 turn에서 누적)")
+        } else {
+            Chart {
+                ForEach(data) { d in
+                    BarMark(
+                        x: .value("Chat", d.chatLabel),
+                        y: .value("Count", d.count)
+                    )
+                    .foregroundStyle(by: .value("Workspace", d.workspaceName))
+                    .position(by: .value("Workspace", d.workspaceName))
+                }
+            }
+            .chartLegend(position: .top)
+            .frame(height: 200)
+        }
+    }
+
+    /// **ADR-063 Phase 1** — chartSection. PNG export는 caller가 별도 호출.
+    /// chartId는 export filename용.
     private func chartSection<Content: View>(
         title: String,
         subtitle: String,
+        chartId: String,
         @ViewBuilder content: () -> Content
     ) -> some View {
-        VStack(alignment: .leading, spacing: 4) {
-            Text(title)
-                .font(Theme.Typography.body.weight(.semibold))
-                .foregroundStyle(Theme.Color.text)
-            Text(subtitle)
-                .font(Theme.Typography.micro)
-                .foregroundStyle(Theme.Color.textTertiary)
-            content()
+        let renderedContent = content()
+        return VStack(alignment: .leading, spacing: 4) {
+            HStack {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(title)
+                        .font(Theme.Typography.body.weight(.semibold))
+                        .foregroundStyle(Theme.Color.text)
+                    Text(subtitle)
+                        .font(Theme.Typography.micro)
+                        .foregroundStyle(Theme.Color.textTertiary)
+                }
+                Spacer()
+                // ADR-063 Phase 1 — per-chart PNG export
+                Button {
+                    exportChartPNG(chartId: chartId, view: AnyView(renderedContent))
+                } label: {
+                    Image(systemName: "square.and.arrow.down")
+                        .font(.system(size: 12))
+                        .foregroundStyle(Theme.Color.textTertiary)
+                }
+                .buttonStyle(.plain)
+                .help("이 chart를 PNG로 저장")
+            }
+            renderedContent
                 .padding(.top, 4)
         }
         .padding(Theme.Spacing.md)
@@ -318,5 +475,60 @@ public struct TelegramUsageDashboard: View {
             .foregroundStyle(Theme.Color.textTertiary)
             .frame(maxWidth: .infinity, alignment: .center)
             .padding(Theme.Spacing.lg)
+    }
+
+    // MARK: - ADR-063 Phase 1 — per-chart PNG export
+
+    @MainActor
+    private func exportChartPNG(chartId: String, view: AnyView) {
+        let snapshotView = view
+            .padding(Theme.Spacing.lg)
+            .frame(width: 800, height: 220)
+            .background(Theme.Color.bg)
+        let renderer = ImageRenderer(content: snapshotView)
+        renderer.scale = 2.0
+        guard let nsImage = renderer.nsImage,
+              let tiff = nsImage.tiffRepresentation,
+              let bitmap = NSBitmapImageRep(data: tiff),
+              let png = bitmap.representation(using: .png, properties: [:])
+        else { return }
+        let panel = NSSavePanel()
+        panel.allowedContentTypes = [.png]
+        panel.nameFieldStringValue = "yuminai-\(chartId)-\(Int(Date().timeIntervalSince1970)).png"
+        if panel.runModal() == .OK, let url = panel.url {
+            try? png.write(to: url)
+        }
+    }
+
+    // MARK: - ADR-063 Phase 4 — CSV export
+
+    private enum CSVKind {
+        case chatStats, commandStats, hourly, daily
+    }
+
+    @MainActor
+    private func exportCSV(_ kind: CSVKind) {
+        let csv: String
+        let suggestedName: String
+        switch kind {
+        case .chatStats:
+            csv = CSVExporter.exportChatStats(Array(snapshot.chatStats.values))
+            suggestedName = "telegram-chat-stats.csv"
+        case .commandStats:
+            csv = CSVExporter.exportCommandStats(snapshot.commandStats)
+            suggestedName = "telegram-command-stats.csv"
+        case .hourly:
+            csv = CSVExporter.exportHourlyBuckets(filteredHourly)
+            suggestedName = "telegram-hourly-buckets.csv"
+        case .daily:
+            csv = CSVExporter.exportDailyBuckets(filteredDaily)
+            suggestedName = "telegram-daily-buckets.csv"
+        }
+        let panel = NSSavePanel()
+        panel.allowedContentTypes = [.commaSeparatedText]
+        panel.nameFieldStringValue = suggestedName
+        if panel.runModal() == .OK, let url = panel.url {
+            try? csv.write(to: url, atomically: true, encoding: .utf8)
+        }
     }
 }

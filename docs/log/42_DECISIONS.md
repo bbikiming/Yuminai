@@ -1,6 +1,74 @@
 # Decisions Log (ADR-lite)
 
-> 최신: ADR-062 (Charts 확장 + Telegram Usage Dashboard 신규 — 사용자 요청)
+> 최신: ADR-063 (per-chart PNG + daily aggregation + dashboard time picker + CSV export + workspace×chat)
+
+---
+
+## ADR-063 — Telegram Dashboard 확장 + CSV/PNG export (5 phases)
+
+- **날짜**: 2026-05-03
+- **상태**: Accepted
+- **결정**: ADR-062 deferred 5 phase 모두 구현
+
+### 결정
+
+#### Phase 2: TelegramUsageStore daily aggregation
+- `DailyUsageBucket` struct 신설 (date + turnCount + cost + tokens)
+- `dailyAggregation()` API: hourly buckets를 같은 날짜로 grouping + sum
+- AppModel.telegramDailyBuckets cache + loadTelegramUsage에서 함께 갱신
+
+#### Phase 5: workspace × chat usage 분리
+- `ChatUsageStats.workspaceUsageCounts: [String: Int]` 추가
+- `recordTurnStart(chatId:workspaceId:)` 시그니처 확장
+- AppModel.recordTelegramTurnStart: `selectedWorkspaceId` 자동 전달
+- TelegramUsageDashboard: `workspaceUsagePerChatChart` (stacked BarMark, foregroundStyle by workspace)
+
+#### Phase 3: TelegramUsageDashboard 시간 범위 + 집계 모드 picker
+- `TimeRange` enum: 24h / 3일 / 7일
+- `AggregationMode` enum: 시간별 / 일별
+- 모든 시계열 chart가 filtered + aggregation mode 적용
+- controlsBar에 두 picker 동시 표시
+
+#### Phase 4: CSV export
+- `Sources/YuminaiCore/CSVExporter.swift` 신설:
+  - `escape()` (RFC 4180: comma/quote/newline)
+  - `format(headers:rows:)` 단순 helper
+  - `exportChatStats / exportCommandStats / exportHourlyBuckets / exportDailyBuckets`
+  - `exportRoutingDecisions / exportCacheTrend`
+- TelegramUsageDashboard: Menu로 4가지 CSV export 옵션 (NSSavePanel)
+
+#### Phase 1: per-chart PNG export
+- `chartSection(title:subtitle:chartId:content:)` 시그니처 확장
+- 각 chart 우상단에 ⤓ 버튼 (renderedContent 캡처)
+- ImageRenderer scale 2.0 + NSSavePanel
+- filename: `yuminai-{chartId}-{timestamp}.png`
+
+### 적용 결과
+```
+swift build              → Build complete! (9.17s)
+swift test               → 454/454 passed (95 suites, +12 new)
+새 파일                  → 2 (CSVExporter.swift, CSVExporterTests.swift)
+수정 파일                → 4 (TelegramUsageStore, AppModel, TelegramUsageDashboard, RootView)
+```
+
+### 사용된 SwiftUI Charts API 확장
+
+- `foregroundStyle(by: .value(...))` — workspace색 자동 분리
+- `position(by: .value(...))` — stacked bar (workspace별)
+
+### 트레이드오프
+
+- **Daily aggregation은 client-side**: store는 hourly만 보존 → daily는 view 호출 시 계산. 데이터 작아서 OK.
+- **CSV export 메모리 안전**: 전체 데이터 string으로 만든 후 disk write. 매우 큰 데이터(>10MB)는 streaming write 필요.
+- **per-chart PNG export 위치**: chart 우상단 작은 ⤓ 버튼 — 각 chart마다 individual export. 화면 가득 PNG는 footer의 전체 export로.
+- **workspaceUsageCounts 누적은 turn 시작 시점**: turn 시작 후 workspace 변경 시 정확하지 않을 수 있음 (race). 거의 발생 X.
+
+### 향후 (ADR-064 후보)
+- Telegram dashboard에 ChartsDashboard처럼 routing trend chart 통합
+- workspace × chat heatmap (RectangleMark)
+- CSV export streaming write (대용량 안전)
+- chat별 last activity gauge (시간 경과 visual)
+- usage forecast (간단한 EWMA 기반)
 
 ---
 

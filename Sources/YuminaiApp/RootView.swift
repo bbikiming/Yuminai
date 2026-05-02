@@ -214,11 +214,13 @@ struct RootView: View {
             )
             .task { await appModel.refreshCacheTrendSnapshot() }
         }
-        // ADR-062 Phase 6 — Telegram Usage Dashboard (사용자 신규 요청)
+        // ADR-062 Phase 6 + ADR-063 — Telegram Usage Dashboard (확장)
         .sheet(isPresented: $bindable.showTelegramUsageDashboard) {
             TelegramUsageDashboard(
                 snapshot: appModel.telegramUsageSnapshot,
+                dailyBuckets: appModel.telegramDailyBuckets,
                 chatIdToWorkspaceName: appModel.telegramChatIdToWorkspaceName(),
+                workspaceIdToName: Dictionary(uniqueKeysWithValues: appModel.workspaces.map { ($0.id.uuidString, $0.name) }),
                 onClose: { appModel.showTelegramUsageDashboard = false },
                 onClearStats: { Task { await appModel.clearTelegramUsage() } }
             )

@@ -4,6 +4,53 @@
 
 ## [Unreleased] — 2026-05-03
 
+### Added — ADR-063 Telegram Dashboard 확장 + CSV/PNG export (5 phases)
+
+**Phase 2 — Daily aggregation**
+- DailyUsageBucket struct (date + turnCount + cost + tokens)
+- TelegramUsageStore.dailyAggregation() — hourly grouping + sum
+- AppModel.telegramDailyBuckets cache
+
+**Phase 5 — workspace × chat usage**
+- ChatUsageStats.workspaceUsageCounts: [String: Int]
+- recordTurnStart(chatId:workspaceId:) 확장
+- AppModel: selectedWorkspaceId 자동 전달
+- TelegramUsageDashboard.workspaceUsagePerChatChart (stacked BarMark)
+
+**Phase 3 — Dashboard 시간 + 집계 picker**
+- TimeRange enum (24h/3일/7일) + AggregationMode (시간별/일별)
+- 모든 시계열 chart가 filtered + mode 적용
+- controlsBar 2 picker
+
+**Phase 4 — CSV export**
+- Sources/YuminaiCore/CSVExporter.swift: RFC 4180 escape + format
+- exportChatStats / exportCommandStats / exportHourlyBuckets / exportDailyBuckets
+- exportRoutingDecisions / exportCacheTrend
+- TelegramUsageDashboard: Menu에서 4가지 옵션
+
+**Phase 1 — per-chart PNG export**
+- chartSection signature: chartId 추가
+- 각 chart 우상단 ⤓ 버튼
+- ImageRenderer scale 2.0 + NSSavePanel
+- filename: yuminai-{chartId}-{timestamp}.png
+
+### Tests added (+12)
+- CSVExporterTests (8): escape (plain/comma/quote/newline), format, chatStats header, command sorted, hourly timestamp
+- DailyAggregationTests (2): basic + empty
+- ChatWorkspaceUsageTests (2): accumulate + nil ignored
+
+### 빌드/테스트 결과
+- swift build → Build complete! (9.17s)
+- swift test → 454/454 passed (95 suites)
+
+### 새 파일
+- CSVExporter.swift, CSVExporterTests.swift
+
+### 수정 파일
+- TelegramUsageStore (workspace/daily), AppModel (telegramDailyBuckets), TelegramUsageDashboard (4 controls + workspace chart), RootView (extra props)
+
+---
+
 ### Added — ADR-062 Charts 확장 + Telegram Usage Dashboard (사용자 신규 요청)
 
 **Phase 6 (사용자 요청) — Telegram Usage Dashboard**

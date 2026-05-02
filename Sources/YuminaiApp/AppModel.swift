@@ -3788,9 +3788,10 @@ public final class AppModel {
     }
 
     /// **ADR-062 Phase 6** — Telegram turn 시작/종료 시 usage store 기록 helper.
-    /// caller: YuminaiCommandRouter.handlePlainText (turn 시작 시 chatId 알 수 있음).
+    /// **ADR-063 Phase 5** — workspaceId 전달 (chat별 workspace 분포 분석).
     public func recordTelegramTurnStart(chatId: Int64) async {
-        await telegramUsageStore.recordTurnStart(chatId: chatId)
+        let wsId = selectedWorkspaceId
+        await telegramUsageStore.recordTurnStart(chatId: chatId, workspaceId: wsId)
         telegramUsageSnapshot = await telegramUsageStore.snapshot()
     }
 
@@ -3812,7 +3813,11 @@ public final class AppModel {
     /// bootstrap에서 호출.
     public func loadTelegramUsage() async {
         telegramUsageSnapshot = await telegramUsageStore.snapshot()
+        telegramDailyBuckets = await telegramUsageStore.dailyAggregation()
     }
+
+    /// **ADR-063 Phase 2** — daily aggregation cache (UI binding).
+    public var telegramDailyBuckets: [DailyUsageBucket] = []
 
     /// **ADR-062 Phase 6** — Telegram 통계 초기화.
     public func clearTelegramUsage() async {
