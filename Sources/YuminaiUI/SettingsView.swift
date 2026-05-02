@@ -457,6 +457,31 @@ public struct SettingsView: View {
                         hint: "ADR-051 — 메인 chat area를 Harness 통합 view로 교체. multi-pane이 안 보임. ⌘K Command Palette에서 빠른 토글 가능."
                     )
                 }
+                // ADR-052 — 새 토글들
+                Divider().padding(.vertical, 4)
+                Toggle(isOn: $preferences.multiAgentParallelEnabled) {
+                    LabelWithHint(
+                        "Multi-agent 병렬 실행 (실험적)",
+                        hint: "ADR-052 — 두 pane에서 dependency-free task 동시 실행 (BSP barrier merge 패턴, LangGraph/CrewAI 차용). Cognition Devin 권고: 비용 ~2x, 충돌 위험 있음. dependency 검증 후 ⌘K → ‘병렬 실행’으로 launch."
+                    )
+                }
+                Toggle(isOn: $preferences.routingLogRawPrompts) {
+                    LabelWithHint(
+                        "Routing log: raw prompt 저장",
+                        hint: "ADR-052 — 자동 routing 결정의 사용자 prompt를 disk에 보존 (privacy 위험). 끄면 80자 prefix만. OTel GenAI semconv ‘sensitive PII’ 가이드를 따라 default OFF."
+                    )
+                }
+                HStack {
+                    LabelWithHint(
+                        "Routing log retention (일)",
+                        hint: "ADR-052 — 메모리에 유지할 routing decision 일수. disk 파일은 별도 manual cleanup 필요."
+                    )
+                    Spacer()
+                    Stepper(value: $preferences.routingLogRetentionDays, in: 1...30) {
+                        Text("\(preferences.routingLogRetentionDays)일").font(Theme.Typography.monoSmall)
+                    }
+                    .frame(width: 140)
+                }
             } header: {
                 Text("Harness (다중 모델 오케스트레이션)")
             }

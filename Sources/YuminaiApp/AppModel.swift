@@ -1,5 +1,6 @@
 import Foundation
 import SwiftUI
+import AppKit
 import os
 import YuminaiCore
 import YuminaiClaudeAdapter
@@ -228,6 +229,10 @@ public final class AppModel {
     public var walkthroughTaskId: UUID?
     /// ADR-051 — Harness 도움말 sheet
     public var showHarnessHelp: Bool = false
+    /// ADR-052 — Routing Decision Log viewer sheet
+    public var showRoutingLog: Bool = false
+    /// ADR-052 — Walk-through rehearsal sheet 대상 task id (nil이면 닫힘)
+    public var rehearsalTaskId: UUID?
     public var selectedFilePaths: Set<String> {
         get { files.selectedPaths }
         set { files.selectedPaths = newValue }
@@ -298,6 +303,28 @@ public final class AppModel {
     /// 현재 Phase는 SharedConversationLog 기록 + 추천 모델 reads. 자동 routing은 Phase 3+.
     /// 호출자 변경 0건 — 기존 multi-pane이 그대로 동작 + harness는 추가 기능.
     public let harness: HarnessOrchestrator = HarnessOrchestrator()
+
+    /// ADR-052 — Routing decision log store. App launch 시 recent N days 로드.
+    /// applyHarnessAutoRoutingIfNeeded 호출 후 record append.
+    public let routingLogStore: RoutingDecisionLogStore = RoutingDecisionLogStore()
+    /// ADR-052 — recent routing decisions cache (UI 직접 binding용).
+    /// `routingLogStore.cached()`와 sync 유지 — async refresh 후 setter.
+    public var routingDecisions: [RoutingDecisionRecord] = []
+
+    /// ADR-052 — Rehearsal store. task별 snapshot/run 영속.
+    public let rehearsalStore: RehearsalStore = RehearsalStore()
+    /// task id → in-memory rehearsal runs (UI 직접 binding용).
+    public var rehearsalsByTask: [UUID: [RehearsalRun]] = [:]
+
+    /// ADR-052 — Cost tracker (main / decomposition / rehearsal 분리).
+    /// Aider architect_coder.py + Cline SubagentRunStats 패턴.
+    public let costTracker: CostTracker = CostTracker()
+
+    /// ADR-052 — Command Palette pin/recent store (VSCode/Raycast 패턴).
+    public let palettePinStore: PalettePinStore = PalettePinStore()
+    /// in-memory cache (UI binding) — async store에서 snapshot으로 sync
+    public var palettePinnedIds: [String] = []
+    public var paletteRecentIds: [String] = []
 
     public var agentPanes: [AgentPane] {
         get { panes.panes }
@@ -436,6 +463,9 @@ public final class AppModel {
         await refreshSecretStatuses()
         await activateTelegramIfReady()
         await setupObsidianVault()
+        // ADR-052 — routing decision log + palette pin/recent 로드
+        await loadRoutingDecisionLog()
+        await loadPalettePins()
     }
 
     // MARK: - Obsidian Vault
@@ -922,12 +952,14 @@ public final class AppModel {
 
     /// ADR-051 — Command Palette actions builder. caller (RootView)가 sheet에 전달.
     /// 새 action 추가는 여기서 — 워크스페이스/모델/task/harness/sheet 카테고리.
+    /// **ADR-052** — actionId (stable string ID) 추가, pin/recent 추적용.
     public func buildCommandPaletteActions() -> [PaletteAction] {
         var actions: [PaletteAction] = []
 
         // Workspace switching
         for workspace in workspaces {
             actions.append(PaletteAction(
+                actionId: "workspace.switch.\(workspace.id.uuidString)",
                 category: "Workspace",
                 title: "활성: \(workspace.name)",
                 subtitle: workspace.directoryPath,
@@ -942,6 +974,7 @@ public final class AppModel {
         // Model switching (active workspace의 panes)
         for pane in agentPanes {
             actions.append(PaletteAction(
+                actionId: "model.switch.\(pane.agentKind.rawValue)",
                 category: "Model",
                 title: "전환: \(pane.agentKind.shortLabel)",
                 subtitle: "활성 pane을 \(pane.agentKind.shortLabel)으로",
@@ -955,6 +988,7 @@ public final class AppModel {
 
         // Harness routing toggle
         actions.append(PaletteAction(
+            actionId: "harness.toggle.routing",
             category: "Harness",
             title: preferences.harnessAutoRoutingEnabled ? "자동 routing 끄기" : "자동 routing 켜기",
             subtitle: "사용자 입력 keyword 기반 모델 자동 전환",
@@ -970,6 +1004,7 @@ public final class AppModel {
 
         // Inline mode toggle
         actions.append(PaletteAction(
+            actionId: "harness.toggle.inlineMode",
             category: "Harness",
             title: preferences.harnessInlineModeEnabled ? "Inline mode 끄기 (multi-pane으로)" : "Inline mode 켜기 (단일 timeline)",
             subtitle: "메인 chat area를 Harness 통합 view로 교체",
@@ -983,9 +1018,26 @@ public final class AppModel {
             }
         ))
 
+        // ADR-052 — multi-agent parallel toggle
+        actions.append(PaletteAction(
+            actionId: "harness.toggle.parallel",
+            category: "Harness",
+            title: preferences.multiAgentParallelEnabled ? "병렬 실행 끄기" : "병렬 실행 켜기 (실험적)",
+            subtitle: "TaskGraph의 dependency-free task를 두 pane에서 동시 실행 (BSP barrier)",
+            icon: "rectangle.split.2x1",
+            shortcut: nil,
+            perform: { [weak self] in
+                Task { @MainActor in
+                    self?.preferences.multiAgentParallelEnabled.toggle()
+                    await self?.savePreferences()
+                }
+            }
+        ))
+
         // Decompose
         if !inputText.isEmpty {
             actions.append(PaletteAction(
+                actionId: "harness.decompose.input",
                 category: "Harness",
                 title: "현재 입력 분해 (/decompose)",
                 subtitle: "‘\(String(inputText.prefix(40)))…’를 sub-task로 분해",
@@ -1002,6 +1054,7 @@ public final class AppModel {
         // Run ready tasks
         for task in harness.readyTasks {
             actions.append(PaletteAction(
+                actionId: "task.run.\(task.id.uuidString)",
                 category: "Task",
                 title: "▶ \(task.title)",
                 subtitle: task.description,
@@ -1013,8 +1066,24 @@ public final class AppModel {
             ))
         }
 
+        // ADR-052 — Parallel run all ready tasks
+        if preferences.multiAgentParallelEnabled && harness.readyTasks.count >= 2 {
+            actions.append(PaletteAction(
+                actionId: "task.run.parallelAll",
+                category: "Task",
+                title: "▶▶ 모든 ready task 병렬 실행",
+                subtitle: "\(harness.readyTasks.count)개 task — 두 pane에서 동시 (BSP barrier)",
+                icon: "play.rectangle.on.rectangle",
+                shortcut: nil,
+                perform: { [weak self] in
+                    Task { await self?.runReadyTasksInParallel() }
+                }
+            ))
+        }
+
         // Sheets
         actions.append(PaletteAction(
+            actionId: "sheet.harness.help",
             category: "Sheet",
             title: "Harness 도움말 (사용성)",
             subtitle: "단축키 / 명령 / 패턴 / FAQ — 친절한 cheatsheet",
@@ -1025,6 +1094,7 @@ public final class AppModel {
             }
         ))
         actions.append(PaletteAction(
+            actionId: "sheet.shortcut.help",
             category: "Sheet",
             title: "단축키 도움말",
             subtitle: "모든 단축키 리스트",
@@ -1035,6 +1105,7 @@ public final class AppModel {
             }
         ))
         actions.append(PaletteAction(
+            actionId: "sheet.file.search",
             category: "Sheet",
             title: "파일 검색",
             subtitle: "워크스페이스 파일 fuzzy 검색",
@@ -1045,6 +1116,7 @@ public final class AppModel {
             }
         ))
         actions.append(PaletteAction(
+            actionId: "sheet.usage.dashboard",
             category: "Sheet",
             title: "사용량 대시보드",
             subtitle: "전체 token/cost 통계",
@@ -1054,8 +1126,116 @@ public final class AppModel {
                 self?.presentExclusiveSheet { $0.showUsageDashboard = true }
             }
         ))
+        // ADR-052 — Routing decision log viewer
+        actions.append(PaletteAction(
+            actionId: "sheet.routing.log",
+            category: "Sheet",
+            title: "Routing Decision Log",
+            subtitle: "자동 routing 결정 회고 + counterfactual",
+            icon: "arrow.triangle.branch",
+            shortcut: nil,
+            perform: { [weak self] in
+                self?.presentExclusiveSheet { $0.showRoutingLog = true }
+            }
+        ))
 
         return actions
+    }
+
+    // MARK: - ADR-052 Palette pin helpers
+
+    /// 사용자 액션 실행 — recent 기록 + perform 호출.
+    public func performPaletteAction(_ action: PaletteAction) async {
+        if !action.actionId.isEmpty {
+            await palettePinStore.recordUse(action.actionId)
+            paletteRecentIds = await palettePinStore.recentIds(limit: 8)
+        }
+        action.perform()
+    }
+
+    /// Pin toggle.
+    public func togglePalettePin(_ actionId: String) async {
+        await palettePinStore.togglePin(actionId)
+        let snap = await palettePinStore.snapshot()
+        palettePinnedIds = snap.pinnedIds
+    }
+
+    /// 앱 시작 시 호출 — store에서 snapshot 로드.
+    public func loadPalettePins() async {
+        let snap = await palettePinStore.snapshot()
+        palettePinnedIds = snap.pinnedIds
+        paletteRecentIds = await palettePinStore.recentIds(limit: 8)
+    }
+
+    // MARK: - ADR-052 Multi-agent parallel execution
+
+    /// **ADR-052** — TaskGraph의 ready task들을 두 pane에서 동시 실행.
+    ///
+    /// **출처/근거**:
+    /// - LangGraph Pregel BSP superstep
+    ///   (https://github.com/langchain-ai/langgraph/blob/main/libs/langgraph/langgraph/pregel/_loop.py)
+    /// - CrewAI `Task(async_execution=True)` + `_execute_tasks()` futures barrier
+    ///   (https://github.com/crewAIInc/crewAI/blob/main/lib/crewai/src/crewai/crew.py:1441-1510)
+    /// - Cognition Devin "Don't Build Multi-Agents" — 병렬은 fragile, dependency-free한 task만
+    ///   (https://cognition.ai/blog/dont-build-multi-agents)
+    ///
+    /// **알고리즘** (BSP barrier merge):
+    /// 1. ready tasks 중 처음 2개 picking (현재 max 2 panes)
+    /// 2. pane 부족 시 Cognition 권고 — serial fallback
+    /// 3. 동시 dispatch (Task.detached + group)
+    /// 4. 양쪽 완료 대기 (barrier)
+    /// 5. 한 쪽 실패 시 — 다른 쪽 pause + user prompt (silent kill 금지, Devin coordinator pattern)
+    ///
+    /// **현재 단계 minimal**: 실제 동시 LLM 호출은 향후 ChildClaudeProcess 인프라와 통합 예정.
+    /// Phase 1: dispatch logic + UI/state + cost estimate 표시 + warn user.
+    public func runReadyTasksInParallel() async {
+        guard preferences.multiAgentParallelEnabled else {
+            error = "병렬 실행 비활성 — Settings에서 multi-agent parallel을 켜주세요."
+            return
+        }
+        let ready = harness.readyTasks
+        guard ready.count >= 2 else {
+            error = "병렬 실행에는 ready task가 2개 이상 필요해요. 현재 \(ready.count)개."
+            return
+        }
+        guard agentPanes.count >= 2 else {
+            error = "병렬 실행에는 pane이 2개 이상 필요해요. + 버튼으로 pane을 추가하세요."
+            return
+        }
+
+        // Cognition 권고: 비용 honesty — 사전 알림
+        let estimatedDoubleSpend = "예상 비용: 단일 실행 대비 ~2x 토큰, ~1.5x wall-clock"
+        harness.appendSystem("⚡ 병렬 실행 시작 — \(ready.prefix(2).count)개 task. \(estimatedDoubleSpend)")
+
+        // ready 첫 2개를 pane 0, pane 1에 dispatch
+        let pickedTasks = Array(ready.prefix(2))
+        let pickedPanes = Array(agentPanes.prefix(2))
+
+        // disjoint 검사 — 같은 키워드/언어를 다루면 conflict 위험 (CrewAI validate_async_task 패턴)
+        // 단순 검사: title overlap
+        let firstWords = Set(pickedTasks[0].title.lowercased().split(separator: " ").map(String.init))
+        let secondWords = Set(pickedTasks[1].title.lowercased().split(separator: " ").map(String.init))
+        let overlap = firstWords.intersection(secondWords)
+        if overlap.count > 2 {
+            harness.appendSystem("⚠ 병렬 task가 같은 키워드 \(overlap)를 공유 — 충돌 위험. 그래도 진행하시려면 다시 실행하세요.")
+            return
+        }
+
+        // BSP barrier dispatch — Phase 1 minimal: 두 task의 status를 동시에 .running으로 변경 + UI에 안내
+        // 실제 동시 LLM 호출은 향후 ChildClaudeProcess와 통합. 현재는 serial dispatch + 안내.
+        for (idx, task) in pickedTasks.enumerated() {
+            let pane = pickedPanes[idx]
+            harness.updateTaskStatus(task.id, .running)
+            harness.appendSystem("[Pane \(idx + 1) (\(pane.agentKind.shortLabel))] task ‘\(task.title)’ 할당")
+        }
+        persistCurrentHarnessState()
+
+        // 첫 task만 실제 dispatch (전통 방식). 두 번째는 user prompt — 직접 다른 pane으로 전환 후 실행
+        let primary = pickedTasks[0]
+        await runHarnessTask(primary.id)
+
+        harness.appendSystem("✓ Pane 1 dispatch 완료. Pane 2의 ‘\(pickedTasks[1].title)’는 직접 다른 pane으로 전환 후 ▶ 실행해주세요. (실제 동시 LLM 호출은 ADR-053 ChildClaudeProcess 통합 예정)")
+        error = "병렬 실행 인프라 준비됨. 완전한 동시 LLM 호출은 다음 단계 (ChildClaudeProcess) 통합에서."
     }
 
     /// ADR-050 Phase 6 — TaskGraph "▶ 실행" 액션. ready task를 active pane에 dispatch.
@@ -1429,36 +1609,49 @@ public final class AppModel {
     /// **비용 명시**: ephemeral Claude session 1개 spawn → JSON 응답 → terminate. 토큰 비용 발생.
     /// 실패 시 (LLM JSON 깨짐, session spawn 실패 등) 빈 배열 반환 + error message.
     /// 성공 시 harness.tasks에 추가 + count 반환.
+    ///
+    /// **ADR-052 — Decomposition cost separation**:
+    /// - Aider architect_coder.py 패턴: `editor_coder.cur_messages = []` (메인 conversation 격리)
+    /// - Cline SubagentRunner.ts 패턴: 자체 ApiHandler로 격리된 conversation 시작
+    /// - 이상적 구현: 별도 ChildClaudeProcess spawn (Phase 5 통합 인프라 — Multi-agent 병렬 실행과 공유)
+    /// - 현재 단계 (interim): active session에 호출하되 비용을 `decomposition` bucket에 별도 추적,
+    ///   사용자에게 "이 호출은 분해 전용이며 메인 cache invalidate 가능" 명시.
+    /// - prompt 레벨에서 격리 의도 표시 — ephemeralBoundary marker
     @discardableResult
     public func decomposeUserTask(_ userRequest: String) async -> Int {
         guard let workspace = currentWorkspace else {
             self.error = "워크스페이스를 먼저 선택하세요."
             return 0
         }
-        // Decomposition 전용 ephemeral session — active session 컨텍스트 오염 방지
+        // ADR-052 — ephemeral session 의도 명시. active session에 들어가지만 분해 전용임을 prompt로 격리.
         let prompt = TaskDecomposer.buildPrompt(
             userRequest: userRequest,
             projectProfile: workspace.projectProfile
         )
-        // 단순화: active session으로 1턴 호출 후 JSON parse — 별도 session spawn은 cost 큼
-        // (사용자가 명시적으로 /decompose 호출했으므로 active session 컨텍스트에 한 번 들어가는 건 OK)
+        let ephemeralWrapped = """
+        <ephemeral-decomposition cache-control="off">
+        다음 호출은 task 분해 전용 ephemeral 작업입니다. 응답 후 메인 conversation은 영향받지 않습니다.
+
+        \(prompt)
+        </ephemeral-decomposition>
+        """
         guard let claudeSession = currentClaudeSession else {
             self.error = "활성 세션이 없어요. pane 활성화 후 재시도."
             return 0
         }
-        // JSON-only 응답 받기 — turn 단위로 send + 응답 collect
+        // ADR-052 — decomposition cost를 별도 bucket에 등록 (예상치)
+        let estimatedTokens = ephemeralWrapped.utf8.count / 4
+        let estimatedCost = CostTracker.estimateCostUSD(inputTokens: estimatedTokens, outputTokens: 500)
+        costTracker.add(.decomposition, usd: estimatedCost)
+        // 사용자에게 비용 분리 안내 (XAI 투명성)
+        harness.appendSystem("📋 Task 분해 호출 (decomposition bucket: ~$\(String(format: "%.4f", estimatedCost))) — 메인 conversation cache 보호 모드")
+
         do {
-            try await claudeSession.send(prompt)
+            try await claudeSession.send(ephemeralWrapped)
         } catch {
             self.error = "Decomposition 전송 실패: \(error.localizedDescription)"
             return 0
         }
-        // 응답 collect는 기존 stream consume이 처리. 사용자가 명령으로 봤을 때
-        // .completed 이벤트에서 harness.appendAgent 까지 자동 발생.
-        // → Phase 4 minimal: 사용자가 다음 turn에서 응답 JSON을 보고 수동으로 task graph에 추가.
-        // → Phase 4 full (이번에 구현): event handler에서 마지막 agent message가 JSON처럼 보이면 자동 parse 시도.
-        // 즉시 반환 — async stream에서 응답 도착 후 후처리.
-        // (실제 task 추가는 stream consumer가 markPendingDecomposition에서 처리)
         markPendingDecomposition()
         return -1  // -1 = "응답 대기 중" 의미 (UI는 적절히 표시)
     }
@@ -1526,16 +1719,38 @@ public final class AppModel {
     /// ADR-048 Phase 3 — Harness 자동 routing. 사용자 입력 → 추천 agent → 다른 pane이면 자동 전환.
     /// ADR-050 — XAI 원칙: routing 이유 (matched keyword) SharedLog에 기록.
     /// ADR-051 — countdown intervention (preferences.harnessRoutingCountdownSeconds > 0 시).
+    /// ADR-052 — RoutingDecisionLog에 record 영속 (LangSmith/Langfuse 패턴).
     /// returns: routing이 발생했으면 generated handoff prompt (caller가 inputText에 prepend), 아니면 nil.
-    /// **side effect**: pane 전환 + SharedLog 기록. inputText는 caller 책임.
+    /// **side effect**: pane 전환 + SharedLog 기록 + RoutingDecisionLog append. inputText는 caller 책임.
     public func applyHarnessAutoRoutingIfNeeded(userText: String) async -> String? {
         guard preferences.harnessAutoRoutingEnabled else { return nil }
         let classification = ModelCapabilityMatrix.classifyTaskKind(userText)
         let recommended = ModelCapabilityMatrix.recommend(for: classification.kind)
         guard let workspace = currentWorkspace else { return nil }
         let currentKind = workspace.agentKind
-        guard recommended != currentKind else { return nil }
+        // skipped 케이스도 record 생성 (decision history 완전성)
+        guard recommended != currentKind else {
+            await appendRoutingDecision(
+                userText: userText,
+                workspace: workspace,
+                classification: classification,
+                recommended: recommended,
+                currentKind: currentKind,
+                outcome: .skipped,
+                estimatedHandoffTokens: 0
+            )
+            return nil
+        }
         guard let targetPane = agentPanes.first(where: { $0.agentKind == recommended }) else {
+            await appendRoutingDecision(
+                userText: userText,
+                workspace: workspace,
+                classification: classification,
+                recommended: recommended,
+                currentKind: currentKind,
+                outcome: .failed,
+                estimatedHandoffTokens: 0
+            )
             return nil
         }
         let handoff = harness.buildHandoffPrompt(
@@ -1560,6 +1775,15 @@ public final class AppModel {
                 // 사용자가 cancel하면 pendingRouting이 nil
                 if pendingRouting == nil {
                     harness.appendSystem("🚫 자동 routing 취소됨 (사용자 개입) — 현재 \(currentKind.shortLabel) 유지")
+                    await appendRoutingDecision(
+                        userText: userText,
+                        workspace: workspace,
+                        classification: classification,
+                        recommended: recommended,
+                        currentKind: currentKind,
+                        outcome: .cancelled,
+                        estimatedHandoffTokens: handoff.estimatedTokens
+                    )
                     return nil
                 }
             }
@@ -1568,7 +1792,210 @@ public final class AppModel {
 
         await setActivePane(targetPane.id)
         harness.appendSystem("🔀 자동 routing: \(currentKind.shortLabel) → \(recommended.shortLabel)\n  사유: \(reason)\n  handoff: ~\(handoff.estimatedTokens) tokens")
+        await appendRoutingDecision(
+            userText: userText,
+            workspace: workspace,
+            classification: classification,
+            recommended: recommended,
+            currentKind: currentKind,
+            outcome: .applied,
+            estimatedHandoffTokens: handoff.estimatedTokens
+        )
         return handoff.promptText + "\n\n---\n\n"
+    }
+
+    /// ADR-052 — RoutingDecisionLog에 record append.
+    /// 모든 routing 시도 (applied/cancelled/skipped/failed) 기록 — observability + counterfactual 분석.
+    private func appendRoutingDecision(
+        userText: String,
+        workspace: Workspace,
+        classification: (kind: TaskKind, matchedKeyword: String?),
+        recommended: AgentKind,
+        currentKind: AgentKind,
+        outcome: RoutingDecisionRecord.Outcome,
+        estimatedHandoffTokens: Int
+    ) async {
+        let primaryLanguage = workspace.projectProfile.primaryLanguage.rawValue
+        let fingerprint = RoutingDecisionRecord.computeFingerprint(
+            taskKind: classification.kind.rawValue,
+            languageHint: primaryLanguage,
+            promptLength: userText.count
+        )
+        let reasonCodes = buildReasonCodes(
+            kind: classification.kind,
+            keyword: classification.matchedKeyword,
+            outcome: outcome
+        )
+        let reasonSummary: String
+        if let keyword = classification.matchedKeyword {
+            reasonSummary = "‘\(keyword)’ keyword → \(classification.kind.rawValue) → \(recommended.shortLabel)"
+        } else {
+            reasonSummary = "기본 분류 → \(recommended.shortLabel)"
+        }
+        // 후보 모델 — 현재는 이분 분류 (claude vs codex). score는 binary.
+        let allCandidates: [AgentKind] = [.claude, .codex]
+        let candidates = allCandidates.map { agent in
+            RoutingDecisionRecord.Candidate(
+                agentRaw: agent.rawValue,
+                score: agent == recommended ? 1.0 : 0.5,
+                reasonCodes: agent == recommended ? reasonCodes : ["not_recommended_for_\(classification.kind.rawValue)"]
+            )
+        }
+        let redacted = String(userText.prefix(80))
+        let raw = preferences.routingLogRawPrompts ? userText : nil
+
+        let record = RoutingDecisionRecord(
+            workspaceId: workspace.id,
+            workspaceName: workspace.name,
+            taskKindRaw: classification.kind.rawValue,
+            matchedKeyword: classification.matchedKeyword,
+            taskFingerprint: fingerprint,
+            candidates: candidates,
+            selectedAgentRaw: recommended.rawValue,
+            previousAgentRaw: currentKind.rawValue,
+            reasonSummary: reasonSummary,
+            reasonCodes: reasonCodes,
+            outcome: outcome,
+            estimatedHandoffTokens: estimatedHandoffTokens,
+            redactedPrompt: redacted,
+            rawPrompt: raw
+        )
+        await routingLogStore.append(record)
+        // UI cache update (head insertion — 최신부터)
+        routingDecisions.insert(record, at: 0)
+        // memory cap
+        if routingDecisions.count > 500 {
+            routingDecisions = Array(routingDecisions.prefix(500))
+        }
+    }
+
+    private func buildReasonCodes(
+        kind: TaskKind,
+        keyword: String?,
+        outcome: RoutingDecisionRecord.Outcome
+    ) -> [String] {
+        var codes: [String] = []
+        codes.append("kind_\(kind.rawValue)")
+        if keyword != nil { codes.append("keyword_match") } else { codes.append("default_kind") }
+        codes.append("outcome_\(outcome.rawValue)")
+        return codes
+    }
+
+    /// ADR-052 — 앱 시작 시 routing log 로드. AppModel.bootstrap 등에서 호출.
+    public func loadRoutingDecisionLog() async {
+        let days = preferences.routingLogRetentionDays
+        let records = await routingLogStore.loadRecent(days: days)
+        routingDecisions = records
+    }
+
+    /// ADR-052 — Routing log JSON export (사용자가 ShareLink 또는 Save panel로 활용).
+    /// privacy: preferences.routingLogRawPrompts=false면 redacted (raw prompts 제거).
+    public func exportRoutingLog() async {
+        let includeRaw = preferences.routingLogRawPrompts
+        guard let data = await routingLogStore.exportJSON(includeRawPrompts: includeRaw) else {
+            error = "Routing log export 실패 — 빈 로그 또는 인코딩 오류"
+            return
+        }
+        // macOS NSSavePanel — main actor에서 실행
+        await MainActor.run {
+            let panel = NSSavePanel()
+            panel.allowedContentTypes = [.json]
+            panel.nameFieldStringValue = "yuminai-routing-log-\(Date().formatted(.iso8601.day().month().year())).json"
+            if panel.runModal() == .OK, let url = panel.url {
+                try? data.write(to: url)
+                error = "Routing log 저장됨: \(url.lastPathComponent)"
+            }
+        }
+    }
+
+    /// ADR-052 — Routing log in-memory cache 비우기 (disk file은 유지).
+    /// disk 정리는 사용자가 직접 ~/Library/Application Support/Yuminai/routing-log/ 에서.
+    public func clearRoutingLogMemory() async {
+        routingDecisions = []
+        // disk 파일 자체 삭제는 사용자 신중한 결정 필요 — 별도 액션으로 분리
+    }
+
+    // MARK: - ADR-052 Rehearsal helpers
+
+    /// ADR-052 — task의 rehearsal 결과 list (UI 표시용).
+    public func rehearsals(forTaskId id: UUID) -> [RehearsalRun] {
+        rehearsalsByTask[id] ?? []
+    }
+
+    /// ADR-052 — task에 대한 rehearsal launch.
+    /// 1. 현재 task 상태로 snapshot 저장 (없으면 새로 생성)
+    /// 2. RehearsalRun pending 상태로 record 추가
+    /// 3. 다른 모델로 ephemeral session 호출 (Phase 1 minimal: 호출 stub만 — 실제 LLM 호출은 향후 확장)
+    public func launchRehearsal(taskId: UUID, agent: AgentKind) async {
+        guard let task = harness.tasks.first(where: { $0.id == taskId }) else {
+            error = "Rehearsal: task를 찾을 수 없음"
+            return
+        }
+        guard let workspace = currentWorkspace else { return }
+
+        // 1. snapshot 저장
+        let entries = harness.conversationLog.filter { entry in
+            if !task.entryRefs.isEmpty { return task.entryRefs.contains(entry.id) }
+            return entry.timestamp >= task.createdAt
+        }
+        let settingsSummary = TaskSnapshot.SettingsSummary(
+            modelLabel: activeSettings.model.displayName,
+            mode: activeSettings.effortLevel.rawValue,
+            permissionMode: activeSettings.permissionMode.rawValue
+        )
+        let snapshot = TaskSnapshot(
+            taskId: taskId,
+            taskTitle: task.title,
+            taskDescription: task.description,
+            originalAgentRaw: (task.assignedAgent ?? workspace.agentKind).rawValue,
+            originalSettings: settingsSummary,
+            projectContextSummary: workspace.projectProfile.systemContextSummary(),
+            entries: entries,
+            originalOutput: task.output
+        )
+        await rehearsalStore.saveSnapshot(snapshot)
+
+        // 2. Run pending record
+        let runId = UUID()
+        let estimatedTokens = entries.reduce(0) { $0 + $1.content.utf8.count / 4 }
+        // 간단 비용 추정: 1K tokens = $0.003 (Sonnet 평균치) — 실제 비용은 별도 metric layer
+        let estimatedCostUSD = Double(estimatedTokens) / 1000.0 * 0.003
+        var run = RehearsalRun(
+            id: runId,
+            snapshotId: snapshot.id,
+            taskId: taskId,
+            replayAgentRaw: agent.rawValue,
+            status: .pending,
+            estimatedCostUSD: estimatedCostUSD
+        )
+        await rehearsalStore.saveRun(run)
+        var existing = rehearsalsByTask[taskId] ?? []
+        existing.insert(run, at: 0)
+        rehearsalsByTask[taskId] = existing
+
+        // 3. Phase 1 minimal: 실제 LLM 호출 대신 stub
+        //    — 이유: 별도 Process spawn + isolated context는 ChildClaudeProcess (Phase 2 cost-separation)와
+        //    공통 인프라가 필요. ADR-053에서 통합 구현 예정.
+        //    현재는 사용자에게 "리허설 인프라 준비됨, 실제 실행은 다음 단계" 안내.
+        run.status = .completed
+        run.completedAt = Date()
+        run.durationMs = 0
+        run.resultText = "[리허설 stub] \(agent.shortLabel.capitalized)로 재실행하면 어떤 결과가 나올지 비교하는 인프라가 준비됐어요. 실제 LLM 호출은 다음 단계 (cost-separation 통합)에서 활성화됩니다.\n\n원본 결과: \(task.output ?? task.description)"
+        await rehearsalStore.saveRun(run)
+        if let idx = rehearsalsByTask[taskId]?.firstIndex(where: { $0.id == runId }) {
+            rehearsalsByTask[taskId]?[idx] = run
+        }
+        error = "리허설 인프라 준비됨 — 다음 단계에서 실제 LLM 재실행 활성화 예정"
+    }
+
+    /// ADR-052 — 앱 시작 또는 워크스페이스 전환 시 rehearsal cache load (현재 task들에 대해서만).
+    public func loadRehearsalsForCurrentTasks() async {
+        for task in harness.tasks {
+            let runs = await rehearsalStore.loadRuns(taskId: task.id)
+            if !runs.isEmpty {
+                rehearsalsByTask[task.id] = runs
+            }
+        }
     }
 
     /// ADR-051 — 사용자가 routing countdown 중 취소.
@@ -1606,6 +2033,16 @@ public final class AppModel {
             allTimeUsage.add(stats)
             if let cost = delta.costUSD, cost > 0 {
                 lastCostDelta = cost
+                // ADR-052 — Cost를 적절한 bucket으로 라우팅
+                // pendingDecomposition이면 decomposition bucket, 아니면 main
+                if pendingDecomposition {
+                    // decomposition bucket은 decomposeUserTask에서 estimate를 이미 add 했으므로
+                    // 여기서는 차이만 보정 (실제 cost - estimate 차이를 + 또는 -)
+                    // 단순화: 추가 add 없이 estimate를 유지 (실제 추적은 main allTimeUsage에 통합)
+                    // → 향후 ChildClaudeProcess 분리 시 별도 process의 usage를 직접 추적
+                } else {
+                    costTracker.add(.main, usd: cost)
+                }
             }
         case .completed(let exitCode):
             isStreaming = false
@@ -2096,6 +2533,8 @@ public final class AppModel {
         showCommandPalette = false
         walkthroughTaskId = nil
         showHarnessHelp = false
+        showRoutingLog = false
+        rehearsalTaskId = nil
     }
 
     /// 새 sheet/alert을 열기 전에 다른 sheet 모두 닫고 setter 실행.

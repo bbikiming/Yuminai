@@ -151,13 +151,18 @@ struct RootView: View {
                 onCancel: { appModel.editingProjectProfileForWorkspaceId = nil }
             )
         }
-        // ADR-051 — ⌘K Command Palette
+        // ADR-051 + ADR-052 — ⌘K Command Palette (pin/recent 지원)
         .sheet(isPresented: $bindable.showCommandPalette) {
             CommandPaletteSheet(
                 actions: appModel.buildCommandPaletteActions(),
+                pinnedIds: appModel.palettePinnedIds,
+                recentIds: appModel.paletteRecentIds,
                 onPerform: { action in
                     appModel.showCommandPalette = false
-                    action.perform()
+                    Task { await appModel.performPaletteAction(action) }
+                },
+                onTogglePin: { actionId in
+                    Task { await appModel.togglePalettePin(actionId) }
                 },
                 onCancel: { appModel.showCommandPalette = false }
             )
@@ -173,6 +178,31 @@ struct RootView: View {
         // ADR-051 — Harness 도움말
         .sheet(isPresented: $bindable.showHarnessHelp) {
             HarnessHelpSheet(onClose: { appModel.showHarnessHelp = false })
+        }
+        // ADR-052 — Routing Decision Log viewer
+        .sheet(isPresented: $bindable.showRoutingLog) {
+            RoutingDecisionLogSheet(
+                decisions: appModel.routingDecisions,
+                onClose: { appModel.showRoutingLog = false },
+                onExport: {
+                    Task { await appModel.exportRoutingLog() }
+                },
+                onClear: {
+                    Task { await appModel.clearRoutingLogMemory() }
+                }
+            )
+        }
+        // ADR-052 — Walk-through rehearsal sheet (다른 모델로 재실행)
+        .sheet(item: rehearsalBinding) { task in
+            RehearsalSheet(
+                task: task,
+                allEntries: appModel.harness.conversationLog,
+                rehearsals: appModel.rehearsals(forTaskId: task.id),
+                onLaunch: { agent in
+                    Task { await appModel.launchRehearsal(taskId: task.id, agent: agent) }
+                },
+                onClose: { appModel.rehearsalTaskId = nil }
+            )
         }
         .sheet(item: $bindable.renameSheetPane) { pane in
             PaneRenameSheet(
@@ -374,6 +404,12 @@ struct RootView: View {
                     },
                     onHarnessShowHelp: {
                         appModel.presentExclusiveSheet { $0.showHarnessHelp = true }
+                    },
+                    onHarnessShowRehearsal: { id in
+                        appModel.presentExclusiveSheet { $0.rehearsalTaskId = id }
+                    },
+                    onHarnessShowRoutingLog: {
+                        appModel.presentExclusiveSheet { $0.showRoutingLog = true }
                     }
                 )
                 .task(id: appModel.selectedWorkspaceId) {
@@ -471,6 +507,19 @@ struct RootView: View {
             },
             set: { newValue in
                 appModel.walkthroughTaskId = newValue?.id
+            }
+        )
+    }
+
+    /// ADR-052 — Rehearsal sheet binding (task id ↔ HarnessTask).
+    private var rehearsalBinding: Binding<HarnessTask?> {
+        Binding(
+            get: {
+                guard let id = appModel.rehearsalTaskId else { return nil }
+                return appModel.harness.tasks.first { $0.id == id }
+            },
+            set: { newValue in
+                appModel.rehearsalTaskId = newValue?.id
             }
         )
     }

@@ -41,6 +41,15 @@ public struct AppPreferences: Sendable, Codable, Hashable {
     /// ADR-051 — Harness inline mode: 메인 chat area를 HarnessConversationView로 교체.
     /// **default false** — 전통 ChatView가 default.
     public var harnessInlineModeEnabled: Bool
+    /// ADR-052 — Routing decision log raw prompt 저장 toggle. **default false**.
+    /// 켜면 disk에 raw prompt까지 저장 (privacy 위험). 끄면 80자 prefix만.
+    public var routingLogRawPrompts: Bool
+    /// ADR-052 — Routing decision log retention (in-memory). default 7일.
+    /// disk file은 별도 manual cleanup 필요.
+    public var routingLogRetentionDays: Int
+    /// ADR-052 — Multi-agent 병렬 실행 활성. **default false** (Cognition 권고: parallel = fragile).
+    /// 켜면 TaskGraph의 disjoint task를 두 pane에서 동시 실행 가능.
+    public var multiAgentParallelEnabled: Bool
     /// pane 응답에 `@<other>` mention이 있으면 자동으로 다음 turn dispatch (ADR-034 A1).
     /// **default OFF** — 무한 루프 위험, 명시적 토글 필요.
     public var agentChainEnabled: Bool
@@ -69,6 +78,9 @@ public struct AppPreferences: Sendable, Codable, Hashable {
         harnessUIEnabled: Bool = false,
         harnessRoutingCountdownSeconds: Int = 3,
         harnessInlineModeEnabled: Bool = false,
+        routingLogRawPrompts: Bool = false,
+        routingLogRetentionDays: Int = 7,
+        multiAgentParallelEnabled: Bool = false,
         agentChainEnabled: Bool = false,
         agentChainMaxHops: Int = 1,
         fontSizeOffset: Int = 0,
@@ -93,6 +105,9 @@ public struct AppPreferences: Sendable, Codable, Hashable {
         self.harnessUIEnabled = harnessUIEnabled
         self.harnessRoutingCountdownSeconds = harnessRoutingCountdownSeconds
         self.harnessInlineModeEnabled = harnessInlineModeEnabled
+        self.routingLogRawPrompts = routingLogRawPrompts
+        self.routingLogRetentionDays = routingLogRetentionDays
+        self.multiAgentParallelEnabled = multiAgentParallelEnabled
         self.agentChainEnabled = agentChainEnabled
         self.agentChainMaxHops = agentChainMaxHops
         self.fontSizeOffset = fontSizeOffset
@@ -121,6 +136,9 @@ public struct AppPreferences: Sendable, Codable, Hashable {
         self.harnessUIEnabled = try c.decodeIfPresent(Bool.self, forKey: .harnessUIEnabled) ?? false
         self.harnessRoutingCountdownSeconds = try c.decodeIfPresent(Int.self, forKey: .harnessRoutingCountdownSeconds) ?? 3
         self.harnessInlineModeEnabled = try c.decodeIfPresent(Bool.self, forKey: .harnessInlineModeEnabled) ?? false
+        self.routingLogRawPrompts = try c.decodeIfPresent(Bool.self, forKey: .routingLogRawPrompts) ?? false
+        self.routingLogRetentionDays = try c.decodeIfPresent(Int.self, forKey: .routingLogRetentionDays) ?? 7
+        self.multiAgentParallelEnabled = try c.decodeIfPresent(Bool.self, forKey: .multiAgentParallelEnabled) ?? false
         self.agentChainEnabled = try c.decodeIfPresent(Bool.self, forKey: .agentChainEnabled) ?? false
         self.agentChainMaxHops = try c.decodeIfPresent(Int.self, forKey: .agentChainMaxHops) ?? 1
         self.fontSizeOffset = try c.decodeIfPresent(Int.self, forKey: .fontSizeOffset) ?? 0

@@ -13,6 +13,8 @@ public struct TaskGraphMiniMap: View {
     public let onAddTask: () -> Void
     public let onRunReadyTask: (UUID) -> Void
     public let onShowWalkthrough: (UUID) -> Void
+    /// ADR-052 — task에 대해 다른 모델로 rehearsal 시도
+    public let onShowRehearsal: (UUID) -> Void
 
     @AppStorage("yuminai.harness.taskGraphMode") private var modeRaw: String = TaskGraphViewMode.list.rawValue
 
@@ -26,7 +28,8 @@ public struct TaskGraphMiniMap: View {
         onRemove: @escaping (UUID) -> Void = { _ in },
         onAddTask: @escaping () -> Void = {},
         onRunReadyTask: @escaping (UUID) -> Void = { _ in },
-        onShowWalkthrough: @escaping (UUID) -> Void = { _ in }
+        onShowWalkthrough: @escaping (UUID) -> Void = { _ in },
+        onShowRehearsal: @escaping (UUID) -> Void = { _ in }
     ) {
         self.tasks = tasks
         self.onUpdateStatus = onUpdateStatus
@@ -34,6 +37,7 @@ public struct TaskGraphMiniMap: View {
         self.onAddTask = onAddTask
         self.onRunReadyTask = onRunReadyTask
         self.onShowWalkthrough = onShowWalkthrough
+        self.onShowRehearsal = onShowRehearsal
     }
 
     public var body: some View {
@@ -116,7 +120,8 @@ public struct TaskGraphMiniMap: View {
                         onUpdateStatus: { status in onUpdateStatus(task.id, status) },
                         onRemove: { onRemove(task.id) },
                         onRunReady: { onRunReadyTask(task.id) },
-                        onShowWalkthrough: { onShowWalkthrough(task.id) }
+                        onShowWalkthrough: { onShowWalkthrough(task.id) },
+                        onShowRehearsal: { onShowRehearsal(task.id) }
                     )
                 }
             }
@@ -242,6 +247,7 @@ private struct TaskRow: View {
     let onRemove: () -> Void
     let onRunReady: () -> Void
     let onShowWalkthrough: () -> Void
+    let onShowRehearsal: () -> Void
 
     @State private var hovering = false
 
@@ -286,6 +292,14 @@ private struct TaskRow: View {
                             }
                             .buttonStyle(.plain)
                             .help("이 task의 진행 과정 walk-through")
+                            // ADR-052 — Rehearsal 버튼 (완료된 task에 대해 다른 모델로 재실행)
+                            Button(action: onShowRehearsal) {
+                                Image(systemName: "arrow.triangle.2.circlepath")
+                                    .font(.system(size: 10))
+                                    .foregroundStyle(Color.orange)
+                            }
+                            .buttonStyle(.plain)
+                            .help("이 task를 다른 모델로 리허설 (ADR-052)")
                         }
                         Menu {
                             ForEach(TaskStatus.allCases, id: \.self) { s in

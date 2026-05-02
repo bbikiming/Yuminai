@@ -4,6 +4,112 @@
 
 ## [Unreleased] — 2026-05-02
 
+### Added — Harness 차세대 5개 후보 (ADR-052) — 외부 시스템 검증 패턴 기반
+
+**1. Routing Decision Log** (LangSmith/Langfuse/Phoenix/OTel GenAI 패턴):
+- `Sources/YuminaiCore/RoutingDecisionLog.swift`
+  - `RoutingDecisionRecord`: id/ts/workspace/taskKind/candidates[]/selected/outcome(applied/cancelled/skipped/failed)/reason
+  - `computeFingerprint`: djb2 hash of `{taskKind, lang, length_bucket}` (counterfactual 그룹화)
+  - `RoutingDecisionLogStore` actor: NDJSON daily rotation (`~/Library/Application Support/Yuminai/routing-log/YYYY-MM-DD.ndjson`),
+    file mode 0600, in-memory cache (capDays=7), exportJSON(redact 옵션)
+- `Sources/YuminaiUI/RoutingDecisionLogSheet.swift` (3-pane viewer):
+  - Timeline (filter: all/applied/cancelled/skipped/failed)
+  - Decision Card (Mitchell Model Card 패턴 — selected, candidates, reason, fingerprint, metadata)
+  - Counterfactual section (같은 fingerprint의 과거 결정 분포)
+- `AppPreferences.routingLogRawPrompts: Bool = false` (OTel "sensitive PII" default OFF)
+- `AppPreferences.routingLogRetentionDays: Int = 7`
+- AppModel: `applyHarnessAutoRoutingIfNeeded`에 모든 outcome record append
+- Inspector + Command Palette에서 진입 가능
+
+**2. Walk-through Rehearsal** (Promptfoo/Braintrust/LangSmith Experiments 패턴):
+- `Sources/YuminaiCore/RehearsalTypes.swift`
+  - `TaskSnapshot` immutable (Jest snapshot 차용): id/taskId/createdAt/originalAgent/SettingsSummary/entries
+  - `RehearsalRun` 별도 record: snapshotId reference + replayAgent + status + result + cost + duration
+  - `RehearsalStore` actor: per-task directory `rehearsals/{taskId}/snapshot.json + run-*.json`
+- `Sources/YuminaiUI/RehearsalSheet.swift`:
+  - Yellow tint 배경 (Xcode debug overlay 패턴)
+  - REHEARSAL banner (orange, "원본 vs 재실행" 명시, 닫기 불가)
+  - Run picker, side-by-side original vs rehearsal, metadata 6필드
+  - "결과는 production conversation에 자동 반영되지 않습니다" footer (Promote 명시 필요)
+- TaskGraphMiniMap: completed/failed task에 `arrow.triangle.2.circlepath` orange 버튼 hover 표시
+- AppModel: `launchRehearsal(taskId:agent:)` Phase 1 stub (실제 LLM 호출은 ADR-053 ChildClaudeProcess 통합)
+
+**3. TaskDecomposition Cost Separation** (Aider architect_coder + Cline SubagentRunner 패턴):
+- `Sources/YuminaiCore/CostTracker.swift`:
+  - `Bucket` enum: `main` / `decomposition` / `rehearsal` / `routing`
+  - `Snapshot.formatted()`: "Main: $0.04 / Decomp: $0.001 / Rehearsal: $0 / Total: $0.041"
+  - `nonisolated static estimateCostUSD(inputTokens, outputTokens)` — Sonnet 4.5 pricing ($3/$15 per MTok)
+- TaskDecomposer prompt: `<ephemeral-decomposition cache-control="off">` wrap (의도 명시)
+- AppModel: `decomposeUserTask`에서 estimate를 decomposition bucket에 add + SharedLog에 비용 분리 안내
+- usage event handler: `pendingDecomposition`이면 main bucket skip (cache 보호)
+- 한계: 별도 Process가 아니므로 정확한 격리는 ADR-053 ChildClaudeProcess와 통합 시
+
+**4. Command Palette Pin/Customization** (VSCode quickPickPin + Raycast + cmdk 패턴):
+- `PaletteAction.actionId: String` (stable string ID) — VSCode/Raycast 패턴 (객체 임베드 X)
+- `Sources/YuminaiCore/PalettePinStore.swift`:
+  - actor (UserDefaults 기반)
+  - `pinnedIds: [String]` ordered (drag reorder 지원)
+  - `recentCounters: [String:Int]` LRU 50 cap (`PalettePinStore.recentCap`)
+  - `togglePin / pin / unpin / reorderPins / recordUse / recentIds(limit:) / clearRecents`
+  - `CmdkScore.score(text:query:)` (cmdk command-score.ts 차용):
+    - empty query → 1.0, prefix → 1.0, space-jump → 0.9, dash-jump → 0.8, contains → 0.7, subsequence → 0.4
+- CommandPaletteSheet:
+  - 검색 빈 상태: "★ 핀" / "최근" / "전체" 3 sections 분리 + 헤더 표시
+  - 검색 중: 단일 ranked list (pin section 자동 숨김 — cmdk linear.tsx 패턴)
+  - 각 row에 ★ toggle 버튼 (actionId 있는 액션만)
+- AppModel: `palettePinnedIds` / `paletteRecentIds` cache + `performPaletteAction` (recent 기록) + `togglePalettePin` + `loadPalettePins` (bootstrap에서 호출)
+
+**5. Multi-agent Parallel Execution** (LangGraph BSP + CrewAI futures + Devin 격리 + Cognition 권고):
+- `AppPreferences.multiAgentParallelEnabled: Bool = false` (Cognition "Don't Build Multi-Agents" 권고)
+- AppModel: `runReadyTasksInParallel()`:
+  - dependency-free task 2개 picking
+  - title overlap > 2 keywords 시 conflict warning + abort (CrewAI validate 패턴)
+  - 비용 honest disclosure: "예상 비용: 2x 토큰, 1.5x wall-clock" SharedLog에 표시
+  - Phase 1: 첫 task dispatch + 두 번째 task 안내 (실제 동시 LLM은 ADR-053 ChildClaudeProcess와)
+- Command Palette: `task.run.parallelAll` action (ready ≥ 2일 때만 표시)
+- Settings: `Multi-agent 병렬 실행 (실험적)` toggle + 비용 hint
+
+### Tests added
+- `RoutingDecisionLogTests.swift` (10 tests): fingerprint determinism, Codable round-trip, log store append/load/group/export
+- `PalettePinStoreTests.swift` (16 tests): pin/recent CRUD, reorder, cap, CmdkScore (6가지 점수), CostTracker bucket
+- `RehearsalStoreTests.swift` (5 tests): TaskSnapshot/Run round-trip, store save/load
+- **Total**: 372/372 passed (78 suites)
+
+### Settings UI 변경
+- "Harness (다중 모델 오케스트레이션)" section에:
+  - Divider 후 ADR-052 새 토글들
+  - Multi-agent 병렬 실행 toggle (warning hint)
+  - Routing log: raw prompt 저장 toggle
+  - Routing log retention (1-30일) Stepper
+
+### Inspector 변경
+- TaskGraphMiniMap row hover 시 `arrow.triangle.2.circlepath` orange 버튼 → rehearsal sheet
+- InspectorPanel callback 2개 추가: `onHarnessShowRehearsal`, `onHarnessShowRoutingLog`
+
+### 빌드/테스트 결과
+- `swift build` → Build complete! (7.16s)
+- `swift test` → 372/372 passed in 78 suites (~0.09s)
+
+### 출처 (외부 검증)
+연구는 5개 parallel research agents (academic-researcher / search-specialist 2회) 결과 종합:
+- LangGraph: `_executor.py`, `_loop.py` (Pregel BSP)
+- CrewAI: `crew.py:1441-1510` (futures barrier)
+- AutoGen: `_digraph_group_chat.py:305,458` (List[str] fan-out)
+- Aider: `architect_coder.py:37-39,46` (cur_messages reset, "I made those changes" 요약 import)
+- Cline: `SubagentRunner.ts:243,297,393`, `SubagentRunStats:48-58` (자체 ApiHandler/Stats)
+- VSCode: `quickPickPin.ts`, `commandsQuickAccess.ts:378-484` (pin storage + MRU LRUCache)
+- Raycast: `clean-text.tsx:55-81,249-285` (pinned 별도 storage key)
+- cmdk: `command-score.ts:6-44` (1.0/0.9/0.8 fuzzy ranking)
+- Promptfoo: `providers:` yaml 패턴
+- LangSmith: `Run/Trace/Thread`, `/datasets/comparative/{id}`, `/runs/threads/{id}`
+- Langfuse: v4 observation immutable model
+- Phoenix: `openinference.span.kind` (CHAIN/LLM/AGENT/TOOL/RETRIEVER/RERANKER/EMBEDDING)
+- OTel GenAI semconv 1.41 (`gen_ai.input.messages` PII warning)
+- Mitchell et al. "Model Cards" FAT* '19 (Decision Card 기준)
+- Cognition: "Don't Build Multi-Agents" position paper
+
+---
+
 ### Added — Harness 사용성 강화: 5개 핵심 + 친절한 도움말 (ADR-051)
 
 **1. Intervention countdown** — 자동 routing 전 cancel window:

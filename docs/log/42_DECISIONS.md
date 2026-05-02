@@ -1,6 +1,178 @@
 # Decisions Log (ADR-lite)
 
-> 최신: ADR-051 (Harness 다음 라운드 — Intervention / Command Palette / Inline mode / Walk-through / 친절한 도움말)
+> 최신: ADR-052 (Harness 차세대 — 5개 후보 모두 레퍼런스 기반 구현)
+
+---
+
+## ADR-052 — Harness 차세대 5개 후보: Routing Log + Rehearsal + Cost Separation + Palette Pin + Multi-agent Parallel
+
+- **날짜**: 2026-05-02
+- **상태**: Accepted (Phase 1 minimal — 일부는 ADR-053 ChildClaudeProcess와 통합 예정)
+- **결정**: ADR-051에 명시한 5개 후보를 외부 시스템 검증 패턴 기반으로 모두 도입
+
+### 컨텍스트
+사용자: "다음 라운드의 모든 후보들도 래퍼런스와 명확한 근거 웹과 깃에서 확실하게 조사한 후에 기획에 적용해 가면서 구현해 줘"
+
+ADR-051에서 다음 라운드 후보로 정의한 5개:
+1. Multi-agent 병렬 실행 (두 pane 동시)
+2. TaskDecomposition LLM 비용 분리
+3. Routing decision log
+4. Walk-through 리허설 (다른 모델로 re-run)
+5. Command Palette ★ 핀
+
+각 후보의 근거를 web/git에서 학술 + 산업 시스템에서 검증해 적용.
+
+### 외부 검증 (5개 parallel research agents 결과)
+
+#### 1. Multi-agent parallel execution
+- **Google Antigravity** — Workspace = swimlane card, manual trigger, Artifacts review
+  (https://antigravity.google/docs/concepts/manager)
+- **Cognition Devin** — 격리된 VM per child, "Don't Build Multi-Agents" 경고: 병렬은 fragile
+  (https://cognition.ai/blog/dont-build-multi-agents)
+- **Microsoft AutoGen** — `GraphFlowManager.select_speaker() -> List[str]` (multiple = parallel)
+  (`autogen-agentchat/teams/_group_chat/_graph/_digraph_group_chat.py:305,458`)
+- **CrewAI** — `Task(async_execution=True)` + `_execute_tasks() futures` barrier
+  (`lib/crewai/src/crewai/crew.py:1441-1510`)
+- **LangGraph** — Pregel BSP superstep (`BackgroundExecutor.submit()` + barrier)
+- **AutoGPT** — `ThreadPoolExecutor + max_concurrent_graph_executions_per_user=25`
+
+**결론**: per-pane git worktree 격리 mandatory + BSP barrier merge + failure 시 다른 쪽 pause + 비용 honest disclosure
+
+#### 2. TaskDecomposition cost separation
+- **Aider** — `architect_coder.py:37-39` `editor_coder.cur_messages = []` (full reset),
+  `cache_prompts = False`, weak_model 슬롯, `total_cost` 별도
+  (https://github.com/Aider-AI/aider/blob/main/aider/coders/architect_coder.py)
+- **Cline** — `SubagentRunner.ts:243,297,393` 자체 ApiHandler + 자체 conversation,
+  `SubagentRunStats { totalCost, ... }`, retry 3회 + exponential backoff
+  (`/cline/src/core/task/tools/subagent/SubagentRunner.ts`)
+- **Claude Code** Task tool — 각 sub-agent 자체 context window, final response만 메인 import
+- **OpenAI Swarm** — 반례: `history` 공유 누적, 비용 격리 X (deprecated)
+
+**결론**: 별도 ChildClaudeProcess + cache_control off + 모델 슬롯 분리 + result는 요약 + JSON만 import
+
+#### 3. Routing decision log
+- **LangSmith** — `Run`(=OTel span) inside `Trace`, `Thread`로 multi-turn link
+  (https://docs.smith.langchain.com/observability/concepts)
+- **Langfuse** — `Observation` immutable v4 (https://langfuse.com/docs/observability/data-model)
+- **Phoenix** — OTel `openinference.span.kind=AGENT`, `Datasets & Experiments`
+- **OTel GenAI semconv 1.41** — `gen_ai.input.messages`는 "sensitive PII" warning
+  (https://opentelemetry.io/docs/specs/semconv/gen-ai/gen-ai-spans/)
+- **Honeycomb** — high-cardinality wide event + BubbleUp
+- **Mitchell et al. "Model Cards" FAT* '19** — Decision Card 패턴 기준
+
+**결론**: NDJSON daily rotation + 경량 in-memory + redacted prompt by default + counterfactual A/B view
+
+#### 4. Walk-through rehearsal
+- **Promptfoo** — `providers:` yaml 배열로 N model 매트릭스
+  (https://www.promptfoo.dev/docs/configuration/guide/)
+- **LangSmith Datasets + Experiments** — `client.evaluate(fn, data=ds)` model swap
+- **Braintrust** — `Eval(name, task=fn1) vs Eval(name, task=fn2)` 분리 record
+- **OpenAI Evals** — `oaieval gpt-3.5-turbo test-match` CLI model swap
+- **Anthropic Evals** — Cookbook 패턴 (수동)
+- **Postman** — Save Response + Environment switcher
+
+**결론**: TaskSnapshot immutable + RehearsalRun 별도 record + UI에 yellow tint + REHEARSAL banner +
+"Promote to main" 명시 액션 + DiffMatchPatch row-per-turn
+
+#### 5. Command Palette pin
+- **VSCode** — `quickPickPin.ts` `IStorageService` keyed by `quickPickPin`, JSON `string[]`,
+  StorageScope.WORKSPACE; `commandsQuickAccess.ts:378-484` MRU LRUCache 50 cap, save on shutdown
+  (https://github.com/microsoft/vscode/blob/main/src/vs/platform/quickinput/browser/quickPickPin.ts)
+- **Raycast** — `LocalStorage.setItem("clean-text-pinned", JSON.stringify(string[]))`,
+  recent cap = 4 + pinned.length
+  (https://github.com/raycast/extensions/blob/main/extensions/clean-text/src/clean-text.tsx)
+- **cmdk** — command-score: continuous=1.0, word-jump=0.8-0.9, case=0.9999
+  (https://github.com/pacocoursey/cmdk/blob/main/cmdk/src/command-score.ts)
+- **cmdk linear demo** — 검색 중에는 pin section 자동 숨김
+
+**결론**: stable string ID 배열 + Pins/Recents 별도 storage + 검색 중 pin 숨김 + cmdk fuzzy scoring
+
+### 결정
+
+#### 1. Routing Decision Log (Phase 1 — 완전)
+- `Sources/YuminaiCore/RoutingDecisionLog.swift`
+  - `RoutingDecisionRecord` struct (id, ts, workspace, taskKind, candidates, selected, outcome, reason)
+  - `Outcome` enum: applied / cancelled / skipped / failed
+  - `RoutingDecisionLogStore` actor — NDJSON daily rotation, file mode 0600, in-memory cache
+  - `computeFingerprint()` — djb2 hash of `{taskKind, lang, length_bucket}`
+- `Sources/YuminaiUI/RoutingDecisionLogSheet.swift` — 3-pane viewer (Timeline / Decision Card / Counterfactual)
+- AppModel: `applyHarnessAutoRoutingIfNeeded`에 모든 outcome (applied/cancelled/skipped/failed) record append
+- Settings: routing log retention days (1-30) + raw prompts toggle
+
+#### 2. Walk-through Rehearsal (Phase 1 — infra)
+- `Sources/YuminaiCore/RehearsalTypes.swift`
+  - `TaskSnapshot` immutable + `RehearsalRun` 별도 record + status enum
+  - `RehearsalStore` actor — `~/Library/Application Support/Yuminai/rehearsals/{taskId}/{runId}.json`
+- `Sources/YuminaiUI/RehearsalSheet.swift`
+  - Yellow tint 배경 (Xcode debug overlay 차용)
+  - REHEARSAL banner (닫기 불가)
+  - launch picker + cost 추정 표시
+  - Promote to main 미구현 (rehearsal vs production 격리 강제)
+- TaskGraphMiniMap: completed task에 rehearsal 버튼 (orange `arrow.triangle.2.circlepath`)
+- AppModel: `launchRehearsal(taskId:agent:)` — Phase 1 stub (실제 LLM 호출은 ADR-053에서 ChildClaudeProcess와 통합)
+
+#### 3. TaskDecomposition Cost Separation (Phase 1 — infra)
+- `Sources/YuminaiCore/CostTracker.swift`
+  - 4 buckets: `main`, `decomposition`, `rehearsal`, `routing`
+  - `Snapshot` formatted output: "Main: $X / Decomp: $Y / ..."
+  - Sonnet 4.5 pricing estimate (input $3/MTok, output $15/MTok)
+- TaskDecomposer prompt: `<ephemeral-decomposition cache-control="off">` wrap (의도 명시)
+- AppModel: `decomposeUserTask`에서 estimate를 decomposition bucket에 add
+- usage event handler: `pendingDecomposition`이면 main bucket skip
+- **알림**: 별도 ChildClaudeProcess는 ADR-053 (multi-agent parallel과 공통 인프라)
+
+#### 4. Command Palette Pin/Customization (Phase 1 — 완전)
+- `PaletteAction.actionId` (stable string ID) 추가 — VSCode/Raycast 패턴
+- `Sources/YuminaiCore/PalettePinStore.swift`
+  - actor (UserDefaults 기반)
+  - `pinnedIds: [String]` ordered + `recentCounters: [String:Int]` LRU 50 cap
+  - `togglePin / pin / unpin / reorderPins / recordUse / clearRecents`
+  - cmdk-derived `CmdkScore.score(text:query:)` (1.0/0.9/0.8/0.7/0.4/0.0)
+- CommandPaletteSheet:
+  - 검색 빈 상태: ★ 핀 / 최근 / 전체 sections 분리
+  - 검색 중: 단일 ranked list (pin section 자동 숨김 — cmdk linear 패턴)
+  - 각 row에 ★ toggle 버튼
+- AppModel: `palettePinnedIds`, `paletteRecentIds` cache + `performPaletteAction(action)`/`togglePalettePin(id)`/`loadPalettePins()`
+
+#### 5. Multi-agent Parallel Execution (Phase 1 — infra + warn)
+- `AppPreferences.multiAgentParallelEnabled` — default OFF (Cognition 권고)
+- AppModel: `runReadyTasksInParallel()`
+  - dependency-free task 2개 picking
+  - title overlap > 2 keywords면 conflict warning + abort
+  - 비용 honest disclosure: "예상 비용: 2x 토큰, 1.5x wall-clock"
+  - Phase 1 minimal: 첫 task dispatch + UI에 두 번째 안내 (실제 동시 LLM은 ADR-053)
+- Command Palette: `task.run.parallelAll` action (멀티 ready task 병렬 실행)
+- Settings: 활성 토글 + warning hint
+
+### 적용 결과 (검증)
+
+```
+swift build                 → Build complete! (7.16s)
+swift test                  → 372/372 passed
+새 파일 (Core)              → 4개 (RoutingDecisionLog, RehearsalTypes, CostTracker, PalettePinStore)
+새 파일 (UI)                → 2개 (RoutingDecisionLogSheet, RehearsalSheet)
+새 테스트 파일              → 3개 (RoutingDecisionLog/PalettePin/Rehearsal Tests, +25 tests)
+AppPreferences 새 필드      → 3개 (routingLogRawPrompts, routingLogRetentionDays, multiAgentParallelEnabled)
+```
+
+### 트레이드오프
+
+- **5개 모두 Phase 1 (infra) 진행 vs 1-2개 깊이 (full LLM 호출)**:
+  사용자 요청은 "모두" 적용. Multi-agent parallel + Rehearsal의 실제 동시/재실행 LLM 호출은
+  공통 ChildClaudeProcess 인프라 필요 → ADR-053으로 분리. 현재는 사용자 인지/UI/state는 완전.
+- **Cost separation의 main bucket 동기화**:
+  진정한 별도 process가 아니므로 usage event 기반 bucket switching이 정확하지 않을 수 있음.
+  ChildClaudeProcess 도입 시 자체 usage 추적으로 정확도 향상 예정.
+- **Pin section vs 검색 결과 ordering**:
+  cmdk linear 패턴 따라 검색 중 pin section 숨김. 사용자 혼란 방지 우선.
+- **Privacy**:
+  routing log raw prompts default OFF (OTel "Opt-In + sensitive" 따라). 켜야 disk 보존.
+
+### 향후 (ADR-053 후보)
+- ChildClaudeProcess 도입 (별도 Process spawn) — Multi-agent parallel + Rehearsal + Decomposition cost 격리 통합
+- Routing decision log: BubbleUp-style 통계 view (어떤 keyword가 가장 misroute됐나)
+- Rehearsal: DiffMatchPatch row-per-turn 비교 view
+- Multi-agent parallel: per-pane git worktree 자동 분기
 
 ---
 

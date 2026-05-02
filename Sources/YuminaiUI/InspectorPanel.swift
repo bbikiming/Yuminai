@@ -94,6 +94,10 @@ public struct InspectorPanel: View {
     public let onHarnessRunTask: (UUID) -> Void
     public let onHarnessShowWalkthrough: (UUID) -> Void
     public let onHarnessShowHelp: () -> Void
+    /// ADR-052 — task에 대해 다른 모델로 rehearsal launch sheet 표시
+    public let onHarnessShowRehearsal: (UUID) -> Void
+    /// ADR-052 — Routing decision log viewer 표시
+    public let onHarnessShowRoutingLog: () -> Void
 
     // Diff review (ADR-027 phase A3)
     public let pendingChanges: [ChangedFile]
@@ -206,7 +210,9 @@ public struct InspectorPanel: View {
         onHarnessAddTask: @escaping () -> Void = {},
         onHarnessRunTask: @escaping (UUID) -> Void = { _ in },
         onHarnessShowWalkthrough: @escaping (UUID) -> Void = { _ in },
-        onHarnessShowHelp: @escaping () -> Void = {}
+        onHarnessShowHelp: @escaping () -> Void = {},
+        onHarnessShowRehearsal: @escaping (UUID) -> Void = { _ in },
+        onHarnessShowRoutingLog: @escaping () -> Void = {}
     ) {
         self._tab = tab
         self.usage = usage
@@ -299,6 +305,8 @@ public struct InspectorPanel: View {
         self.onHarnessRunTask = onHarnessRunTask
         self.onHarnessShowWalkthrough = onHarnessShowWalkthrough
         self.onHarnessShowHelp = onHarnessShowHelp
+        self.onHarnessShowRehearsal = onHarnessShowRehearsal
+        self.onHarnessShowRoutingLog = onHarnessShowRoutingLog
     }
 
     public var body: some View {
@@ -446,7 +454,8 @@ public struct InspectorPanel: View {
                     onRemove: onHarnessRemoveTask,
                     onAddTask: onHarnessAddTask,
                     onRunReadyTask: onHarnessRunTask,
-                    onShowWalkthrough: onHarnessShowWalkthrough
+                    onShowWalkthrough: onHarnessShowWalkthrough,
+                    onShowRehearsal: onHarnessShowRehearsal
                 )
                 .frame(minHeight: 140, idealHeight: 220)
             }
