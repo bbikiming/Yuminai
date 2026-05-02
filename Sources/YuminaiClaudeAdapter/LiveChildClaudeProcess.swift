@@ -197,6 +197,8 @@ public actor LiveChildClaudeProcess: ChildClaudeProcess {
             resultText: resultText,
             inputTokens: parsed.inputTokens,
             outputTokens: parsed.outputTokens,
+            cacheReadTokens: parsed.cacheReadTokens,
+            cacheCreationTokens: parsed.cacheCreationTokens,
             costUSD: parsed.costUSD,
             durationMs: durationMs,
             exitCode: exitCode
@@ -206,18 +208,21 @@ public actor LiveChildClaudeProcess: ChildClaudeProcess {
     // MARK: - Private
 
     /// Claude `--output-format json` 응답 파싱.
-    /// 형식: `{"result": "...", "total_cost_usd": 0.001, "usage": {"input_tokens": ...}, ...}`
+    /// 형식: `{"result": "...", "total_cost_usd": 0.001, "usage": {"input_tokens": ..., "cache_read_input_tokens": ...}, ...}`
     /// 실패 시 raw text 반환 (caller가 적절히 처리).
-    private func parseClaudeJSONOutput(_ stdout: String) -> (text: String, inputTokens: Int, outputTokens: Int, costUSD: Double) {
+    /// **ADR-058 Phase 1** — cache_read_input_tokens + cache_creation_input_tokens 추가 파싱.
+    private func parseClaudeJSONOutput(_ stdout: String) -> (text: String, inputTokens: Int, outputTokens: Int, cacheReadTokens: Int, cacheCreationTokens: Int, costUSD: Double) {
         guard let data = stdout.data(using: .utf8),
               let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else {
-            return (text: stdout, inputTokens: 0, outputTokens: 0, costUSD: 0)
+            return (text: stdout, inputTokens: 0, outputTokens: 0, cacheReadTokens: 0, cacheCreationTokens: 0, costUSD: 0)
         }
         let text = (json["result"] as? String) ?? stdout
         let cost = (json["total_cost_usd"] as? Double) ?? 0.0
         let usage = json["usage"] as? [String: Any]
         let inputTokens = (usage?["input_tokens"] as? Int) ?? 0
         let outputTokens = (usage?["output_tokens"] as? Int) ?? 0
-        return (text: text, inputTokens: inputTokens, outputTokens: outputTokens, costUSD: cost)
+        let cacheRead = (usage?["cache_read_input_tokens"] as? Int) ?? 0
+        let cacheCreation = (usage?["cache_creation_input_tokens"] as? Int) ?? 0
+        return (text: text, inputTokens: inputTokens, outputTokens: outputTokens, cacheReadTokens: cacheRead, cacheCreationTokens: cacheCreation, costUSD: cost)
     }
 }

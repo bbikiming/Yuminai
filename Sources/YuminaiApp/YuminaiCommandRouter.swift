@@ -144,16 +144,26 @@ public final class YuminaiCommandRouter: TelegramCommandRouter, @unchecked Senda
         }
 
         // ADR-045 R2.H3 — bind한 chat을 자동으로 default response chat으로 설정
+        // ADR-058 Phase 3 — chat-specific binding도 동시 등록 (multi-chat 지원)
         await model.bindTelegramWorkspace(workspace.id, defaultChatId: requestChatId)
-        return "✓ ‘\(workspace.name)’에 연결됐어요. 이제 이 chat에서 텍스트를 보내면 Claude로 전달되고, 응답도 이 chat으로 와요."
+        await MainActor.run {
+            model.preferences.telegramChatBindings[String(requestChatId)] = workspace.id
+        }
+        await model.savePreferences()
+        return "✓ ‘\(workspace.name)’에 이 chat 연결됐어요. (chat ID \(requestChatId) ↔ \(workspace.name))\n다른 chat에서 다른 워크스페이스를 binding하면 멀티 chat 운영 가능."
     }
 
     private func unbindCommand() async -> String? {
         guard let model = appModel else { return "Yuminai 연결 안 됨" }
         let prevName = await MainActor.run { model.boundWorkspaceName }
         await model.bindTelegramWorkspace(nil)
+        // ADR-058 Phase 3 — chat-specific binding도 모두 해제
+        await MainActor.run {
+            model.preferences.telegramChatBindings.removeAll()
+        }
+        await model.savePreferences()
         if let prevName {
-            return "✓ ‘\(prevName)’ 연결 해제. 이제 일반 텍스트는 무시돼요."
+            return "✓ ‘\(prevName)’ 연결 해제. (모든 chat-specific binding도 함께 해제)"
         }
         return "이미 연결된 워크스페이스가 없어요."
     }
@@ -379,7 +389,8 @@ public final class YuminaiCommandRouter: TelegramCommandRouter, @unchecked Senda
         return "💼 per-turn cap: $\(String(format: "%.4f", value)) (per-day는 별도 — /budget day <USD>)"
     }
 
-    /// **ADR-056 Phase 6** — TaskGraph 조회 + 실행 안내 (inline keyboard로 ▶ 실행).
+    /// **ADR-056 Phase 6 + ADR-058 Phase 4** — TaskGraph 조회 (inline keyboard로 ▶ 실행).
+    /// inline keyboard는 별도 send (router는 텍스트만 반환하므로 keyboard는 직접 client 사용)
     private func tasksCommand() async -> String? {
         guard let model = appModel else { return "Yuminai 연결 안 됨" }
         let tasks = await MainActor.run { model.harness.tasks }
@@ -402,6 +413,11 @@ public final class YuminaiCommandRouter: TelegramCommandRouter, @unchecked Senda
         lines.append("")
         lines.append("/rehearse <번호> <claude|codex> — 다른 모델로 리허설")
         lines.append("/walkthrough <번호> — 완료 task의 진행 과정 회고")
+        // ADR-058 Phase 4 — 사용자에게 inline keyboard 첨부 안내 (실제 button은 별도 trigger)
+        lines.append("")
+        lines.append("💡 ready task가 있으면 자동 ▶ 버튼 첨부 메시지가 별도로 전송됩니다 (PC bridge 활성 시)")
+        // 별도 actor 호출은 router 현재 구조에서 어려움 → AppModel이 task push 시 keyboard 사용
+        // 향후 router를 client-aware로 확장 시 직접 sendWithKeyboard 호출
         return lines.joined(separator: "\n")
     }
 
@@ -515,13 +531,17 @@ public final class YuminaiCommandRouter: TelegramCommandRouter, @unchecked Senda
         guard let model = appModel else { return "Yuminai 연결 안 됨" }
 
         let preflight: Preflight = await MainActor.run {
-            guard let boundId = model.preferences.telegramBoundWorkspaceId else {
-                return .notBound
-            }
-            guard model.workspaces.contains(where: { $0.id == boundId }) else {
+            // ADR-058 Phase 3 — chat별 binding 우선 (multi-chat 지원)
+            // 1. chat-specific binding 먼저 확인
+            // 2. 없으면 telegramBoundWorkspaceId fallback (legacy 1:1)
+            let chatKey = String(requestChatId)
+            let boundId: UUID? = model.preferences.telegramChatBindings[chatKey]
+                ?? model.preferences.telegramBoundWorkspaceId
+            guard let id = boundId else { return .notBound }
+            guard model.workspaces.contains(where: { $0.id == id }) else {
                 return .boundMissing
             }
-            return .ready(boundId, needsSwitch: model.selectedWorkspaceId != boundId)
+            return .ready(id, needsSwitch: model.selectedWorkspaceId != id)
         }
 
         switch preflight {

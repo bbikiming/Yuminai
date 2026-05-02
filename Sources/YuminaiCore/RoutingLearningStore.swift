@@ -17,11 +17,19 @@ public actor RoutingLearningStore {
     public static let mutedKey = "yuminai.routing.mutedKeywords"
     public static let cancelCountsKey = "yuminai.routing.cancelCounts"
     public static let customKeywordsKey = "yuminai.routing.customKeywords"
-    /// cancel 임계 — 이 횟수에 도달하면 keyword muted.
+    public static let useCountsKey = "yuminai.routing.useCounts"
+    /// cancel 임계 — 이 횟수에 도달하면 keyword muted (binary fallback, ADR-055).
     public static let muteThreshold = 3
+    /// **ADR-058 Phase 2** — weight 기반 mute. cancel ratio가 이 값 이상이면 mute.
+    /// 동시 사용 (binary OR weight 둘 중 하나라도 trigger).
+    public static let muteRatioThreshold = 0.5
+    /// minimum sample size — ratio 계산 전 이 횟수만큼 use 후에야 weight 적용.
+    public static let minSamplesForRatio = 5
 
     private let defaults: UserDefaults
     private(set) var cancelCounts: [String: Int] = [:]
+    /// **ADR-058 Phase 2** — keyword 사용 (matched) 카운트. ratio = cancel / use.
+    private(set) var useCounts: [String: Int] = [:]
     private(set) var mutedKeywords: Set<String> = []
     /// taskKind → 추가 keyword 배열 (사용자 정의)
     private(set) var customKeywords: [String: [String]] = [:]
@@ -36,18 +44,47 @@ public actor RoutingLearningStore {
            let counts = try? JSONDecoder().decode([String: Int].self, from: data) {
             self.cancelCounts = counts
         }
+        if let data = defaults.data(forKey: Self.useCountsKey),
+           let counts = try? JSONDecoder().decode([String: Int].self, from: data) {
+            self.useCounts = counts
+        }
         if let data = defaults.data(forKey: Self.customKeywordsKey),
            let custom = try? JSONDecoder().decode([String: [String]].self, from: data) {
             self.customKeywords = custom
         }
     }
 
+    /// **ADR-058 Phase 2** — keyword가 matched 됐을 때 호출 (use count 증가).
+    /// AppModel.applyHarnessAutoRoutingIfNeeded에서 classification 후 호출.
+    public func recordUse(keyword: String) {
+        guard !keyword.isEmpty else { return }
+        useCounts[keyword, default: 0] += 1
+        persist()
+    }
+
+    /// **ADR-058 Phase 2** — keyword cancel ratio (0~1.0).
+    /// minSamplesForRatio 미만이면 nil (충분한 sample 없음).
+    public func cancelRatio(_ keyword: String) -> Double? {
+        let uses = useCounts[keyword] ?? 0
+        guard uses >= Self.minSamplesForRatio else { return nil }
+        let cancels = cancelCounts[keyword] ?? 0
+        return Double(cancels) / Double(uses)
+    }
+
     /// 사용자가 routing을 cancel했을 때 호출.
-    /// 동일 keyword가 muteThreshold 이상 cancel되면 자동 mute.
+    /// **ADR-055 (binary)**: muteThreshold 이상 cancel → mute
+    /// **ADR-058 Phase 2 (weight)**: cancel ratio ≥ muteRatioThreshold (after minSamples) → mute
+    /// 둘 중 하나라도 trigger되면 mute.
     public func recordCancel(keyword: String) {
         guard !keyword.isEmpty else { return }
         cancelCounts[keyword, default: 0] += 1
-        if (cancelCounts[keyword] ?? 0) >= Self.muteThreshold {
+        let cancels = cancelCounts[keyword] ?? 0
+        let uses = useCounts[keyword] ?? 0
+        // ADR-055 binary path
+        let binaryTrigger = cancels >= Self.muteThreshold
+        // ADR-058 weight path — sample 충분 + ratio 도달
+        let weightTrigger = uses >= Self.minSamplesForRatio && Double(cancels) / Double(uses) >= Self.muteRatioThreshold
+        if binaryTrigger || weightTrigger {
             mutedKeywords.insert(keyword)
         }
         persist()
@@ -96,6 +133,7 @@ public actor RoutingLearningStore {
         Snapshot(
             mutedKeywords: mutedKeywords,
             cancelCounts: cancelCounts,
+            useCounts: useCounts,
             customKeywords: customKeywords
         )
     }
@@ -103,16 +141,28 @@ public actor RoutingLearningStore {
     public struct Snapshot: Sendable, Hashable {
         public let mutedKeywords: Set<String>
         public let cancelCounts: [String: Int]
+        /// **ADR-058 Phase 2** — keyword use 카운트
+        public let useCounts: [String: Int]
         public let customKeywords: [String: [String]]
 
         public init(
             mutedKeywords: Set<String>,
             cancelCounts: [String: Int],
+            useCounts: [String: Int] = [:],
             customKeywords: [String: [String]]
         ) {
             self.mutedKeywords = mutedKeywords
             self.cancelCounts = cancelCounts
+            self.useCounts = useCounts
             self.customKeywords = customKeywords
+        }
+
+        /// **ADR-058 Phase 2** — keyword cancel ratio. minSamplesForRatio 이하는 nil.
+        public func cancelRatio(_ keyword: String) -> Double? {
+            let uses = useCounts[keyword] ?? 0
+            guard uses >= RoutingLearningStore.minSamplesForRatio else { return nil }
+            let cancels = cancelCounts[keyword] ?? 0
+            return Double(cancels) / Double(uses)
         }
     }
 
@@ -122,6 +172,9 @@ public actor RoutingLearningStore {
         }
         if let data = try? JSONEncoder().encode(cancelCounts) {
             defaults.set(data, forKey: Self.cancelCountsKey)
+        }
+        if let data = try? JSONEncoder().encode(useCounts) {
+            defaults.set(data, forKey: Self.useCountsKey)
         }
         if let data = try? JSONEncoder().encode(customKeywords) {
             defaults.set(data, forKey: Self.customKeywordsKey)

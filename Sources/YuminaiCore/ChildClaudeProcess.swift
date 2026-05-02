@@ -63,6 +63,13 @@ public struct ChildProcessOutput: Sendable, Hashable {
     /// 추정 또는 실제 token usage.
     public let inputTokens: Int
     public let outputTokens: Int
+    /// **ADR-058 Phase 1** — Anthropic prompt cache hit token 수.
+    /// systemPromptAppendix가 결정적 ordering이고 같은 prompt prefix면 cache hit 발생.
+    /// `cache_read_input_tokens` 값. 0이면 cache miss.
+    public let cacheReadTokens: Int
+    /// **ADR-058 Phase 1** — cache 생성 token 수 (`cache_creation_input_tokens`).
+    /// 5분 TTL의 cache가 처음 만들어질 때 비용 발생.
+    public let cacheCreationTokens: Int
     /// 비용 (있으면 LLM cost report, 없으면 estimate).
     public let costUSD: Double
     /// 실행 시간 (ms).
@@ -74,6 +81,8 @@ public struct ChildProcessOutput: Sendable, Hashable {
         resultText: String,
         inputTokens: Int,
         outputTokens: Int,
+        cacheReadTokens: Int = 0,
+        cacheCreationTokens: Int = 0,
         costUSD: Double,
         durationMs: Int,
         exitCode: Int32
@@ -81,9 +90,18 @@ public struct ChildProcessOutput: Sendable, Hashable {
         self.resultText = resultText
         self.inputTokens = inputTokens
         self.outputTokens = outputTokens
+        self.cacheReadTokens = cacheReadTokens
+        self.cacheCreationTokens = cacheCreationTokens
         self.costUSD = costUSD
         self.durationMs = durationMs
         self.exitCode = exitCode
+    }
+
+    /// **ADR-058 Phase 1** — cache hit ratio (0~1.0). 1.0 = 모든 input이 cache에서.
+    public var cacheHitRatio: Double {
+        let total = inputTokens + cacheReadTokens
+        guard total > 0 else { return 0 }
+        return Double(cacheReadTokens) / Double(total)
     }
 }
 

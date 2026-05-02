@@ -71,6 +71,57 @@ struct RoutingLearningStoreTests {
         let snap = await store.snapshot()
         #expect(snap.cancelCounts.isEmpty)
     }
+
+    // MARK: - ADR-058 Phase 2 weight learning
+
+    @Test("weight: minSamples 미만이면 ratio nil")
+    func weightMinSamplesNil() async {
+        let store = makeStore()
+        await store.recordUse(keyword: "테스트")
+        await store.recordCancel(keyword: "테스트")
+        // sample 1개 < minSamplesForRatio (5)
+        let ratio = await store.cancelRatio("테스트")
+        #expect(ratio == nil)
+    }
+
+    @Test("weight: minSamples 후 ratio 정확 계산")
+    func weightRatioCalculation() async {
+        let store = makeStore()
+        for _ in 0..<10 { await store.recordUse(keyword: "구현") }
+        for _ in 0..<3 { await store.recordCancel(keyword: "구현") }
+        let ratio = await store.cancelRatio("구현")
+        #expect(ratio != nil)
+        #expect(abs((ratio ?? 0) - 0.3) < 0.0001)  // 3/10 = 0.3
+    }
+
+    @Test("weight: ratio ≥ 0.5 자동 mute (binary 임계 미달이라도)")
+    func weightAutoMute() async {
+        let store = makeStore()
+        // 5 uses + 3 cancels (binary 임계 3 + ratio 0.6)
+        for _ in 0..<5 { await store.recordUse(keyword: "ratio_test") }
+        for _ in 0..<3 { await store.recordCancel(keyword: "ratio_test") }
+        // binary OR weight 둘 중 하나로 mute
+        #expect(await store.isMuted("ratio_test"))
+    }
+
+    @Test("weight: 6 uses + 3 cancels = 0.5, 자동 mute")
+    func weightExactly50pct() async {
+        let store = makeStore()
+        for _ in 0..<6 { await store.recordUse(keyword: "half") }
+        for _ in 0..<3 { await store.recordCancel(keyword: "half") }
+        #expect(await store.isMuted("half"))
+    }
+
+    @Test("snapshot.cancelRatio 호출 가능")
+    func snapshotCancelRatio() async {
+        let store = makeStore()
+        for _ in 0..<10 { await store.recordUse(keyword: "foo") }
+        for _ in 0..<2 { await store.recordCancel(keyword: "foo") }
+        let snap = await store.snapshot()
+        let ratio = snap.cancelRatio("foo")
+        #expect(ratio != nil)
+        #expect(abs((ratio ?? 0) - 0.2) < 0.0001)
+    }
 }
 
 @Suite("ModelCapabilityMatrix.classifyTaskKind learning (ADR-055 #5)")

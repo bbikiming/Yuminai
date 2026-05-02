@@ -17,7 +17,12 @@ public struct AppPreferences: Sendable, Codable, Hashable {
     /// nil이면 직접 입력 모드.
     public var telegramSourceLabel: String?
     /// 텔레그램에서 직접 제어할 워크스페이스 (1개). nil이면 미연결.
+    /// **ADR-058 Phase 3** — 1:1 binding (legacy). 멀티 chat 시에는 telegramChatBindings 우선 사용.
     public var telegramBoundWorkspaceId: UUID?
+    /// **ADR-058 Phase 3** — chat ID → workspace UUID multi-mapping.
+    /// 멀티 chat에서 각각 다른 워크스페이스 binding 가능 (chat A=웹앱, chat B=모바일앱).
+    /// telegramBoundWorkspaceId는 fallback (멀티 mapping에 없는 chat용).
+    public var telegramChatBindings: [String: UUID]  // chatId(string) → workspaceId
     /// 텔레그램으로 어시스턴트 응답을 forward할지 여부.
     public var telegramForwardAssistant: Bool
     /// 텔레그램으로 도구 호출 요약을 forward할지 여부.
@@ -53,6 +58,10 @@ public struct AppPreferences: Sendable, Codable, Hashable {
     /// **ADR-056 Phase 4** — per-day cost cap (USD). nil이면 무제한.
     /// 도달 시 외부 turn은 차단 (PC turn은 그대로). 매일 자정 reset.
     public var dailyBudgetUSD: Double?
+    /// **ADR-058 Phase 5** — 컨텍스트가 이 % 도달하면 자동 새 세션 시작 (옵션).
+    /// nil이면 비활성. 0.0~1.0 (예: 0.85 = 85%)
+    /// **default nil** — 사용자 의도와 다를 수 있으므로 명시적 활성 권장.
+    public var autoNewSessionContextThreshold: Double?
     /// pane 응답에 `@<other>` mention이 있으면 자동으로 다음 turn dispatch (ADR-034 A1).
     /// **default OFF** — 무한 루프 위험, 명시적 토글 필요.
     public var agentChainEnabled: Bool
@@ -73,6 +82,7 @@ public struct AppPreferences: Sendable, Codable, Hashable {
         telegramAlertPolicy: TelegramAlertPolicy = .default,
         telegramSourceLabel: String? = nil,
         telegramBoundWorkspaceId: UUID? = nil,
+        telegramChatBindings: [String: UUID] = [:],
         telegramForwardAssistant: Bool = true,
         telegramForwardToolCalls: Bool = true,
         telegramRemoteRequiresPlan: Bool = true,
@@ -85,6 +95,7 @@ public struct AppPreferences: Sendable, Codable, Hashable {
         routingLogRetentionDays: Int = 7,
         multiAgentParallelEnabled: Bool = false,
         dailyBudgetUSD: Double? = nil,
+        autoNewSessionContextThreshold: Double? = nil,
         agentChainEnabled: Bool = false,
         agentChainMaxHops: Int = 1,
         fontSizeOffset: Int = 0,
@@ -101,6 +112,7 @@ public struct AppPreferences: Sendable, Codable, Hashable {
         self.telegramAlertPolicy = telegramAlertPolicy
         self.telegramSourceLabel = telegramSourceLabel
         self.telegramBoundWorkspaceId = telegramBoundWorkspaceId
+        self.telegramChatBindings = telegramChatBindings
         self.telegramForwardAssistant = telegramForwardAssistant
         self.telegramForwardToolCalls = telegramForwardToolCalls
         self.telegramRemoteRequiresPlan = telegramRemoteRequiresPlan
@@ -113,6 +125,7 @@ public struct AppPreferences: Sendable, Codable, Hashable {
         self.routingLogRetentionDays = routingLogRetentionDays
         self.multiAgentParallelEnabled = multiAgentParallelEnabled
         self.dailyBudgetUSD = dailyBudgetUSD
+        self.autoNewSessionContextThreshold = autoNewSessionContextThreshold
         self.agentChainEnabled = agentChainEnabled
         self.agentChainMaxHops = agentChainMaxHops
         self.fontSizeOffset = fontSizeOffset
@@ -133,6 +146,7 @@ public struct AppPreferences: Sendable, Codable, Hashable {
         self.telegramAlertPolicy = try c.decodeIfPresent(TelegramAlertPolicy.self, forKey: .telegramAlertPolicy) ?? .default
         self.telegramSourceLabel = try c.decodeIfPresent(String.self, forKey: .telegramSourceLabel)
         self.telegramBoundWorkspaceId = try c.decodeIfPresent(UUID.self, forKey: .telegramBoundWorkspaceId)
+        self.telegramChatBindings = try c.decodeIfPresent([String: UUID].self, forKey: .telegramChatBindings) ?? [:]
         self.telegramForwardAssistant = try c.decodeIfPresent(Bool.self, forKey: .telegramForwardAssistant) ?? true
         self.telegramForwardToolCalls = try c.decodeIfPresent(Bool.self, forKey: .telegramForwardToolCalls) ?? true
         self.telegramRemoteRequiresPlan = try c.decodeIfPresent(Bool.self, forKey: .telegramRemoteRequiresPlan) ?? true
@@ -145,6 +159,7 @@ public struct AppPreferences: Sendable, Codable, Hashable {
         self.routingLogRetentionDays = try c.decodeIfPresent(Int.self, forKey: .routingLogRetentionDays) ?? 7
         self.multiAgentParallelEnabled = try c.decodeIfPresent(Bool.self, forKey: .multiAgentParallelEnabled) ?? false
         self.dailyBudgetUSD = try c.decodeIfPresent(Double.self, forKey: .dailyBudgetUSD)
+        self.autoNewSessionContextThreshold = try c.decodeIfPresent(Double.self, forKey: .autoNewSessionContextThreshold)
         self.agentChainEnabled = try c.decodeIfPresent(Bool.self, forKey: .agentChainEnabled) ?? false
         self.agentChainMaxHops = try c.decodeIfPresent(Int.self, forKey: .agentChainMaxHops) ?? 1
         self.fontSizeOffset = try c.decodeIfPresent(Int.self, forKey: .fontSizeOffset) ?? 0

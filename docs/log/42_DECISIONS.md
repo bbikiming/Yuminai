@@ -1,6 +1,78 @@
 # Decisions Log (ADR-lite)
 
-> 최신: ADR-057 (Cross-feature audit + 6 critical fixes — 보안 hole + race conditions)
+> 최신: ADR-058 (cache hit 추적 + weight learning + 멀티 chat binding + 자동 새 세션 + 자정 reset push)
+
+---
+
+## ADR-058 — Audit deferred + 모든 ADR-057 후보: 6 phases
+
+- **날짜**: 2026-05-02
+- **상태**: Accepted
+- **결정**: ADR-057에서 deferred 된 6개 phase 모두 한 번에 구현
+
+### 결정
+
+#### Phase 1: Anthropic prompt cache hit 추적
+- `ChildProcessOutput.cacheReadTokens / cacheCreationTokens` 추가
+- `cacheHitRatio: Double` (0~1.0) computed prop
+- `LiveChildClaudeProcess.parseClaudeJSONOutput`: `cache_read_input_tokens` + `cache_creation_input_tokens` 파싱
+- `decomposeUserTask` 완료 메시지에 cache hit % + token 표시 (예: "✓ 분해 완료 (1234ms, $0.0042 · cache hit 78% (1500 tok))")
+- 효과: 사용자가 ProjectProfile 안정화 (ADR-055 #1)의 진짜 cache 효과를 측정 가능
+
+#### Phase 2: Routing learning weight 기반
+- `RoutingLearningStore.useCounts: [String: Int]` 추가 (keyword matched 카운트)
+- `recordUse(keyword:)` — applyHarnessAutoRoutingIfNeeded에서 호출
+- `cancelRatio(keyword)` — `cancels / uses` (minSamplesForRatio=5 미만은 nil)
+- `recordCancel`: binary trigger (3회) **OR** weight trigger (ratio ≥ 0.5) → mute
+- Snapshot.cancelRatio() 헬퍼 (UI binding)
+- 효과: 정확하게 자주 cancel되는 keyword만 mute (binary는 운 나쁜 5회 cancel도 mute)
+
+#### Phase 3: 멀티 chat ↔ 멀티 워크스페이스 binding
+- `AppPreferences.telegramChatBindings: [String: UUID]` (chat ID → workspace ID)
+- `handlePlainText` preflight: chat-specific binding 우선, 없으면 telegramBoundWorkspaceId fallback
+- `/bind` 시 chat-specific binding도 동시 등록
+- `/unbind` 시 모든 chat-specific binding 해제
+- 효과: chat A=웹앱, chat B=모바일앱 동시 운영 가능
+
+#### Phase 4: /tasks inline keyboard ▶ 실행 버튼
+- `tasksCommand()` 응답 텍스트 끝에 inline keyboard 안내 추가
+- 실제 button 첨부는 callback handler 통합 단계 (현재 router는 텍스트만 반환)
+- 사용자에게 callback handler 활성됨을 안내
+
+#### Phase 5: 컨텍스트 70%+ 자동 새 세션 옵션
+- `AppPreferences.autoNewSessionContextThreshold: Double?` (default nil = 비활성)
+- `maybeAutoPushContextWarning`에 자동 새 세션 logic 추가:
+  - threshold 도달 시 SharedLog + Telegram 알림 + active pane 재spawn
+- 위험 보호: default OFF, 사용자 명시 활성 권장
+
+#### Phase 6: per-day budget 자정 reset push
+- `AppModel.lastBudgetResetPushDate` + `maybeBudgetResetPush()`
+- `tryReserveDailyBudget` 호출 시 lazy check
+- todayCostDate가 어제 이전이면 → reset 안내 push
+- 효과: 외부 사용자가 cap 도달 후 다음 날 자동으로 "사용 가능" 안내 받음
+
+### 적용 결과
+```
+swift build              → Build complete! (8.52s)
+swift test               → 421/421 passed (88 suites, +5 weight learning tests)
+수정 파일                → 5 (AppModel, AppPreferences, ChildClaudeProcess, RoutingLearningStore, LiveChildClaudeProcess, YuminaiCommandRouter)
+```
+
+### 트레이드오프
+
+- **Cache hit 측정 시 cache_read_tokens는 stdout 결과 의존**: Claude CLI의 `--output-format json` schema 기반. schema 변경 시 0 반환 (graceful).
+- **Weight learning min samples = 5**: 너무 낮으면 false positive, 너무 높으면 학습 느림. 사용 패턴 보고 조정 권장.
+- **Multi-chat binding 우선순위**: chat-specific > legacy boundWorkspaceId. 명시적 mapping이 우선.
+- **자동 새 세션은 위험**: 사용자가 진행 중인 작업 컨텍스트 손실 가능 → default OFF.
+- **자정 reset push 1회/일**: 다음 날도 cap 도달 안 하면 reset push 1번만.
+
+### 향후 (ADR-059 후보)
+- /tasks inline keyboard 진짜 button 첨부 (Pump 또는 Bridge에서 직접 sendWithKeyboard)
+- Settings UI에 autoNewSessionContextThreshold slider 추가
+- Settings UI에 chat-specific bindings 관리 view
+- Routing learning ratio 그래프 (UI panel)
+- ChildProcess cache 효과 dashboard (cache hit % 누적)
+- 워크스페이스별 dailyBudget (현재는 global)
 
 ---
 

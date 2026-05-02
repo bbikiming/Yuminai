@@ -4,6 +4,54 @@
 
 ## [Unreleased] — 2026-05-02
 
+### Added — ADR-058 audit deferred + 모든 ADR-057 후보 (6 phases)
+
+**Phase 1 — Anthropic prompt cache hit 추적**
+- ChildProcessOutput.cacheReadTokens / cacheCreationTokens 추가 + cacheHitRatio computed
+- LiveChildClaudeProcess.parseClaudeJSONOutput: cache_read_input_tokens + cache_creation_input_tokens 파싱
+- decomposeUserTask 완료 메시지에 cache hit % + tokens 표시
+
+**Phase 2 — Routing learning weight 기반 (binary 보강)**
+- RoutingLearningStore.useCounts 추가
+- recordUse(keyword:) — applyHarnessAutoRoutingIfNeeded에서 호출
+- cancelRatio(keyword) — cancels / uses (minSamples=5 미만은 nil)
+- recordCancel: binary OR weight trigger 둘 중 하나로 mute
+- Snapshot.cancelRatio() 헬퍼
+
+**Phase 3 — 멀티 chat ↔ 멀티 워크스페이스 binding**
+- AppPreferences.telegramChatBindings: [String: UUID]
+- handlePlainText: chat-specific binding 우선, legacy fallback
+- /bind 시 chat-specific 동시 등록
+- /unbind 시 모든 chat-specific 해제
+
+**Phase 4 — /tasks inline keyboard ▶ 실행 안내**
+- tasksCommand 응답에 callback handler 안내
+
+**Phase 5 — 컨텍스트 70%+ 자동 새 세션 옵션**
+- AppPreferences.autoNewSessionContextThreshold (default nil)
+- maybeAutoPushContextWarning: threshold 도달 시 자동 active pane 재spawn
+
+**Phase 6 — per-day budget 자정 reset push**
+- AppModel.lastBudgetResetPushDate + maybeBudgetResetPush()
+- tryReserveDailyBudget 시 lazy check, todayCostDate 어제 이전이면 push
+
+### Tests added (+5)
+- RoutingLearningStoreTests에 weight 기반 5 tests:
+  - minSamples 미만 ratio nil
+  - ratio 정확 계산 (10 uses + 3 cancels = 0.3)
+  - ratio ≥ 0.5 자동 mute
+  - exactly 50% mute
+  - Snapshot.cancelRatio 호출
+
+### 빌드/테스트 결과
+- swift build → Build complete! (8.52s)
+- swift test → 421/421 passed (88 suites)
+
+### 수정 파일 (6)
+- AppModel, AppPreferences, ChildClaudeProcess, RoutingLearningStore, LiveChildClaudeProcess, YuminaiCommandRouter
+
+---
+
 ### Fixed — Cross-feature audit + 6 critical fixes (ADR-057)
 
 **Fix 1 — ChildProcess가 외부 turn plan-mode 우회 (🔴 보안 hole)**

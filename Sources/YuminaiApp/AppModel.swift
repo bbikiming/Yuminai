@@ -1840,7 +1840,10 @@ public final class AppModel {
                 completeChildProcess(progressId, status: .completed)
                 // 정확한 cost 추적
                 costTracker.add(.decomposition, usd: output.costUSD)
-                harness.appendSystem("✓ 분해 완료 (\(output.durationMs)ms, $\(String(format: "%.4f", output.costUSD)))")
+                // ADR-058 Phase 1 — cache hit 안내 (효과 측정)
+                let cachePct = Int(output.cacheHitRatio * 100)
+                let cacheNote = output.cacheReadTokens > 0 ? " · cache hit \(cachePct)% (\(output.cacheReadTokens) tok)" : ""
+                harness.appendSystem("✓ 분해 완료 (\(output.durationMs)ms, $\(String(format: "%.4f", output.costUSD))\(cacheNote))")
                 // JSON parse → harness.tasks 추가
                 let parsed = TaskDecomposer.parseTasks(jsonResponse: output.resultText)
                 guard !parsed.isEmpty else {
@@ -1979,6 +1982,11 @@ public final class AppModel {
             mutedKeywords: routingLearningSnapshot.mutedKeywords,
             customKeywords: routingLearningSnapshot.customKeywords
         )
+        // ADR-058 Phase 2 — keyword matched 시 use 카운트 (ratio 계산용)
+        if let kw = classification.matchedKeyword {
+            await routingLearningStore.recordUse(keyword: kw)
+            routingLearningSnapshot = await routingLearningStore.snapshot()
+        }
         let recommended = ModelCapabilityMatrix.recommend(for: classification.kind)
         guard let workspace = currentWorkspace else { return nil }
         let currentKind = workspace.agentKind
@@ -3495,6 +3503,8 @@ public final class AppModel {
     /// **MainActor 보장** — 동시 호출 시에도 직렬화됨 (struct flag 단순 + atomic).
     public func tryReserveDailyBudget(estimatedMinCostUSD: Double = 0.001) -> Bool {
         guard preferences.dailyBudgetUSD != nil else { return true }  // cap 없으면 통과
+        // ADR-058 Phase 6 — 자정 reset push (lazy check)
+        maybeBudgetResetPush()
         // 날짜 reset check
         let cal = Calendar.current
         if !cal.isDate(todayCostDate, inSameDayAs: Date()) {
@@ -3509,22 +3519,62 @@ public final class AppModel {
     }
 
     /// **ADR-056 Phase 3** — 컨텍스트 70%+ 시 Telegram 자동 push (하루 1회).
+    /// **ADR-058 Phase 5** — autoNewSessionContextThreshold 도달 시 자동 새 세션 옵션.
     /// completed 이벤트 후 호출.
     public func maybeAutoPushContextWarning() {
         let pct = currentContextUsage
+        // ADR-058 Phase 5 — 자동 새 세션 (사용자 명시 활성 시만)
+        if let autoThresh = preferences.autoNewSessionContextThreshold, pct >= autoThresh {
+            harness.appendSystem("🔄 자동 새 세션 시작 — 컨텍스트 \(Int(pct * 100))% ≥ \(Int(autoThresh * 100))% (Settings에서 비활성 가능)")
+            // 사용자에게 알림 + 새 session spawn (active pane 재spawn)
+            if let bridge = sessionBridge {
+                let msg = "🔄 컨텍스트 \(Int(pct * 100))% — 자동으로 새 세션 시작합니다."
+                Task { await bridge.sendNotice(msg) }
+            }
+            // active pane session 재시작 (현재 messages는 새 session으로 안 가져감 — clean start)
+            Task { @MainActor in
+                if let paneId = activePaneId {
+                    await setActivePane(paneId)  // re-spawn
+                }
+            }
+            return
+        }
+        // 70% 일반 push (하루 1회)
         guard pct >= 0.70 else { return }
-        // 같은 날 이미 push했으면 skip
         let cal = Calendar.current
         if let last = lastContextWarnDate, cal.isDate(last, inSameDayAs: Date()) {
             return
         }
-        // bound bridge 있으면 push
         guard let bridge = sessionBridge else { return }
         let pctInt = Int(pct * 100)
         let model = activeSettings.model.displayName
-        let msg = "⚠ 컨텍스트 \(pctInt)% (\(model)) — 새 세션 시작 권장.\n• PC에서 새 세션 만들기\n• 또는 /reset 비슷한 작업 (현재는 PC만)"
+        let msg = "⚠ 컨텍스트 \(pctInt)% (\(model)) — 새 세션 시작 권장.\n• PC에서 새 세션 만들기\n• Settings에서 ‘자동 새 세션’ 옵션 활성 가능 (ADR-058)"
         Task { await bridge.sendNotice(msg) }
         lastContextWarnDate = Date()
+    }
+
+    /// **ADR-058 Phase 6** — 자정 reset push.
+    /// 어제 budget cap 도달 → 오늘 reset 됐으면 사용자에게 알림.
+    /// turn 시작 시 호출 (lazy check).
+    public var lastBudgetResetPushDate: Date?
+    public func maybeBudgetResetPush() {
+        guard preferences.dailyBudgetUSD != nil else { return }
+        let cal = Calendar.current
+        // 오늘 이미 push 했으면 skip
+        if let last = lastBudgetResetPushDate, cal.isDate(last, inSameDayAs: Date()) {
+            return
+        }
+        // todayCostDate가 어제 이전 + 어제 cap 도달했었으면 push
+        // 단순화: todayCostDate가 어제 이전이면 무조건 reset 안내 (cap 도달 여부 무관)
+        if !cal.isDate(todayCostDate, inSameDayAs: Date()) {
+            // reset 발생 — push
+            if let bridge = sessionBridge {
+                let cap = preferences.dailyBudgetUSD ?? 0
+                let msg = "🌅 오늘 budget reset 됐어요. cap: $\(String(format: "%.4f", cap))/일. 외부 turn 가능."
+                Task { await bridge.sendNotice(msg) }
+            }
+            lastBudgetResetPushDate = Date()
+        }
     }
 
     public func incrementExternalTurnCount() {
