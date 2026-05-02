@@ -1223,16 +1223,52 @@ public final class AppModel {
     }
 
     /// Tab 닫기 — dirty면 reject (단순 안전).
+    /// active tab이 닫히면 같은 위치의 인접 tab으로 active 이동 (VSCode 패턴).
     public func closeFileTab(_ tabId: UUID) {
         guard let idx = openFileTabs.firstIndex(where: { $0.id == tabId }) else { return }
         if openFileTabs[idx].isDirty {
             self.error = "저장 안 된 변경이 있어요: \(openFileTabs[idx].displayName). 저장 또는 취소 후 닫으세요."
             return
         }
+        let wasActive = activeFileTabId == tabId
         openFileTabs.remove(at: idx)
-        if activeFileTabId == tabId {
-            activeFileTabId = openFileTabs.last?.id
+        if wasActive {
+            // 같은 idx (오른쪽 tab) → 그것도 없으면 idx-1 (왼쪽 tab) → 그것도 없으면 nil
+            if idx < openFileTabs.count {
+                activeFileTabId = openFileTabs[idx].id
+            } else if idx > 0 {
+                activeFileTabId = openFileTabs[idx - 1].id
+            } else {
+                activeFileTabId = nil
+            }
         }
+    }
+
+    /// 모든 file tab 닫기 — 워크스페이스 전환 시 호출 (ADR-038 R2 polish).
+    /// dirty tab은 보존 (사용자 명시 close 필요) — VSCode "Close All" 동작과 다름:
+    /// Yuminai는 워크스페이스 격리가 우선이지만 unsaved 손실은 더 큰 비용.
+    public func closeAllFileTabs() {
+        let cleanIds = openFileTabs.filter { !$0.isDirty }.map(\.id)
+        for id in cleanIds {
+            closeFileTab(id)
+        }
+    }
+
+    /// 인접 tab으로 active 이동 (offset = +1 다음, -1 이전). 순환 (마지막→첫번째).
+    public func selectAdjacentFileTab(offset: Int) {
+        guard !openFileTabs.isEmpty else { return }
+        let currentIdx = activeFileTabId.flatMap { id in
+            openFileTabs.firstIndex(where: { $0.id == id })
+        } ?? 0
+        let count = openFileTabs.count
+        let nextIdx = ((currentIdx + offset) % count + count) % count
+        activeFileTabId = openFileTabs[nextIdx].id
+    }
+
+    /// 현재 active tab 닫기 — ⌘W 단축키 entry point.
+    public func closeActiveFileTab() {
+        guard let id = activeFileTabId else { return }
+        closeFileTab(id)
     }
 
     public func startEditingWorkspaceFile() {

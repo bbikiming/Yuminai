@@ -27,6 +27,26 @@ struct FileSearchSheet: View {
         .frame(width: 540, height: 400)
         .background(Theme.Color.bg)
         .onAppear { inputFocused = true }
+        // ↑↓ 화살표 navigation — TextField focus 중에도 동작 (ADR-038 R2).
+        .onKeyPress(.downArrow) {
+            moveSelection(by: 1)
+            return .handled
+        }
+        .onKeyPress(.upArrow) {
+            moveSelection(by: -1)
+            return .handled
+        }
+        .onKeyPress(.escape) {
+            onCancel()
+            return .handled
+        }
+    }
+
+    private func moveSelection(by delta: Int) {
+        let count = filtered.prefix(50).count
+        guard count > 0 else { return }
+        let next = ((selectedIndex + delta) % count + count) % count
+        selectedIndex = next
     }
 
     private var searchHeader: some View {

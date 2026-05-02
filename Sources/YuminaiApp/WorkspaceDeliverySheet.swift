@@ -212,11 +212,28 @@ struct WorkspaceDeliverySheet: View {
             Spacer()
             Button("취소", action: onCancel)
                 .keyboardShortcut(.escape, modifiers: [])
-            Button("저장") { onApply(draft) }
+            Button("저장") { onApply(sanitizedDraft) }
                 .keyboardShortcut(.return, modifiers: [.command])
                 .buttonStyle(.borderedProminent)
         }
         .padding(Theme.Spacing.md)
+    }
+
+    /// 저장 직전 sanitize — 빈 customQuickCommands trim/제거 (ADR-038 R2).
+    /// 빈 명령은 chip 행에 노이즈만 됨 — 사용자가 명시 제거 안 해도 자동 정리.
+    private var sanitizedDraft: DeliveryConfig {
+        var out = draft
+        out.customQuickCommands = draft.customQuickCommands.compactMap { quick in
+            let trimmedLabel = quick.label.trimmingCharacters(in: .whitespacesAndNewlines)
+            let trimmedCommand = quick.command.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !trimmedCommand.isEmpty else { return nil }
+            return CustomQuickCommand(
+                id: quick.id,
+                label: trimmedLabel.isEmpty ? trimmedCommand : trimmedLabel,
+                command: trimmedCommand
+            )
+        }
+        return out
     }
 
     private func commandField(

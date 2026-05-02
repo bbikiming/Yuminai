@@ -43,6 +43,7 @@ struct RootView: View {
                 quickSwitchHotkeys  // ⌘1~9 invisible buttons
                 helpHotkey  // ⌘? invisible
                 fileSearchHotkey  // ⌘P invisible
+                fileTabHotkeys  // ⌘W close + ⌘⇧[/⌘⇧] tab nav
             }
             .onAppear {
                 windowSize = geo.size
@@ -247,6 +248,9 @@ struct RootView: View {
                     onShowFileSearch: { appModel.showFileSearchSheet = true }
                 )
                 .task(id: appModel.selectedWorkspaceId) {
+                    // Workspace 전환 시 다른 워크스페이스의 stale tab 정리 (ADR-038 R2).
+                    // dirty tab은 보존 — 사용자 명시 close 필요.
+                    appModel.closeAllFileTabs()
                     await appModel.refreshWorkspaceFileTree()
                 }
                 .transition(.move(edge: .trailing).combined(with: .opacity))
@@ -306,7 +310,7 @@ struct RootView: View {
             .transition(.move(edge: .leading))
     }
 
-    /// ⌘? — 단축키 도움말 sheet.
+    /// ⌘P — 파일 검색 (Cmd+P palette) sheet.
     private var fileSearchHotkey: some View {
         Button {
             appModel.showFileSearchSheet = true
@@ -314,6 +318,40 @@ struct RootView: View {
             .keyboardShortcut("p", modifiers: .command)
             .opacity(0)
             .frame(width: 0, height: 0)
+            .accessibilityHidden(true)
+            .disabled(appModel.currentWorkspace == nil)
+    }
+
+    /// ⌘W = active tab close / ⌘⇧] = 다음 tab / ⌘⇧[ = 이전 tab (ADR-038 R2).
+    private var fileTabHotkeys: some View {
+        ZStack {
+            Button {
+                appModel.closeActiveFileTab()
+            } label: { EmptyView() }
+                .keyboardShortcut("w", modifiers: .command)
+                .opacity(0)
+                .frame(width: 0, height: 0)
+                .accessibilityHidden(true)
+                .disabled(appModel.activeFileTabId == nil)
+
+            Button {
+                appModel.selectAdjacentFileTab(offset: 1)
+            } label: { EmptyView() }
+                .keyboardShortcut("]", modifiers: [.command, .shift])
+                .opacity(0)
+                .frame(width: 0, height: 0)
+                .accessibilityHidden(true)
+                .disabled(appModel.openFileTabs.count < 2)
+
+            Button {
+                appModel.selectAdjacentFileTab(offset: -1)
+            } label: { EmptyView() }
+                .keyboardShortcut("[", modifiers: [.command, .shift])
+                .opacity(0)
+                .frame(width: 0, height: 0)
+                .accessibilityHidden(true)
+                .disabled(appModel.openFileTabs.count < 2)
+        }
     }
 
     private var helpHotkey: some View {

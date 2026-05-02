@@ -4,6 +4,44 @@
 
 ## [Unreleased] — 2026-05-02
 
+### Polish — v0.9+ R2: 누락된 dx/단축키 보완 (ADR-038 R2)
+
+사용자: "현재 진행상황 점검해서 누락된 부분 파악하고 이어서 진행해 줘"
+
+R1에서 빠진 5가지 dx 폴리시 보완:
+
+1. **워크스페이스 전환 시 stale tab 정리**:
+   - `AppModel.closeAllFileTabs()` — clean tab만 닫음 (dirty는 보존)
+   - `RootView .task(id: selectedWorkspaceId)` hook에 연결
+   - 다른 워크스페이스 파일이 tab bar에 남아있던 혼란 해소
+
+2. **FileSearchSheet ↑↓ 화살표 keyboard navigation**:
+   - 기존 placeholder에 "↑↓ 화살표 + Enter로 이동" 안내만 있고 미구현이던 것 보완
+   - `.onKeyPress(.downArrow)` / `.onKeyPress(.upArrow)` — TextField focus 중에도 동작
+   - `.onKeyPress(.escape)` — sheet cancel
+   - `moveSelection(by:)` 순환 (마지막 → 첫번째)
+
+3. **⌘W tab close + ⌘⇧]/⌘⇧[ tab navigation 단축키**:
+   - `AppModel.closeActiveFileTab()` — ⌘W entry point
+   - `AppModel.selectAdjacentFileTab(offset:)` — 순환 navigation
+   - `AppModel.closeFileTab` 개선: active tab 닫히면 같은 idx (오른쪽) → idx-1 (왼쪽) 순으로 이동 (이전엔 last로 점프)
+   - `RootView.fileTabHotkeys` invisible buttons + `.disabled` (tab 0/1개 시)
+
+4. **fileSearchHotkey 주석 수정 + accessibility/disable**:
+   - 잘못된 주석 "⌘? — 단축키 도움말 sheet" → "⌘P — 파일 검색"
+   - `.accessibilityHidden(true)` 추가 (invisible button)
+   - `.disabled(currentWorkspace == nil)` — 워크스페이스 없을 때 sheet 떠도 빈 트리만 보이는 문제 차단
+
+5. **CustomQuickCommand 빈 입력 sanitize**:
+   - `WorkspaceDeliverySheet.sanitizedDraft` — 저장 직전 trim + 빈 command 자동 제거
+   - 빈 label은 command로 fallback display
+   - `CommandRunnerPane.QuickCommand.defaults` 보조 방어 — 빈 command custom skip
+
+테스트 5 신규 (총 252/252 통과):
+- `QuickCommandDefaultsTests` — custom 위치 / 빈 command skip / 빈 label fallback / git defaults 항상 표시 / 방어적 빈 입력
+
+빌드 11.24s clean.
+
 ### Added — v0.9+ R1: Syntax highlight + Multi-tab + Cmd+P 파일 검색 + Quick command 사용자 정의 (ADR-038)
 
 사용자: "v0.9+ 항목들 전부 논리적으로 기획해 가면서 구현해 줘"

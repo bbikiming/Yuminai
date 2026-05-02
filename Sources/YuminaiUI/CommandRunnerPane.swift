@@ -216,9 +216,12 @@ public struct QuickCommand: Sendable, Identifiable, Hashable {
         if let lint, !lint.isEmpty {
             result.append(.init(label: "린트", command: lint, icon: "magnifyingglass"))
         }
-        // 사용자 정의 (앞쪽에)
-        for custom in custom {
-            result.append(.init(label: custom.label, command: custom.command, icon: "sparkles"))
+        // 사용자 정의 (앞쪽에) — 빈 command는 skip (sheet sanitize 보조 방어)
+        for custom in custom where !custom.command.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            let displayLabel = custom.label.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+                ? custom.command
+                : custom.label
+            result.append(.init(label: displayLabel, command: custom.command, icon: "sparkles"))
         }
         // 일반적인 git 명령
         result.append(contentsOf: [
