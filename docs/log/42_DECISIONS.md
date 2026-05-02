@@ -1,6 +1,96 @@
 # Decisions Log (ADR-lite)
 
-> 최신: ADR-060 (workspace cost persist + cache trend + workspace budget command + bind 알림)
+> 최신: ADR-061 (SwiftUI Charts 8개 통합 dashboard + workspace cache + 자동 unmute + binding audit)
+
+---
+
+## ADR-061 — SwiftUI Charts 본격 도입 + 4 phases
+
+- **날짜**: 2026-05-03
+- **상태**: Accepted
+- **결정**: SwiftUI Charts framework로 8개 chart 통합 dashboard + 나머지 deferred 3 phases
+
+### 컨텍스트
+사용자: "SwiftUI Charts는 최대한 다양하게 적용해 줄 수 있도록 상세하게 기획해서 신경써줘"
+→ 단순한 line chart 1개가 아니라 다양한 chart type + 다양한 데이터 소스 활용
+
+### 결정
+
+#### Phase 1: SwiftUI Charts 통합 Dashboard (8개 chart)
+- `Sources/YuminaiUI/ChartsDashboard.swift` 신설 (920×700 sheet)
+- 8개 chart 종류 모두 활용:
+  1. **Cache Hit Trend** — `LineMark` + `AreaMark` + `interpolationMethod(.catmullRom)` + 0~100% Y scale
+  2. **Cost Breakdown** — `BarMark` 5 buckets + `annotation(position: .top)` cost label
+  3. **Cache Volume Stacked** — `BarMark` `position(by:)` for stacked (read vs uncached)
+  4. **Routing Outcome Donut** — `SectorMark` `innerRadius: .ratio(0.55)` + count overlay
+  5. **Routing Timeline Heatmap** — `RectangleMark` 100개 (time × outcome)
+  6. **Workspace Cost** — horizontal `BarMark` (x=cost, y=workspace)
+  7. **Token Usage** — `BarMark` (input/output/cache read/cache create)
+  8. **Cache Cost Savings** — `LineMark` + `AreaMark` 추정 절약 비용 ($0.0027/1K tokens)
+- 모두 `chartSection` helper로 통일 — title + subtitle + content
+- empty state hint 처리
+- ⌘K Palette에 `sheet.charts.dashboard` 진입점
+
+#### Phase 2: workspace별 cache hit 분리
+- `CacheHitSample.workspaceId: UUID?` 필드 추가
+- `addCacheSample(read:uncachedInput:workspaceId:)` 시그니처 확장
+- `cacheHitRatio(workspaceId:)` API
+- 같은 hour bucket이라도 다른 workspace면 별도 record
+- AppModel: ChildProcess 호출 시 `workspace.id` 전달
+
+#### Phase 3: routing learning 자동 unmute
+- `RoutingLearningStore.muteTimestamps: [String: Date]` 추가
+- `recordCancel` / `setMuted`에서 timestamp 기록
+- `performAutoUnmute()` — 마지막 mute로부터 30일 지난 keyword 자동 해제 + cancel/use count reset
+- AppModel.bootstrap: 시작 시 자동 unmute + 사용자 알림 (해제된 keyword 목록)
+- `RoutingLearningStore.autoUnmuteDays = 30`
+
+#### Phase 4: chat binding audit log
+- `Sources/YuminaiCore/ChatBindingAuditLog.swift` 신설 (actor, NDJSON)
+- `ChatBindingAuditEntry`: id, timestamp, chatId, userId, action (bind/unbind/rebind), workspaceId, workspaceName
+- 저장: `~/Library/Application Support/Yuminai/chat-bindings/audit.ndjson` (file mode 0600)
+- memory cap 500
+- AppModel: `recordBindingAudit(...)` helper + `chatBindingAuditEntries` cache
+- YuminaiCommandRouter: bind/unbind 시 `lastUserId` + `lastChatId` 추적 + audit record
+
+### 적용 결과
+```
+swift build              → Build complete! (12.60s)
+swift test               → 436/436 passed (91 suites, +6 new)
+새 파일                  → 3 (ChartsDashboard.swift, ChatBindingAuditLog.swift, ChatBindingAuditLogTests.swift)
+수정 파일                → 5 (AppModel, AppPreferences, RoutingLearningStore, DailyCostStore, YuminaiCommandRouter, RootView)
+```
+
+### 사용된 SwiftUI Charts API 종류
+
+| Mark 종류 | 사용처 |
+|-----------|-------|
+| `LineMark` | Cache hit trend, cost savings |
+| `AreaMark` (gradient) | Cache trend (line 보강), savings |
+| `BarMark` | Cost breakdown, token usage, workspace cost |
+| `BarMark` + `position(by:)` | Stacked bar (cache volume) |
+| `BarMark` (horizontal) | Workspace cost |
+| `SectorMark` (donut) | Routing outcome 분포 |
+| `RectangleMark` | Routing timeline heatmap |
+| `interpolationMethod(.catmullRom)` | Smooth line |
+| `chartYScale(domain:)` | 0~1 (ratio) |
+| `chartLegend(position:)` | Donut, stacked bar |
+| `annotation(position:)` | Bar value label |
+| `chartXAxis(.hidden)` | Heatmap (시간축 숨김) |
+
+### 트레이드오프
+
+- **8 chart는 한 sheet에 무거움**: 920×700 + ScrollView로 처리. 빈 데이터는 hint로 가벼움 유지.
+- **cacheTrend snapshot은 sheet 열 때 refresh**: realtime이 아니지만 데이터 변경 빈도 낮음.
+- **Cost Savings 90% 할인 가정**: Anthropic Sonnet 4.5의 cache read는 normal input 대비 10% 가격. 정확한 비용은 향후 model별 분리.
+- **Routing timeline heatmap 100개**: 더 많이 표시하면 가독성 ↓. 시간순으로 재배치 필요 시 별도 view.
+
+### 향후 (ADR-062 후보)
+- Charts dashboard에 시간 범위 picker (1h / 6h / 24h / 7d)
+- workspace별 cache hit chart 추가
+- chat binding audit log viewer sheet
+- routing learning history chart (use vs cancel 시간 추이)
+- export to PNG (chart 이미지 저장)
 
 ---
 

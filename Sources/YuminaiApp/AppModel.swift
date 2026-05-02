@@ -234,6 +234,8 @@ public final class AppModel {
     public var showHarnessHelp: Bool = false
     /// ADR-052 — Routing Decision Log viewer sheet
     public var showRoutingLog: Bool = false
+    /// **ADR-061 Phase 1** — SwiftUI Charts dashboard sheet
+    public var showChartsDashboard: Bool = false
     /// ADR-052 — Walk-through rehearsal sheet 대상 task id (nil이면 닫힘)
     public var rehearsalTaskId: UUID?
     public var selectedFilePaths: Set<String> {
@@ -485,6 +487,11 @@ public final class AppModel {
         await loadRoutingDecisionLog()
         await loadPalettePins()
         // ADR-055 #5 — routing learning snapshot 로드
+        // ADR-061 Phase 3 — 자동 unmute (마지막 mute로부터 30일 지난 keyword)
+        let unmuted = await routingLearningStore.performAutoUnmute()
+        if !unmuted.isEmpty {
+            harness.appendSystem("🤖 학습: 30일 이상 사용 안 된 mute keyword \(unmuted.count)개 자동 해제 — \(unmuted.joined(separator: ", "))")
+        }
         routingLearningSnapshot = await routingLearningStore.snapshot()
         // ADR-060 Phase 1 — workspace daily cost 복원 (앱 재시작 보존)
         await loadPersistedDailyCosts()
@@ -1160,6 +1167,18 @@ public final class AppModel {
                 self?.presentExclusiveSheet { $0.showRoutingLog = true }
             }
         ))
+        // ADR-061 Phase 1 — Charts Dashboard 진입
+        actions.append(PaletteAction(
+            actionId: "sheet.charts.dashboard",
+            category: "Sheet",
+            title: "Charts Dashboard",
+            subtitle: "8개 chart로 cost / cache / routing 시각화",
+            icon: "chart.line.uptrend.xyaxis",
+            shortcut: nil,
+            perform: { [weak self] in
+                self?.presentExclusiveSheet { $0.showChartsDashboard = true }
+            }
+        ))
 
         return actions
     }
@@ -1406,6 +1425,25 @@ public final class AppModel {
                 self?.activeChildProcesses.removeAll { $0.id == id }
             }
         }
+    }
+
+    /// **ADR-061 Phase 4** — binding audit log 추가 + UI cache 갱신.
+    public func recordBindingAudit(
+        chatId: Int64,
+        userId: Int64,
+        action: ChatBindingAuditEntry.Action,
+        workspaceId: UUID?,
+        workspaceName: String?
+    ) async {
+        let entry = ChatBindingAuditEntry(
+            chatId: chatId,
+            userId: userId,
+            action: action,
+            workspaceId: workspaceId,
+            workspaceName: workspaceName
+        )
+        await chatBindingAuditLog.record(entry)
+        chatBindingAuditEntries = await chatBindingAuditLog.recent(limit: 50)
     }
 
     /// **ADR-060 Phase 5** — chat bindings 변경 시 다른 chat에 알림 push.
@@ -1891,11 +1929,12 @@ public final class AppModel {
                     creation: output.cacheCreationTokens,
                     uncachedInput: output.inputTokens
                 )
-                // ADR-060 Phase 4 — hourly trend 누적 (disk persist)
+                // ADR-060 Phase 4 + ADR-061 Phase 2 — hourly trend 누적 (workspace별 분리)
                 let trendStore = dailyCostStore
                 let read = output.cacheReadTokens
                 let uncached = output.inputTokens
-                Task { await trendStore.addCacheSample(read: read, uncachedInput: uncached) }
+                let wsId = workspace.id
+                Task { await trendStore.addCacheSample(read: read, uncachedInput: uncached, workspaceId: wsId) }
                 let cachePct = Int(output.cacheHitRatio * 100)
                 let cacheNote = output.cacheReadTokens > 0 ? " · cache hit \(cachePct)% (\(output.cacheReadTokens) tok)" : ""
                 harness.appendSystem("✓ 분해 완료 (\(output.durationMs)ms, $\(String(format: "%.4f", output.costUSD))\(cacheNote))")
@@ -2996,6 +3035,7 @@ public final class AppModel {
         showHarnessHelp = false
         showRoutingLog = false
         rehearsalTaskId = nil
+        showChartsDashboard = false
     }
 
     /// 새 sheet/alert을 열기 전에 다른 sheet 모두 닫고 setter 실행.
@@ -3513,6 +3553,12 @@ public final class AppModel {
     public var workspaceTodayCostUSD: [UUID: Double] = [:]
     /// **ADR-060 Phase 1 + 4** — workspace cost + cache trend disk store.
     public let dailyCostStore: DailyCostStore = DailyCostStore()
+    /// **ADR-061 Phase 1** — UI binding용 cache trend snapshot (charts dashboard).
+    public var cacheTrendSnapshot: [CacheHitSample] = []
+    /// **ADR-061 Phase 4** — chat binding audit log (NDJSON disk persist).
+    public let chatBindingAuditLog: ChatBindingAuditLog = ChatBindingAuditLog()
+    /// **ADR-061 Phase 4** — UI binding용 cache
+    public var chatBindingAuditEntries: [ChatBindingAuditEntry] = []
     /// **ADR-056 Phase 3** — 컨텍스트 70% 자동 push 알림 cap (하루 1회).
     /// 마지막 push 일자 — 같은 날에 두 번 push 안 함.
     public var lastContextWarnDate: Date?
@@ -3567,15 +3613,22 @@ public final class AppModel {
     }
 
     /// **ADR-060 Phase 1** — bootstrap에서 disk store cost 복원 (앱 재시작 후에도 budget 유지).
+    /// **ADR-061 Phase 1** — cacheTrend snapshot도 캐싱 (UI binding).
     public func loadPersistedDailyCosts() async {
         let snap = await dailyCostStore.snapshot()
         let cal = Calendar.current
         for (wsId, ws) in snap.workspaceCosts {
-            // 같은 날만 복원 (다른 날 cost는 무시)
             if cal.isDate(ws.date, inSameDayAs: Date()) {
                 workspaceTodayCostUSD[wsId] = ws.costUSD
             }
         }
+        cacheTrendSnapshot = snap.cacheTrend
+    }
+
+    /// **ADR-061 Phase 1** — cache trend snapshot 갱신 (Charts dashboard 열기 직전).
+    public func refreshCacheTrendSnapshot() async {
+        let snap = await dailyCostStore.snapshot()
+        cacheTrendSnapshot = snap.cacheTrend
     }
 
     /// **ADR-056 Phase 4 + ADR-059 Phase 5** — budget cap 도달 여부.

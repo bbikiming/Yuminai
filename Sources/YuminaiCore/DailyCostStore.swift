@@ -62,31 +62,42 @@ public actor DailyCostStore {
 
     /// hourly bucket에 cache hit sample 추가. 시간이 바뀌면 새 bucket 생성.
     /// cap 24시간 이상은 prune.
-    public func addCacheSample(read: Int, uncachedInput: Int) {
+    /// **ADR-061 Phase 2** — workspaceId 추가 (per-workspace 분리 분석용).
+    public func addCacheSample(read: Int, uncachedInput: Int, workspaceId: UUID? = nil) {
         let now = Date()
         let cal = Calendar.current
         let hour = cal.component(.hour, from: now)
         let day = cal.startOfDay(for: now)
-        // 같은 시간 bucket 찾기
+        // 같은 시간 bucket + 같은 workspace 찾기
         if let lastIdx = cacheTrend.indices.last,
            let lastDay = cal.dateInterval(of: .day, for: cacheTrend[lastIdx].timestamp)?.start,
            lastDay == day,
-           cal.component(.hour, from: cacheTrend[lastIdx].timestamp) == hour {
-            // 누적
+           cal.component(.hour, from: cacheTrend[lastIdx].timestamp) == hour,
+           cacheTrend[lastIdx].workspaceId == workspaceId {
             cacheTrend[lastIdx].readTokens += read
             cacheTrend[lastIdx].uncachedInputTokens += uncachedInput
         } else {
-            // 새 bucket
             cacheTrend.append(CacheHitSample(
                 timestamp: now,
                 readTokens: read,
-                uncachedInputTokens: uncachedInput
+                uncachedInputTokens: uncachedInput,
+                workspaceId: workspaceId
             ))
         }
         // 24시간 이상 prune
         let cutoff = Date().addingTimeInterval(-Double(Self.cacheTrendCapHours) * 3600)
         cacheTrend.removeAll { $0.timestamp < cutoff }
         persistCacheTrend()
+    }
+
+    /// **ADR-061 Phase 2** — workspace별 cache hit ratio (해당 workspace의 모든 sample 평균).
+    public func cacheHitRatio(workspaceId: UUID) -> Double {
+        let samples = cacheTrend.filter { $0.workspaceId == workspaceId }
+        let totalRead = samples.reduce(0) { $0 + $1.readTokens }
+        let totalUncached = samples.reduce(0) { $0 + $1.uncachedInputTokens }
+        let total = totalRead + totalUncached
+        guard total > 0 else { return 0 }
+        return Double(totalRead) / Double(total)
     }
 
     // MARK: - Internal
@@ -115,15 +126,19 @@ public struct WorkspaceDayCost: Codable, Sendable, Hashable {
 }
 
 /// **ADR-060 Phase 4** — hourly cache hit sample.
-public struct CacheHitSample: Codable, Sendable, Hashable {
+/// **ADR-061 Phase 2** — workspaceId 추가 (per-workspace 분리).
+public struct CacheHitSample: Codable, Sendable, Hashable, Identifiable {
+    public var id: Date { timestamp }
     public let timestamp: Date
     public var readTokens: Int
     public var uncachedInputTokens: Int
+    public let workspaceId: UUID?
 
-    public init(timestamp: Date, readTokens: Int, uncachedInputTokens: Int) {
+    public init(timestamp: Date, readTokens: Int, uncachedInputTokens: Int, workspaceId: UUID? = nil) {
         self.timestamp = timestamp
         self.readTokens = readTokens
         self.uncachedInputTokens = uncachedInputTokens
+        self.workspaceId = workspaceId
     }
 
     /// 이 bucket의 hit ratio.

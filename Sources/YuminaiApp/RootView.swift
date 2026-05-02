@@ -198,6 +198,21 @@ struct RootView: View {
                 }
             )
         }
+        // ADR-061 Phase 1 — SwiftUI Charts dashboard (8 charts)
+        .sheet(isPresented: $bindable.showChartsDashboard) {
+            ChartsDashboard(
+                costSnapshot: appModel.costTracker.snapshot(),
+                cacheTrend: appModel.cacheTrendSnapshot,
+                routingDecisions: appModel.routingDecisions,
+                workspaceCosts: appModel.workspaceTodayCostUSD.compactMap { (id, cost) in
+                    guard let ws = appModel.workspaces.first(where: { $0.id == id }) else { return nil }
+                    return (workspaceName: ws.name, costUSD: cost)
+                },
+                currentSessionUsage: appModel.currentSessionUsage,
+                onClose: { appModel.showChartsDashboard = false }
+            )
+            .task { await appModel.refreshCacheTrendSnapshot() }
+        }
         // ADR-052 — Walk-through rehearsal sheet (다른 모델로 재실행)
         .sheet(item: rehearsalBinding) { task in
             RehearsalSheet(

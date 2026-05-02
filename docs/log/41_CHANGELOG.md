@@ -4,6 +4,57 @@
 
 ## [Unreleased] — 2026-05-03
 
+### Added — ADR-061 SwiftUI Charts 8개 통합 dashboard + 4 phases
+
+**Phase 1 — SwiftUI Charts 통합 Dashboard (8 charts)**
+- Sources/YuminaiUI/ChartsDashboard.swift (920×700 sheet)
+- 8개 chart, 다양한 Mark API:
+  1. Cache Hit Trend (LineMark + AreaMark + catmullRom + 0~100% Y scale)
+  2. Cost Breakdown (BarMark 5 buckets + value annotation)
+  3. Cache Volume Stacked (BarMark + position(by:))
+  4. Routing Outcome Donut (SectorMark with innerRadius)
+  5. Routing Timeline Heatmap (RectangleMark 100개)
+  6. Workspace Cost (horizontal BarMark)
+  7. Token Usage (BarMark, input/output/cache)
+  8. Cache Cost Savings (LineMark + AreaMark, 추정 절약 USD)
+- AppModel.cacheTrendSnapshot + refreshCacheTrendSnapshot
+- ⌘K Palette: sheet.charts.dashboard 진입점
+- showChartsDashboard state
+
+**Phase 2 — workspace별 cache hit 분리**
+- CacheHitSample.workspaceId: UUID? 추가
+- addCacheSample(read:uncachedInput:workspaceId:) 확장
+- cacheHitRatio(workspaceId:) API
+- 같은 hour라도 다른 workspace면 별도 bucket
+
+**Phase 3 — routing learning 자동 unmute**
+- RoutingLearningStore.muteTimestamps + autoUnmuteDays = 30
+- recordCancel / setMuted에서 timestamp 기록
+- performAutoUnmute(): 30일 지난 mute 자동 해제 + count reset
+- AppModel.bootstrap: 시작 시 자동 unmute + 알림
+
+**Phase 4 — chat binding audit log**
+- Sources/YuminaiCore/ChatBindingAuditLog.swift (actor, NDJSON)
+- ChatBindingAuditEntry (id/timestamp/chatId/userId/action/workspaceId/workspaceName)
+- ~/Library/Application Support/Yuminai/chat-bindings/audit.ndjson (mode 0600)
+- memory cap 500
+- AppModel.recordBindingAudit + chatBindingAuditEntries cache
+- YuminaiCommandRouter: bind/unbind 시 lastUserId/lastChatId 추적 + record
+
+### Tests added (+6)
+- ChatBindingAuditLogTests: record + recent, disk persist + reload, memory cap, Action cases
+- AutoUnmuteTests: 최근 mute 보존, 빈 mutes 처리
+
+### 빌드/테스트 결과
+- swift build → Build complete! (12.60s)
+- swift test → 436/436 passed (91 suites)
+
+### 새 / 수정 파일
+- 새: ChartsDashboard.swift, ChatBindingAuditLog.swift, ChatBindingAuditLogTests.swift
+- 수정: AppModel, AppPreferences, RoutingLearningStore, DailyCostStore, YuminaiCommandRouter, RootView
+
+---
+
 ### Added — ADR-060 영속성 + 시계열 + multi-chat 알림 (5 phases)
 
 **Phase 1 — workspace budget disk persist**

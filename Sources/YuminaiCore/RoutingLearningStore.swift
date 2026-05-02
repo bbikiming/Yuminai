@@ -18,19 +18,24 @@ public actor RoutingLearningStore {
     public static let cancelCountsKey = "yuminai.routing.cancelCounts"
     public static let customKeywordsKey = "yuminai.routing.customKeywords"
     public static let useCountsKey = "yuminai.routing.useCounts"
+    public static let muteTimestampsKey = "yuminai.routing.muteTimestamps"
     /// cancel 임계 — 이 횟수에 도달하면 keyword muted (binary fallback, ADR-055).
     public static let muteThreshold = 3
     /// **ADR-058 Phase 2** — weight 기반 mute. cancel ratio가 이 값 이상이면 mute.
-    /// 동시 사용 (binary OR weight 둘 중 하나라도 trigger).
     public static let muteRatioThreshold = 0.5
     /// minimum sample size — ratio 계산 전 이 횟수만큼 use 후에야 weight 적용.
     public static let minSamplesForRatio = 5
+    /// **ADR-061 Phase 3** — 자동 unmute 일수. 마지막 mute로부터 이 일수 지나면 자동 unmute.
+    /// 기본 30일 — 사용자 의도가 변경됐을 가능성 (예: 새 프로젝트).
+    public static let autoUnmuteDays = 30
 
     private let defaults: UserDefaults
     private(set) var cancelCounts: [String: Int] = [:]
     /// **ADR-058 Phase 2** — keyword 사용 (matched) 카운트. ratio = cancel / use.
     private(set) var useCounts: [String: Int] = [:]
     private(set) var mutedKeywords: Set<String> = []
+    /// **ADR-061 Phase 3** — keyword → mute timestamp (자동 unmute 계산용).
+    private(set) var muteTimestamps: [String: Date] = [:]
     /// taskKind → 추가 keyword 배열 (사용자 정의)
     private(set) var customKeywords: [String: [String]] = [:]
 
@@ -52,6 +57,28 @@ public actor RoutingLearningStore {
            let custom = try? JSONDecoder().decode([String: [String]].self, from: data) {
             self.customKeywords = custom
         }
+        if let data = defaults.data(forKey: Self.muteTimestampsKey),
+           let times = try? JSONDecoder().decode([String: Date].self, from: data) {
+            self.muteTimestamps = times
+        }
+    }
+
+    /// **ADR-061 Phase 3** — 자동 unmute 점검 (init 후 또는 isMuted 호출 시 lazy).
+    /// 마지막 mute로부터 autoUnmuteDays 지난 keyword는 자동 unmute.
+    public func performAutoUnmute() -> [String] {
+        let cutoff = Date().addingTimeInterval(-Double(Self.autoUnmuteDays) * 86400)
+        let toUnmute = muteTimestamps.compactMap { (kw, ts) -> String? in
+            (ts < cutoff && mutedKeywords.contains(kw)) ? kw : nil
+        }
+        for kw in toUnmute {
+            mutedKeywords.remove(kw)
+            muteTimestamps.removeValue(forKey: kw)
+            // cancel/use count도 리셋 (새로 학습 시작)
+            cancelCounts.removeValue(forKey: kw)
+            useCounts.removeValue(forKey: kw)
+        }
+        if !toUnmute.isEmpty { persist() }
+        return toUnmute
     }
 
     /// **ADR-058 Phase 2** — keyword가 matched 됐을 때 호출 (use count 증가).
@@ -80,12 +107,12 @@ public actor RoutingLearningStore {
         cancelCounts[keyword, default: 0] += 1
         let cancels = cancelCounts[keyword] ?? 0
         let uses = useCounts[keyword] ?? 0
-        // ADR-055 binary path
         let binaryTrigger = cancels >= Self.muteThreshold
-        // ADR-058 weight path — sample 충분 + ratio 도달
         let weightTrigger = uses >= Self.minSamplesForRatio && Double(cancels) / Double(uses) >= Self.muteRatioThreshold
         if binaryTrigger || weightTrigger {
             mutedKeywords.insert(keyword)
+            // ADR-061 Phase 3 — mute timestamp 기록 (자동 unmute 계산용)
+            muteTimestamps[keyword] = Date()
         }
         persist()
     }
@@ -97,8 +124,14 @@ public actor RoutingLearningStore {
 
     /// 명시적 mute / unmute (사용자가 직접 toggle).
     public func setMuted(_ keyword: String, muted: Bool) {
-        if muted { mutedKeywords.insert(keyword) }
-        else { mutedKeywords.remove(keyword) }
+        if muted {
+            mutedKeywords.insert(keyword)
+            // ADR-061 Phase 3 — 명시적 mute도 timestamp 기록
+            muteTimestamps[keyword] = Date()
+        } else {
+            mutedKeywords.remove(keyword)
+            muteTimestamps.removeValue(forKey: keyword)
+        }
         persist()
     }
 
@@ -178,6 +211,9 @@ public actor RoutingLearningStore {
         }
         if let data = try? JSONEncoder().encode(customKeywords) {
             defaults.set(data, forKey: Self.customKeywordsKey)
+        }
+        if let data = try? JSONEncoder().encode(muteTimestamps) {
+            defaults.set(data, forKey: Self.muteTimestampsKey)
         }
     }
 }

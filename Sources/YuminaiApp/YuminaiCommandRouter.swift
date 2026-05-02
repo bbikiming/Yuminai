@@ -20,9 +20,16 @@ public final class YuminaiCommandRouter: TelegramCommandRouter, @unchecked Senda
         self.appModel = appModel
     }
 
+    /// **ADR-061 Phase 4** — last received message의 user/chat ID (audit log용).
+    private var lastUserId: Int64 = 0
+    private var lastChatId: Int64 = 0
+
     public func handle(_ message: IncomingTelegramMessage) async -> String? {
         // ADR-045 R1.H4 — bot reflection 차단 (allowlist 통과해도 추가 가드)
         guard !message.isFromBot else { return nil }
+        // ADR-061 Phase 4 — audit log용 last user/chat 캡처
+        lastUserId = message.userId
+        lastChatId = message.chatId
         // ADR-056 Phase 2 — callback_query (inline keyboard 클릭) 처리
         if let cb = message.callbackData {
             return await handleCallback(cb, requestChatId: message.chatId)
@@ -153,6 +160,15 @@ public final class YuminaiCommandRouter: TelegramCommandRouter, @unchecked Senda
             model.preferences.telegramChatBindings[chatKey] = workspace.id
         }
         await model.savePreferences()
+        // ADR-061 Phase 4 — audit log 기록
+        let action: ChatBindingAuditEntry.Action = previousBinding != nil ? .rebind : .bind
+        await model.recordBindingAudit(
+            chatId: requestChatId,
+            userId: lastUserId,
+            action: action,
+            workspaceId: workspace.id,
+            workspaceName: workspace.name
+        )
         // ADR-060 Phase 5 — 다른 chat에 binding 변경 알림 (자기 자신 제외)
         if previousBinding != workspace.id {
             await model.notifyOtherChatsOfBindingChange(
@@ -174,6 +190,14 @@ public final class YuminaiCommandRouter: TelegramCommandRouter, @unchecked Senda
             model.preferences.telegramChatBindings.removeAll()
         }
         await model.savePreferences()
+        // ADR-061 Phase 4 — audit log
+        await model.recordBindingAudit(
+            chatId: lastChatId,
+            userId: lastUserId,
+            action: .unbind,
+            workspaceId: nil,
+            workspaceName: prevName
+        )
         if let prevName {
             return "✓ ‘\(prevName)’ 연결 해제. (모든 chat-specific binding도 함께 해제)"
         }
