@@ -791,6 +791,23 @@ public final class AppModel {
         terminals.restore(from: workspace.savedTerminalSessions)
     }
 
+    /// ADR-043 R4 — 워크스페이스 전환 시 모든 cleanup/restore을 한 함수로 응집.
+    /// 이전: RootView .task(id:)에서 closeAllFileTabs + refreshWorkspaceFileTree +
+    ///       restoreTerminalSessionsFromWorkspace 분산 호출 + .onChange로 selectWorkspace 별도.
+    /// 이후: 단일 진입점 — 순서/race 명확. 호출자는 RootView.onChange만.
+    public func transitionToWorkspace(_ id: UUID?) async {
+        // 1) 이전 workspace의 stale 파일 tab 정리 (dirty 보존)
+        closeAllFileTabs()
+        // 2) workspace 활성화 (없으면 noop)
+        if id != selectedWorkspaceId {
+            selectedWorkspaceId = id
+        }
+        // 3) 새 workspace의 file tree + terminal session 복원
+        await refreshWorkspaceFileTree()
+        restoreTerminalSessionsFromWorkspace()
+        // 향후 추가: dev server suggestions refresh, mention scope reset 등
+    }
+
     /// 현재 terminalSessions를 workspace에 영속 (ADR-041 T13).
     /// activity/hasUnreadOutput는 Codable 제외 (영속 X). label/cwd/createdAt만 보존.
     public func persistCurrentTerminalSessions() {
@@ -799,22 +816,28 @@ public final class AppModel {
         if let idx = workspaces.firstIndex(where: { $0.id == workspace.id }) {
             workspaces[idx] = updated
         }
-        let store = workspaceStore
-        Task { try? await store.update(updated) }
+        chainPersistTask(updated)
     }
 
     /// 현재 agentPanes를 workspace.savedPanes로 영속 (자동 호출).
     private func persistCurrentPanes() {
         guard let workspace = currentWorkspace else { return }
         let updated = workspace.with(savedPanes: agentPanes)
-        // local cache 업데이트
         if let idx = workspaces.firstIndex(where: { $0.id == workspace.id }) {
             workspaces[idx] = updated
         }
-        // SwiftData 영속 (silent — 실패해도 UX 유지)
+        chainPersistTask(updated)
+    }
+
+    /// ADR-043 R4 — Workspace persist 직렬화 (race 방지).
+    /// 이전 persist task await 후 새 update 발행 → write order 보장 (last-write-wins by call time).
+    private var pendingPersistTask: Task<Void, Never>?
+    private func chainPersistTask(_ workspace: Workspace) {
         let store = workspaceStore
-        Task {
-            try? await store.update(updated)
+        let previous = pendingPersistTask
+        pendingPersistTask = Task {
+            await previous?.value  // 이전 write 완료 대기 (직렬화)
+            try? await store.update(workspace)
         }
     }
 
@@ -1176,10 +1199,10 @@ public final class AppModel {
         let results = await runner.runIfConfigured(workspace: workspace, trigger: .turnComplete)
         isDeliveryRunning = false
 
-        // 결과 누적 (최근 10개만)
+        // ADR-043 R4 — AppLimits.maxDeliveryResults 사용
         deliveryResults.append(contentsOf: results)
-        if deliveryResults.count > 10 {
-            deliveryResults.removeFirst(deliveryResults.count - 10)
+        if deliveryResults.count > AppLimits.maxDeliveryResults {
+            deliveryResults.removeFirst(deliveryResults.count - AppLimits.maxDeliveryResults)
         }
 
         // 실패 + autoFeedFailureToAgent → 다음 turn에 prepend
@@ -1264,8 +1287,8 @@ public final class AppModel {
             let tab = FileTab(path: relativePath, savedContents: contents)
             openFileTabs.append(tab)
             activeFileTabId = tab.id
-            // max 10 tabs 유지 (FIFO — 가장 오래된 dirty 아닌 tab 제거)
-            if openFileTabs.count > 10 {
+            // ADR-043 R4 — AppLimits 사용 (magic number 추출)
+            if openFileTabs.count > AppLimits.maxFileTabs {
                 if let firstClean = openFileTabs.firstIndex(where: { !$0.isDirty && $0.id != tab.id }) {
                     openFileTabs.remove(at: firstClean)
                 }
@@ -1655,9 +1678,9 @@ public final class AppModel {
         do {
             let result = try await commandRunner.run(command: command, in: workingDir)
             commandBlocks.append(result)
-            // max 50 blocks 유지
-            if commandBlocks.count > 50 {
-                commandBlocks.removeFirst(commandBlocks.count - 50)
+            // ADR-043 R4 — AppLimits 사용
+            if commandBlocks.count > AppLimits.maxCommandBlocks {
+                commandBlocks.removeFirst(commandBlocks.count - AppLimits.maxCommandBlocks)
             }
         } catch {
             self.error = "명령 실행 실패: \(error.localizedDescription)"
@@ -1765,8 +1788,8 @@ public final class AppModel {
         let result = await deliveryRunner.runOnce(workspace: workspace, kind: kind, command: command)
         isDeliveryRunning = false
         deliveryResults.append(result)
-        if deliveryResults.count > 10 {
-            deliveryResults.removeFirst(deliveryResults.count - 10)
+        if deliveryResults.count > AppLimits.maxDeliveryResults {
+            deliveryResults.removeFirst(deliveryResults.count - AppLimits.maxDeliveryResults)
         }
     }
 

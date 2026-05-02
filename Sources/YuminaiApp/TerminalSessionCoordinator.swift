@@ -42,8 +42,8 @@ public final class TerminalSessionCoordinator {
         let session = TerminalSession(label: nextLabel, workingDirectory: workingDirectory)
         sessions.append(session)
         activeSessionId = session.id
-        // max 10 — overflow는 가장 오래된 것 삭제
-        if sessions.count > 10 {
+        // ADR-043 R4 — max 10→5 hard cap. 비활성 세션도 PTY process 살아있어 메모리 비용 큼.
+        if sessions.count > AppLimits.maxTerminalSessions {
             sessions.removeFirst()
         }
     }
@@ -126,7 +126,9 @@ public final class TerminalSessionCoordinator {
         guard let idx = sessions.firstIndex(where: { $0.id == id }) else { return }
         let wasActive = activeSessionId == id
         sessions[idx].activity = activity
-        if !wasActive && activity == .running {
+        // ADR-043 R4 — 비활성 세션의 running/completedRecently 모두 unread 알림.
+        // (사용자가 다른 창 보다 돌아왔을 때 "끝났다" 신호 보존 — 3초 timeout 후에도 dot 유지)
+        if !wasActive && (activity == .running || activity == .completedRecently) {
             sessions[idx].hasUnreadOutput = true
         }
     }

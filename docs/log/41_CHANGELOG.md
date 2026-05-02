@@ -4,6 +4,17 @@
 
 ## [Unreleased] — 2026-05-02
 
+### Fixed — audit 기반 R4: 안정성 + magic number 추출 (ADR-043)
+
+- AppLimits enum 신규 — 산재된 magic number 단일 source
+  - maxFileTabs=10, maxTerminalSessions=5 (10→5 hard cap), maxCommandBlocks=50,
+    maxDeliveryResults=10, oversizedPromptTokenThreshold=50_000
+- 터미널 max 10→5 hard cap (메모리/CPU 보호)
+- Workspace persist 직렬화 — pendingPersistTask chain (race 방지)
+- AppModel.transitionToWorkspace(_:) 응집 — 분산된 cleanup/restore 단일 진입점
+- 비활성 세션의 completedRecently도 hasUnreadOutput 유지 (3초 timeout 후에도 dot 보존)
+- Unread dot 5pt → 7pt + white border (가시성 ↑) + 더 명확한 tooltip
+
 ### Refactored — audit 기반 R3.1: TerminalSessionCoordinator 추출 (god-object 분해 시작) (ADR-042)
 
 - 신규 `Sources/YuminaiApp/TerminalSessionCoordinator.swift` (190줄, `@MainActor @Observable`)

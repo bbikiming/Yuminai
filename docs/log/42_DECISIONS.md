@@ -1,6 +1,44 @@
 # Decisions Log (ADR-lite)
 
-> 최신: ADR-042 (audit 기반 R1+R2+R3 — 토큰 안전 + UX 일관성 + AppModel 코디네이터 분리 시작)
+> 최신: ADR-043 (audit 기반 R4 — 안정성: max cap, persist 직렬화, transition 응집, unread fallback)
+
+---
+
+## ADR-043 — audit 기반 R4: 안정성 + magic number 추출
+
+- **날짜**: 2026-05-02
+- **상태**: Accepted
+- **결정**: ADR-042 R3.1 후속. 안정성 6개 항목 일괄.
+
+### 변경
+
+1. **AppLimits enum 신규**: 산재된 magic number (10/50/10/10/50_000) 단일 source.
+   - `maxFileTabs = 10`, `maxTerminalSessions = 5` (10→5 hard cap), `maxCommandBlocks = 50`, `maxDeliveryResults = 10`, `oversizedPromptTokenThreshold = 50_000`
+2. **터미널 max 10→5 hard cap**: 비활성 세션도 PTY process 살아있어 메모리 비용 큼. 5개 넘으면 실용적 multi-tasking이 아닌 cluttering. Hibernation 패턴은 v2.0+로 미루되 cap만 즉시 적용
+3. **Workspace persist 직렬화**:
+   - 이전: `Task { try? await store.update(updated) }` fire-and-forget — 빠른 전환 시 race
+   - 이후: `pendingPersistTask: Task<Void, Never>?` chain — 새 task가 이전 task await 후 실행 (순서 보장)
+   - persist함수(`persistCurrentTerminalSessions`/`persistCurrentPanes`)가 `chainPersistTask(_:)` 헬퍼 사용
+4. **transitionToWorkspace 응집**:
+   - 이전: RootView `.task(id:)`에서 `closeAllFileTabs + refreshWorkspaceFileTree + restoreTerminalSessionsFromWorkspace` 분산 호출
+   - 이후: AppModel `transitionToWorkspace(_:)` 단일 함수 — 순서/race 명확
+   - 향후 추가될 transition step도 한 곳에서 관리
+5. **completedRecently → unread dot fallback**:
+   - 이전: 비활성 세션이 completedRecently → 3초 후 idle, dot 사라짐 → 사용자가 다른 창 보다 돌아오면 끝났는지 모름
+   - 이후: 비활성 세션의 running OR completedRecently 모두 `hasUnreadOutput=true` → active 전환할 때까지 dot 유지
+6. **Unread dot 가시성**: 5pt → 7pt + white border opacity 0.4 (주변 시야 인지 강화) + 더 명확한 tooltip ("새 출력이 있어요 — 클릭해서 확인")
+
+### 결과
+- 신규 파일 1개 (Core): AppLimits.swift
+- 수정 파일 3개: AppModel/RootView/TerminalSessionCoordinator
+- 테스트 293/293 통과 (regression 0)
+- 빌드 7.91s clean
+
+### 알려진 한계 / 다음 라운드
+- R3.2~R3.7 코디네이터 6개 점진 추출
+- Sheet enum mutual exclusion (현재 9개 sheet binding 동시 attach — race 가능성)
+- 터미널 hibernation (max 5로 우회)
+- F2 키 NSEvent monitor
 
 ---
 

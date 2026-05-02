@@ -312,12 +312,8 @@ struct RootView: View {
                     }
                 )
                 .task(id: appModel.selectedWorkspaceId) {
-                    // Workspace 전환 시 다른 워크스페이스의 stale tab 정리 (ADR-038 R2).
-                    // dirty tab은 보존 — 사용자 명시 close 필요.
-                    appModel.closeAllFileTabs()
-                    await appModel.refreshWorkspaceFileTree()
-                    // 터미널 세션 영속 복원 (ADR-041 T13).
-                    appModel.restoreTerminalSessionsFromWorkspace()
+                    // ADR-043 R4 — 단일 transition 함수로 응집 (race/순서 명확)
+                    await appModel.transitionToWorkspace(appModel.selectedWorkspaceId)
                 }
                 .transition(.move(edge: .trailing).combined(with: .opacity))
             }
@@ -1078,10 +1074,12 @@ private struct TerminalSessionTabButton: View {
                     .foregroundStyle(isActive ? Theme.Color.text : Theme.Color.textSecondary)
                     .lineLimit(1)
                 if session.hasUnreadOutput && !isActive {
+                    // ADR-043 R4 — 5pt → 7pt + white border (가시성 ↑, 주변 시야 인지 강화)
                     Circle()
                         .fill(Color.orange)
-                        .frame(width: 5, height: 5)
-                        .help("새 출력이 있어요")
+                        .frame(width: 7, height: 7)
+                        .overlay(Circle().stroke(Color.white.opacity(0.4), lineWidth: 1))
+                        .help("새 출력이 있어요 — 클릭해서 확인")
                 }
                 if hovering || isActive {
                     Button(action: onClose) {
