@@ -118,6 +118,20 @@ public final actor LiveTelegramBot: TelegramClient {
         return SentTelegramMessage(messageId: messageId, chatId: chatId)
     }
 
+    /// **ADR-057 Phase 1** — Telegram bot API answerCallbackQuery.
+    /// 사용자가 inline keyboard 클릭 시 ✓ 표시 (또는 작은 toast 텍스트).
+    public func answerCallback(_ callbackQueryId: String, text: String?) async throws {
+        let url = baseURL.appendingPathComponent("answerCallbackQuery")
+        var request = URLRequest(url: url)
+        request.httpMethod = "POST"
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        var body: [String: Any] = ["callback_query_id": callbackQueryId]
+        if let text { body["text"] = String(text.prefix(200)) }  // Telegram 한도
+        request.httpBody = try JSONSerialization.data(withJSONObject: body)
+        let (data, response) = try await session.data(for: request)
+        try validate(response: response, data: data)
+    }
+
     public func edit(messageId: Int64, in chatId: Int64, text: String) async throws {
         do {
             try await editInternal(messageId: messageId, in: chatId, text: text, parseMode: "MarkdownV2", escape: true)
@@ -290,7 +304,7 @@ public final actor LiveTelegramBot: TelegramClient {
 
     private static func parseUpdate(_ raw: [String: Any]) -> IncomingTelegramMessage? {
         guard let updateId = coerceInt64(raw["update_id"]) else { return nil }
-        // ADR-056 Phase 2 — callback_query (inline keyboard 버튼 클릭) 처리
+        // ADR-056 Phase 2 + ADR-057 Phase 1 — callback_query parse (callbackQueryId 포함)
         if let callback = raw["callback_query"] as? [String: Any],
            let from = callback["from"] as? [String: Any],
            let userId = coerceInt64(from["id"]),
@@ -299,13 +313,15 @@ public final actor LiveTelegramBot: TelegramClient {
            let chatId = coerceInt64(chat["id"]) {
             let isBot = (from["is_bot"] as? Bool) ?? false
             let callbackData = callback["data"] as? String
+            let callbackQueryId = callback["id"] as? String  // ADR-057
             return IncomingTelegramMessage(
                 updateId: updateId,
                 userId: userId,
                 chatId: chatId,
-                text: nil,  // callback은 text 없음
+                text: nil,
                 isFromBot: isBot,
-                callbackData: callbackData
+                callbackData: callbackData,
+                callbackQueryId: callbackQueryId
             )
         }
         // 일반 message

@@ -23,12 +23,15 @@ import Foundation
 public protocol ChildClaudeProcess: Sendable {
     /// 1회성 prompt 호출 → 결과 collect → process terminate.
     /// caller는 반환된 `ChildProcessOutput`을 main conversation에 적절히 import (또는 무시).
+    /// **ADR-057 Critical Fix 1** — `overrideSettings`로 caller가 명시적 settings 전달 가능
+    /// (외부 turn plan-mode 등 보안 적용용).
     func runOnce(
         prompt: String,
         in workspace: Workspace,
         agent: AgentKind,
         purpose: ChildProcessPurpose,
-        timeoutSeconds: Int
+        timeoutSeconds: Int,
+        overrideSettings: SessionSettings?
     ) async throws -> ChildProcessOutput
 
     /// **ADR-055 HIGH 2** — 진행 중인 모든 child process kill (사용자 /cancel 응답).
@@ -153,7 +156,8 @@ public actor MockChildClaudeProcess: ChildClaudeProcess {
         in workspace: Workspace,
         agent: AgentKind,
         purpose: ChildProcessPurpose,
-        timeoutSeconds: Int = 60
+        timeoutSeconds: Int = 60,
+        overrideSettings: SessionSettings? = nil
     ) async throws -> ChildProcessOutput {
         let canned = responses[purpose] ?? "[mock \(purpose.rawValue) for \(agent.shortLabel)] echo: \(prompt.prefix(60))…"
         return ChildProcessOutput(

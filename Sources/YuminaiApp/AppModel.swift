@@ -1267,6 +1267,9 @@ public final class AppModel {
                 context: "Pane 2 ‘\(secondary.title)’ 병렬"
             )
 
+            // ADR-057 Critical Fix 1 — 외부 turn이면 plan-mode 적용
+            let childSettings = effectiveChildSettings()
+
             // async let으로 두 호출 동시 진행 (LangGraph BSP superstep 패턴)
             async let primaryDone: Void = runHarnessTask(primary.id)
             async let secondaryOutput: ChildProcessOutput = {
@@ -1288,7 +1291,8 @@ public final class AppModel {
                         in: workspace,
                         agent: secondaryPane.agentKind,
                         purpose: .parallel,
-                        timeoutSeconds: 180
+                        timeoutSeconds: 180,
+                        overrideSettings: childSettings
                     )
                 } catch {
                     // 실패 시 빈 output 반환 (caller가 handle)
@@ -1822,13 +1826,16 @@ public final class AppModel {
                 agent: workspace.agentKind,
                 context: "‘\(userRequest.prefix(40))…’ 분해"
             )
+            // ADR-057 Critical Fix 1 — 외부 turn이면 plan-mode 적용된 settings로 호출 (보안 hole 방지)
+            let childSettings = effectiveChildSettings()
             do {
                 let output = try await child.runOnce(
                     prompt: prompt,
                     in: workspace,
                     agent: workspace.agentKind,
                     purpose: .decomposition,
-                    timeoutSeconds: 60
+                    timeoutSeconds: 60,
+                    overrideSettings: childSettings
                 )
                 completeChildProcess(progressId, status: .completed)
                 // 정확한 cost 추적
@@ -2270,13 +2277,16 @@ public final class AppModel {
             replayAgent: agent
         )
 
+        // ADR-057 Critical Fix 1 — 외부 turn이면 plan-mode 적용
+        let childSettings = effectiveChildSettings()
         do {
             let output = try await child.runOnce(
                 prompt: rehearsalPrompt,
                 in: workspace,
                 agent: agent,
                 purpose: .rehearsal,
-                timeoutSeconds: 120
+                timeoutSeconds: 120,
+                overrideSettings: childSettings
             )
             completeChildProcess(progressId, status: .completed)
             costTracker.add(.rehearsal, usd: output.costUSD)
@@ -2844,7 +2854,16 @@ public final class AppModel {
               let bound = preferences.telegramBoundWorkspaceId,
               selectedWorkspaceId == bound
         else { return }
-        Task { await bridge.consume(event: event) }
+        // ADR-057 Critical Fix 6 — workspace switching 도중 stale event 차단.
+        // 이벤트 발행 시점의 workspace id를 캡처 → consume 시점에 여전히 같은지 확인.
+        // (사용자가 workspace 빠르게 switching하면 이전 workspace의 이벤트가 새 chat에 forward 가능)
+        let capturedWorkspace = bound
+        Task {
+            // consume 시점에도 여전히 bound + active가 같은지 재확인 (race 차단)
+            let stillBound = await MainActor.run { self.preferences.telegramBoundWorkspaceId == capturedWorkspace && self.selectedWorkspaceId == capturedWorkspace }
+            guard stillBound else { return }
+            await bridge.consume(event: event)
+        }
     }
 
     private func appendMessage(role: Message.Role, content: String) {
@@ -3107,6 +3126,11 @@ public final class AppModel {
         for idx in activeChildProcesses.indices where activeChildProcesses[idx].status == .running || activeChildProcesses[idx].status == .starting {
             activeChildProcesses[idx].status = .failed
         }
+        // ADR-057 Critical Fix 3 — pending decomposition flag도 reset
+        // (cancel 후 다음 turn에서 잘못된 메시지를 분해 결과로 parse 시도하는 bug 방지)
+        pendingDecomposition = false
+        // ADR-057 Critical Fix 6 보호: streaming buffer/agent buffer도 깨끗이
+        harnessAgentBuffer = ""
     }
 
     // MARK: - secrets
@@ -3419,6 +3443,18 @@ public final class AppModel {
     /// 마지막 push 일자 — 같은 날에 두 번 push 안 함.
     public var lastContextWarnDate: Date?
 
+    /// **ADR-057 Critical Fix 1** — ChildProcess 호출용 effective settings.
+    /// 외부 turn (isExternalTurn) + telegramRemoteRequiresPlan이면 plan-mode 적용.
+    /// 그렇지 않으면 active settings 사용.
+    /// → 외부 사용자가 /decompose /rehearse 보낼 때 plan-mode 우회 차단 (보안 hole 수정).
+    public func effectiveChildSettings() -> SessionSettings {
+        var settings = activeSettings
+        if isExternalTurn && preferences.telegramRemoteRequiresPlan && settings.permissionMode != .plan {
+            settings.permissionMode = .plan
+        }
+        return settings
+    }
+
     /// **ADR-056 Phase 5** — Routing learning UI helpers (Settings panel용).
     public func unmuteKeyword(_ keyword: String) async {
         await routingLearningStore.setMuted(keyword, muted: false)
@@ -3450,6 +3486,26 @@ public final class AppModel {
     public func isDailyBudgetExhausted() -> Bool {
         guard let cap = preferences.dailyBudgetUSD else { return false }
         return todayCostUSD >= cap
+    }
+
+    /// **ADR-057 Critical Fix 4** — atomic check + reserve (race 방지).
+    /// 외부 turn 시작 시 호출 → 동시 turn 2개가 둘 다 cap check 통과하는 race 차단.
+    /// reserve를 미리 추가 (estimated min cost) → 두 번째 turn은 reserve 포함 합계로 cap check.
+    /// turn 종료 시 actual cost로 보정 (reserve 차감 + actual 추가).
+    /// **MainActor 보장** — 동시 호출 시에도 직렬화됨 (struct flag 단순 + atomic).
+    public func tryReserveDailyBudget(estimatedMinCostUSD: Double = 0.001) -> Bool {
+        guard preferences.dailyBudgetUSD != nil else { return true }  // cap 없으면 통과
+        // 날짜 reset check
+        let cal = Calendar.current
+        if !cal.isDate(todayCostDate, inSameDayAs: Date()) {
+            todayCostUSD = 0
+            todayCostDate = Date()
+        }
+        // 이미 cap 도달
+        if isDailyBudgetExhausted() { return false }
+        // reserve를 미리 추가 (race 방지) — 동시 turn 2개면 두 번째는 누적된 reserve 포함 합계로 check
+        accumulateDailyCost(estimatedMinCostUSD)
+        return !isDailyBudgetExhausted()
     }
 
     /// **ADR-056 Phase 3** — 컨텍스트 70%+ 시 Telegram 자동 push (하루 1회).

@@ -1,6 +1,113 @@
 # Decisions Log (ADR-lite)
 
-> 최신: ADR-056 (Telegram 마무리 — edit-in-place + inline keyboards + per-day budget + 자동 push + Routing 학습 UI + 새 명령)
+> 최신: ADR-057 (Cross-feature audit + 6 critical fixes — 보안 hole + race conditions)
+
+---
+
+## ADR-057 — Cross-feature 이슈 audit + 6 critical fixes (보안 hole + race conditions)
+
+- **날짜**: 2026-05-02
+- **상태**: Accepted
+- **결정**: 사용자 요청 "이슈 예상 부분의 초기부터 파악해서 조치해 줘"에 따라 ADR-052~056 cross-feature audit 후 발견된 6 critical 이슈 즉시 수정. ADR-057 나머지 후보 (multi-chat binding, weight-based learning 등)는 ADR-058로 분리.
+
+### 컨텍스트
+ADR-052~056의 5개 ADR이 누적되며 cross-feature 상호 작용에서 잠재적 이슈 발견:
+
+| # | 영역 | 위험도 |
+|---|------|--------|
+| 1 | ChildProcess가 외부 turn plan-mode 우회 | 🔴 CRITICAL (보안 hole) |
+| 2 | answerCallback 호출 누락 | 🟠 HIGH (UX) |
+| 3 | pendingDecomposition cancel 시 reset 안 됨 | 🟠 HIGH (잘못된 상태) |
+| 4 | per-day budget 동시 turn race | 🟠 HIGH (race) |
+| 5 | callback_data 64 bytes 한도 무방비 | 🟡 MEDIUM (silent fail) |
+| 6 | forwardToBridgeIfBound workspace switching race | 🟡 MEDIUM (잘못된 chat) |
+| 7 | Anthropic prompt cache는 child process마다 miss | 🟡 MEDIUM (비용 효율 X) → 별도 ADR |
+| 8 | streamingMessageId race | 🟢 LOW |
+
+### 결정 — 6 Critical Fixes
+
+#### Fix 1: ChildProcess 외부 turn plan-mode 적용 (보안 hole 수정)
+- 문제: 외부 사용자가 `/decompose` `/rehearse` 보내면 메인 turn은 plan-mode인데 ChildProcess는 default settings 사용 → plan 우회
+- 수정:
+  - `ChildClaudeProcess.runOnce(... overrideSettings: SessionSettings?)` 파라미터 추가
+  - `LiveChildClaudeProcess`: `effectiveSettings = overrideSettings ?? defaultSettings`
+  - `AppModel.effectiveChildSettings()`: `isExternalTurn && telegramRemoteRequiresPlan`이면 plan-mode 적용
+  - `decomposeUserTask` / `launchRehearsal` / `runReadyTasksInParallel`: 모두 effectiveChildSettings() 전달
+
+#### Fix 2: answerCallback 호출 (Pump에서 자동)
+- 문제: 사용자가 inline 버튼 클릭해도 Telegram 화면에 ✓ 표시 안 됨 (먹먹한 UX, spinning 표시 지속)
+- 수정:
+  - `TelegramClient.answerCallback(_:text:)` protocol method 추가
+  - `LiveTelegramBot`: `/bot<token>/answerCallbackQuery` API 호출
+  - `IncomingTelegramMessage.callbackQueryId: String?` 추가
+  - `LiveTelegramBot.parseUpdate`: `callback_query.id`까지 파싱
+  - `TelegramCommandPump`: callback 받자마자 즉시 ack (router 처리 전에)
+  - `MockTelegramBot`: `answeredCallbacks` log
+
+#### Fix 3: pendingDecomposition cancel 시 reset
+- 문제: 사용자 /cancel 보낸 후 pendingDecomposition flag가 true 유지 → 다음 turn의 임의 응답을 분해 결과로 잘못 parse
+- 수정: `cancelStream()`에서 `pendingDecomposition = false` + `harnessAgentBuffer = ""` 추가
+
+#### Fix 4: per-day budget atomic check (race 차단)
+- 문제: 동시 외부 turn 2개면 둘 다 `isDailyBudgetExhausted()` check 통과 → over-budget
+- 수정:
+  - `tryReserveDailyBudget(estimatedMinCostUSD: Double = 0.001)` helper 추가
+  - 동시 호출 시: 첫 번째 turn이 `estimatedMinCostUSD` reserve → 두 번째 turn은 reserve 포함 합계로 check
+  - YuminaiCommandRouter `handlePlainText`: `isDailyBudgetExhausted` 대신 `tryReserveDailyBudget` 사용
+  - **MainActor 보장**: AppModel은 @MainActor → 두 turn handler가 직렬화
+
+#### Fix 5: callback_data 64 bytes 자동 truncate
+- 문제: Telegram callback_data 한도 64 bytes — 초과 시 silent fail (메시지 안 옴)
+- 수정:
+  - `InlineButton.maxCallbackDataBytes = 64` 명시 상수
+  - `init`에서 utf8 byte count 검사
+  - 초과 시 character boundary 기준 안전 truncate (multi-byte UTF-8 한글 안전)
+- 5 unit tests:
+  - 64 bytes 정확히 보존
+  - UUID composite 51자 OK
+  - 한글 25자 (75 bytes) 안전 truncate
+
+#### Fix 6: forwardToBridgeIfBound workspace switching race
+- 문제: workspace switching 도중 이전 workspace의 이벤트가 새 chat에 forward
+- 수정: 이벤트 발행 시점의 workspace id 캡처 → consume 시점에 재확인 (stillBound) → race 차단
+
+### 적용 결과
+```
+swift build              → Build complete! (8.16s)
+swift test               → 416/416 passed (88 suites, +5 InlineButton tests)
+수정 파일                → 5 (AppModel, ChildClaudeProcess, LiveChildClaudeProcess, TelegramClient, TelegramCommandPump, YuminaiCommandRouter)
+새 테스트                → 1 (InlineButtonTests.swift, 5 tests)
+```
+
+### 트레이드오프
+
+- **overrideSettings option vs 항상 active settings 사용**:
+  protocol에 새 파라미터 추가 (소소한 breaking change). 하지만 명시적 override가 더 안전.
+- **answerCallback handler 처리 전에 호출**:
+  router error나 처리 시간이 길어도 사용자는 즉시 ✓ 봄. handler 결과는 별도 send.
+- **tryReserveDailyBudget의 estimatedMinCostUSD = 0.001**:
+  너무 작으면 race 차단 효과 X. 너무 크면 정상 turn도 차단. 0.001 USD = 토큰 수백자 estimate.
+- **callback_data truncate가 silent (DEBUG print만)**:
+  caller가 의도적으로 긴 data 보내면 silently 잘림. 사용자에게는 inline button 클릭이 의도와 다른 동작 가능. 향후 명시적 throw 검토.
+- **forwardToBridgeIfBound 추가 MainActor.run**:
+  consume 시점마다 추가 actor hop — 미세한 latency. 대신 race 차단 명확.
+
+### 향후 (ADR-058 후보)
+- **Anthropic prompt cache 진짜 활용**: child process도 메인 session-id 공유 (또는 cache control header)
+- ADR-057 deferred phases:
+  - Routing learning weight 기반 (binary mute 대체)
+  - 멀티 chat ↔ 멀티 워크스페이스 binding (현재 1:1만)
+  - /tasks에 inline keyboard ▶ 실행 버튼
+  - 컨텍스트 70%+ 자동 새 세션 시작 옵션
+  - per-day budget 자정 reset push 알림
+
+### Audit 보고서 요약 (사용자 답변)
+
+발견된 8개 잠재 이슈 중:
+- HIGH 4개 (보안 hole + race + 잘못된 상태): 즉시 수정 ✓
+- MEDIUM 2개 (silent fail + chat race): 즉시 수정 ✓
+- MEDIUM 1개 (cache miss): ADR-058 deferred (큰 변경 필요)
+- LOW 1개 (streaming race): 미수정 (실제 발생 시나리오 적음 — Telegram polling cadence가 turn보다 짧음)
 
 ---
 

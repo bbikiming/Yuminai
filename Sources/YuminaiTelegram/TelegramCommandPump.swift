@@ -24,6 +24,11 @@ public final actor TelegramCommandPump {
         consumeTask = Task {
             for await message in stream {
                 if Task.isCancelled { break }
+                // ADR-057 Critical Fix 2 — callback 들어오면 즉시 ✓ 응답 (silent fail 방지)
+                // (handler 처리 전에 ack — Telegram은 callback에 응답 없으면 사용자 화면에 spinning 표시)
+                if let cbId = message.callbackQueryId {
+                    _ = try? await client.answerCallback(cbId, text: nil)
+                }
                 let response = await router.handle(message)
                 if let response {
                     _ = try? await client.send(response, to: message.chatId)

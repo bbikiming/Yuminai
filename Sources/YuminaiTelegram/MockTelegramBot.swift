@@ -44,6 +44,12 @@ public final actor MockTelegramBot: TelegramClient {
         editLog.append((messageId, chatId, text))
     }
 
+    /// **ADR-057 Phase 1** — answerCallback log (mock).
+    public private(set) var answeredCallbacks: [(id: String, text: String?)] = []
+    public func answerCallback(_ callbackQueryId: String, text: String?) async throws {
+        answeredCallbacks.append((callbackQueryId, text))
+    }
+
     public func startPolling() async throws {}
     public func stopPolling() async {}
 

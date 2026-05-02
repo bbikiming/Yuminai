@@ -69,13 +69,18 @@ public actor LiveChildClaudeProcess: ChildClaudeProcess {
         activePids.remove(pid)
     }
 
+    /// **ADR-057 Critical Fix 1** — caller가 명시적으로 settings override 가능.
+    /// 외부 turn 시 plan-mode 적용된 settings를 전달해야 안전 (보안 hole 방지).
+    /// nil이면 actor defaultSettings 사용.
     public func runOnce(
         prompt: String,
         in workspace: Workspace,
         agent: AgentKind,
         purpose: ChildProcessPurpose,
-        timeoutSeconds: Int = 60
+        timeoutSeconds: Int = 60,
+        overrideSettings: SessionSettings? = nil
     ) async throws -> ChildProcessOutput {
+        let effectiveSettings = overrideSettings ?? defaultSettings
         // ADR-055 HIGH 1 + #1 — ProjectProfile을 child process에 inject.
         // `systemPromptAppendix()` 사용 → LiveClaudeAdapter와 정확히 같은 string → cache key 일치 → hit ↑.
         let systemAppendix: String? = workspace.projectProfile.systemPromptAppendix()
@@ -93,9 +98,9 @@ public actor LiveChildClaudeProcess: ChildClaudeProcess {
                 "-p", prompt,
                 "--output-format", "json",
                 "--session-id", UUID().uuidString,
-                "--model", defaultSettings.model.rawValue,
-                "--permission-mode", defaultSettings.permissionMode.rawValue,
-                "--effort", defaultSettings.effortLevel.rawValue
+                "--model", effectiveSettings.model.rawValue,
+                "--permission-mode", effectiveSettings.permissionMode.rawValue,
+                "--effort", effectiveSettings.effortLevel.rawValue
             ]
             if let appendix = systemAppendix {
                 args.append(contentsOf: ["--append-system-prompt", appendix])

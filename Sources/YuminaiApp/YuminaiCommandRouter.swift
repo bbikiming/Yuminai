@@ -530,16 +530,17 @@ public final class YuminaiCommandRouter: TelegramCommandRouter, @unchecked Senda
         case .boundMissing:
             return "연결된 워크스페이스를 찾을 수 없어요. /unbind 후 다시 /bind 해주세요."
         case .ready(let boundId, let needsSwitch):
-            // ADR-056 Phase 4 — daily budget cap 도달 시 외부 turn 차단 (PC turn은 그대로)
-            let exhausted = await MainActor.run { model.isDailyBudgetExhausted() }
-            if exhausted {
+            // ADR-056 Phase 4 + ADR-057 Critical Fix 4 — atomic reserve (race 방지)
+            // 동시 외부 turn 2개면 두 번째는 첫 번째의 reserve 포함 합계로 cap check
+            let reserved = await MainActor.run { model.tryReserveDailyBudget() }
+            if !reserved {
                 let cap = await MainActor.run { model.preferences.dailyBudgetUSD ?? 0 }
                 let used = await MainActor.run { model.todayCostUSD }
                 return """
                 💼 오늘 budget cap 도달 — 외부 turn 차단됨.
                   · cap: $\(String(format: "%.4f", cap))
                   · 사용: $\(String(format: "%.4f", used))
-                  · 자정에 자동 reset / 또는 /budget off로 해제 / /budget <USD>로 증액
+                  · 자정에 자동 reset / 또는 /budget day off로 해제 / /budget day <USD>로 증액
                 """
             }
             if needsSwitch {

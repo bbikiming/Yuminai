@@ -4,6 +4,48 @@
 
 ## [Unreleased] — 2026-05-02
 
+### Fixed — Cross-feature audit + 6 critical fixes (ADR-057)
+
+**Fix 1 — ChildProcess가 외부 turn plan-mode 우회 (🔴 보안 hole)**
+- ChildClaudeProcess.runOnce에 overrideSettings 파라미터 추가
+- AppModel.effectiveChildSettings(): isExternalTurn + telegramRemoteRequiresPlan ⇒ plan-mode
+- decompose / rehearsal / parallel 모두 effectiveChildSettings 전달
+
+**Fix 2 — answerCallback 호출 (🟠 UX)**
+- TelegramClient.answerCallback protocol method
+- LiveTelegramBot: answerCallbackQuery API
+- IncomingTelegramMessage.callbackQueryId 필드
+- LiveTelegramBot.parseUpdate: callback_query.id 파싱
+- TelegramCommandPump: callback 받자마자 즉시 ack (router 처리 전)
+
+**Fix 3 — pendingDecomposition cancel 시 reset (🟠 잘못된 상태)**
+- AppModel.cancelStream()에서 pendingDecomposition = false + harnessAgentBuffer = "" 추가
+
+**Fix 4 — per-day budget atomic check (🟠 race)**
+- AppModel.tryReserveDailyBudget(estimatedMinCostUSD:) 추가
+- 동시 외부 turn: 첫 turn이 reserve → 두 번째는 누적된 reserve 포함 합계로 check
+- handlePlainText에서 isDailyBudgetExhausted 대신 tryReserveDailyBudget 사용
+
+**Fix 5 — InlineButton callback_data 64 bytes 자동 truncate (🟡 silent fail)**
+- InlineButton.maxCallbackDataBytes = 64 명시
+- init에서 utf8 byte 검사 → 초과 시 character boundary 안전 truncate
+- multi-byte UTF-8 (한글 75 bytes → 64 이내) 안전 처리
+
+**Fix 6 — forwardToBridgeIfBound workspace switching race (🟡 잘못된 chat)**
+- 이벤트 발행 시점 workspace id 캡처 → consume 시점에 stillBound 재확인
+
+### Tests added (+5)
+- InlineButtonTests.swift: 64자 보존, 정확히 64자, 100자 truncate, UUID 51자 OK, 한글 25자 안전
+
+### 빌드/테스트 결과
+- swift build → Build complete! (8.16s)
+- swift test → 416/416 passed (88 suites)
+
+### 수정 파일 (5)
+- AppModel, ChildClaudeProcess, LiveChildClaudeProcess, TelegramClient, TelegramCommandPump, YuminaiCommandRouter
+
+---
+
 ### Added — Telegram 통합 마무리: 6 phases (ADR-056)
 
 **Phase 1: 진짜 edit-in-place (editMessageText accumulation)**
