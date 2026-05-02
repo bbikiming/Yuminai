@@ -133,6 +133,7 @@ public enum HandoffPromptBuilder {
         log: [ConversationEntry],
         targetModel: AgentKind,
         currentTask: HarnessTask? = nil,
+        projectProfile: ProjectProfile? = nil,
         recentEntriesVerbatim: Int = 5,
         tokenBudget: Int = 4000
     ) -> Output {
@@ -141,6 +142,14 @@ public enum HandoffPromptBuilder {
         // Header — 새 모델에 역할 설명
         let strength = ModelCapabilityMatrix.strengthSummary(for: targetModel)
         sections.append("# 컨텍스트 인계 (Handoff)\n당신은 \(targetModel.shortLabel) 모델입니다 — \(strength).\n이 대화는 다른 모델 또는 사용자가 진행하던 것이며, 당신이 이어받습니다.")
+
+        // ADR-048 — Project profile (system context)
+        if let profile = projectProfile {
+            let summary = profile.systemContextSummary()
+            if summary != "(프로필 미설정)" {
+                sections.append("## 프로젝트 컨텍스트\n\(summary)")
+            }
+        }
 
         // Current task (있으면)
         if let task = currentTask {

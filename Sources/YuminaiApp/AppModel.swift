@@ -1228,6 +1228,37 @@ public final class AppModel {
         isStreaming = false
     }
 
+    /// ADR-048 Phase 3.C — kind와 일치하는 pane으로 전환. 없으면 false.
+    public func switchToPaneOfKind(_ kind: AgentKind) async -> Bool {
+        guard let target = agentPanes.first(where: { $0.agentKind == kind }) else { return false }
+        await setActivePane(target.id)
+        return true
+    }
+
+    /// ADR-048 Phase 3 — Harness 자동 routing. 사용자 입력 → 추천 agent → 다른 pane이면 자동 전환.
+    /// returns: routing이 발생했으면 generated handoff prompt (caller가 inputText에 prepend), 아니면 nil.
+    /// **side effect**: pane 전환 + SharedLog 기록. inputText는 caller 책임.
+    public func applyHarnessAutoRoutingIfNeeded(userText: String) async -> String? {
+        guard preferences.harnessAutoRoutingEnabled else { return nil }
+        let recommended = harness.recommendAgent(for: userText)
+        guard let workspace = currentWorkspace else { return nil }
+        let currentKind = workspace.agentKind
+        guard recommended != currentKind else { return nil }
+        // 추천 모델의 pane 찾기 (없으면 routing 포기 — 사용자가 manual 추가 필요)
+        guard let targetPane = agentPanes.first(where: { $0.agentKind == recommended }) else {
+            return nil
+        }
+        // Pane 전환
+        await setActivePane(targetPane.id)
+        // Handoff prompt 생성
+        let handoff = harness.buildHandoffPrompt(
+            targetModel: recommended,
+            projectProfile: workspace.projectProfile
+        )
+        harness.appendSystem("[자동 routing] \(currentKind.shortLabel) → \(recommended.shortLabel) (\(handoff.estimatedTokens) tokens handoff)")
+        return handoff.promptText + "\n\n---\n\n"
+    }
+
     /// ADR-047 Phase 2 — turn 단위 agent 응답 누적 buffer.
     /// .text chunk 마다 누적하고 .completed 시 SharedLog에 단일 entry로 기록.
     private var harnessAgentBuffer: String = ""
@@ -1781,9 +1812,20 @@ public final class AppModel {
         let trimmed = inputText.trimmingCharacters(in: .whitespacesAndNewlines)
         let hasAttachments = !attachedFiles.isEmpty
         guard (!trimmed.isEmpty || hasAttachments),
-              let session = currentSession,
-              let claudeSession = currentClaudeSession,
               !isStreaming else { return }
+
+        // ADR-048 Phase 3 — 자동 routing 검사 (활성 pane이 바뀔 수 있으므로 session 캡처 전에)
+        if let handoffPrefix = await applyHarnessAutoRoutingIfNeeded(userText: trimmed) {
+            // pane 전환됐으므로 이전 inputText에 handoff prepend
+            inputText = handoffPrefix + inputText
+        }
+
+        // session 재캡처 (routing 후 바뀐 active pane 기준)
+        guard let session = currentSession,
+              let claudeSession = currentClaudeSession else { return }
+
+        // ADR-048 — routing이 inputText에 handoff prefix를 추가했을 수 있으므로 재trim
+        let effectiveInput = inputText.trimmingCharacters(in: .whitespacesAndNewlines)
 
         // 첨부 prepend — Claude Code의 @ mention 구문
         let attachmentPreamble: String
@@ -1800,9 +1842,9 @@ public final class AppModel {
             pendingFailureFeedback = ""
         }
 
-        let bodyForUser = trimmed.isEmpty
+        let bodyForUser = effectiveInput.isEmpty
             ? (failurePrefix + attachmentPreamble).trimmingCharacters(in: .whitespacesAndNewlines)
-            : failurePrefix + attachmentPreamble + trimmed
+            : failurePrefix + attachmentPreamble + effectiveInput
 
         let userMsg = Message(sessionId: session.id, role: .user, content: bodyForUser)
         messages.append(userMsg)

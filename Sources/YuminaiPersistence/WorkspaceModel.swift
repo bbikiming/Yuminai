@@ -25,6 +25,8 @@ public final class WorkspaceModel {
     /// `[TerminalSession]` JSON 직렬화 — workspace 재진입 시 터미널 세션 복원 (ADR-041 T13).
     /// 라벨/cwd만 복원 — process는 새로 spawn (zsh 새 인스턴스).
     public var terminalSessionsJSON: Data?
+    /// ProjectProfile JSON 직렬화 (ADR-048).
+    public var projectProfileJSON: Data?
 
     public init(
         id: UUID,
@@ -37,7 +39,8 @@ public final class WorkspaceModel {
         agentKindRaw: String? = nil,
         deliveryConfigJSON: Data? = nil,
         panesJSON: Data? = nil,
-        terminalSessionsJSON: Data? = nil
+        terminalSessionsJSON: Data? = nil,
+        projectProfileJSON: Data? = nil
     ) {
         self.id = id
         self.name = name
@@ -50,6 +53,7 @@ public final class WorkspaceModel {
         self.deliveryConfigJSON = deliveryConfigJSON
         self.panesJSON = panesJSON
         self.terminalSessionsJSON = terminalSessionsJSON
+        self.projectProfileJSON = projectProfileJSON
     }
 
     public convenience init(from core: Workspace) {
@@ -64,7 +68,8 @@ public final class WorkspaceModel {
             agentKindRaw: core.agentKind.rawValue,
             deliveryConfigJSON: try? JSONEncoder().encode(core.deliveryConfig),
             panesJSON: try? JSONEncoder().encode(core.savedPanes),
-            terminalSessionsJSON: try? JSONEncoder().encode(core.savedTerminalSessions)
+            terminalSessionsJSON: try? JSONEncoder().encode(core.savedTerminalSessions),
+            projectProfileJSON: try? JSONEncoder().encode(core.projectProfile)
         )
     }
 
@@ -90,6 +95,13 @@ public final class WorkspaceModel {
         } else {
             terminals = []
         }
+        let profile: ProjectProfile
+        if let data = projectProfileJSON,
+           let decoded = try? JSONDecoder().decode(ProjectProfile.self, from: data) {
+            profile = decoded
+        } else {
+            profile = .empty
+        }
         return Workspace(
             id: id,
             name: name,
@@ -101,7 +113,8 @@ public final class WorkspaceModel {
             agentKind: agentKindRaw.flatMap(AgentKind.init(rawValue:)) ?? .default,
             deliveryConfig: delivery,
             savedPanes: panes,
-            savedTerminalSessions: terminals
+            savedTerminalSessions: terminals,
+            projectProfile: profile
         )
     }
 }

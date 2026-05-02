@@ -3,9 +3,19 @@ import AppKit
 import YuminaiCore
 
 /// 새 워크스페이스 생성 시트 — flat 자체 컴포넌트.
+/// ADR-048 — ProjectProfile 입력 추가 (platform/언어/백엔드 등). 폴더 선택 시 자동 감지로 미리채움.
 public struct CreateWorkspaceSheet: View {
     @State private var name: String = ""
     @State private var directoryPath: String = ""
+    // ADR-048 — ProjectProfile fields
+    @State private var profilePlatform: ProjectPlatform = .unknown
+    @State private var profileLanguage: ProjectLanguage = .unknown
+    @State private var profileHasBackend: Bool = false
+    @State private var profileBackendLanguage: ProjectLanguage = .unknown
+    @State private var profileFrameworks: String = ""
+    @State private var profileTestFramework: String = ""
+    @State private var profileNotes: String = ""
+    @State private var detectedHint: String?  // 자동 감지된 결과 표시
 
     public let onCreate: (Workspace) -> Void
     public let onCancel: () -> Void
@@ -19,21 +29,37 @@ public struct CreateWorkspaceSheet: View {
     }
 
     public var body: some View {
-        VStack(alignment: .leading, spacing: Theme.Spacing.xl) {
-            VStack(alignment: .leading, spacing: 6) {
-                Text("새 워크스페이스 만들기")
-                    .font(Theme.Typography.title)
-                    .foregroundStyle(Theme.Color.text)
-                Text("어떤 폴더에서 시작할까요? Claude CLI가 그 위치에서 실행돼요.")
-                    .font(Theme.Typography.small)
-                    .foregroundStyle(Theme.Color.textSecondary)
+        ScrollView {
+            VStack(alignment: .leading, spacing: Theme.Spacing.xl) {
+                header
+                nameAndPathSection
+                projectProfileSection
+                Spacer(minLength: Theme.Spacing.lg)
+                footer
             }
+            .padding(Theme.Spacing.xxl)
+        }
+        .frame(width: Theme.Layout.sheetWidth, height: 640)
+        .background(Theme.Color.bg)
+    }
 
+    private var header: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Text("새 워크스페이스 만들기")
+                .font(Theme.Typography.title)
+                .foregroundStyle(Theme.Color.text)
+            Text("폴더 선택 후 프로젝트 종류를 알려주면 Harness가 모델 routing + system context를 자동 구성해요.")
+                .font(Theme.Typography.small)
+                .foregroundStyle(Theme.Color.textSecondary)
+        }
+    }
+
+    private var nameAndPathSection: some View {
+        VStack(alignment: .leading, spacing: Theme.Spacing.md) {
             VStack(alignment: .leading, spacing: Theme.Spacing.sm) {
                 fieldLabel("이름")
                 FlatTextField("예: 내 새 프로젝트", text: $name)
             }
-
             VStack(alignment: .leading, spacing: Theme.Spacing.sm) {
                 fieldLabel("폴더")
                 HStack(spacing: Theme.Spacing.sm) {
@@ -42,22 +68,88 @@ public struct CreateWorkspaceSheet: View {
                         selectDirectory()
                     }
                 }
-            }
-
-            Spacer(minLength: Theme.Spacing.lg)
-
-            HStack {
-                Spacer()
-                FlatButton("취소", variant: .secondary) { onCancel() }
-                    .keyboardShortcut(.escape, modifiers: [])
-                FlatButton("만들기", variant: .primary) { create() }
-                    .keyboardShortcut(.return, modifiers: [])
-                    .disabled(!isValid)
+                if let hint = detectedHint {
+                    Text(hint)
+                        .font(Theme.Typography.micro)
+                        .foregroundStyle(Theme.Color.accent)
+                }
             }
         }
-        .padding(Theme.Spacing.xxl)
-        .frame(width: Theme.Layout.sheetWidth)
-        .background(Theme.Color.bg)
+    }
+
+    @ViewBuilder
+    private var projectProfileSection: some View {
+        VStack(alignment: .leading, spacing: Theme.Spacing.md) {
+            HStack(spacing: 6) {
+                Image(systemName: "rectangle.stack.fill")
+                    .font(.system(size: 11))
+                    .foregroundStyle(Theme.Color.accent)
+                Text("프로젝트 프로필")
+                    .font(Theme.Typography.small.weight(.medium))
+                    .foregroundStyle(Theme.Color.text)
+                Text("(Harness가 모델 routing 시 활용)")
+                    .font(Theme.Typography.micro)
+                    .foregroundStyle(Theme.Color.textTertiary)
+            }
+            HStack(spacing: Theme.Spacing.md) {
+                VStack(alignment: .leading, spacing: 4) {
+                    fieldLabel("Platform")
+                    Picker("Platform", selection: $profilePlatform) {
+                        ForEach(ProjectPlatform.allCases, id: \.self) { p in
+                            Text(p.displayName).tag(p)
+                        }
+                    }
+                    .labelsHidden()
+                }
+                VStack(alignment: .leading, spacing: 4) {
+                    fieldLabel("주요 언어")
+                    Picker("Language", selection: $profileLanguage) {
+                        ForEach(ProjectLanguage.allCases, id: \.self) { l in
+                            Text(l.displayName).tag(l)
+                        }
+                    }
+                    .labelsHidden()
+                }
+            }
+            VStack(alignment: .leading, spacing: 4) {
+                Toggle(isOn: $profileHasBackend) {
+                    Text("백엔드 포함")
+                        .font(Theme.Typography.small)
+                        .foregroundStyle(Theme.Color.textSecondary)
+                }
+                if profileHasBackend {
+                    Picker("백엔드 언어", selection: $profileBackendLanguage) {
+                        ForEach(ProjectLanguage.allCases, id: \.self) { l in
+                            Text(l.displayName).tag(l)
+                        }
+                    }
+                    .pickerStyle(.menu)
+                }
+            }
+            VStack(alignment: .leading, spacing: 4) {
+                fieldLabel("프레임워크 (쉼표로 구분)")
+                FlatTextField("예: Next.js, Tailwind, tRPC", text: $profileFrameworks)
+            }
+            VStack(alignment: .leading, spacing: 4) {
+                fieldLabel("테스트 도구 (선택)")
+                FlatTextField("예: Jest, pytest, XCTest", text: $profileTestFramework)
+            }
+            VStack(alignment: .leading, spacing: 4) {
+                fieldLabel("비고 (선택, 자유 입력 — Harness가 system context에 포함)")
+                FlatTextField("예: 실시간 수정 필요, ADR 우선", text: $profileNotes)
+            }
+        }
+    }
+
+    private var footer: some View {
+        HStack {
+            Spacer()
+            FlatButton("취소", variant: .secondary) { onCancel() }
+                .keyboardShortcut(.escape, modifiers: [])
+            FlatButton("만들기", variant: .primary) { create() }
+                .keyboardShortcut(.return, modifiers: [.command])
+                .disabled(!isValid)
+        }
     }
 
     private func fieldLabel(_ text: String) -> some View {
@@ -77,7 +169,22 @@ public struct CreateWorkspaceSheet: View {
         let trimmedName = name.trimmingCharacters(in: .whitespaces)
         let trimmedPath = directoryPath.trimmingCharacters(in: .whitespaces)
         let expanded = NSString(string: trimmedPath).expandingTildeInPath
-        onCreate(Workspace(name: trimmedName, directoryPath: expanded))
+        // ADR-048 — profile 구성
+        let frameworks = profileFrameworks
+            .split(separator: ",")
+            .map { $0.trimmingCharacters(in: .whitespaces) }
+            .filter { !$0.isEmpty }
+        let profile = ProjectProfile(
+            platform: profilePlatform,
+            primaryLanguage: profileLanguage,
+            secondaryLanguages: [],
+            hasBackend: profileHasBackend,
+            backendLanguage: profileHasBackend ? profileBackendLanguage : nil,
+            frameworks: frameworks,
+            testFramework: profileTestFramework.isEmpty ? nil : profileTestFramework,
+            notes: profileNotes.trimmingCharacters(in: .whitespaces)
+        )
+        onCreate(Workspace(name: trimmedName, directoryPath: expanded, projectProfile: profile))
     }
 
     private func selectDirectory() {
@@ -89,6 +196,37 @@ public struct CreateWorkspaceSheet: View {
         panel.prompt = "이 폴더로"
         if panel.runModal() == .OK, let url = panel.url {
             directoryPath = url.path
+            // ADR-048 — 자동 감지 후 폼 미리채움
+            applyAutoDetection(at: url.path)
         }
+    }
+
+    /// ProjectProfileDetector 결과로 폼 미리채움. 사용자는 자유 수정 가능.
+    private func applyAutoDetection(at path: String) {
+        let detected = ProjectProfileDetector.detect(at: path)
+        // 자동 감지된 값이 .unknown이 아니면 폼에 반영
+        if detected.platform != .unknown {
+            profilePlatform = detected.platform
+        }
+        if detected.primaryLanguage != .unknown {
+            profileLanguage = detected.primaryLanguage
+        }
+        if detected.hasBackend {
+            profileHasBackend = true
+            if let bl = detected.backendLanguage {
+                profileBackendLanguage = bl
+            }
+        }
+        if !detected.frameworks.isEmpty {
+            profileFrameworks = detected.frameworks.joined(separator: ", ")
+        }
+        if let test = detected.testFramework {
+            profileTestFramework = test
+        }
+        // 사용자에게 hint 표시
+        let summary = detected.systemContextSummary()
+        detectedHint = summary == "(프로필 미설정)"
+            ? "자동 감지 marker 파일 없음 — 수동 입력하세요"
+            : "🔍 자동 감지: \(summary) — 필요하면 수정하세요"
     }
 }

@@ -69,6 +69,9 @@ public final class YuminaiCommandRouter: TelegramCommandRouter, @unchecked Senda
         case "/changes":
             // ADR-045 — 변경 파일 목록만
             return await changesCommand()
+        case "/model":
+            // ADR-048 Phase 3.C — manual model override (claude/codex)
+            return await modelCommand(arg)
         default:
             return "알 수 없는 명령: \(cmd)\n/help로 사용 가능한 명령을 확인해요."
         }
@@ -198,6 +201,35 @@ public final class YuminaiCommandRouter: TelegramCommandRouter, @unchecked Senda
         return "```diff\n\(trimmed)\n```"
     }
 
+    /// ADR-048 Phase 3.C — manual model override.
+    /// /model claude / /model codex / /model auto / /model status
+    private func modelCommand(_ arg: String) async -> String? {
+        guard let model = appModel else { return "Yuminai 연결 안 됨" }
+        let lower = arg.lowercased()
+        if lower.isEmpty || lower == "status" {
+            let active = await MainActor.run { model.currentWorkspace?.agentKind.shortLabel ?? "?" }
+            let routing = await MainActor.run { model.preferences.harnessAutoRoutingEnabled ? "auto ON" : "auto OFF" }
+            return "현재 모델: \(active)\nHarness routing: \(routing)\n\n사용법:\n/model claude — Claude로 전환\n/model codex — Codex로 전환\n/model auto — 자동 routing 토글"
+        }
+        if lower == "auto" {
+            let newValue = await MainActor.run { () -> Bool in
+                model.preferences.harnessAutoRoutingEnabled.toggle()
+                return model.preferences.harnessAutoRoutingEnabled
+            }
+            await model.savePreferences()
+            return "Harness 자동 routing: \(newValue ? "✓ 켜짐" : "꺼짐")"
+        }
+        // claude/codex 전환
+        guard let kind = AgentKind(rawValue: lower) ?? AgentKind.allCases.first(where: { $0.shortLabel.lowercased() == lower }) else {
+            return "알 수 없는 모델: ‘\(arg)’\n사용 가능: claude, codex, auto"
+        }
+        let switched = await model.switchToPaneOfKind(kind)
+        if switched {
+            return "✓ \(kind.shortLabel) pane으로 전환됨"
+        }
+        return "‘\(kind.shortLabel)’ pane이 없어요. PC에서 +로 pane 추가 후 재시도."
+    }
+
     /// ADR-045 M8 — 변경 파일 목록만 (요약).
     private func changesCommand() async -> String? {
         guard let model = appModel else { return "Yuminai 연결 안 됨" }
@@ -279,6 +311,7 @@ public final class YuminaiCommandRouter: TelegramCommandRouter, @unchecked Senda
     /cancel       — 진행 중 turn 중단 (위험 작업 보면 즉시!)
     /diff         — 보류 중인 변경 diff (chunk 보존)
     /changes      — 변경 파일 목록만 요약
+    /model <name> — 모델 전환 (claude/codex/auto/status)
 
     /start        — 처음 사용자용 안내
     /help         — 이 도움말

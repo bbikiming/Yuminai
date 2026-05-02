@@ -4,6 +4,39 @@
 
 ## [Unreleased] — 2026-05-02
 
+### Added — Harness Phase 3 (자동 routing) + ProjectProfile (ADR-048)
+
+**Phase 3 — 자동 routing + handoff inject**:
+- `AppPreferences.harnessAutoRoutingEnabled` (default false, opt-in)
+- `AppModel.applyHarnessAutoRoutingIfNeeded(userText:)` — recommendAgent 결과가 다르면 pane 자동 전환 + handoff prompt 반환
+- `sendMessage` 통합 — routing 후 inputText에 handoff prepend 후 전송
+- `/model claude|codex|auto|status` 텔레그램 명령 — manual override + autoRouting 토글
+- `AppModel.switchToPaneOfKind(_:)` 헬퍼
+
+**ProjectProfile (새 시스템 기능)**:
+- `ProjectProfile` Core 모델 — platform/주요언어/백엔드/언어/프레임워크/테스트/notes
+- `ProjectPlatform` 11종 (web/ios/android/macos/desktop/cli/library/backend/mobile/dataScience/unknown)
+- `ProjectLanguage` 17종 (TS/JS/Swift/Kotlin/Java/Python/Go/Rust/...)
+- `ProjectProfileDetector.detect(at:)` — Package.swift / package.json / Cargo.toml / pyproject.toml / build.gradle / pubspec.yaml / Gemfile / composer.json 자동 감지
+  - Framework 자동 검출 (Next.js / React / Vue / Svelte / RN / Expo / Electron / Express / NestJS / Django / FastAPI / Flask / Spring Boot / Rails / Laravel)
+- `Workspace.projectProfile` + `WorkspaceModel.projectProfileJSON` SwiftData 영속
+
+**CreateWorkspaceSheet 확장**:
+- 7 fields (platform/주요언어/백엔드 toggle/백엔드 언어/프레임워크 쉼표/테스트/비고)
+- 폴더 선택 시 auto-detect → 폼 미리채움 + "🔍 자동 감지: ..." hint
+- 사용자 자유 수정 가능
+- 640pt ScrollView + ⌘↵ 단축키
+
+**HandoffPromptBuilder ProjectProfile 활용**:
+- `build(... projectProfile:)` 매개변수 추가
+- "## 프로젝트 컨텍스트" 섹션 prompt 포함 — 새 모델이 catch-up 시 프로젝트 종류 즉시 인지
+
+**테스트 14 신규 (317→331 통과)**:
+- ProjectProfileTests (4): empty/full summary/Codable
+- ProjectProfileDetectorTests (10): Swift Package/iOS/Next.js TS/RN+Expo/Express backend/Rust/Python/Django/Flutter/empty
+
+빌드 5.25s clean.
+
 ### Added — Harness Engineering Phase 1+2: 다중 모델 오케스트레이션 foundation (ADR-047)
 
 Antigravity-style harness 도입 — 다양한 LLM 모델을 단일 워크스페이스 컨텍스트에서 오가도록.

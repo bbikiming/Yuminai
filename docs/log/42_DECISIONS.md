@@ -1,6 +1,127 @@
 # Decisions Log (ADR-lite)
 
-> 최신: ADR-047 (Harness Engineering — 다중 모델 오케스트레이션 + SharedConversationLog + Handoff)
+> 최신: ADR-048 (Harness Phase 3 자동 routing + ProjectProfile)
+
+---
+
+## ADR-048 — Harness Phase 3 (자동 routing + handoff inject) + ProjectProfile
+
+- **날짜**: 2026-05-02
+- **상태**: Accepted
+- **결정**: ADR-047 Phase 3 구현 + 워크스페이스 생성 시 ProjectProfile 수집/자동감지로 Harness가 모델 routing + system context 자동 구성
+
+### 컨텍스트
+사용자: "페이즈3 구현해 줘. 그리고 새 프로젝트 시작할 때 platform/언어/백엔드 등 설정 가능한 시스템 기능 구축"
+
+### Phase 3 — 자동 routing + handoff inject
+
+1. **`AppPreferences.harnessAutoRoutingEnabled`** (default false — opt-in)
+   - Codable backward-compat 적용
+   - `/model auto` 텔레그램 명령으로 토글 가능
+
+2. **`AppModel.applyHarnessAutoRoutingIfNeeded(userText:)` → String?** 반환
+   - sendMessage 시작에서 호출
+   - `harness.recommendAgent(for: userText)` 결과가 현재 active pane의 agentKind와 다르면:
+     - 추천 모델의 pane 활성화 (`setActivePane`)
+     - `harness.buildHandoffPrompt(targetModel:projectProfile:)` 생성
+     - SharedLog에 `[자동 routing] X → Y (N tokens)` system entry 기록
+     - prompt 반환 (caller가 `inputText` 앞에 prepend)
+
+3. **sendMessage 통합**:
+   - 기존 `trimmed`는 routing 전 캡처
+   - routing 후 `inputText`가 mutated되었으므로 `effectiveInput`으로 재trim
+   - bodyForUser 계산에 `effectiveInput` 사용
+
+4. **`/model` 텔레그램 명령**:
+   - `/model claude` / `/model codex` — manual override
+   - `/model auto` — autoRouting 토글
+   - `/model status` 또는 `/model` — 현재 모델 + routing 상태
+   - `AppModel.switchToPaneOfKind(_:)` 헬퍼 추가
+
+### ProjectProfile (새 시스템 기능)
+
+5. **`ProjectProfile` Core 모델**:
+   ```swift
+   public struct ProjectProfile {
+       var platform: ProjectPlatform   // web/iosApp/androidApp/macosApp/desktop/cli/library/backend/mobile/dataScience/unknown
+       var primaryLanguage: ProjectLanguage  // typescript/swift/kotlin/python/rust/go/...
+       var secondaryLanguages: [ProjectLanguage]
+       var hasBackend: Bool
+       var backendLanguage: ProjectLanguage?
+       var frameworks: [String]   // "Next.js", "SwiftUI", ...
+       var testFramework: String?
+       var notes: String  // 사용자 자유 입력
+   }
+   ```
+   - `systemContextSummary()` — Harness가 사용 ("웹 / TypeScript / Next.js + Tailwind / 백엔드 / Jest")
+
+6. **`ProjectPlatform` 11종**: web/iosApp/androidApp/macosApp/desktopCrossPlatform/cli/library/backend/mobile(cross-platform)/dataScience/unknown
+
+7. **`ProjectLanguage` 17종**: TS/JS/Swift/Kotlin/Java/Python/Go/Rust/C++/C#/Ruby/PHP/Dart/Elixir/Clojure/Haskell/Other/Unknown
+
+8. **`ProjectProfileDetector.detect(at:)` 자동 감지**:
+   - Package.swift → Swift (+ iOS/macOS hint)
+   - .xcodeproj → Swift iOS
+   - package.json → JS/TS + Next/React/Vue/Svelte/RN/Expo/Electron + Express/Fastify/NestJS 백엔드 + Jest/Vitest
+   - Cargo.toml → Rust (+ axum/actix → 백엔드)
+   - go.mod / pyproject.toml / Pipfile / build.gradle / pubspec.yaml / Gemfile / composer.json
+   - Django/FastAPI/Flask/Spring Boot/Rails/Laravel 등 framework 자동 검출
+
+9. **Workspace 통합**:
+   - `Workspace.projectProfile: ProjectProfile`
+   - `WorkspaceModel.projectProfileJSON: Data?` SwiftData 영속
+   - `with(projectProfile:)` immutable update
+
+10. **CreateWorkspaceSheet 확장**:
+    - 7 fields: platform / 주요 언어 / 백엔드 toggle / 백엔드 언어 / 프레임워크 (쉼표) / 테스트 도구 / 비고
+    - 폴더 선택 시 `applyAutoDetection` — 폼 미리채움 + "🔍 자동 감지: ..." hint 표시
+    - 사용자가 자유 수정 가능 (auto-detect는 default 채움만)
+    - 640pt 높이 ScrollView (스크롤 가능)
+    - ⌘↵으로 만들기
+
+11. **HandoffPromptBuilder ProjectProfile 활용**:
+    - `build(... projectProfile: ProjectProfile?)` 매개변수 추가
+    - profile.systemContextSummary()를 "## 프로젝트 컨텍스트" 섹션으로 prompt 포함
+    - 새 모델이 catch-up 시 프로젝트 종류 즉시 인지 → 적절한 idiom/framework 사용
+
+### 격리
+
+- Core: ProjectProfile / Detector / HandoffPromptBuilder ProjectProfile 인자 — UI 의존성 X
+- Persistence: WorkspaceModel.projectProfileJSON
+- App: AppModel.applyHarnessAutoRoutingIfNeeded / switchToPaneOfKind, YuminaiCommandRouter /model
+- UI: CreateWorkspaceSheet ProjectProfile section + auto-detect
+
+### 결과
+
+- 신규 파일 3개:
+  - YuminaiCore/ProjectProfile.swift (~300줄)
+  - Tests/YuminaiCoreTests/ProjectProfileTests.swift (14 tests)
+- 수정 파일 8개:
+  - YuminaiCore/AppPreferences.swift — harnessAutoRoutingEnabled + Codable
+  - YuminaiCore/Workspace.swift — projectProfile + with(_:) propagate
+  - YuminaiCore/HarnessTypes.swift — HandoffPromptBuilder.build(projectProfile:)
+  - YuminaiPersistence/WorkspaceModel.swift — projectProfileJSON 영속
+  - YuminaiApp/AppModel.swift — applyHarnessAutoRoutingIfNeeded + switchToPaneOfKind + sendMessage 통합
+  - YuminaiApp/HarnessOrchestrator.swift — buildHandoffPrompt projectProfile 인자
+  - YuminaiApp/YuminaiCommandRouter.swift — /model 명령
+  - YuminaiUI/CreateWorkspaceSheet.swift — 7 fields + auto-detect
+- 테스트 14 신규 (317→331 통과):
+  - ProjectProfileTests (4): empty/summary/full summary/Codable
+  - ProjectProfileDetectorTests (10): Swift/iOS/Next/RN/Express/Rust/Python/Django/Flutter/empty
+- 빌드 5.25s clean
+
+### Phase 4-5 spec (다음 라운드 후보)
+
+- **Phase 4 — TaskGraph 자동 분해**: 사용자 큰 task → orchestrator가 sub-task LLM 호출로 분해 → 각 agent에 routing
+- **Phase 5 — HarnessUI**: 단일 conversation view + agent badge + TaskGraph mini-map (sidebar)
+- **ProjectProfile 편집 UI**: workspace 생성 후 수정 sheet (현재는 생성 시만)
+- **System prompt 자동 prepend**: pane spawn 시 프로젝트 프로필을 system message로 inject (Claude --append-system-prompt)
+
+### 재검토
+
+- 자동 routing이 사용자 의도 정확히 추론하는지 (keyword 휴리스틱 한계)
+- handoff prompt가 실제로 모델 catch-up에 도움 되는지 (4K 토큰 예산 적정성)
+- ProjectProfile auto-detect 정확도 vs false positive
 
 ---
 

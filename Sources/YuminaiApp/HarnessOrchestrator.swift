@@ -89,9 +89,11 @@ public final class HarnessOrchestrator {
 
     /// 모델 전환 시 새 모델에 보낼 catch-up prompt 생성.
     /// caller (HarnessOrchestrator wrapper 또는 AppModel)가 새 pane의 첫 메시지로 사용.
+    /// ADR-048 — projectProfile 추가로 프로젝트 컨텍스트 포함.
     public func buildHandoffPrompt(
         targetModel: AgentKind,
         currentTaskId: UUID? = nil,
+        projectProfile: ProjectProfile? = nil,
         recentEntriesVerbatim: Int = 5,
         tokenBudget: Int = 4000
     ) -> HandoffPromptBuilder.Output {
@@ -100,6 +102,7 @@ public final class HarnessOrchestrator {
             log: conversationLog,
             targetModel: targetModel,
             currentTask: task,
+            projectProfile: projectProfile,
             recentEntriesVerbatim: recentEntriesVerbatim,
             tokenBudget: tokenBudget
         )

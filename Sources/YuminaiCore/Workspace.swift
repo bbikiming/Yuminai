@@ -21,6 +21,8 @@ public struct Workspace: Sendable, Identifiable, Hashable {
     public let savedPanes: [AgentPane]
     /// 영속된 터미널 세션들 (ADR-041 T13). 라벨 + cwd만 복원 — process는 새로 spawn.
     public let savedTerminalSessions: [TerminalSession]
+    /// ADR-048 — 프로젝트 프로필 (platform/언어/백엔드 등). Harness가 활용.
+    public let projectProfile: ProjectProfile
 
     public init(
         id: UUID = UUID(),
@@ -33,7 +35,8 @@ public struct Workspace: Sendable, Identifiable, Hashable {
         agentKind: AgentKind = .default,
         deliveryConfig: DeliveryConfig = .disabled,
         savedPanes: [AgentPane] = [],
-        savedTerminalSessions: [TerminalSession] = []
+        savedTerminalSessions: [TerminalSession] = [],
+        projectProfile: ProjectProfile = .empty
     ) {
         self.id = id
         self.name = name
@@ -46,6 +49,7 @@ public struct Workspace: Sendable, Identifiable, Hashable {
         self.deliveryConfig = deliveryConfig
         self.savedPanes = savedPanes
         self.savedTerminalSessions = savedTerminalSessions
+        self.projectProfile = projectProfile
     }
 
     /// agentKind만 다른 새 인스턴스 반환 (불변성 유지).
@@ -54,7 +58,8 @@ public struct Workspace: Sendable, Identifiable, Hashable {
             id: id, name: name, directoryPath: directoryPath, createdAt: createdAt,
             lastOpenedAt: lastOpenedAt, harnessTemplate: harnessTemplate,
             isArchived: isArchived, agentKind: agentKind, deliveryConfig: deliveryConfig,
-            savedPanes: savedPanes, savedTerminalSessions: savedTerminalSessions
+            savedPanes: savedPanes, savedTerminalSessions: savedTerminalSessions,
+            projectProfile: projectProfile
         )
     }
 
@@ -63,7 +68,8 @@ public struct Workspace: Sendable, Identifiable, Hashable {
             id: id, name: name, directoryPath: directoryPath, createdAt: createdAt,
             lastOpenedAt: lastOpenedAt, harnessTemplate: harnessTemplate,
             isArchived: isArchived, agentKind: agentKind, deliveryConfig: deliveryConfig,
-            savedPanes: savedPanes, savedTerminalSessions: savedTerminalSessions
+            savedPanes: savedPanes, savedTerminalSessions: savedTerminalSessions,
+            projectProfile: projectProfile
         )
     }
 
@@ -72,7 +78,8 @@ public struct Workspace: Sendable, Identifiable, Hashable {
             id: id, name: name, directoryPath: directoryPath, createdAt: createdAt,
             lastOpenedAt: lastOpenedAt, harnessTemplate: harnessTemplate,
             isArchived: isArchived, agentKind: agentKind, deliveryConfig: deliveryConfig,
-            savedPanes: savedPanes, savedTerminalSessions: savedTerminalSessions
+            savedPanes: savedPanes, savedTerminalSessions: savedTerminalSessions,
+            projectProfile: projectProfile
         )
     }
 
@@ -81,7 +88,18 @@ public struct Workspace: Sendable, Identifiable, Hashable {
             id: id, name: name, directoryPath: directoryPath, createdAt: createdAt,
             lastOpenedAt: lastOpenedAt, harnessTemplate: harnessTemplate,
             isArchived: isArchived, agentKind: agentKind, deliveryConfig: deliveryConfig,
-            savedPanes: savedPanes, savedTerminalSessions: savedTerminalSessions
+            savedPanes: savedPanes, savedTerminalSessions: savedTerminalSessions,
+            projectProfile: projectProfile
+        )
+    }
+
+    public func with(projectProfile: ProjectProfile) -> Workspace {
+        Workspace(
+            id: id, name: name, directoryPath: directoryPath, createdAt: createdAt,
+            lastOpenedAt: lastOpenedAt, harnessTemplate: harnessTemplate,
+            isArchived: isArchived, agentKind: agentKind, deliveryConfig: deliveryConfig,
+            savedPanes: savedPanes, savedTerminalSessions: savedTerminalSessions,
+            projectProfile: projectProfile
         )
     }
 }
