@@ -11,6 +11,10 @@ public struct UsageDashboard: View {
     /// **ADR-055 #6** — 외부 turn cost (Telegram에서 시작된 turn 누적)
     public let externalTurnCount: Int
     public let externalTurnCostUSD: Double
+    /// **ADR-059 Phase 1** — ChildProcess cache hit 누적 (Anthropic prompt cache 효과 측정)
+    public let cumulativeCacheHitRatio: Double
+    public let totalCacheReadTokens: Int
+    public let totalCacheCreationTokens: Int
     public let onClose: () -> Void
 
     public init(
@@ -20,6 +24,9 @@ public struct UsageDashboard: View {
         costSnapshot: CostTracker.Snapshot = CostTracker.Snapshot(main: 0, decomposition: 0, rehearsal: 0, routing: 0, parallel: 0),
         externalTurnCount: Int = 0,
         externalTurnCostUSD: Double = 0,
+        cumulativeCacheHitRatio: Double = 0,
+        totalCacheReadTokens: Int = 0,
+        totalCacheCreationTokens: Int = 0,
         onClose: @escaping () -> Void
     ) {
         self.currentSessionUsage = currentSessionUsage
@@ -28,6 +35,9 @@ public struct UsageDashboard: View {
         self.costSnapshot = costSnapshot
         self.externalTurnCount = externalTurnCount
         self.externalTurnCostUSD = externalTurnCostUSD
+        self.cumulativeCacheHitRatio = cumulativeCacheHitRatio
+        self.totalCacheReadTokens = totalCacheReadTokens
+        self.totalCacheCreationTokens = totalCacheCreationTokens
         self.onClose = onClose
     }
 
@@ -43,6 +53,17 @@ public struct UsageDashboard: View {
                 // ADR-055 #6 — 5 buckets cost histogram
                 FlatSection("Cost 분리 (격리 호출별 — ADR-053/054/055)") {
                     CostBucketsHistogram(snapshot: costSnapshot)
+                }
+
+                // ADR-059 Phase 1 — Cache hit dashboard
+                if totalCacheReadTokens > 0 || totalCacheCreationTokens > 0 {
+                    FlatSection("Cache 효과 (ADR-055 #1 + ADR-058 Phase 1)") {
+                        CacheHitDashboard(
+                            ratio: cumulativeCacheHitRatio,
+                            readTokens: totalCacheReadTokens,
+                            creationTokens: totalCacheCreationTokens
+                        )
+                    }
                 }
 
                 if externalTurnCount > 0 {
@@ -254,6 +275,55 @@ struct CostBucketsHistogram: View {
                 }
             }
             .frame(height: 6)
+        }
+    }
+}
+
+/// **ADR-059 Phase 1** — Anthropic prompt cache 효과 dashboard.
+struct CacheHitDashboard: View {
+    let ratio: Double
+    let readTokens: Int
+    let creationTokens: Int
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            HStack(spacing: 16) {
+                statBlock(label: "Hit Ratio", value: "\(Int(ratio * 100))%", color: ratio > 0.5 ? .green : (ratio > 0.2 ? .yellow : .orange))
+                statBlock(label: "Read Tokens", value: readTokens.formattedShort, color: .blue)
+                statBlock(label: "Creation Tokens", value: creationTokens.formattedShort, color: .indigo)
+                Spacer()
+            }
+            // Visual bar
+            GeometryReader { geo in
+                ZStack(alignment: .leading) {
+                    RoundedRectangle(cornerRadius: 3)
+                        .fill(Theme.Color.surface)
+                    RoundedRectangle(cornerRadius: 3)
+                        .fill(LinearGradient(
+                            colors: [.green.opacity(0.6), .blue.opacity(0.6)],
+                            startPoint: .leading, endPoint: .trailing
+                        ))
+                        .frame(width: geo.size.width * ratio)
+                }
+            }
+            .frame(height: 8)
+            // Hint
+            Text(ratio > 0.5 ? "✓ 효율적: ProjectProfile 안정화 효과" : (ratio > 0.2 ? "보통: 더 많은 격리 호출에서 cache hit 기대" : "낮음: 첫 호출 또는 5분 TTL 만료 후"))
+                .font(Theme.Typography.micro)
+                .foregroundStyle(Theme.Color.textTertiary)
+        }
+    }
+
+    private func statBlock(label: String, value: String, color: Color) -> some View {
+        VStack(alignment: .leading, spacing: 3) {
+            Text(label)
+                .font(Theme.Typography.micro)
+                .foregroundStyle(Theme.Color.textTertiary)
+                .textCase(.uppercase)
+                .tracking(0.6)
+            Text(value)
+                .font(Theme.Typography.title)
+                .foregroundStyle(color)
         }
     }
 }

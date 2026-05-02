@@ -77,6 +77,9 @@ struct RootView: View {
                 costSnapshot: appModel.costTracker.snapshot(),
                 externalTurnCount: appModel.externalTurnCount,
                 externalTurnCostUSD: appModel.externalTurnTotalCostUSD,
+                cumulativeCacheHitRatio: appModel.costTracker.cumulativeCacheHitRatio,
+                totalCacheReadTokens: appModel.costTracker.totalCacheReadTokens,
+                totalCacheCreationTokens: appModel.costTracker.totalCacheCreationTokens,
                 onClose: { appModel.showUsageDashboard = false }
             )
         }

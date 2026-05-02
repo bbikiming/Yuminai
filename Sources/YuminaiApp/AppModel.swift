@@ -1316,6 +1316,12 @@ public final class AppModel {
                 completeChildProcess(progressId, status: .completed)
                 harness.updateTaskStatus(secondary.id, .completed, output: result.resultText)
                 costTracker.add(.parallel, usd: result.costUSD)
+                // ADR-059 Phase 1 — cache 효과 누적
+                costTracker.addCacheStats(
+                    read: result.cacheReadTokens,
+                    creation: result.cacheCreationTokens,
+                    uncachedInput: result.inputTokens
+                )
                 harness.appendAgent(
                     result.resultText,
                     agentKind: secondaryPane.agentKind,
@@ -1398,6 +1404,18 @@ public final class AppModel {
                 self?.activeChildProcesses.removeAll { $0.id == id }
             }
         }
+    }
+
+    /// **ADR-059 Phase 4** — bound bridge에 ready task ▶ 버튼 push.
+    /// /tasks 명령 처리 후 router가 호출.
+    public func notifyBoundBridgeTaskButtons() {
+        guard let bridge = sessionBridge,
+              let bound = preferences.telegramBoundWorkspaceId,
+              selectedWorkspaceId == bound
+        else { return }
+        let ready = harness.readyTasks.map { (id: $0.id, title: $0.title) }
+        guard !ready.isEmpty else { return }
+        Task { await bridge.sendTaskButtons(ready) }
     }
 
     /// **ADR-055 HIGH 3** — ChildProcess 결과를 Telegram에 forward (bound workspace만).
@@ -1840,7 +1858,12 @@ public final class AppModel {
                 completeChildProcess(progressId, status: .completed)
                 // 정확한 cost 추적
                 costTracker.add(.decomposition, usd: output.costUSD)
-                // ADR-058 Phase 1 — cache hit 안내 (효과 측정)
+                // ADR-058 Phase 1 + ADR-059 Phase 1 — cache 효과 누적 추적
+                costTracker.addCacheStats(
+                    read: output.cacheReadTokens,
+                    creation: output.cacheCreationTokens,
+                    uncachedInput: output.inputTokens
+                )
                 let cachePct = Int(output.cacheHitRatio * 100)
                 let cacheNote = output.cacheReadTokens > 0 ? " · cache hit \(cachePct)% (\(output.cacheReadTokens) tok)" : ""
                 harness.appendSystem("✓ 분해 완료 (\(output.durationMs)ms, $\(String(format: "%.4f", output.costUSD))\(cacheNote))")
@@ -2306,6 +2329,12 @@ public final class AppModel {
             if let idx = rehearsalsByTask[taskId]?.firstIndex(where: { $0.id == runId }) {
                 rehearsalsByTask[taskId]?[idx] = run
             }
+            // ADR-059 Phase 1 — cache 효과 누적
+            costTracker.addCacheStats(
+                read: output.cacheReadTokens,
+                creation: output.cacheCreationTokens,
+                uncachedInput: output.inputTokens
+            )
             error = "✓ 리허설 완료: \(agent.shortLabel) (\(output.durationMs)ms, $\(String(format: "%.4f", output.costUSD)))"
             // ADR-055 HIGH 3 — Telegram forward
             notifyBoundBridgeChildProcessResult(
@@ -3447,6 +3476,9 @@ public final class AppModel {
     /// **ADR-056 Phase 4** — daily cost 누적 (자정 reset). dailyBudgetUSD 도달 시 외부 차단.
     public var todayCostUSD: Double = 0
     public var todayCostDate: Date = Date()
+    /// **ADR-059 Phase 5** — workspace별 today cost (자정 reset).
+    /// disk persist X (메모리만 — 다음 launch에 reset).
+    public var workspaceTodayCostUSD: [UUID: Double] = [:]
     /// **ADR-056 Phase 3** — 컨텍스트 70% 자동 push 알림 cap (하루 1회).
     /// 마지막 push 일자 — 같은 날에 두 번 push 안 함.
     public var lastContextWarnDate: Date?
@@ -3480,18 +3512,32 @@ public final class AppModel {
     }
 
     /// **ADR-056 Phase 4** — daily cost 누적. 날짜 바뀌면 reset.
+    /// **ADR-059 Phase 5** — workspace별 cost도 누적 (selectedWorkspaceId 기준).
     public func accumulateDailyCost(_ cost: Double) {
         let cal = Calendar.current
         if !cal.isDate(todayCostDate, inSameDayAs: Date()) {
-            // 새 날짜 — reset
+            // 새 날짜 — global + workspace 모두 reset
             todayCostUSD = 0
+            workspaceTodayCostUSD.removeAll()
             todayCostDate = Date()
         }
         todayCostUSD += cost
+        // ADR-059 Phase 5 — workspace별 누적
+        if let wsId = selectedWorkspaceId {
+            workspaceTodayCostUSD[wsId, default: 0.0] += cost
+        }
     }
 
-    /// **ADR-056 Phase 4** — daily budget cap 도달 여부 (외부 turn 차단용).
+    /// **ADR-056 Phase 4 + ADR-059 Phase 5** — budget cap 도달 여부.
+    /// workspace별 cap이 있으면 그것 우선, 없으면 global dailyBudgetUSD.
     public func isDailyBudgetExhausted() -> Bool {
+        // ADR-059 Phase 5 — workspace별 cap 우선
+        if let wsId = selectedWorkspaceId,
+           let wsCap = preferences.workspaceDailyBudgetsUSD[wsId] {
+            let wsCost = workspaceTodayCostUSD[wsId] ?? 0
+            if wsCost >= wsCap { return true }
+        }
+        // global cap fallback
         guard let cap = preferences.dailyBudgetUSD else { return false }
         return todayCostUSD >= cap
     }

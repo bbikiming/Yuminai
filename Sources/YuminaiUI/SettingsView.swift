@@ -399,6 +399,35 @@ public struct SettingsView: View {
                     .foregroundStyle(.secondary)
             }
 
+            // ADR-059 Phase 2 — Multi-chat bindings 매니저
+            if preferences.telegramEnabled && !preferences.telegramChatBindings.isEmpty {
+                Section {
+                    ForEach(preferences.telegramChatBindings.sorted(by: { $0.key < $1.key }), id: \.key) { chatKey, workspaceId in
+                        HStack {
+                            Text("Chat \(chatKey)")
+                                .font(.system(.callout, design: .monospaced))
+                            Image(systemName: "arrow.right")
+                                .foregroundStyle(.secondary)
+                            Text(workspaceId.uuidString.prefix(8) + "…")
+                                .font(.system(.caption, design: .monospaced))
+                                .foregroundStyle(.secondary)
+                            Spacer()
+                            Button("해제") {
+                                preferences.telegramChatBindings.removeValue(forKey: chatKey)
+                            }
+                            .buttonStyle(.borderless)
+                            .foregroundStyle(.red)
+                        }
+                    }
+                } header: {
+                    Text("멀티 chat 바인딩 (ADR-058 Phase 3)")
+                } footer: {
+                    Text("각 Telegram chat에 다른 워크스페이스 binding 가능. /bind 명령으로 chat에서 직접 등록.")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+            }
+
             if preferences.telegramEnabled {
                 Section {
                     HStack(spacing: 8) {
@@ -508,6 +537,23 @@ public struct SettingsView: View {
                         "Routing log: raw prompt 저장",
                         hint: "ADR-052 — 자동 routing 결정의 사용자 prompt를 disk에 보존 (privacy 위험). 끄면 80자 prefix만. OTel GenAI semconv ‘sensitive PII’ 가이드를 따라 default OFF."
                     )
+                }
+                // ADR-059 Phase 2 — Auto new session slider
+                HStack {
+                    LabelWithHint(
+                        "자동 새 세션 (컨텍스트 %)",
+                        hint: "ADR-058 Phase 5 — 컨텍스트가 이 % 도달하면 active pane을 자동으로 재spawn (clean start). 0% = 비활성. 위험: 진행 중 작업 컨텍스트 손실 가능."
+                    )
+                    Spacer()
+                    let pct = Binding<Double>(
+                        get: { (preferences.autoNewSessionContextThreshold ?? 0) * 100 },
+                        set: { preferences.autoNewSessionContextThreshold = $0 == 0 ? nil : $0 / 100 }
+                    )
+                    Slider(value: pct, in: 0...95, step: 5)
+                        .frame(width: 180)
+                    Text(preferences.autoNewSessionContextThreshold.map { "\(Int($0 * 100))%" } ?? "off")
+                        .font(Theme.Typography.monoSmall)
+                        .frame(width: 40, alignment: .trailing)
                 }
                 HStack {
                     LabelWithHint(

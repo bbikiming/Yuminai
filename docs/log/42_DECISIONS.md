@@ -1,6 +1,80 @@
 # Decisions Log (ADR-lite)
 
-> 최신: ADR-058 (cache hit 추적 + weight learning + 멀티 chat binding + 자동 새 세션 + 자정 reset push)
+> 최신: ADR-059 (cache dashboard + Settings UI + ratio bar + task buttons + workspace budget)
+
+---
+
+## ADR-059 — UI/UX 마감 + workspace 격리: 5 phases
+
+- **날짜**: 2026-05-03
+- **상태**: Accepted
+- **결정**: ADR-058에서 deferred 된 5 phase 모두 + 워크스페이스별 budget
+
+### 결정
+
+#### Phase 1: Cache hit accumulator + dashboard
+- `CostTracker.totalCacheReadTokens / totalCacheCreationTokens / totalUncachedInputTokens` 누적
+- `addCacheStats(read:creation:uncachedInput:)` API
+- `cumulativeCacheHitRatio` computed (0~1.0)
+- decompose / rehearsal / parallel 호출 후 자동 누적
+- `UsageDashboard`에 `CacheHitDashboard` view 추가:
+  - Hit Ratio, Read Tokens, Creation Tokens 3블록
+  - GeometryReader 기반 gradient bar
+  - hint: > 50% = 효율적 / 20-50% = 보통 / < 20% = 첫 호출
+
+#### Phase 2: Settings UI 강화
+- General tab에 autoNewSession Slider (0-95%, 5% step)
+  - 0% = off, 그 외 = % 표시
+  - hint: 컨텍스트 도달 시 active pane 자동 재spawn
+- Telegram tab에 multi-chat bindings 매니저 section
+  - chat ID → workspace UUID 표시 + 개별 [해제] 버튼
+  - bindings 비어있으면 section 자체 숨김
+
+#### Phase 3: Routing learning ratio bar
+- `RoutingLearningPanel.learningRow(keyword:cancelCount:)` 확장
+- binary progress (0/3) + weight ratio bar (충분한 sample 후)
+- ratio bar:
+  - blue (정상) / orange (mute 임계 도달)
+  - 0.5 임계 점선 표시
+  - "ratio: 30% (3/10)" 텍스트
+- minSamples 미만일 때: "5/X sample 후 weight 적용" 안내
+
+#### Phase 4: /tasks 진짜 inline button push
+- `TelegramSessionBridge.sendTaskButtons(_:)` 추가
+  - ready task 별 "▶ <title>" 버튼 (1행 1개)
+  - title 30자 truncate, 최대 8개 task
+  - callback_data: `task:run:<UUID>`
+- `AppModel.notifyBoundBridgeTaskButtons()` helper
+- `tasksCommand` 호출 후 자동 button push (bound workspace만)
+- ADR-056 callback handler가 `task:run` 처리 → AppModel.runHarnessTask
+
+#### Phase 5: 워크스페이스별 dailyBudget
+- `AppPreferences.workspaceDailyBudgetsUSD: [UUID: Double]` 추가
+- `AppModel.workspaceTodayCostUSD: [UUID: Double]` (메모리만, 자정 reset)
+- `accumulateDailyCost`: global + workspace 양쪽 누적
+- `isDailyBudgetExhausted`: workspace 우선, global fallback
+- 효과: 한 워크스페이스가 budget 도달해도 다른 워크스페이스는 그대로 사용
+
+### 적용 결과
+```
+swift build              → Build complete! (11.24s)
+swift test               → 425/425 passed (88 suites, +4 cache tests)
+수정 파일                → 6 (CostTracker, AppPreferences, AppModel, UsageDashboard, SettingsView, RoutingLearningPanel, TelegramSessionBridge, RootView, YuminaiCommandRouter)
+```
+
+### 트레이드오프
+
+- **workspaceTodayCostUSD 메모리만**: 앱 재시작 시 reset → 짧은 운영 시간 cap이 정확하지 않을 수 있음. disk persist는 별도 store 필요.
+- **autoNewSession slider 0% = off**: 사용자가 명시적 disable 하려면 0으로 — UX는 "off" 텍스트 표시.
+- **inline keyboard 8 task 제한**: Telegram은 100개까지 가능하지만 화면 가득해서 8 권장.
+- **workspace budget이 selectedWorkspaceId 기준**: pane 별 분리는 X (단일 workspace 안에서 multi-pane은 같은 budget 공유).
+
+### 향후 (ADR-060 후보)
+- workspace budget disk persist (앱 재시작 후에도 유지)
+- routing learning ratio 시간순 그래프 (line chart)
+- telegram /budget command에 workspace-specific 옵션 (`/budget workspace <name> <USD>`)
+- chat bindings 변경 시 알림 push
+- cache hit dashboard에 daily/hourly trend 추가
 
 ---
 

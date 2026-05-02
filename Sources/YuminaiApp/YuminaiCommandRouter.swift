@@ -413,11 +413,13 @@ public final class YuminaiCommandRouter: TelegramCommandRouter, @unchecked Senda
         lines.append("")
         lines.append("/rehearse <번호> <claude|codex> — 다른 모델로 리허설")
         lines.append("/walkthrough <번호> — 완료 task의 진행 과정 회고")
-        // ADR-058 Phase 4 — 사용자에게 inline keyboard 첨부 안내 (실제 button은 별도 trigger)
-        lines.append("")
-        lines.append("💡 ready task가 있으면 자동 ▶ 버튼 첨부 메시지가 별도로 전송됩니다 (PC bridge 활성 시)")
-        // 별도 actor 호출은 router 현재 구조에서 어려움 → AppModel이 task push 시 keyboard 사용
-        // 향후 router를 client-aware로 확장 시 직접 sendWithKeyboard 호출
+        // ADR-058 Phase 4 + ADR-059 Phase 4 — ready task에 ▶ 버튼 별도 push
+        await MainActor.run { model.notifyBoundBridgeTaskButtons() }
+        let readyCount = await MainActor.run { model.harness.readyTasks.count }
+        if readyCount > 0 {
+            lines.append("")
+            lines.append("💡 ▶ \(readyCount)개 ready task 버튼이 별도 메시지로 전송됐습니다.")
+        }
         return lines.joined(separator: "\n")
     }
 

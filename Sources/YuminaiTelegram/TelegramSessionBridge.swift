@@ -156,6 +156,28 @@ public actor TelegramSessionBridge {
         await send(text)
     }
 
+    /// **ADR-059 Phase 4** — task 별 ▶ 실행 버튼 메시지 전송 (multi-row inline keyboard).
+    /// caller가 ready task list를 전달 → 각 task 별 [▶ task title] 버튼 1개씩.
+    /// callback_data 형식: "task:run:<UUID>"
+    public func sendTaskButtons(_ tasks: [(id: UUID, title: String)]) async {
+        guard !tasks.isEmpty else { return }
+        await flushAssistantBuffer()
+        let target = requestChatId ?? config.chatId
+        // 한 행에 1개 버튼 (title이 길어서 가로 배치 어려움)
+        let rows: [[InlineButton]] = tasks.prefix(8).map { task in
+            // 제목 길면 30자 truncate
+            let label = task.title.count > 30 ? String(task.title.prefix(30)) + "…" : task.title
+            return [InlineButton(text: "▶ \(label)", callbackData: "task:run:\(task.id.uuidString)")]
+        }
+        _ = try? await client.sendWithKeyboard(
+            "📋 Ready task 실행 버튼:",
+            to: target,
+            buttons: rows
+        )
+        streamingMessageId = nil
+        streamingAccumulated = ""
+    }
+
     /// 활성 turn 중단 안내.
     public func notifyCancelled() async {
         await flushAssistantBuffer()

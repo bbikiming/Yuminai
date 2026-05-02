@@ -55,9 +55,15 @@ public struct AppPreferences: Sendable, Codable, Hashable {
     /// ADR-052 — Multi-agent 병렬 실행 활성. **default false** (Cognition 권고: parallel = fragile).
     /// 켜면 TaskGraph의 disjoint task를 두 pane에서 동시 실행 가능.
     public var multiAgentParallelEnabled: Bool
-    /// **ADR-056 Phase 4** — per-day cost cap (USD). nil이면 무제한.
+    /// **ADR-056 Phase 4** — global per-day cost cap (USD). nil이면 무제한.
     /// 도달 시 외부 turn은 차단 (PC turn은 그대로). 매일 자정 reset.
     public var dailyBudgetUSD: Double?
+    /// **ADR-059 Phase 5** — workspace별 per-day cost cap. workspaceId → USD.
+    /// 비어있으면 dailyBudgetUSD (global) 사용. 우선 순위: workspace > global.
+    public var workspaceDailyBudgetsUSD: [UUID: Double]
+    /// **ADR-059 Phase 5** — workspace별 today cost 누적 (자정 reset).
+    /// disk persist X (메모리만) — 영속 필요 시 향후 별도 store.
+    /// 단, codable 안 — 따로 transient field로 처리.
     /// **ADR-058 Phase 5** — 컨텍스트가 이 % 도달하면 자동 새 세션 시작 (옵션).
     /// nil이면 비활성. 0.0~1.0 (예: 0.85 = 85%)
     /// **default nil** — 사용자 의도와 다를 수 있으므로 명시적 활성 권장.
@@ -95,6 +101,7 @@ public struct AppPreferences: Sendable, Codable, Hashable {
         routingLogRetentionDays: Int = 7,
         multiAgentParallelEnabled: Bool = false,
         dailyBudgetUSD: Double? = nil,
+        workspaceDailyBudgetsUSD: [UUID: Double] = [:],
         autoNewSessionContextThreshold: Double? = nil,
         agentChainEnabled: Bool = false,
         agentChainMaxHops: Int = 1,
@@ -125,6 +132,7 @@ public struct AppPreferences: Sendable, Codable, Hashable {
         self.routingLogRetentionDays = routingLogRetentionDays
         self.multiAgentParallelEnabled = multiAgentParallelEnabled
         self.dailyBudgetUSD = dailyBudgetUSD
+        self.workspaceDailyBudgetsUSD = workspaceDailyBudgetsUSD
         self.autoNewSessionContextThreshold = autoNewSessionContextThreshold
         self.agentChainEnabled = agentChainEnabled
         self.agentChainMaxHops = agentChainMaxHops
@@ -159,6 +167,7 @@ public struct AppPreferences: Sendable, Codable, Hashable {
         self.routingLogRetentionDays = try c.decodeIfPresent(Int.self, forKey: .routingLogRetentionDays) ?? 7
         self.multiAgentParallelEnabled = try c.decodeIfPresent(Bool.self, forKey: .multiAgentParallelEnabled) ?? false
         self.dailyBudgetUSD = try c.decodeIfPresent(Double.self, forKey: .dailyBudgetUSD)
+        self.workspaceDailyBudgetsUSD = try c.decodeIfPresent([UUID: Double].self, forKey: .workspaceDailyBudgetsUSD) ?? [:]
         self.autoNewSessionContextThreshold = try c.decodeIfPresent(Double.self, forKey: .autoNewSessionContextThreshold)
         self.agentChainEnabled = try c.decodeIfPresent(Bool.self, forKey: .agentChainEnabled) ?? false
         self.agentChainMaxHops = try c.decodeIfPresent(Int.self, forKey: .agentChainMaxHops) ?? 1

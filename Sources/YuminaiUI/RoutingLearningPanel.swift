@@ -79,7 +79,7 @@ public struct RoutingLearningPanel: View {
 
     private var cancelCountsSection: some View {
         VStack(alignment: .leading, spacing: 6) {
-            Text("Cancel 학습 진행 (3회 도달 시 자동 mute)")
+            Text("Cancel 학습 진행 (binary 3회 OR weight ratio ≥ 0.5)")
                 .font(Theme.Typography.body.weight(.semibold))
                 .foregroundStyle(Theme.Color.text)
             let nonMuted = snapshot.cancelCounts.filter { !snapshot.mutedKeywords.contains($0.key) }
@@ -89,18 +89,61 @@ public struct RoutingLearningPanel: View {
                     .foregroundStyle(Theme.Color.textSecondary)
             } else {
                 ForEach(nonMuted.sorted(by: { $0.value > $1.value }), id: \.key) { item in
-                    HStack {
-                        Text("‘\(item.key)’")
-                            .font(Theme.Typography.monoSmall)
-                            .frame(width: 100, alignment: .leading)
-                        ProgressView(value: Double(item.value), total: Double(RoutingLearningStore.muteThreshold))
-                            .frame(maxWidth: .infinity)
-                        Text("\(item.value) / \(RoutingLearningStore.muteThreshold)")
-                            .font(Theme.Typography.monoSmall)
-                            .foregroundStyle(Theme.Color.textSecondary)
-                            .frame(width: 50, alignment: .trailing)
-                    }
+                    learningRow(keyword: item.key, cancelCount: item.value)
                 }
+            }
+        }
+    }
+
+    /// **ADR-059 Phase 3** — keyword 학습 row: binary progress + weight ratio bar.
+    private func learningRow(keyword: String, cancelCount: Int) -> some View {
+        let useCount = snapshot.useCounts[keyword] ?? 0
+        let ratio = snapshot.cancelRatio(keyword)
+        return VStack(alignment: .leading, spacing: 3) {
+            HStack {
+                Text("‘\(keyword)’")
+                    .font(Theme.Typography.monoSmall)
+                    .frame(width: 100, alignment: .leading)
+                // Binary progress (3회까지)
+                ProgressView(value: Double(min(cancelCount, RoutingLearningStore.muteThreshold)), total: Double(RoutingLearningStore.muteThreshold))
+                    .frame(maxWidth: .infinity)
+                Text("\(cancelCount) / \(RoutingLearningStore.muteThreshold)")
+                    .font(Theme.Typography.monoSmall)
+                    .foregroundStyle(Theme.Color.textSecondary)
+                    .frame(width: 50, alignment: .trailing)
+            }
+            // ADR-059 Phase 3 — weight ratio bar (충분한 sample 있을 때만)
+            if let r = ratio {
+                HStack(spacing: 6) {
+                    Text("ratio")
+                        .font(Theme.Typography.micro)
+                        .foregroundStyle(Theme.Color.textTertiary)
+                        .frame(width: 100, alignment: .leading)
+                    GeometryReader { geo in
+                        ZStack(alignment: .leading) {
+                            RoundedRectangle(cornerRadius: 2)
+                                .fill(Theme.Color.surface)
+                            RoundedRectangle(cornerRadius: 2)
+                                .fill(r >= RoutingLearningStore.muteRatioThreshold ? Color.orange : Color.blue.opacity(0.6))
+                                .frame(width: geo.size.width * r)
+                            // 0.5 임계 표시 (점선)
+                            Rectangle()
+                                .fill(Color.red.opacity(0.4))
+                                .frame(width: 1)
+                                .offset(x: geo.size.width * RoutingLearningStore.muteRatioThreshold)
+                        }
+                    }
+                    .frame(height: 4)
+                    Text("\(Int(r * 100))% (\(cancelCount)/\(useCount))")
+                        .font(Theme.Typography.micro)
+                        .foregroundStyle(r >= RoutingLearningStore.muteRatioThreshold ? Color.orange : Theme.Color.textTertiary)
+                        .frame(width: 80, alignment: .trailing)
+                }
+            } else if useCount > 0 {
+                Text("ratio: \(useCount)/\(RoutingLearningStore.minSamplesForRatio) sample 후 weight 적용")
+                    .font(Theme.Typography.micro)
+                    .foregroundStyle(Theme.Color.textTertiary)
+                    .padding(.leading, 100)
             }
         }
     }

@@ -173,4 +173,43 @@ struct CostTrackerTests {
         let outCost = CostTracker.estimateCostUSD(inputTokens: 0, outputTokens: 1_000_000)
         #expect(abs(outCost - 15.0) < 0.001)
     }
+
+    // MARK: - ADR-059 Phase 1 cache stats
+
+    @Test("addCacheStats accumulates")
+    @MainActor
+    func cacheStatsAccumulate() {
+        let tracker = CostTracker()
+        tracker.addCacheStats(read: 1000, creation: 500, uncachedInput: 200)
+        tracker.addCacheStats(read: 2000, creation: 0, uncachedInput: 100)
+        #expect(tracker.totalCacheReadTokens == 3000)
+        #expect(tracker.totalCacheCreationTokens == 500)
+        #expect(tracker.totalUncachedInputTokens == 300)
+    }
+
+    @Test("cumulativeCacheHitRatio 정확 계산")
+    @MainActor
+    func cacheHitRatioCalc() {
+        let tracker = CostTracker()
+        tracker.addCacheStats(read: 800, creation: 0, uncachedInput: 200)
+        // 800 / (800 + 200) = 0.8
+        #expect(abs(tracker.cumulativeCacheHitRatio - 0.8) < 0.0001)
+    }
+
+    @Test("cacheHitRatio: 누적 0이면 0 반환 (no division by zero)")
+    @MainActor
+    func cacheHitRatioZero() {
+        let tracker = CostTracker()
+        #expect(tracker.cumulativeCacheHitRatio == 0)
+    }
+
+    @Test("addCacheStats: 음수 input은 0으로 처리")
+    @MainActor
+    func negativeInputClamped() {
+        let tracker = CostTracker()
+        tracker.addCacheStats(read: -100, creation: -50, uncachedInput: -10)
+        #expect(tracker.totalCacheReadTokens == 0)
+        #expect(tracker.totalCacheCreationTokens == 0)
+        #expect(tracker.totalUncachedInputTokens == 0)
+    }
 }

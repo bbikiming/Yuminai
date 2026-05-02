@@ -2,7 +2,50 @@
 
 > 변경 사항 시간순 기록. 의미 있는 변경만.
 
-## [Unreleased] — 2026-05-02
+## [Unreleased] — 2026-05-03
+
+### Added — ADR-059 UI/UX 마감 + workspace 격리 (5 phases)
+
+**Phase 1 — Cache hit accumulator + dashboard**
+- CostTracker.totalCacheReadTokens / Creation / UncachedInput 누적
+- addCacheStats(read:creation:uncachedInput:) + cumulativeCacheHitRatio
+- UsageDashboard에 CacheHitDashboard view (hit ratio + read/creation tokens + gradient bar + hint)
+- decompose / rehearsal / parallel 호출 후 자동 누적
+
+**Phase 2 — Settings UI 강화**
+- General tab: autoNewSession Slider (0-95%, 5% step, 0=off)
+- Telegram tab: multi-chat bindings 매니저 section (개별 [해제] 버튼)
+
+**Phase 3 — Routing learning ratio bar**
+- RoutingLearningPanel.learningRow 확장: binary progress + weight ratio bar
+- ratio < 0.5: blue, ≥ 0.5: orange, 0.5 임계 점선
+- minSamples 미만: "X/5 sample 후 weight 적용" 안내
+
+**Phase 4 — /tasks 진짜 inline button push**
+- TelegramSessionBridge.sendTaskButtons (ready task별 ▶ 버튼, 1행 1개, 30자 truncate, 최대 8개)
+- AppModel.notifyBoundBridgeTaskButtons helper
+- tasksCommand 호출 후 자동 push (bound workspace만)
+
+**Phase 5 — 워크스페이스별 dailyBudget**
+- AppPreferences.workspaceDailyBudgetsUSD: [UUID: Double] 추가
+- AppModel.workspaceTodayCostUSD (메모리만, 자정 reset)
+- accumulateDailyCost: global + workspace 양쪽 누적
+- isDailyBudgetExhausted: workspace 우선, global fallback
+
+### Tests added (+4)
+- CostTracker.addCacheStats accumulate
+- cumulativeCacheHitRatio 정확 계산
+- 0 division 안전
+- 음수 input clamp
+
+### 빌드/테스트 결과
+- swift build → Build complete! (11.24s)
+- swift test → 425/425 passed (88 suites)
+
+### 수정 파일 (8)
+- CostTracker, AppPreferences, AppModel, UsageDashboard, SettingsView, RoutingLearningPanel, TelegramSessionBridge, RootView, YuminaiCommandRouter
+
+---
 
 ### Added — ADR-058 audit deferred + 모든 ADR-057 후보 (6 phases)
 

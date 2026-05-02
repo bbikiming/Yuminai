@@ -53,6 +53,11 @@ public final class CostTracker {
 
     /// bucket별 누적 USD
     public private(set) var buckets: [Bucket: Double] = [:]
+    /// **ADR-059 Phase 1** — cache hit/creation token 누적 (총합 — bucket별 분리는 향후).
+    public private(set) var totalCacheReadTokens: Int = 0
+    public private(set) var totalCacheCreationTokens: Int = 0
+    /// **ADR-059 Phase 1** — cache miss로 input으로 처리된 토큰 누적 (cache 활용율 분모용).
+    public private(set) var totalUncachedInputTokens: Int = 0
 
     public init() {
         for b in Bucket.allCases { buckets[b] = 0.0 }
@@ -60,6 +65,22 @@ public final class CostTracker {
 
     public func add(_ bucket: Bucket, usd: Double) {
         buckets[bucket, default: 0.0] += usd
+    }
+
+    /// **ADR-059 Phase 1** — ChildProcess 호출 시 cache 활용 누적.
+    /// caller: AppModel decompose/rehearsal/parallel 호출 후.
+    public func addCacheStats(read: Int, creation: Int, uncachedInput: Int) {
+        totalCacheReadTokens += max(0, read)
+        totalCacheCreationTokens += max(0, creation)
+        totalUncachedInputTokens += max(0, uncachedInput)
+    }
+
+    /// **ADR-059 Phase 1** — 누적 cache hit ratio (0~1.0).
+    /// 1.0 = 모든 input이 cache. 0.0 = cache 효과 없음.
+    public var cumulativeCacheHitRatio: Double {
+        let total = totalCacheReadTokens + totalUncachedInputTokens
+        guard total > 0 else { return 0 }
+        return Double(totalCacheReadTokens) / Double(total)
     }
 
     public func snapshot() -> Snapshot {
