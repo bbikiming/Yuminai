@@ -904,9 +904,60 @@ public final class AppModel {
         // 3) 새 workspace의 file tree + terminal session 복원
         await refreshWorkspaceFileTree()
         restoreTerminalSessionsFromWorkspace()
-        // 4) ADR-047 — harness conversation log reset (워크스페이스 별 분리)
-        harness.resetForWorkspace()
+        // 4) ADR-050 Phase 6 — harness conversation log + tasks 영속 복원
+        if let workspace = currentWorkspace {
+            harness.conversationLog = workspace.savedConversationLog
+            harness.tasks = workspace.savedTasks
+        } else {
+            harness.resetForWorkspace()
+        }
         // 향후 추가: dev server suggestions refresh, mention scope reset 등
+    }
+
+    /// ADR-050 Phase 6 — TaskGraph "▶ 실행" 액션. ready task를 active pane에 dispatch.
+    /// 1. task.assignedAgent로 pane 전환 (있으면)
+    /// 2. handoff prompt + task description을 inputText로 prepend
+    /// 3. status를 .running으로 변경
+    /// 4. sendMessage 호출 — 사용자에게 실행 사실 표시
+    public func runHarnessTask(_ taskId: UUID) async {
+        guard let task = harness.tasks.first(where: { $0.id == taskId }) else { return }
+        guard task.isReady(allTasks: harness.tasks) else {
+            self.error = "task ‘\(task.title)’의 의존성이 아직 완료되지 않았어요."
+            return
+        }
+        // 추천 agent로 pane 전환 (있으면)
+        if let agent = task.assignedAgent,
+           let pane = agentPanes.first(where: { $0.agentKind == agent }) {
+            await setActivePane(pane.id)
+        }
+        // status running으로 변경
+        harness.updateTaskStatus(taskId, .running)
+        persistCurrentHarnessState()
+        // task description을 input으로 + handoff prompt
+        let projectProfile = currentWorkspace?.projectProfile
+        let handoff = harness.buildHandoffPrompt(
+            targetModel: task.assignedAgent ?? .claude,
+            currentTaskId: taskId,
+            projectProfile: projectProfile
+        )
+        let taskInstruction = "[작업 시작 — \(task.title)]\n\n\(task.description)"
+        let body = handoff.promptText + "\n\n---\n\n" + taskInstruction
+        inputText = body
+        await sendMessage()
+    }
+
+    /// ADR-050 Phase 6 — Harness conversationLog + tasks 영속.
+    /// 자동 호출: appendUser/Agent/System, addTask/updateTaskStatus/removeTask 등 변경 시.
+    public func persistCurrentHarnessState() {
+        guard let workspace = currentWorkspace else { return }
+        let updated = workspace.with(
+            savedConversationLog: harness.conversationLog,
+            savedTasks: harness.tasks
+        )
+        if let idx = workspaces.firstIndex(where: { $0.id == workspace.id }) {
+            workspaces[idx] = updated
+        }
+        chainPersistTask(updated)
     }
 
     /// 현재 terminalSessions를 workspace에 영속 (ADR-041 T13).
@@ -1317,26 +1368,28 @@ public final class AppModel {
     }
 
     /// ADR-048 Phase 3 — Harness 자동 routing. 사용자 입력 → 추천 agent → 다른 pane이면 자동 전환.
+    /// ADR-050 — XAI 원칙: routing 이유 (matched keyword) SharedLog에 기록.
     /// returns: routing이 발생했으면 generated handoff prompt (caller가 inputText에 prepend), 아니면 nil.
     /// **side effect**: pane 전환 + SharedLog 기록. inputText는 caller 책임.
     public func applyHarnessAutoRoutingIfNeeded(userText: String) async -> String? {
         guard preferences.harnessAutoRoutingEnabled else { return nil }
-        let recommended = harness.recommendAgent(for: userText)
+        // ADR-050 XAI — keyword 매칭 정보 함께 가져오기
+        let classification = ModelCapabilityMatrix.classifyTaskKind(userText)
+        let recommended = ModelCapabilityMatrix.recommend(for: classification.kind)
         guard let workspace = currentWorkspace else { return nil }
         let currentKind = workspace.agentKind
         guard recommended != currentKind else { return nil }
-        // 추천 모델의 pane 찾기 (없으면 routing 포기 — 사용자가 manual 추가 필요)
         guard let targetPane = agentPanes.first(where: { $0.agentKind == recommended }) else {
             return nil
         }
-        // Pane 전환
         await setActivePane(targetPane.id)
-        // Handoff prompt 생성
         let handoff = harness.buildHandoffPrompt(
             targetModel: recommended,
             projectProfile: workspace.projectProfile
         )
-        harness.appendSystem("[자동 routing] \(currentKind.shortLabel) → \(recommended.shortLabel) (\(handoff.estimatedTokens) tokens handoff)")
+        // ADR-050 XAI 설명 — 사용자가 SharedLog에서 왜 전환됐는지 즉시 인지
+        let reason = classification.matchedKeyword.map { "‘\($0)’ keyword 감지 → \(classification.kind.rawValue)" } ?? "keyword 일반"
+        harness.appendSystem("🔀 자동 routing: \(currentKind.shortLabel) → \(recommended.shortLabel)\n  사유: \(reason)\n  handoff: ~\(handoff.estimatedTokens) tokens")
         return handoff.promptText + "\n\n---\n\n"
     }
 
@@ -1382,6 +1435,8 @@ public final class AppModel {
                     tokenCount: currentSessionUsage.outputTokens
                 )
                 harnessAgentBuffer = ""
+                // ADR-050 Phase 6 — turn 종료 시 harness state 영속
+                persistCurrentHarnessState()
             }
             // ADR-049 Phase 4 — pending decomposition 응답 자동 parse
             tryParseDecompositionResult()

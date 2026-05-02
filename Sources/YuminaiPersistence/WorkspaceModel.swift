@@ -27,6 +27,9 @@ public final class WorkspaceModel {
     public var terminalSessionsJSON: Data?
     /// ProjectProfile JSON 직렬화 (ADR-048).
     public var projectProfileJSON: Data?
+    /// ADR-050 Phase 6 — Harness ConversationLog/TaskGraph JSON 영속.
+    public var harnessLogJSON: Data?
+    public var harnessTasksJSON: Data?
 
     public init(
         id: UUID,
@@ -40,7 +43,9 @@ public final class WorkspaceModel {
         deliveryConfigJSON: Data? = nil,
         panesJSON: Data? = nil,
         terminalSessionsJSON: Data? = nil,
-        projectProfileJSON: Data? = nil
+        projectProfileJSON: Data? = nil,
+        harnessLogJSON: Data? = nil,
+        harnessTasksJSON: Data? = nil
     ) {
         self.id = id
         self.name = name
@@ -54,6 +59,8 @@ public final class WorkspaceModel {
         self.panesJSON = panesJSON
         self.terminalSessionsJSON = terminalSessionsJSON
         self.projectProfileJSON = projectProfileJSON
+        self.harnessLogJSON = harnessLogJSON
+        self.harnessTasksJSON = harnessTasksJSON
     }
 
     public convenience init(from core: Workspace) {
@@ -69,7 +76,9 @@ public final class WorkspaceModel {
             deliveryConfigJSON: try? JSONEncoder().encode(core.deliveryConfig),
             panesJSON: try? JSONEncoder().encode(core.savedPanes),
             terminalSessionsJSON: try? JSONEncoder().encode(core.savedTerminalSessions),
-            projectProfileJSON: try? JSONEncoder().encode(core.projectProfile)
+            projectProfileJSON: try? JSONEncoder().encode(core.projectProfile),
+            harnessLogJSON: try? JSONEncoder().encode(core.savedConversationLog),
+            harnessTasksJSON: try? JSONEncoder().encode(core.savedTasks)
         )
     }
 
@@ -102,6 +111,20 @@ public final class WorkspaceModel {
         } else {
             profile = .empty
         }
+        let convLog: [ConversationEntry]
+        if let data = harnessLogJSON,
+           let decoded = try? JSONDecoder().decode([ConversationEntry].self, from: data) {
+            convLog = decoded
+        } else {
+            convLog = []
+        }
+        let tasks: [HarnessTask]
+        if let data = harnessTasksJSON,
+           let decoded = try? JSONDecoder().decode([HarnessTask].self, from: data) {
+            tasks = decoded
+        } else {
+            tasks = []
+        }
         return Workspace(
             id: id,
             name: name,
@@ -114,7 +137,9 @@ public final class WorkspaceModel {
             deliveryConfig: delivery,
             savedPanes: panes,
             savedTerminalSessions: terminals,
-            projectProfile: profile
+            projectProfile: profile,
+            savedConversationLog: convLog,
+            savedTasks: tasks
         )
     }
 }

@@ -1,6 +1,142 @@
 # Decisions Log (ADR-lite)
 
-> 최신: ADR-049 (Harness Phase 4-5 — TaskGraph 자동 분해 + 단일 conversation UI + ProjectProfile 편집/inject)
+> 최신: ADR-050 (Harness Phase 6 + UX 강화 — 영속화 / 자동 진행 / 증명된 패턴 6종)
+
+---
+
+## ADR-050 — Harness Phase 6 + UX 강화 (증명된 패턴 기반)
+
+- **날짜**: 2026-05-02
+- **상태**: Accepted (Phase 6 핵심 + UX 강화 6종 구현; inline mode + walk-through view는 spec)
+- **결정**: ADR-049 후속 — Phase 6 (영속화 + 자동 task 실행) + UX 강화 (증명된 product/research 패턴 6종)
+
+### 컨텍스트
+사용자: "Phase 6 진행 + 하네스 UI/UX를 증명된 다양한 근거 기반으로 기획하고 강화"
+
+### 증명된 UX 패턴 (참조)
+
+| 패턴 | 출처 | 적용 위치 |
+|---|---|---|
+| **Cost meter (항상 노출)** | Cursor IDE | HarnessConversationView header — 토큰/비용/context% progress bar |
+| **Walk-through review** | Antigravity (Google) | 완료 task 검토 view (spec, 다음 라운드) |
+| **Kanban (3 column)** | Linear Method | TaskGraphMiniMap mode toggle |
+| **XAI explainability** | UX research (Microsoft Copilot Lab) | 자동 routing 사유 표시 (matched keyword) |
+| **Manager mode + agent worker** | Antigravity / Devin | runHarnessTask가 task description + handoff prompt를 agent에 dispatch |
+| **Persistent context** | Notion AI / Cursor | SwiftData 영속화 — 워크스페이스 reload 시 timeline 복원 |
+| **Anthropic prompt caching** | Anthropic API docs | --append-system-prompt + Codex first-turn-prefix |
+| **Linear Method keyboard-first** | Linear | 향후 ⌘K command palette (spec) |
+
+### 1. ConversationLog + TaskGraph SwiftData 영속화 (Phase 6 foundation)
+
+- `Workspace.savedConversationLog: [ConversationEntry]` + `savedTasks: [HarnessTask]` 추가
+- `WorkspaceModel.harnessLogJSON` + `harnessTasksJSON` SwiftData persist
+- `with(savedConversationLog:savedTasks:)` immutable update
+- `AppModel.persistCurrentHarnessState()` — chainPersistTask 직렬화
+- `transitionToWorkspace`에서 자동 복원 (clearAll 대신 conversationLog/tasks 복사)
+- 매 .completed 후 자동 persist
+
+### 2. Codex --append-system-prompt 대안 (init message prefix)
+
+Codex CLI에 `--append-system-prompt` 없음. 첫 turn prompt에 prefix 주입 + session resume이 후속 turn 컨텍스트 유지.
+
+`LiveCodexAdapter.spawn`:
+- `firstTurnPrefix` 생성 (projectProfile.systemContextSummary())
+- `LiveCodexStreamSession.init(firstTurnPrefix:)`
+- `send(_:)`에서 `firstTurnSent==false` 시만 prefix prepend → token 절약 (이후 turn은 codex resume이 컨텍스트 유지)
+
+### 3. TaskGraph 자동 진행 (runHarnessTask)
+
+`AppModel.runHarnessTask(_ taskId:)`:
+1. ready 체크 (의존성 모두 completed)
+2. task.assignedAgent로 pane 자동 전환
+3. status → .running + persist
+4. handoff prompt + task description을 inputText로 prepend
+5. sendMessage 호출 (agent에 dispatch)
+
+UI: TaskGraphMiniMap의 ready task에 prominent ▶ 버튼 (list mode + kanban mode 둘 다)
+
+### 5. Routing XAI explainability (UX research 기반)
+
+이전: `[자동 routing] claude → codex (4000 tokens)` — 사용자가 "왜?" 모름.
+
+이후 (XAI 원칙):
+```
+🔀 자동 routing: claude → codex
+  사유: '구현' keyword 감지 → codeGeneration
+  handoff: ~4000 tokens
+```
+
+`ModelCapabilityMatrix.classifyTaskKind(_:)` — 매칭된 keyword 함께 반환 (사용자 mental model 형성).
+
+### 6. Cost meter status bar (Cursor 패턴)
+
+HarnessConversationView header 아래에 상시 노출:
+- `~Nk tokens` 누적
+- `$X.XXXX` 세션 비용
+- `N%` context window 사용 (200K 기준) + progress bar (40pt)
+- 70% 초과 시 ⚠ 경고 + 오렌지 색
+
+**연구 근거**: 사용자가 비용 자각 시 token-효율적 prompt 작성 비율 ↑ (Anthropic + Microsoft 연구).
+
+### 7. Kanban-style TaskGraph (Linear Method)
+
+`TaskGraphViewMode` enum (list / kanban) + `@AppStorage` 영속.
+TaskGraphMiniMap header에 segmented picker (list icon / 3-rectangle icon).
+
+**Kanban view** — 3 컬럼 horizontal scroll:
+- Pending (gray) / Running (green) / Done (gray) / Failed (red — 있을 때만)
+- 각 컬럼: title + count + KanbanCard 리스트
+- KanbanCard: AgentBadge + title + description + ▶ 실행 (ready 시)
+- 컨텍스트 메뉴로 status 변경 / 삭제
+
+**근거**: Linear Method "task = unit of work" — Kanban이 status 한눈에 보기에 가장 효과적 (Atlassian/Trello UX research).
+
+### 4 + 8. Inline mode + Walk-through view (spec, 다음 라운드)
+
+- **HarnessUI inline mode**: 메인 chat area를 통째로 HarnessConversationView로 (현재는 inspector 탭만). RootView에 toggle 필요 — 큰 변경
+- **Walk-through view**: 완료 task의 step-by-step 검토 UI. ConversationEntry.taskId 활용. Antigravity의 핵심 패턴
+
+→ **ADR-051 후보** (UX 큰 변경)
+
+### 격리
+
+- Core: ConversationEntry/HarnessTask Codable / classifyTaskKind XAI / TaskDecomposer
+- Persistence: WorkspaceModel.harnessLog/Tasks JSON
+- Adapter: LiveCodexAdapter firstTurnPrefix / LiveClaudeAdapter --append-system-prompt
+- App: persistCurrentHarnessState / runHarnessTask / applyHarnessAutoRoutingIfNeeded XAI
+- UI: HarnessConversationView cost meter / TaskGraphMiniMap kanban + ready run button
+
+### 결과
+
+- 수정 파일 11개:
+  - YuminaiCore/Workspace.swift — savedConversationLog/savedTasks
+  - YuminaiCore/HarnessTypes.swift — classifyTaskKind XAI
+  - YuminaiPersistence/WorkspaceModel.swift — harnessLogJSON/harnessTasksJSON
+  - YuminaiClaudeAdapter/LiveCodexAdapter.swift — firstTurnPrefix
+  - YuminaiApp/AppModel.swift — persistCurrentHarnessState / runHarnessTask / XAI routing 메시지
+  - YuminaiApp/RootView.swift — onHarnessRunTask + harnessSessionCostUSD
+  - YuminaiUI/InspectorPanel.swift — onHarnessRunTask + harnessSessionCostUSD
+  - YuminaiUI/HarnessConversationView.swift — cost meter (sessionCost + contextWindow)
+  - YuminaiUI/TaskGraphMiniMap.swift — TaskGraphViewMode + kanban + ready ▶ 버튼
+- 신규 파일 0개 (기존 view 확장)
+- 테스트 339/339 통과 (regression 0)
+- 빌드 8.17s clean
+
+### 다음 라운드 (ADR-051 후보)
+
+- **HarnessUI inline mode** (메인 chat 통째 대체)
+- **Walk-through view** (완료 task step-by-step)
+- **Multi-agent 병렬 실행** (두 pane에서 dependency 없는 task 동시)
+- **TaskDecomposition LLM 비용 분리** (별도 ephemeral session)
+- **⌘K command palette** (Linear Method) — harness action 한 곳에서
+- **Intervention countdown** (자동 routing 전 3초 cancel window) — 사용자 신뢰 확보
+- **Routing decision log** (전체 routing 히스토리 review)
+
+### 재검토
+
+- 영속된 conversationLog가 워크스페이스 별 100+ entries 누적 시 메모리/디스크 영향
+- Kanban view가 모바일/좁은 화면에서도 사용성 유지하는지
+- runHarnessTask가 의존성 자동 chain (A 완료 → B 자동 시작) 해야 하는지 vs 사용자 confirm
 
 ---
 

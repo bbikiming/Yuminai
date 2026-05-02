@@ -1,24 +1,43 @@
 import SwiftUI
 import YuminaiCore
 
-/// 다중 모델 통합 conversation view (ADR-049 Phase 5).
+/// 다중 모델 통합 conversation view (ADR-049 Phase 5, ADR-050 cost meter).
 ///
 /// SharedConversationLog 기반 단일 timeline. 각 entry에 agent badge로 어느 모델이
 /// 응답했는지 시각 구분. 전통 multi-pane은 유지 — 사용자가 Settings에서 toggle.
+///
+/// **ADR-050 UX 강화** (Cursor cost meter pattern):
+/// - 누적 토큰을 K 단위로 표시
+/// - context window % 표시 (200K 기준)
+/// - cost ($X.XXXX) 표시
 public struct HarnessConversationView: View {
     public let entries: [ConversationEntry]
     public let estimatedTotalTokens: Int
     public let agentResponseCounts: [AgentKind: Int]
+    public let sessionCostUSD: Double
+    public let contextWindowSize: Int  // default 200K
 
     public init(
         entries: [ConversationEntry],
         estimatedTotalTokens: Int = 0,
-        agentResponseCounts: [AgentKind: Int] = [:]
+        agentResponseCounts: [AgentKind: Int] = [:],
+        sessionCostUSD: Double = 0,
+        contextWindowSize: Int = 200_000
     ) {
         self.entries = entries
         self.estimatedTotalTokens = estimatedTotalTokens
         self.agentResponseCounts = agentResponseCounts
+        self.sessionCostUSD = sessionCostUSD
+        self.contextWindowSize = contextWindowSize
     }
+
+    /// 컨텍스트 윈도우 사용 비율 (0.0~1.0).
+    private var contextUsageRatio: Double {
+        guard contextWindowSize > 0 else { return 0 }
+        return min(1.0, Double(estimatedTotalTokens) / Double(contextWindowSize))
+    }
+
+    private var contextWarning: Bool { contextUsageRatio >= 0.7 }
 
     public var body: some View {
         VStack(spacing: 0) {
@@ -30,31 +49,76 @@ public struct HarnessConversationView: View {
     }
 
     private var header: some View {
-        HStack(spacing: 8) {
-            Image(systemName: "sparkles.rectangle.stack")
-                .font(.system(size: 11))
-                .foregroundStyle(Theme.Color.accent)
-            Text("Harness 통합 대화")
-                .font(Theme.Typography.small.weight(.medium))
-                .foregroundStyle(Theme.Color.text)
-            // 모델별 응답 횟수
-            ForEach(Array(agentResponseCounts.keys.sorted(by: { $0.rawValue < $1.rawValue })), id: \.self) { kind in
-                let count = agentResponseCounts[kind] ?? 0
-                HStack(spacing: 3) {
-                    AgentBadge(agent: kind, size: .small)
-                    Text("\(count)")
-                        .font(Theme.Typography.micro)
-                        .foregroundStyle(Theme.Color.textSecondary)
+        VStack(spacing: 0) {
+            HStack(spacing: 8) {
+                Image(systemName: "sparkles.rectangle.stack")
+                    .font(.system(size: 11))
+                    .foregroundStyle(Theme.Color.accent)
+                Text("Harness 통합 대화")
+                    .font(Theme.Typography.small.weight(.medium))
+                    .foregroundStyle(Theme.Color.text)
+                ForEach(Array(agentResponseCounts.keys.sorted(by: { $0.rawValue < $1.rawValue })), id: \.self) { kind in
+                    let count = agentResponseCounts[kind] ?? 0
+                    HStack(spacing: 3) {
+                        AgentBadge(agent: kind, size: .small)
+                        Text("\(count)")
+                            .font(Theme.Typography.micro)
+                            .foregroundStyle(Theme.Color.textSecondary)
+                    }
                 }
+                Spacer()
+                Text("\(entries.count) entries")
+                    .font(Theme.Typography.micro)
+                    .foregroundStyle(Theme.Color.textTertiary)
+            }
+            .padding(.horizontal, Theme.Spacing.md)
+            .padding(.vertical, Theme.Spacing.xs)
+            .background(Theme.Color.surface)
+            // ADR-050 — Cost meter (Cursor 패턴): 항상 누적 토큰/비용/context % 표시
+            costMeter
+        }
+    }
+
+    private var costMeter: some View {
+        HStack(spacing: 8) {
+            Image(systemName: "gauge")
+                .font(.system(size: 9))
+                .foregroundStyle(Theme.Color.textTertiary)
+            // 토큰 (K 단위)
+            Text("~\(estimatedTotalTokens / 1000)K tokens")
+                .font(Theme.Typography.micro)
+                .foregroundStyle(Theme.Color.textSecondary)
+            // 비용
+            if sessionCostUSD > 0 {
+                Text(String(format: "$%.4f", sessionCostUSD))
+                    .font(Theme.Typography.micro)
+                    .foregroundStyle(Theme.Color.textSecondary)
             }
             Spacer()
-            Text("\(entries.count) entries · ~\(estimatedTotalTokens / 1000)K tokens")
-                .font(Theme.Typography.micro)
-                .foregroundStyle(Theme.Color.textTertiary)
+            // 컨텍스트 윈도우 % progress bar
+            HStack(spacing: 4) {
+                Text("\(Int(contextUsageRatio * 100))%")
+                    .font(Theme.Typography.micro.weight(contextWarning ? .medium : .regular))
+                    .foregroundStyle(contextWarning ? Color.orange : Theme.Color.textTertiary)
+                ZStack(alignment: .leading) {
+                    RoundedRectangle(cornerRadius: 2)
+                        .fill(Theme.Color.borderSubtle)
+                        .frame(width: 40, height: 4)
+                    RoundedRectangle(cornerRadius: 2)
+                        .fill(contextWarning ? Color.orange : Theme.Color.accent)
+                        .frame(width: 40 * contextUsageRatio, height: 4)
+                }
+                if contextWarning {
+                    Image(systemName: "exclamationmark.triangle.fill")
+                        .font(.system(size: 9))
+                        .foregroundStyle(Color.orange)
+                        .help("컨텍스트 70% 초과 — 새 세션 권장")
+                }
+            }
         }
         .padding(.horizontal, Theme.Spacing.md)
-        .padding(.vertical, Theme.Spacing.xs)
-        .background(Theme.Color.surface)
+        .padding(.vertical, 4)
+        .background(Theme.Color.surface.opacity(0.6))
     }
 
     @ViewBuilder

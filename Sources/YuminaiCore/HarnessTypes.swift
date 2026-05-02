@@ -84,20 +84,26 @@ public enum ModelCapabilityMatrix {
     /// 사용자 입력 텍스트 → TaskKind 추정 (휴리스틱).
     /// 정확한 분류는 Phase 3에서 LLM-based classification으로 대체 가능.
     public static func inferTaskKind(from userText: String) -> TaskKind {
+        let result = classifyTaskKind(userText)
+        return result.kind
+    }
+
+    /// ADR-050 — XAI (explainable AI) 원칙: 어떤 keyword가 매칭됐는지 함께 반환.
+    /// 사용자에게 "왜 이 모델로 routing됐는지" 설명할 때 사용.
+    public static func classifyTaskKind(_ userText: String) -> (kind: TaskKind, matchedKeyword: String?) {
         let lower = userText.lowercased()
-        // 명시적 keyword 매칭 (한국어 + 영어)
         let codeGenKeywords = ["구현", "코딩", "작성해줘", "implement", "write a function", "create a class", "write code", "코드 작성"]
         let reviewKeywords = ["리뷰", "review", "검토", "improve", "개선", "리팩터", "refactor"]
         let debugKeywords = ["버그", "에러", "fix", "디버그", "debug", "안 돌아가", "doesn't work", "고쳐"]
         let planKeywords = ["계획", "plan", "어떻게", "how to", "설계", "architect", "approach"]
         let searchKeywords = ["찾아", "search", "검색", "어디", "where is"]
 
-        if codeGenKeywords.contains(where: lower.contains) { return .codeGeneration }
-        if reviewKeywords.contains(where: lower.contains) { return .codeReview }
-        if debugKeywords.contains(where: lower.contains) { return .debugging }
-        if planKeywords.contains(where: lower.contains) { return .planning }
-        if searchKeywords.contains(where: lower.contains) { return .longContextSearch }
-        return .generalChat
+        if let m = codeGenKeywords.first(where: lower.contains) { return (.codeGeneration, m) }
+        if let m = reviewKeywords.first(where: lower.contains) { return (.codeReview, m) }
+        if let m = debugKeywords.first(where: lower.contains) { return (.debugging, m) }
+        if let m = planKeywords.first(where: lower.contains) { return (.planning, m) }
+        if let m = searchKeywords.first(where: lower.contains) { return (.longContextSearch, m) }
+        return (.generalChat, nil)
     }
 
     /// 모델 별 강점 한 줄 (handoff prompt에 포함).

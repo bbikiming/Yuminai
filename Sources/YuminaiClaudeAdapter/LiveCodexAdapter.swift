@@ -49,12 +49,18 @@ public final actor LiveCodexAdapter: ClaudeAdapter {
             throw YuminaiError.claudeSpawnFailed(reason: "워크스페이스 디렉토리 없음: \(workspace.directoryPath)")
         }
 
+        // ADR-050 — Codex는 --append-system-prompt 없음. 첫 turn prompt에 prefix 주입 (session resume이 컨텍스트 유지)
+        let profileSummary = workspace.projectProfile.systemContextSummary()
+        let firstTurnPrefix: String? = profileSummary == "(프로필 미설정)" ? nil :
+            "[프로젝트 컨텍스트]\n\(profileSummary)\n적절한 idiom과 framework convention을 따라주세요.\n\n[사용자 요청]\n"
+
         return LiveCodexStreamSession(
             codexPath: codexPath,
             workspaceURL: workspaceURL,
             environment: environment,
             settings: sessionSettings,
-            extraArguments: extraArguments
+            extraArguments: extraArguments,
+            firstTurnPrefix: firstTurnPrefix
         )
     }
 
@@ -79,19 +85,24 @@ final class LiveCodexStreamSession: ClaudeStreamSession, @unchecked Sendable {
     private var codexSessionId: String?
     private var currentProcess: Process?
     private let parser = CodexJSONLParser()
+    /// ADR-050 — 첫 turn에만 추가될 prefix (ProjectProfile system context).
+    private let firstTurnPrefix: String?
+    private var firstTurnSent: Bool = false
 
     init(
         codexPath: URL,
         workspaceURL: URL,
         environment: [String: String],
         settings: SessionSettings,
-        extraArguments: [String]
+        extraArguments: [String],
+        firstTurnPrefix: String? = nil
     ) {
         self.codexPath = codexPath
         self.workspaceURL = workspaceURL
         self.environment = environment
         self.settings = settings
         self.extraArguments = extraArguments
+        self.firstTurnPrefix = firstTurnPrefix
 
         var contLocal: AsyncThrowingStream<ClaudeEvent, any Error>.Continuation!
         self.events = AsyncThrowingStream<ClaudeEvent, any Error> { c in contLocal = c }
@@ -175,8 +186,18 @@ final class LiveCodexStreamSession: ClaudeStreamSession, @unchecked Sendable {
             throw YuminaiError.claudeSpawnFailed(reason: "codex 실행 실패: \(error.localizedDescription)")
         }
 
+        // ADR-050 — 첫 turn이면 ProjectProfile system context를 prompt 앞에 prefix
+        // 이후 turn은 codex session resume이 컨텍스트 유지하므로 prefix 추가 안 함 (토큰 절약)
+        let actualPrompt: String
+        if !firstTurnSent, let prefix = firstTurnPrefix {
+            actualPrompt = prefix + text
+            firstTurnSent = true
+        } else {
+            actualPrompt = text
+            firstTurnSent = true
+        }
         // prompt를 stdin으로 전달 (codex는 PROMPT arg 없으면 stdin에서 읽음)
-        let promptData = Data((text + "\n").utf8)
+        let promptData = Data((actualPrompt + "\n").utf8)
         do {
             try stdinPipe.fileHandleForWriting.write(contentsOf: promptData)
             try stdinPipe.fileHandleForWriting.close()

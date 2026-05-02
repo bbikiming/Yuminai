@@ -332,6 +332,7 @@ struct RootView: View {
                     harnessEntries: appModel.harness.conversationLog,
                     harnessEstimatedTokens: appModel.harness.estimatedTotalTokens,
                     harnessAgentCounts: appModel.harness.agentResponseCounts,
+                    harnessSessionCostUSD: appModel.currentSessionUsage.costUSD,
                     harnessTasks: appModel.harness.tasks,
                     onHarnessUpdateTaskStatus: { id, status in
                         appModel.harness.updateTaskStatus(id, status)
@@ -343,7 +344,8 @@ struct RootView: View {
                             description: "수동 추가된 작업 — 편집하세요",
                             assignedAgent: appModel.currentWorkspace?.agentKind
                         )
-                    }
+                    },
+                    onHarnessRunTask: { id in Task { await appModel.runHarnessTask(id) } }
                 )
                 .task(id: appModel.selectedWorkspaceId) {
                     // ADR-043 R4 — 단일 transition 함수로 응집 (race/순서 명확)

@@ -4,6 +4,43 @@
 
 ## [Unreleased] — 2026-05-02
 
+### Added — Harness Phase 6 + UX 강화 (증명된 패턴 6종) (ADR-050)
+
+**Phase 6 핵심**:
+- ConversationLog + TaskGraph SwiftData 영속 (Workspace.savedConversationLog/savedTasks + WorkspaceModel.harnessLog/TasksJSON)
+- transitionToWorkspace에서 자동 복원 (clearAll 대신 복사)
+- AppModel.persistCurrentHarnessState — chainPersistTask 직렬화
+- 매 .completed 후 자동 persist
+- Codex --append-system-prompt 대안 — firstTurnPrefix (LiveCodexAdapter)
+  · session resume이 컨텍스트 유지하므로 첫 turn만 prefix → 토큰 절약
+- AppModel.runHarnessTask(_:) — ready task를 active pane에 dispatch
+  · 자동 pane 전환 + handoff prompt + task description prepend + sendMessage
+  · TaskGraphMiniMap에 prominent ▶ 버튼 (list + kanban 양쪽)
+
+**UX 강화 (증명된 product/research 패턴)**:
+1. **Cost meter (Cursor)** — HarnessConversationView header 하단 상시 노출:
+   - ~Nk tokens 누적 / $X.XXXX 비용 / N% context (200K 기준) + 40pt progress bar
+   - 70%+ ⚠ 경고 + 오렌지
+2. **XAI routing explainability (Microsoft Copilot Lab 연구)** — 자동 routing 시:
+   - `🔀 자동 routing: claude → codex / 사유: '구현' keyword 감지 → codeGeneration / handoff: ~4000 tokens`
+   - ModelCapabilityMatrix.classifyTaskKind(_:) — 매칭 keyword 함께 반환
+3. **Kanban TaskGraph (Linear Method)** — TaskGraphMiniMap mode toggle:
+   - list (의존성 들여쓰기) ↔ kanban (Pending/Running/Done/Failed 3-4 컬럼)
+   - @AppStorage 영속 (yuminai.harness.taskGraphMode)
+   - KanbanCard에 ▶ 실행 버튼 (ready 상태)
+4. **Persistent context (Notion AI)** — 워크스페이스 reload 시 timeline 보존
+5. **Manager mode + agent worker (Antigravity/Devin)** — runHarnessTask 패턴
+6. **Anthropic prompt caching** — Claude --append-system-prompt + Codex first-turn-prefix
+
+**다음 라운드 (ADR-051 후보)**:
+- HarnessUI inline mode (메인 chat 대체)
+- Walk-through view (완료 task step-by-step)
+- Multi-agent 병렬 실행
+- ⌘K command palette
+- Intervention countdown (자동 routing 전 3초)
+
+전체 339/339 통과 (regression 0). 빌드 8.17s clean.
+
 ### Added — Harness Phase 4-5 (자동 분해 + 통합 UI) + ProjectProfile 편집/inject (ADR-049)
 
 **1. --append-system-prompt 자동 inject (Claude)**:

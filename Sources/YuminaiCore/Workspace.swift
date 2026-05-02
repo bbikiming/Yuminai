@@ -23,6 +23,10 @@ public struct Workspace: Sendable, Identifiable, Hashable {
     public let savedTerminalSessions: [TerminalSession]
     /// ADR-048 — 프로젝트 프로필 (platform/언어/백엔드 등). Harness가 활용.
     public let projectProfile: ProjectProfile
+    /// ADR-050 Phase 6 — Harness ConversationLog + TaskGraph 영속.
+    /// 워크스페이스 reload 시 단일 timeline 복원.
+    public let savedConversationLog: [ConversationEntry]
+    public let savedTasks: [HarnessTask]
 
     public init(
         id: UUID = UUID(),
@@ -36,7 +40,9 @@ public struct Workspace: Sendable, Identifiable, Hashable {
         deliveryConfig: DeliveryConfig = .disabled,
         savedPanes: [AgentPane] = [],
         savedTerminalSessions: [TerminalSession] = [],
-        projectProfile: ProjectProfile = .empty
+        projectProfile: ProjectProfile = .empty,
+        savedConversationLog: [ConversationEntry] = [],
+        savedTasks: [HarnessTask] = []
     ) {
         self.id = id
         self.name = name
@@ -50,6 +56,8 @@ public struct Workspace: Sendable, Identifiable, Hashable {
         self.savedPanes = savedPanes
         self.savedTerminalSessions = savedTerminalSessions
         self.projectProfile = projectProfile
+        self.savedConversationLog = savedConversationLog
+        self.savedTasks = savedTasks
     }
 
     /// agentKind만 다른 새 인스턴스 반환 (불변성 유지).
@@ -59,7 +67,8 @@ public struct Workspace: Sendable, Identifiable, Hashable {
             lastOpenedAt: lastOpenedAt, harnessTemplate: harnessTemplate,
             isArchived: isArchived, agentKind: agentKind, deliveryConfig: deliveryConfig,
             savedPanes: savedPanes, savedTerminalSessions: savedTerminalSessions,
-            projectProfile: projectProfile
+            projectProfile: projectProfile,
+            savedConversationLog: savedConversationLog, savedTasks: savedTasks
         )
     }
 
@@ -69,7 +78,8 @@ public struct Workspace: Sendable, Identifiable, Hashable {
             lastOpenedAt: lastOpenedAt, harnessTemplate: harnessTemplate,
             isArchived: isArchived, agentKind: agentKind, deliveryConfig: deliveryConfig,
             savedPanes: savedPanes, savedTerminalSessions: savedTerminalSessions,
-            projectProfile: projectProfile
+            projectProfile: projectProfile,
+            savedConversationLog: savedConversationLog, savedTasks: savedTasks
         )
     }
 
@@ -79,7 +89,8 @@ public struct Workspace: Sendable, Identifiable, Hashable {
             lastOpenedAt: lastOpenedAt, harnessTemplate: harnessTemplate,
             isArchived: isArchived, agentKind: agentKind, deliveryConfig: deliveryConfig,
             savedPanes: savedPanes, savedTerminalSessions: savedTerminalSessions,
-            projectProfile: projectProfile
+            projectProfile: projectProfile,
+            savedConversationLog: savedConversationLog, savedTasks: savedTasks
         )
     }
 
@@ -89,7 +100,8 @@ public struct Workspace: Sendable, Identifiable, Hashable {
             lastOpenedAt: lastOpenedAt, harnessTemplate: harnessTemplate,
             isArchived: isArchived, agentKind: agentKind, deliveryConfig: deliveryConfig,
             savedPanes: savedPanes, savedTerminalSessions: savedTerminalSessions,
-            projectProfile: projectProfile
+            projectProfile: projectProfile,
+            savedConversationLog: savedConversationLog, savedTasks: savedTasks
         )
     }
 
@@ -99,7 +111,19 @@ public struct Workspace: Sendable, Identifiable, Hashable {
             lastOpenedAt: lastOpenedAt, harnessTemplate: harnessTemplate,
             isArchived: isArchived, agentKind: agentKind, deliveryConfig: deliveryConfig,
             savedPanes: savedPanes, savedTerminalSessions: savedTerminalSessions,
-            projectProfile: projectProfile
+            projectProfile: projectProfile,
+            savedConversationLog: savedConversationLog, savedTasks: savedTasks
+        )
+    }
+
+    public func with(savedConversationLog: [ConversationEntry], savedTasks: [HarnessTask]) -> Workspace {
+        Workspace(
+            id: id, name: name, directoryPath: directoryPath, createdAt: createdAt,
+            lastOpenedAt: lastOpenedAt, harnessTemplate: harnessTemplate,
+            isArchived: isArchived, agentKind: agentKind, deliveryConfig: deliveryConfig,
+            savedPanes: savedPanes, savedTerminalSessions: savedTerminalSessions,
+            projectProfile: projectProfile,
+            savedConversationLog: savedConversationLog, savedTasks: savedTasks
         )
     }
 }

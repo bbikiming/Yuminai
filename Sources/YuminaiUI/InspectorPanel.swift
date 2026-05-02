@@ -86,10 +86,12 @@ public struct InspectorPanel: View {
     public let harnessEntries: [ConversationEntry]
     public let harnessEstimatedTokens: Int
     public let harnessAgentCounts: [AgentKind: Int]
+    public let harnessSessionCostUSD: Double
     public let harnessTasks: [HarnessTask]
     public let onHarnessUpdateTaskStatus: (UUID, TaskStatus) -> Void
     public let onHarnessRemoveTask: (UUID) -> Void
     public let onHarnessAddTask: () -> Void
+    public let onHarnessRunTask: (UUID) -> Void
 
     // Diff review (ADR-027 phase A3)
     public let pendingChanges: [ChangedFile]
@@ -195,10 +197,12 @@ public struct InspectorPanel: View {
         harnessEntries: [ConversationEntry] = [],
         harnessEstimatedTokens: Int = 0,
         harnessAgentCounts: [AgentKind: Int] = [:],
+        harnessSessionCostUSD: Double = 0,
         harnessTasks: [HarnessTask] = [],
         onHarnessUpdateTaskStatus: @escaping (UUID, TaskStatus) -> Void = { _, _ in },
         onHarnessRemoveTask: @escaping (UUID) -> Void = { _ in },
-        onHarnessAddTask: @escaping () -> Void = {}
+        onHarnessAddTask: @escaping () -> Void = {},
+        onHarnessRunTask: @escaping (UUID) -> Void = { _ in }
     ) {
         self._tab = tab
         self.usage = usage
@@ -283,10 +287,12 @@ public struct InspectorPanel: View {
         self.harnessEntries = harnessEntries
         self.harnessEstimatedTokens = harnessEstimatedTokens
         self.harnessAgentCounts = harnessAgentCounts
+        self.harnessSessionCostUSD = harnessSessionCostUSD
         self.harnessTasks = harnessTasks
         self.onHarnessUpdateTaskStatus = onHarnessUpdateTaskStatus
         self.onHarnessRemoveTask = onHarnessRemoveTask
         self.onHarnessAddTask = onHarnessAddTask
+        self.onHarnessRunTask = onHarnessRunTask
     }
 
     public var body: some View {
@@ -423,14 +429,16 @@ public struct InspectorPanel: View {
                 HarnessConversationView(
                     entries: harnessEntries,
                     estimatedTotalTokens: harnessEstimatedTokens,
-                    agentResponseCounts: harnessAgentCounts
+                    agentResponseCounts: harnessAgentCounts,
+                    sessionCostUSD: harnessSessionCostUSD
                 )
                 .frame(minHeight: 200)
                 TaskGraphMiniMap(
                     tasks: harnessTasks,
                     onUpdateStatus: onHarnessUpdateTaskStatus,
                     onRemove: onHarnessRemoveTask,
-                    onAddTask: onHarnessAddTask
+                    onAddTask: onHarnessAddTask,
+                    onRunReadyTask: onHarnessRunTask
                 )
                 .frame(minHeight: 140, idealHeight: 220)
             }
