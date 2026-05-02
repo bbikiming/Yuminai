@@ -1,4 +1,5 @@
 import SwiftUI
+import AppKit
 import YuminaiCore
 
 /// 워크스페이스 파일 트리 + viewer/editor (ADR-037 D1+D2).
@@ -29,10 +30,22 @@ public struct FilesPanel: View {
     /// 새 파일/폴더 생성 — parent path (root는 ""). ADR-039
     public let onRequestCreateFile: (String) -> Void
     public let onRequestCreateFolder: (String) -> Void
-    /// 이름 변경 — 대상 path + isFolder. ADR-039
+    /// 이름 변경 sheet — 대상 path + isFolder. ADR-039
     public let onRequestRename: (String, Bool) -> Void
     /// 삭제 — 대상 path + isFolder. ADR-039
     public let onRequestDelete: (String, Bool) -> Void
+    /// 다중 선택 (Cmd+Click). ADR-040
+    public let selectedPaths: Set<String>
+    public let onToggleSelection: (String) -> Void
+    public let onClearSelection: () -> Void
+    public let onBulkDelete: () -> Void
+    /// inline rename mode (트리 cell 내 TextField). ADR-040
+    public let inlineRenamePath: String?
+    public let onBeginInlineRename: (String) -> Void
+    public let onCommitInlineRename: (String, String) -> Void
+    public let onCancelInlineRename: () -> Void
+    /// rename 후 agent에게 imports 업데이트 위임 (ADR-040 F5).
+    public let onAskAgentToUpdateImports: (String, String) -> Void
 
     public init(
         tree: [FileNode],
@@ -55,7 +68,16 @@ public struct FilesPanel: View {
         onRequestCreateFile: @escaping (String) -> Void = { _ in },
         onRequestCreateFolder: @escaping (String) -> Void = { _ in },
         onRequestRename: @escaping (String, Bool) -> Void = { _, _ in },
-        onRequestDelete: @escaping (String, Bool) -> Void = { _, _ in }
+        onRequestDelete: @escaping (String, Bool) -> Void = { _, _ in },
+        selectedPaths: Set<String> = [],
+        onToggleSelection: @escaping (String) -> Void = { _ in },
+        onClearSelection: @escaping () -> Void = {},
+        onBulkDelete: @escaping () -> Void = {},
+        inlineRenamePath: String? = nil,
+        onBeginInlineRename: @escaping (String) -> Void = { _ in },
+        onCommitInlineRename: @escaping (String, String) -> Void = { _, _ in },
+        onCancelInlineRename: @escaping () -> Void = {},
+        onAskAgentToUpdateImports: @escaping (String, String) -> Void = { _, _ in }
     ) {
         self.tree = tree
         self.openTabs = openTabs
@@ -78,6 +100,15 @@ public struct FilesPanel: View {
         self.onRequestCreateFolder = onRequestCreateFolder
         self.onRequestRename = onRequestRename
         self.onRequestDelete = onRequestDelete
+        self.selectedPaths = selectedPaths
+        self.onToggleSelection = onToggleSelection
+        self.onClearSelection = onClearSelection
+        self.onBulkDelete = onBulkDelete
+        self.inlineRenamePath = inlineRenamePath
+        self.onBeginInlineRename = onBeginInlineRename
+        self.onCommitInlineRename = onCommitInlineRename
+        self.onCancelInlineRename = onCancelInlineRename
+        self.onAskAgentToUpdateImports = onAskAgentToUpdateImports
     }
 
     public var body: some View {
@@ -131,6 +162,25 @@ public struct FilesPanel: View {
                     placement: .bottom
                 )
                 Spacer()
+                if !selectedPaths.isEmpty {
+                    Text("\(selectedPaths.count)개 선택")
+                        .font(Theme.Typography.micro)
+                        .foregroundStyle(Theme.Color.accent)
+                    Button(action: onClearSelection) {
+                        Image(systemName: "xmark.circle.fill")
+                            .font(.system(size: 10))
+                            .foregroundStyle(Theme.Color.textTertiary)
+                    }
+                    .buttonStyle(.plain)
+                    .help("선택 해제")
+                    Button(action: onBulkDelete) {
+                        Image(systemName: "trash")
+                            .font(.system(size: 10))
+                            .foregroundStyle(.red.opacity(0.85))
+                    }
+                    .buttonStyle(.plain)
+                    .help("선택 항목 일괄 휴지통 (⌫)")
+                }
                 Button(action: { onRequestCreateFile("") }) {
                     Image(systemName: "doc.badge.plus")
                         .font(.system(size: 10))
@@ -184,7 +234,13 @@ public struct FilesPanel: View {
                                 onCreateFile: onRequestCreateFile,
                                 onCreateFolder: onRequestCreateFolder,
                                 onRename: onRequestRename,
-                                onDelete: onRequestDelete
+                                onDelete: onRequestDelete,
+                                multiSelectedPaths: selectedPaths,
+                                onToggleMultiSelect: onToggleSelection,
+                                inlineRenamePath: inlineRenamePath,
+                                onBeginInlineRename: onBeginInlineRename,
+                                onCommitInlineRename: onCommitInlineRename,
+                                onCancelInlineRename: onCancelInlineRename
                             )
                         }
                     }
@@ -386,6 +442,12 @@ private struct FileNodeRow: View {
     let onCreateFolder: (String) -> Void
     let onRename: (String, Bool) -> Void
     let onDelete: (String, Bool) -> Void
+    let multiSelectedPaths: Set<String>
+    let onToggleMultiSelect: (String) -> Void
+    let inlineRenamePath: String?
+    let onBeginInlineRename: (String) -> Void
+    let onCommitInlineRename: (String, String) -> Void
+    let onCancelInlineRename: () -> Void
 
     @State private var expanded: Bool
 
@@ -397,7 +459,13 @@ private struct FileNodeRow: View {
         onCreateFile: @escaping (String) -> Void = { _ in },
         onCreateFolder: @escaping (String) -> Void = { _ in },
         onRename: @escaping (String, Bool) -> Void = { _, _ in },
-        onDelete: @escaping (String, Bool) -> Void = { _, _ in }
+        onDelete: @escaping (String, Bool) -> Void = { _, _ in },
+        multiSelectedPaths: Set<String> = [],
+        onToggleMultiSelect: @escaping (String) -> Void = { _ in },
+        inlineRenamePath: String? = nil,
+        onBeginInlineRename: @escaping (String) -> Void = { _ in },
+        onCommitInlineRename: @escaping (String, String) -> Void = { _, _ in },
+        onCancelInlineRename: @escaping () -> Void = {}
     ) {
         self.node = node
         self.depth = depth
@@ -407,6 +475,12 @@ private struct FileNodeRow: View {
         self.onCreateFolder = onCreateFolder
         self.onRename = onRename
         self.onDelete = onDelete
+        self.multiSelectedPaths = multiSelectedPaths
+        self.onToggleMultiSelect = onToggleMultiSelect
+        self.inlineRenamePath = inlineRenamePath
+        self.onBeginInlineRename = onBeginInlineRename
+        self.onCommitInlineRename = onCommitInlineRename
+        self.onCancelInlineRename = onCancelInlineRename
         // depth 0-1 자동 펼침
         self._expanded = State(initialValue: depth < 2)
     }
@@ -424,7 +498,13 @@ private struct FileNodeRow: View {
                         onCreateFile: onCreateFile,
                         onCreateFolder: onCreateFolder,
                         onRename: onRename,
-                        onDelete: onDelete
+                        onDelete: onDelete,
+                        multiSelectedPaths: multiSelectedPaths,
+                        onToggleMultiSelect: onToggleMultiSelect,
+                        inlineRenamePath: inlineRenamePath,
+                        onBeginInlineRename: onBeginInlineRename,
+                        onCommitInlineRename: onCommitInlineRename,
+                        onCancelInlineRename: onCancelInlineRename
                     )
                 }
             }
@@ -433,35 +513,50 @@ private struct FileNodeRow: View {
 
     @State private var hovering = false
 
+    private var isInlineRenaming: Bool {
+        inlineRenamePath == node.path
+    }
+
     private var row: some View {
-        Button(action: tap) {
-            HStack(spacing: 4) {
-                Spacer().frame(width: CGFloat(depth) * 12)
-                if case .folder = node {
-                    Image(systemName: expanded ? "chevron.down" : "chevron.right")
-                        .font(.system(size: 8, weight: .medium))
-                        .foregroundStyle(Theme.Color.textTertiary)
-                        .frame(width: 10)
-                } else {
-                    Spacer().frame(width: 10)
-                }
-                Image(systemName: iconName)
-                    .font(.system(size: 11))
-                    .foregroundStyle(iconColor)
-                    .frame(width: 14)
+        HStack(spacing: 4) {
+            Spacer().frame(width: CGFloat(depth) * 12)
+            if case .folder = node {
+                Image(systemName: expanded ? "chevron.down" : "chevron.right")
+                    .font(.system(size: 8, weight: .medium))
+                    .foregroundStyle(Theme.Color.textTertiary)
+                    .frame(width: 10)
+            } else {
+                Spacer().frame(width: 10)
+            }
+            Image(systemName: iconName)
+                .font(.system(size: 11))
+                .foregroundStyle(iconColor)
+                .frame(width: 14)
+            if isInlineRenaming {
+                InlineRenameField(
+                    initial: node.name,
+                    onSubmit: { newName in onCommitInlineRename(node.path, newName) },
+                    onCancel: onCancelInlineRename
+                )
+            } else {
                 Text(node.name)
                     .font(Theme.Typography.small)
                     .foregroundStyle(isSelected ? Theme.Color.text : Theme.Color.textSecondary)
                     .lineLimit(1)
                     .truncationMode(.middle)
-                Spacer()
             }
-            .padding(.horizontal, Theme.Spacing.sm)
-            .padding(.vertical, 2)
-            .background(rowBg)
-            .contentShape(Rectangle())
+            Spacer()
+            if isMultiSelected && !isInlineRenaming {
+                Image(systemName: "checkmark.circle.fill")
+                    .font(.system(size: 10))
+                    .foregroundStyle(Theme.Color.accent)
+            }
         }
-        .buttonStyle(.plain)
+        .padding(.horizontal, Theme.Spacing.sm)
+        .padding(.vertical, 2)
+        .background(rowBg)
+        .contentShape(Rectangle())
+        .onTapGesture { tap() }
         .onHover { hovering = $0 }
         .contextMenu { contextMenuContent }
     }
@@ -482,15 +577,34 @@ private struct FileNodeRow: View {
             Divider()
         }
         Button {
+            onBeginInlineRename(node.path)
+        } label: {
+            Label("이름 변경 (inline)", systemImage: "pencil")
+        }
+        Button {
             onRename(node.path, node.isFolder)
         } label: {
-            Label("이름 변경", systemImage: "pencil")
+            Label("이름 변경 sheet…", systemImage: "rectangle.and.pencil.and.ellipsis")
         }
+        Divider()
+        Button {
+            onToggleMultiSelect(node.path)
+        } label: {
+            Label(
+                isMultiSelected ? "선택 해제" : "선택에 추가",
+                systemImage: isMultiSelected ? "checkmark.circle.fill" : "circle"
+            )
+        }
+        Divider()
         Button(role: .destructive) {
             onDelete(node.path, node.isFolder)
         } label: {
-            Label("삭제", systemImage: "trash")
+            Label("휴지통으로 삭제", systemImage: "trash")
         }
+    }
+
+    private var isMultiSelected: Bool {
+        multiSelectedPaths.contains(node.path)
     }
 
     private var iconName: String {
@@ -527,17 +641,54 @@ private struct FileNodeRow: View {
     }
 
     private var rowBg: SwiftUI.Color {
+        if isMultiSelected { return Theme.Color.accent.opacity(0.18) }
         if isSelected { return Theme.Color.accentMuted }
         if hovering { return Theme.Color.surfaceHi }
         return .clear
     }
 
     private func tap() {
+        // ⌘ pressed → 다중 선택 토글 (ADR-040 F3)
+        if NSEvent.modifierFlags.contains(.command) {
+            onToggleMultiSelect(node.path)
+            return
+        }
         switch node {
         case .folder:
             withAnimation(.easeOut(duration: 0.10)) { expanded.toggle() }
         case .file(_, let path, _, _, _):
             onSelect(path)
         }
+    }
+}
+
+/// 트리 cell 내 inline rename TextField — Esc cancel, Enter commit (ADR-040 F4).
+private struct InlineRenameField: View {
+    let initial: String
+    let onSubmit: (String) -> Void
+    let onCancel: () -> Void
+
+    @State private var text: String = ""
+    @FocusState private var focused: Bool
+
+    var body: some View {
+        TextField("", text: $text)
+            .textFieldStyle(.plain)
+            .font(Theme.Typography.small)
+            .foregroundStyle(Theme.Color.text)
+            .padding(.vertical, 1)
+            .padding(.horizontal, 4)
+            .background(Theme.Color.bg)
+            .overlay(
+                RoundedRectangle(cornerRadius: 3)
+                    .stroke(Theme.Color.accent, lineWidth: 1)
+            )
+            .focused($focused)
+            .onAppear {
+                text = initial
+                focused = true
+            }
+            .onSubmit { onSubmit(text) }
+            .onExitCommand { onCancel() }
     }
 }

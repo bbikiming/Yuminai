@@ -4,6 +4,58 @@
 
 ## [Unreleased] — 2026-05-02
 
+### Added — v1.1+ R1: File CRUD 확장 + 다중 터미널 강화 (ADR-040)
+
+사용자: "v1.1+로 미룬 항목들도 모두 구현해줘 / 다중 터미널 기능을 최대한 강화"
+
+ADR-039 v1.1+ deferred 5개 (F1-F5) + 다중 터미널 9개 항목 (T1-T9) 일괄.
+
+**File CRUD 확장 (F1-F5)**:
+- `WorkspaceFileTree.move(_:to:)` — cross-parent move (rename 일반화), 부모 자동 생성
+- `delete(_:moveToTrash:)` — `NSWorkspace.recycle` 휴지통 옵션 (default trash)
+- `deleteMany(_:moveToTrash:)` — 일괄 삭제 (best-effort, 첫 에러 throw)
+- AppModel: `selectedFilePaths: Set<String>` + `toggleFileSelection`/`deleteSelectedWorkspaceNodes`
+- AppModel: `inlineRenameTargetPath` + `beginInlineRename`/`commitInlineRename`/`cancelInlineRename`
+- AppModel: `askAgentToUpdateImports(oldPath:newPath:)` — F5 LSP 대안, agent 위임 prompt 자동 생성
+
+**FilesPanel UI 확장**:
+- 트리 헤더에 "N개 선택" + 선택 해제 + 일괄 휴지통 버튼 (multi-select 시)
+- Cmd+Click → 다중 선택 토글 (NSEvent.modifierFlags)
+- 멀티 선택된 row는 accent.opacity(0.18) 배경 + checkmark.circle.fill 아이콘
+- 컨텍스트 메뉴 확장: 이름 변경 (inline) / 이름 변경 sheet / 선택 추가/해제 / 휴지통으로 삭제
+- `InlineRenameField` private view — TextField in row, Esc cancel + Enter commit, @FocusState
+
+**다중 터미널 (T1-T9)**:
+- `TerminalSession` Sendable Codable 모델 (id/label/workingDirectory/createdAt) — Core
+- AppModel: `terminalSessions: [TerminalSession]` + `activeTerminalSessionId`
+- 13 lifecycle 메서드:
+  - `createTerminalSession()` (max 10 FIFO)
+  - `setActiveTerminalSession(_:)` / `closeTerminalSession(_:)` (인접 이동)
+  - `closeActiveTerminalSession()` / `selectAdjacentTerminalSession(offset:)` (순환)
+  - `renameTerminalSession(_:to:)` / `toggleTerminalPane()` (자동 첫 세션)
+- RootView `terminalPaneSection`을 multi-session aware로 재작성:
+  - 터미널 헤더에 "+ 새 세션" 버튼 (⌃⇧T)
+  - 세션 탭 바 (`TerminalSessionTabButton` private view) — hover/active border/close ✕/double-click rename
+  - 활성 세션의 NSView를 `.id(uuid)`로 lock (세션 별 reload trigger 분리)
+- `TerminalRenameSheet` (App) — 단순 1-field sheet, 더블클릭/컨텍스트 메뉴
+
+**CommandRunnerPane block 강화**:
+- block hover 시 3 버튼: copy (📄) / share to agent (✈️) / rerun (↻)
+- AppModel `copyCommandBlockOutput` (NSPasteboard) + `shareCommandBlockToAgent` (composer prepend)
+
+**RootView 단축키 (terminalSessionHotkeys)**:
+- ⌃⇧T → 새 세션 (+ pane 자동 열림)
+- ⌃⇧W → 활성 세션 닫기
+- ⌃Tab → 다음 세션 (순환)
+- ⌃⇧Tab → 이전 세션
+- 모두 `.disabled(...)` 가드
+
+**테스트 15 신규 (271→286 통과)**:
+- WorkspaceFileTreeMoveTests (9): cross-parent move / 폴더 이동 / target exists / missing source / traversal 차단 / deleteMany basic-partial-empty / delete permanent
+- TerminalSessionTests (6): init / id-based identity / Codable round-trip / defaultLabel / Hashable / mutable fields
+
+빌드 6.75s clean. 외부 dependency 추가 없음 (AppKit + SwiftTerm 기존 사용).
+
 ### Added — v0.9+ R3: File CRUD UX (rename / new file / new folder / delete) (ADR-039)
 
 사용자: "진행해 줘" (R2 점검 후 file CRUD가 v1.0+ 후보 중 ROI 가장 높다는 분석 승인)

@@ -1,6 +1,119 @@
 # Decisions Log (ADR-lite)
 
-> 최신: ADR-039 (v0.9+ R3 — File CRUD UX: 새 파일/폴더 + 이름 변경 + 삭제 + path safety)
+> 최신: ADR-040 (v1.1+ R1 — File CRUD 확장 + 다중 터미널 강화)
+
+---
+
+## ADR-040 — v1.1+ R1: File CRUD 확장 (move/trash/multi-select/inline rename) + 다중 터미널 강화
+
+- **날짜**: 2026-05-02
+- **상태**: Accepted
+- **결정**: ADR-039 v1.1+로 미뤘던 5개 항목 일괄 + 다중 터미널 인스턴스 6개 항목 통합 — 사용자가 외부 IDE/Terminal.app 없이 모든 워크플로 가능. F1-F5 (file CRUD 확장) + T1-T9 (다중 터미널)
+- **컨텍스트**:
+  - 사용자 — "v1.1+로 미룬 항목들도 모두 구현해줘 / 다중 터미널 기능을 최대한 강화해서 기획하고 구현해줘"
+  - file CRUD 4종 (ADR-039)으로 외부 IDE 의존 80% 제거 → 나머지 20% (move/trash/multi-select/inline)도 같은 라운드에 마무리
+  - 단일 터미널 인스턴스 → 진짜 다중 워크플로 지원 위해 multi-session
+- **각 결정**:
+  ### File CRUD 확장 (F1~F5)
+  1. **F1 폴더 이동 (move)**:
+     - `WorkspaceFileTree.move(_:to:)` — `rename`을 cross-parent로 일반화. 부모 디렉토리 자동 생성
+     - rename은 같은 부모 내에서만 (path safety 우선) — move는 다른 부모 허용
+     - drag-drop UI는 v1.2+ (현재는 `move` API만 — 사용자가 cross-parent 필요 시 sheet/agent 위임)
+  2. **F2 휴지통 (trash)**:
+     - `delete(_:moveToTrash:)` 옵션 — `NSWorkspace.shared.recycle` (복구 가능)
+     - **default = trash** (안전 우선). 영구 삭제는 명시적 옵션
+     - `@MainActor` continuation wrap (NSWorkspace.recycle은 main thread + completion handler)
+     - 알림 alert 메시지도 "휴지통으로" 변경
+  3. **F3 다중 선택 (multi-select)**:
+     - `Set<String> selectedFilePaths` AppModel state
+     - 트리 cell **Cmd+Click** → 토글 (NSEvent.modifierFlags 직접 검사 — SwiftUI 표준)
+     - 다중 선택 시 트리 헤더에 "N개 선택" + 선택 해제 + 일괄 휴지통 버튼
+     - `deleteMany([String], moveToTrash:)` — best-effort (일부 실패해도 나머지 진행 + 첫 에러 throw)
+     - `Set` 사용 — order 무관, contains O(1)
+  4. **F4 inline rename**:
+     - 트리 cell이 TextField로 in-place 전환 (`InlineRenameField` private view)
+     - context menu에 "이름 변경 (inline)" 추가, sheet rename도 보존 (`이름 변경 sheet…`)
+     - Esc cancel / Enter commit / focused on appear
+     - `@FocusState` + `onSubmit` + `onExitCommand` 표준 패턴
+     - **합리화 검증**: ADR-039에서 inline rename 보류 사유는 "focus 관리 까다로움". v1.1에서 다시 검토 → SwiftUI 4.0+ `@FocusState` + `onExitCommand`로 충분히 안정적임 확인
+  5. **F5 rename + imports — agent 위임 패턴**:
+     - LSP 통합 (sourcekit-lsp/tsserver)은 수 주 작업 — 보류
+     - 대안: `askAgentToUpdateImports(oldPath:newPath:)` — 활성 chat composer에 자연어 prompt prepend
+     - agent가 grep + 수정 수행 (Yuminai의 vibe-coding 본질에 부합)
+     - 사용자가 호출 시점 선택 (자동 X)
+  ### 다중 터미널 (T1~T9)
+  6. **T1 TerminalSession 모델**:
+     - `public struct TerminalSession: Sendable, Identifiable, Equatable, Codable { id, label, workingDirectory, createdAt }`
+     - Codable로 v1.2+ 영속화 준비 (현재는 메모리만)
+     - `defaultLabel(index:)` — "터미널 1" 한국어
+  7. **T2 다중 인스턴스 lifecycle**:
+     - `terminalSessions: [TerminalSession]` + `activeTerminalSessionId: UUID?`
+     - max 10 (FIFO overflow), 마지막 close → pane 자동 닫기
+     - close active → 같은 idx (오른쪽) → idx-1 (왼쪽) → nil 순으로 active 이동 (FileTab 패턴 동일)
+  8. **T3 split layout 보류**:
+     - 좌우/상하 split은 NSViewRepresentable lifecycle + SwiftTerm process 관리 복잡도 큼
+     - 다중 인스턴스 + 빠른 전환으로 80% 가치 달성, split은 v1.2+
+  9. **T4 라벨 변경**:
+     - `TerminalRenameSheet` (단순 1-field sheet)
+     - 탭 더블 클릭 또는 컨텍스트 메뉴 "이름 변경"
+  10. **T5 영속성**: 메모리만 (워크스페이스 전환 시 reset). 디스크 영속은 Codable 준비됐으므로 v1.2+
+  11. **T6 명령 history 영속**: 보류 — 가치 모호 (대화형 PTY는 zsh history가 처리, block-style은 max 50 in-memory 충분)
+  12. **T7 명령 재실행 (block ↻)**:
+     - CommandBlockView hover 시 `arrow.clockwise` 버튼 → `onRerun(command)` callback
+     - 사용자가 같은 명령을 빠르게 재시도 (테스트 fail-fix-test 사이클)
+  13. **T8 block clipboard share + agent 위임**:
+     - hover 시 `doc.on.doc` (copy) + `paperplane` (agent share)
+     - `copyCommandBlockOutput` — NSPasteboard
+     - `shareCommandBlockToAgent` — 명령 + stdout/stderr를 agent 메시지에 prepend (DeliveryResult 패턴 동일)
+  14. **T9 단축키 (ADR-040 T9)**:
+     - **⌃⇧T**: 새 터미널 세션 (terminal pane 자동 열림)
+     - **⌃⇧W**: 활성 세션 닫기
+     - **⌃Tab**: 다음 세션 (순환)
+     - **⌃⇧Tab**: 이전 세션
+     - 모두 `disabled(...)` 가드로 의미 없는 단축키 차단
+- **단순화 ROI 분석**:
+  - **F1 move**: 가치 50, 비용 0.2인일 (rename 일반화) — ROI 압도
+  - **F2 trash**: 가치 80 (실수 복구 — 사용자 신뢰), 비용 0.3인일 (NSWorkspace.recycle wrap) — ROI 압도
+  - **F3 multi-select**: 가치 60 (대량 정리), 비용 0.5인일 (Set state + UI) — ROI 양호
+  - **F4 inline rename**: 가치 40 (sheet도 충분), 비용 0.4인일 — ROI 보통, 하지만 표준 IDE 경험에 가까움
+  - **F5 agent imports**: 가치 70 (LSP 대안), 비용 0.1인일 (prompt 1개) — ROI 압도
+  - **T1-T9 다중 터미널 일괄**: 가치 90 (Terminal.app 의존 제거), 비용 1.5인일 — ROI 압도. 핵심 vibe-coding 도구
+- **격리**:
+  - Core: WorkspaceFileTree (move/deleteMany/trash) + TerminalSession 모델
+  - App: AppModel multi-terminal/multi-select state + TerminalRenameSheet
+  - UI: FilesPanel (multi-select + inline rename) + CommandRunnerPane (block 강화)
+  - 다중 터미널 view는 RootView (terminalPaneSection을 multi-session 인식 버전으로 교체)
+  - SwiftTerm은 TerminalPane wrap 그대로 — 각 세션 ID로 NSView identity 분리 (`.id(uuid)`)
+- **외부 의존성 정책**:
+  - 새 외부 dependency 없음. AppKit (NSWorkspace.recycle / NSPasteboard / NSEvent.modifierFlags)만 추가
+  - SwiftTerm 다중 인스턴스 — 기존 단일 인스턴스 패턴 N개로 (각 process spawn은 SwiftTerm 자동)
+- **알려진 한계 / v1.2+**:
+  - **Drag-drop file move** — SwiftUI `.draggable`/`.dropDestination` 가능, 하지만 cross-row drop visual feedback이 까다로움
+  - **터미널 split (좌우/상하)** — multi-instance로 80% 가치 달성
+  - **터미널 영속화** (워크스페이스 reload 시 세션 복원) — Codable 준비됐으므로 SwiftData WorkspaceModel에 추가만 하면 됨
+  - **터미널 cwd 분리** (각 세션 다른 디렉토리) — UI에서 cwd 변경 sheet 추가만
+  - **명령 history 검색** (block-style command runner)
+  - **rename 시 LSP 기반 imports 업데이트** — agent 위임으로 충분 가능성. 진짜 LSP는 v2.0+
+  - **F2/Delete 키 단축키 (트리 focus 시)** — `.focusable() + .onKeyPress` SwiftUI macOS 14에서 가능, R2에서 추가
+- **결과**:
+  - 신규 파일 3개 (App): TerminalRenameSheet.swift / (test) WorkspaceFileTreeMoveTests / TerminalSessionTests
+  - 신규 파일 1개 (Core): TerminalSession.swift
+  - 수정 파일 6개:
+    - YuminaiCore/WorkspaceFileTree.swift — move/deleteMany/trash + 3 case 보존
+    - YuminaiApp/AppModel.swift — 13 신규 메서드 (다중 터미널 + 다중 선택 + agent prompt) + 5 state
+    - YuminaiUI/FilesPanel.swift — 다중 선택 UI + inline rename + 13 신규 callback
+    - YuminaiUI/InspectorPanel.swift — 13 callback forwarding
+    - YuminaiUI/CommandRunnerPane.swift — block hover 시 ↻/copy/share 버튼
+    - YuminaiApp/RootView.swift — 다중 터미널 view + 4 단축키 + sheet/alert wiring
+  - **테스트 15 신규 (271→286 통과)**:
+    - WorkspaceFileTreeMoveTests (9): move (cross-parent / folder / target exists / missing / traversal) + deleteMany (basic / partial fail / empty) + delete permanent
+    - TerminalSessionTests (6): init / identity / Codable / defaultLabel / Hashable / mutable
+  - 빌드 6.75s clean
+- **재검토**:
+  - 다중 터미널 사용 빈도 — 1개로 충분한 사용자 vs 3-5개 동시 운영 사용자 분포
+  - inline rename vs sheet rename 사용자 선호
+  - F2 trash가 너무 자주 호출되어 휴지통이 바로 가득 차는지
+  - drag-drop file move 요구 강도 (현재 move API만)
 
 ---
 

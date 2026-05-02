@@ -17,6 +17,8 @@ public struct CommandRunnerPane: View {
     public let onRun: (String) -> Void
     public let onClear: () -> Void
     public let onClose: () -> Void
+    public let onCopyOutput: (String) -> Void
+    public let onShareToAgent: (CommandRunner.CommandResult) -> Void
 
     @State private var draft: String = ""
 
@@ -27,7 +29,9 @@ public struct CommandRunnerPane: View {
         quickCommands: [QuickCommand] = [],
         onRun: @escaping (String) -> Void,
         onClear: @escaping () -> Void,
-        onClose: @escaping () -> Void
+        onClose: @escaping () -> Void,
+        onCopyOutput: @escaping (String) -> Void = { _ in },
+        onShareToAgent: @escaping (CommandRunner.CommandResult) -> Void = { _ in }
     ) {
         self.workingDirectory = workingDirectory
         self.blocks = blocks
@@ -36,6 +40,8 @@ public struct CommandRunnerPane: View {
         self.onRun = onRun
         self.onClear = onClear
         self.onClose = onClose
+        self.onCopyOutput = onCopyOutput
+        self.onShareToAgent = onShareToAgent
     }
 
     public var body: some View {
@@ -125,7 +131,13 @@ public struct CommandRunnerPane: View {
                 ScrollView {
                     VStack(spacing: 4) {
                         ForEach(blocks) { block in
-                            CommandBlockView(block: block).id(block.id)
+                            CommandBlockView(
+                                block: block,
+                                onRerun: onRun,
+                                onCopyOutput: onCopyOutput,
+                                onShareToAgent: onShareToAgent
+                            )
+                            .id(block.id)
                         }
                     }
                     .padding(Theme.Spacing.sm)
@@ -265,7 +277,23 @@ private struct QuickCommandChip: View {
 
 private struct CommandBlockView: View {
     let block: CommandRunner.CommandResult
+    let onRerun: (String) -> Void
+    let onCopyOutput: (String) -> Void
+    let onShareToAgent: (CommandRunner.CommandResult) -> Void
     @State private var collapsed: Bool = false
+    @State private var hovering: Bool = false
+
+    init(
+        block: CommandRunner.CommandResult,
+        onRerun: @escaping (String) -> Void = { _ in },
+        onCopyOutput: @escaping (String) -> Void = { _ in },
+        onShareToAgent: @escaping (CommandRunner.CommandResult) -> Void = { _ in }
+    ) {
+        self.block = block
+        self.onRerun = onRerun
+        self.onCopyOutput = onCopyOutput
+        self.onShareToAgent = onShareToAgent
+    }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
@@ -285,39 +313,70 @@ private struct CommandBlockView: View {
                 .stroke(block.success ? Theme.Color.borderSubtle : SwiftUI.Color.red.opacity(0.4), lineWidth: 1)
         )
         .clipShape(RoundedRectangle(cornerRadius: Theme.Radius.sm))
+        .onHover { hovering = $0 }
     }
 
     private var header: some View {
-        Button {
-            withAnimation(.easeOut(duration: 0.10)) { collapsed.toggle() }
-        } label: {
-            HStack(spacing: 6) {
+        HStack(spacing: 6) {
+            Button {
+                withAnimation(.easeOut(duration: 0.10)) { collapsed.toggle() }
+            } label: {
                 Image(systemName: collapsed ? "chevron.right" : "chevron.down")
                     .font(.system(size: 9))
                     .foregroundStyle(Theme.Color.textSecondary)
-                Image(systemName: block.success ? "checkmark.circle.fill" : "xmark.circle.fill")
-                    .font(.system(size: 11))
-                    .foregroundStyle(block.success ? .green : .red)
-                Text("$ \(block.command)")
-                    .font(Theme.Typography.mono)
-                    .foregroundStyle(Theme.Color.text)
-                    .lineLimit(1)
-                    .truncationMode(.middle)
-                Spacer()
-                Text("\(block.durationMs)ms")
-                    .font(Theme.Typography.micro)
-                    .foregroundStyle(Theme.Color.textTertiary)
-                if block.exitCode != 0 {
-                    Text("exit \(block.exitCode)")
-                        .font(Theme.Typography.micro)
-                        .foregroundStyle(.red)
-                }
             }
-            .padding(.horizontal, Theme.Spacing.sm)
-            .padding(.vertical, 4)
-            .contentShape(Rectangle())
+            .buttonStyle(.plain)
+            Image(systemName: block.success ? "checkmark.circle.fill" : "xmark.circle.fill")
+                .font(.system(size: 11))
+                .foregroundStyle(block.success ? .green : .red)
+            Text("$ \(block.command)")
+                .font(Theme.Typography.mono)
+                .foregroundStyle(Theme.Color.text)
+                .lineLimit(1)
+                .truncationMode(.middle)
+                .textSelection(.enabled)
+            Spacer()
+            if hovering {
+                Button { onCopyOutput(combinedOutput) } label: {
+                    Image(systemName: "doc.on.doc")
+                        .font(.system(size: 9))
+                        .foregroundStyle(Theme.Color.textSecondary)
+                }
+                .buttonStyle(.plain)
+                .help("출력을 클립보드에 복사")
+                Button { onShareToAgent(block) } label: {
+                    Image(systemName: "paperplane")
+                        .font(.system(size: 9))
+                        .foregroundStyle(Theme.Color.textSecondary)
+                }
+                .buttonStyle(.plain)
+                .help("이 결과를 agent 메시지에 첨부")
+                Button { onRerun(block.command) } label: {
+                    Image(systemName: "arrow.clockwise")
+                        .font(.system(size: 9))
+                        .foregroundStyle(Theme.Color.accent)
+                }
+                .buttonStyle(.plain)
+                .help("같은 명령 재실행")
+            }
+            Text("\(block.durationMs)ms")
+                .font(Theme.Typography.micro)
+                .foregroundStyle(Theme.Color.textTertiary)
+            if block.exitCode != 0 {
+                Text("exit \(block.exitCode)")
+                    .font(Theme.Typography.micro)
+                    .foregroundStyle(.red)
+            }
         }
-        .buttonStyle(.plain)
+        .padding(.horizontal, Theme.Spacing.sm)
+        .padding(.vertical, 4)
+    }
+
+    private var combinedOutput: String {
+        var parts: [String] = ["$ \(block.command)"]
+        if !block.stdout.isEmpty { parts.append(block.stdout) }
+        if !block.stderr.isEmpty { parts.append("--- stderr ---\n\(block.stderr)") }
+        return parts.joined(separator: "\n")
     }
 
     private func outputView(_ text: String, isStderr: Bool) -> some View {

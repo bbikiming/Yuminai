@@ -44,6 +44,7 @@ struct RootView: View {
                 helpHotkey  // ⌘? invisible
                 fileSearchHotkey  // ⌘P invisible
                 fileTabHotkeys  // ⌘W close + ⌘⇧[/⌘⇧] tab nav
+                terminalSessionHotkeys  // ⌃⇧T/⌃⇧W/⌃Tab/⌃⇧Tab (ADR-040)
             }
             .onAppear {
                 windowSize = geo.size
@@ -114,13 +115,23 @@ struct RootView: View {
             Alert(
                 title: Text(confirmation.title),
                 message: Text(confirmation.message),
-                primaryButton: .destructive(Text("삭제")) {
-                    Task { await appModel.deleteWorkspaceNode(at: confirmation.path) }
+                primaryButton: .destructive(Text("휴지통으로")) {
+                    Task { await appModel.deleteWorkspaceNode(at: confirmation.path, moveToTrash: true) }
                     appModel.fileDeleteConfirmation = nil
                 },
                 secondaryButton: .cancel(Text("취소")) {
                     appModel.fileDeleteConfirmation = nil
                 }
+            )
+        }
+        .sheet(item: terminalRenameBinding) { session in
+            TerminalRenameSheet(
+                session: session,
+                onSubmit: { newLabel in
+                    appModel.renameTerminalSession(session.id, to: newLabel)
+                    appModel.terminalRenameTargetId = nil
+                },
+                onCancel: { appModel.terminalRenameTargetId = nil }
             )
         }
         .sheet(item: $bindable.renameSheetPane) { pane in
@@ -282,6 +293,19 @@ struct RootView: View {
                         appModel.fileDeleteConfirmation = FileDeleteConfirmation(
                             path: path, isFolder: isFolder
                         )
+                    },
+                    selectedFilePaths: appModel.selectedFilePaths,
+                    onToggleFileSelection: { path in appModel.toggleFileSelection(path) },
+                    onClearFileSelection: { appModel.clearFileSelection() },
+                    onBulkDeleteFiles: { Task { await appModel.deleteSelectedWorkspaceNodes() } },
+                    inlineRenamePath: appModel.inlineRenameTargetPath,
+                    onBeginInlineRename: { path in appModel.beginInlineRename(path) },
+                    onCommitInlineRename: { path, name in
+                        Task { await appModel.commitInlineRename(path, newName: name) }
+                    },
+                    onCancelInlineRename: { appModel.cancelInlineRename() },
+                    onAskAgentToUpdateImports: { oldPath, newPath in
+                        appModel.askAgentToUpdateImports(oldPath: oldPath, newPath: newPath)
                     }
                 )
                 .task(id: appModel.selectedWorkspaceId) {
@@ -357,6 +381,63 @@ struct RootView: View {
             .frame(width: 0, height: 0)
             .accessibilityHidden(true)
             .disabled(appModel.currentWorkspace == nil)
+    }
+
+    /// 터미널 라벨 변경 sheet binding helper (Identifiable item ↔ optional UUID 매핑).
+    private var terminalRenameBinding: Binding<TerminalSession?> {
+        Binding(
+            get: {
+                guard let id = appModel.terminalRenameTargetId else { return nil }
+                return appModel.terminalSessions.first { $0.id == id }
+            },
+            set: { newValue in
+                appModel.terminalRenameTargetId = newValue?.id
+            }
+        )
+    }
+
+    /// 다중 터미널 단축키 (ADR-040 T9):
+    /// - ⌃⇧T 새 세션 / ⌃⇧W 활성 세션 닫기
+    /// - ⌃Tab 다음 / ⌃⇧Tab 이전
+    private var terminalSessionHotkeys: some View {
+        ZStack {
+            Button {
+                if !appModel.showTerminalPane { appModel.showTerminalPane = true }
+                appModel.createTerminalSession()
+            } label: { EmptyView() }
+                .keyboardShortcut("t", modifiers: [.control, .shift])
+                .opacity(0)
+                .frame(width: 0, height: 0)
+                .accessibilityHidden(true)
+                .disabled(appModel.currentWorkspace == nil)
+
+            Button {
+                appModel.closeActiveTerminalSession()
+            } label: { EmptyView() }
+                .keyboardShortcut("w", modifiers: [.control, .shift])
+                .opacity(0)
+                .frame(width: 0, height: 0)
+                .accessibilityHidden(true)
+                .disabled(appModel.activeTerminalSessionId == nil)
+
+            Button {
+                appModel.selectAdjacentTerminalSession(offset: 1)
+            } label: { EmptyView() }
+                .keyboardShortcut(.tab, modifiers: [.control])
+                .opacity(0)
+                .frame(width: 0, height: 0)
+                .accessibilityHidden(true)
+                .disabled(appModel.terminalSessions.count < 2)
+
+            Button {
+                appModel.selectAdjacentTerminalSession(offset: -1)
+            } label: { EmptyView() }
+                .keyboardShortcut(.tab, modifiers: [.control, .shift])
+                .opacity(0)
+                .frame(width: 0, height: 0)
+                .accessibilityHidden(true)
+                .disabled(appModel.terminalSessions.count < 2)
+        }
     }
 
     /// ⌘W = active tab close / ⌘⇧] = 다음 tab / ⌘⇧[ = 이전 tab (ADR-038 R2).
@@ -507,7 +588,7 @@ struct ChatPane: View {
                 commandsVisible: appModel.showCommandRunnerPane,
                 onToggleSidebar: onToggleSidebar,
                 onToggleInspector: onToggleInspector,
-                onToggleTerminal: { appModel.showTerminalPane.toggle() },
+                onToggleTerminal: { appModel.toggleTerminalPane() },
                 onTogglePreview: { appModel.showPreviewPane.toggle() },
                 onToggleCommands: { appModel.showCommandRunnerPane.toggle() },
                 onShowDashboard: { appModel.showUsageDashboard = true },
@@ -752,7 +833,9 @@ struct ChatPane: View {
             quickCommands: quick,
             onRun: { cmd in Task { await appModel.runCommand(cmd) } },
             onClear: { appModel.clearCommandBlocks() },
-            onClose: { appModel.showCommandRunnerPane = false }
+            onClose: { appModel.showCommandRunnerPane = false },
+            onCopyOutput: { text in appModel.copyCommandBlockOutput(text) },
+            onShareToAgent: { block in appModel.shareCommandBlockToAgent(block) }
         )
     }
 
@@ -769,53 +852,165 @@ struct ChatPane: View {
         }
     }
 
-    @State private var terminalReloadTrigger: UUID = UUID()
+    @State private var terminalReloadTriggers: [UUID: UUID] = [:]
 
     private func terminalPaneSection(path: String) -> some View {
         VStack(spacing: 0) {
-            HStack(spacing: 6) {
-                Image(systemName: "terminal")
+            terminalHeader(path: path)
+            if !appModel.terminalSessions.isEmpty {
+                terminalSessionTabBar
+                FlatHDivider()
+            }
+            terminalActiveSessionContent(path: path)
+        }
+    }
+
+    private func terminalHeader(path: String) -> some View {
+        HStack(spacing: 6) {
+            Image(systemName: "terminal")
+                .font(.system(size: 11, weight: .medium))
+                .foregroundStyle(Theme.Color.textSecondary)
+            Text("터미널")
+                .font(Theme.Typography.small.weight(.medium))
+                .foregroundStyle(Theme.Color.textSecondary)
+            Text(URL(fileURLWithPath: path).lastPathComponent)
+                .font(Theme.Typography.monoSmall)
+                .foregroundStyle(Theme.Color.textTertiary)
+            HelpHint(
+                "워크스페이스 디렉토리에서 시작된 zsh 세션이에요. ⌃⇧T로 새 세션 추가, ⌃Tab으로 세션 전환, 라벨 더블클릭으로 이름 변경, 이름 옆 ↻로 reset.",
+                title: "다중 터미널 (ADR-040)",
+                placement: .bottom
+            )
+            Spacer()
+            Button {
+                appModel.createTerminalSession()
+            } label: {
+                Image(systemName: "plus.circle")
                     .font(.system(size: 11, weight: .medium))
                     .foregroundStyle(Theme.Color.textSecondary)
-                Text("터미널")
-                    .font(Theme.Typography.small.weight(.medium))
-                    .foregroundStyle(Theme.Color.textSecondary)
-                Text(URL(fileURLWithPath: path).lastPathComponent)
-                    .font(Theme.Typography.monoSmall)
-                    .foregroundStyle(Theme.Color.textTertiary)
-                HelpHint(
-                    "워크스페이스 디렉토리에서 시작된 zsh 세션이에요. agent가 만든 변경을 git status로 확인하거나, 테스트를 직접 실행할 때 사용하세요. ‘새로 시작’으로 reset 가능해요.",
-                    title: "터미널 사용법",
-                    placement: .bottom
-                )
-                Spacer()
-                Button {
-                    terminalReloadTrigger = UUID()  // 새 SwiftTerm view spawn → 새 zsh
-                } label: {
-                    Image(systemName: "arrow.clockwise")
-                        .font(.system(size: 10, weight: .medium))
-                        .foregroundStyle(Theme.Color.textSecondary)
-                }
-                .buttonStyle(.plain)
-                .help("터미널 새로 시작 (새 zsh 세션)")
-                Button {
-                    appModel.showTerminalPane = false
-                } label: {
-                    Image(systemName: "xmark")
-                        .font(.system(size: 10, weight: .medium))
-                        .foregroundStyle(Theme.Color.textSecondary)
-                }
-                .buttonStyle(.plain)
-                .help("터미널 닫기")
             }
-            .padding(.horizontal, Theme.Spacing.md)
-            .padding(.vertical, Theme.Spacing.xs)
-            .background(Theme.Color.surface)
-            .overlay(alignment: .bottom) { FlatHDivider() }
-
-            TerminalPane(workingDirectory: path)
-                .id(terminalReloadTrigger)  // trigger 변경 시 view 재생성 → 새 zsh
+            .buttonStyle(.plain)
+            .help("새 터미널 세션 (⌃⇧T)")
+            Button {
+                if let id = appModel.activeTerminalSessionId {
+                    terminalReloadTriggers[id] = UUID()
+                }
+            } label: {
+                Image(systemName: "arrow.clockwise")
+                    .font(.system(size: 10, weight: .medium))
+                    .foregroundStyle(Theme.Color.textSecondary)
+            }
+            .buttonStyle(.plain)
+            .disabled(appModel.activeTerminalSessionId == nil)
+            .help("활성 세션 새로 시작")
+            Button {
+                appModel.showTerminalPane = false
+            } label: {
+                Image(systemName: "xmark")
+                    .font(.system(size: 10, weight: .medium))
+                    .foregroundStyle(Theme.Color.textSecondary)
+            }
+            .buttonStyle(.plain)
+            .help("터미널 pane 닫기")
         }
+        .padding(.horizontal, Theme.Spacing.md)
+        .padding(.vertical, Theme.Spacing.xs)
+        .background(Theme.Color.surface)
+        .overlay(alignment: .bottom) { FlatHDivider() }
+    }
+
+    @ViewBuilder
+    private var terminalSessionTabBar: some View {
+        ScrollView(.horizontal, showsIndicators: false) {
+            HStack(spacing: 1) {
+                ForEach(appModel.terminalSessions) { session in
+                    TerminalSessionTabButton(
+                        session: session,
+                        isActive: session.id == appModel.activeTerminalSessionId,
+                        onSelect: { appModel.setActiveTerminalSession(session.id) },
+                        onClose: { appModel.closeTerminalSession(session.id) },
+                        onRequestRename: { appModel.terminalRenameTargetId = session.id }
+                    )
+                }
+            }
+            .padding(.horizontal, Theme.Spacing.sm)
+            .padding(.vertical, 2)
+        }
+        .background(Theme.Color.surface)
+    }
+
+    @ViewBuilder
+    private func terminalActiveSessionContent(path: String) -> some View {
+        if let activeId = appModel.activeTerminalSessionId,
+           let session = appModel.terminalSessions.first(where: { $0.id == activeId }) {
+            // 각 세션 별로 ID로 view를 lock — id 변경 시 NSView 재생성
+            let trigger = terminalReloadTriggers[activeId] ?? activeId
+            TerminalPane(workingDirectory: session.workingDirectory)
+                .id(trigger)
+        } else {
+            EmptyStateHint(
+                icon: "terminal",
+                title: "활성 터미널 세션이 없어요",
+                message: "위 ‘+’ 버튼이나 ⌃⇧T로 새 세션을 만드세요."
+            )
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+        }
+    }
+}
+
+/// 터미널 세션 탭 버튼 — FileTabButton 패턴 동일.
+private struct TerminalSessionTabButton: View {
+    let session: TerminalSession
+    let isActive: Bool
+    let onSelect: () -> Void
+    let onClose: () -> Void
+    let onRequestRename: () -> Void
+
+    @State private var hovering = false
+
+    var body: some View {
+        Button(action: onSelect) {
+            HStack(spacing: 6) {
+                Image(systemName: "terminal")
+                    .font(.system(size: 9))
+                    .foregroundStyle(isActive ? Theme.Color.accent : Theme.Color.textTertiary)
+                Text(session.label)
+                    .font(Theme.Typography.micro)
+                    .foregroundStyle(isActive ? Theme.Color.text : Theme.Color.textSecondary)
+                    .lineLimit(1)
+                if hovering || isActive {
+                    Button(action: onClose) {
+                        Image(systemName: "xmark")
+                            .font(.system(size: 8, weight: .medium))
+                            .foregroundStyle(Theme.Color.textTertiary)
+                    }
+                    .buttonStyle(.plain)
+                    .help("세션 닫기")
+                }
+            }
+            .padding(.horizontal, 8)
+            .padding(.vertical, 3)
+            .background(isActive ? Theme.Color.bg : (hovering ? Theme.Color.surfaceHi : Color.clear))
+            .overlay(alignment: .bottom) {
+                if isActive {
+                    Rectangle()
+                        .fill(Theme.Color.accent)
+                        .frame(height: 1)
+                }
+            }
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .onHover { hovering = $0 }
+        .contextMenu {
+            Button("이름 변경", action: onRequestRename)
+            Button(role: .destructive, action: onClose) {
+                Label("세션 닫기", systemImage: "xmark")
+            }
+        }
+        .simultaneousGesture(
+            TapGesture(count: 2).onEnded { onRequestRename() }
+        )
     }
 }
 

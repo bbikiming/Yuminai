@@ -70,6 +70,15 @@ public struct InspectorPanel: View {
     public let onRequestCreateFolder: (String) -> Void
     public let onRequestRename: (String, Bool) -> Void
     public let onRequestDelete: (String, Bool) -> Void
+    public let selectedFilePaths: Set<String>
+    public let onToggleFileSelection: (String) -> Void
+    public let onClearFileSelection: () -> Void
+    public let onBulkDeleteFiles: () -> Void
+    public let inlineRenamePath: String?
+    public let onBeginInlineRename: (String) -> Void
+    public let onCommitInlineRename: (String, String) -> Void
+    public let onCancelInlineRename: () -> Void
+    public let onAskAgentToUpdateImports: (String, String) -> Void
 
     // Diff review (ADR-027 phase A3)
     public let pendingChanges: [ChangedFile]
@@ -160,7 +169,16 @@ public struct InspectorPanel: View {
         onRequestCreateFile: @escaping (String) -> Void = { _ in },
         onRequestCreateFolder: @escaping (String) -> Void = { _ in },
         onRequestRename: @escaping (String, Bool) -> Void = { _, _ in },
-        onRequestDelete: @escaping (String, Bool) -> Void = { _, _ in }
+        onRequestDelete: @escaping (String, Bool) -> Void = { _, _ in },
+        selectedFilePaths: Set<String> = [],
+        onToggleFileSelection: @escaping (String) -> Void = { _ in },
+        onClearFileSelection: @escaping () -> Void = {},
+        onBulkDeleteFiles: @escaping () -> Void = {},
+        inlineRenamePath: String? = nil,
+        onBeginInlineRename: @escaping (String) -> Void = { _ in },
+        onCommitInlineRename: @escaping (String, String) -> Void = { _, _ in },
+        onCancelInlineRename: @escaping () -> Void = {},
+        onAskAgentToUpdateImports: @escaping (String, String) -> Void = { _, _ in }
     ) {
         self._tab = tab
         self.usage = usage
@@ -231,6 +249,15 @@ public struct InspectorPanel: View {
         self.onRequestCreateFolder = onRequestCreateFolder
         self.onRequestRename = onRequestRename
         self.onRequestDelete = onRequestDelete
+        self.selectedFilePaths = selectedFilePaths
+        self.onToggleFileSelection = onToggleFileSelection
+        self.onClearFileSelection = onClearFileSelection
+        self.onBulkDeleteFiles = onBulkDeleteFiles
+        self.inlineRenamePath = inlineRenamePath
+        self.onBeginInlineRename = onBeginInlineRename
+        self.onCommitInlineRename = onCommitInlineRename
+        self.onCancelInlineRename = onCancelInlineRename
+        self.onAskAgentToUpdateImports = onAskAgentToUpdateImports
     }
 
     public var body: some View {
@@ -316,7 +343,16 @@ public struct InspectorPanel: View {
                 onRequestCreateFile: onRequestCreateFile,
                 onRequestCreateFolder: onRequestCreateFolder,
                 onRequestRename: onRequestRename,
-                onRequestDelete: onRequestDelete
+                onRequestDelete: onRequestDelete,
+                selectedPaths: selectedFilePaths,
+                onToggleSelection: onToggleFileSelection,
+                onClearSelection: onClearFileSelection,
+                onBulkDelete: onBulkDeleteFiles,
+                inlineRenamePath: inlineRenamePath,
+                onBeginInlineRename: onBeginInlineRename,
+                onCommitInlineRename: onCommitInlineRename,
+                onCancelInlineRename: onCancelInlineRename,
+                onAskAgentToUpdateImports: onAskAgentToUpdateImports
             )
             .frame(maxWidth: .infinity, maxHeight: .infinity)
         case .changes:

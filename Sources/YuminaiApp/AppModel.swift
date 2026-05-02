@@ -94,8 +94,14 @@ public final class AppModel {
     // 도움말 sheet (C1)
     public var showShortcutHelp: Bool = false
 
-    // Terminal pane toggle (ADR-027 phase A)
+    // Terminal pane toggle (ADR-027 phase A) + 다중 세션 (ADR-040 T1)
     public var showTerminalPane: Bool = false
+    /// 다중 터미널 세션 — 워크스페이스 별 N개. 빈 배열이면 첫 활성화 시 자동 1개 생성.
+    public var terminalSessions: [TerminalSession] = []
+    /// 활성 세션 id (탭 바에서 highlight + TerminalPane 표시).
+    public var activeTerminalSessionId: UUID?
+    /// 터미널 라벨 변경 sheet (id 기반 — TerminalSession.id).
+    public var terminalRenameTargetId: UUID?
 
     // Preview pane (ADR-034 A4 + ADR-036 C1 live ping)
     public var showPreviewPane: Bool = false
@@ -121,6 +127,10 @@ public final class AppModel {
     /// File CRUD sheet/alert (ADR-039 R3)
     public var fileNameSheetIntent: FileNameSheetIntent?
     public var fileDeleteConfirmation: FileDeleteConfirmation?
+    /// 다중 선택 (ADR-040 F3) — 트리에서 Cmd+Click으로 토글.
+    public var selectedFilePaths: Set<String> = []
+    /// inline rename mode인 path (트리 cell이 TextField로 전환).
+    public var inlineRenameTargetPath: String?
     private var workspaceFileTreeActor: WorkspaceFileTree?
 
     /// 활성 tab — UI에 표시되는 파일.
@@ -1332,30 +1342,7 @@ public final class AppModel {
         guard let actor = workspaceFileTreeActor else { return }
         do {
             let newPath = try await actor.rename(relativePath, to: newName)
-            // 열린 tab 중 rename된 파일 (또는 폴더 rename으로 prefix 변경된 파일)의 path 업데이트
-            let oldPrefix = relativePath
-            let newPrefix = newPath
-            for idx in openFileTabs.indices {
-                let p = openFileTabs[idx].path
-                if p == oldPrefix {
-                    openFileTabs[idx] = FileTab(
-                        id: openFileTabs[idx].id,
-                        path: newPrefix,
-                        savedContents: openFileTabs[idx].savedContents,
-                        draft: openFileTabs[idx].draft,
-                        isEditing: openFileTabs[idx].isEditing
-                    )
-                } else if p.hasPrefix(oldPrefix + "/") {
-                    let suffix = p.dropFirst(oldPrefix.count + 1)
-                    openFileTabs[idx] = FileTab(
-                        id: openFileTabs[idx].id,
-                        path: "\(newPrefix)/\(suffix)",
-                        savedContents: openFileTabs[idx].savedContents,
-                        draft: openFileTabs[idx].draft,
-                        isEditing: openFileTabs[idx].isEditing
-                    )
-                }
-            }
+            updateTabPathsForRename(oldPath: relativePath, newPath: newPath)
             await refreshWorkspaceFileTree()
         } catch {
             self.error = error.localizedDescription
@@ -1377,26 +1364,228 @@ public final class AppModel {
     }
 
     /// 파일/폴더 삭제 + 트리 refresh + 영향받는 tab 강제 닫기 (dirty 무시 — 사용자가 명시 삭제).
-    public func deleteWorkspaceNode(at relativePath: String) async {
+    public func deleteWorkspaceNode(at relativePath: String, moveToTrash: Bool = true) async {
         guard let actor = workspaceFileTreeActor else { return }
         do {
-            try await actor.delete(relativePath)
-            // 삭제된 path와 그 하위에 해당하는 tab 모두 close (강제 — 디스크에 없으니 dirty 의미 없음)
-            let affectedIds = openFileTabs
-                .filter { $0.path == relativePath || $0.path.hasPrefix(relativePath + "/") }
-                .map(\.id)
-            for id in affectedIds {
-                if let idx = openFileTabs.firstIndex(where: { $0.id == id }) {
-                    openFileTabs.remove(at: idx)
-                    if activeFileTabId == id {
-                        activeFileTabId = openFileTabs.last?.id
-                    }
-                }
-            }
+            try await actor.delete(relativePath, moveToTrash: moveToTrash)
+            closeTabsAffectedByPath(relativePath)
+            selectedFilePaths.remove(relativePath)
             await refreshWorkspaceFileTree()
         } catch {
             self.error = error.localizedDescription
         }
+    }
+
+    /// 파일/폴더 다른 부모 디렉토리로 이동 + tab path sync (ADR-040 F1).
+    public func moveWorkspaceNode(at relativePath: String, to newRelativePath: String) async {
+        guard let actor = workspaceFileTreeActor else { return }
+        do {
+            let newPath = try await actor.move(relativePath, to: newRelativePath)
+            updateTabPathsForRename(oldPath: relativePath, newPath: newPath)
+            await refreshWorkspaceFileTree()
+        } catch {
+            self.error = error.localizedDescription
+        }
+    }
+
+    /// 다중 선택 일괄 삭제 (ADR-040 F3).
+    public func deleteSelectedWorkspaceNodes(moveToTrash: Bool = true) async {
+        guard let actor = workspaceFileTreeActor, !selectedFilePaths.isEmpty else { return }
+        let paths = Array(selectedFilePaths)
+        do {
+            try await actor.deleteMany(paths, moveToTrash: moveToTrash)
+        } catch {
+            self.error = "일부 삭제 실패: \(error.localizedDescription)"
+        }
+        for path in paths {
+            closeTabsAffectedByPath(path)
+        }
+        selectedFilePaths.removeAll()
+        await refreshWorkspaceFileTree()
+    }
+
+    /// 트리 다중 선택 토글 (Cmd+Click).
+    public func toggleFileSelection(_ path: String) {
+        if selectedFilePaths.contains(path) {
+            selectedFilePaths.remove(path)
+        } else {
+            selectedFilePaths.insert(path)
+        }
+    }
+
+    public func clearFileSelection() {
+        selectedFilePaths.removeAll()
+    }
+
+    /// inline rename 시작 — 트리 cell이 TextField로 전환.
+    public func beginInlineRename(_ path: String) {
+        inlineRenameTargetPath = path
+    }
+
+    public func cancelInlineRename() {
+        inlineRenameTargetPath = nil
+    }
+
+    /// inline rename 제출 — 빈/유효성 검증 후 actor 호출.
+    public func commitInlineRename(_ path: String, newName: String) async {
+        let trimmed = newName.trimmingCharacters(in: .whitespacesAndNewlines)
+        // 변경 없거나 빈 이름이면 cancel
+        guard !trimmed.isEmpty,
+              trimmed != (path as NSString).lastPathComponent else {
+            inlineRenameTargetPath = nil
+            return
+        }
+        await renameWorkspaceNode(at: path, to: trimmed)
+        inlineRenameTargetPath = nil
+    }
+
+    /// rename 후 imports 업데이트를 agent에게 위임 — 활성 chat에 prompt prepend (ADR-040 F5).
+    /// LSP 통합 없이 agent가 grep + 수정 수행하도록 자연어 위임.
+    public func askAgentToUpdateImports(oldPath: String, newPath: String) {
+        let prompt = """
+        파일 이름이 변경됐어요. imports/refs 업데이트가 필요할 수 있어요.
+
+        - 이전: `\(oldPath)`
+        - 새 경로: `\(newPath)`
+
+        프로젝트 전체에서 `\(oldPath)`를 참조하는 import / require / include 등을 찾아서 새 경로로 업데이트해주세요. 실제 파일 변경 전에 영향 범위를 먼저 보여주세요.
+
+        """
+        // 활성 chat composer에 prepend (이미 있는 패턴)
+        inputText = prompt + inputText
+    }
+
+    // MARK: - Tab sync helpers (ADR-039/040)
+
+    private func updateTabPathsForRename(oldPath: String, newPath: String) {
+        for idx in openFileTabs.indices {
+            let p = openFileTabs[idx].path
+            if p == oldPath {
+                openFileTabs[idx] = FileTab(
+                    id: openFileTabs[idx].id,
+                    path: newPath,
+                    savedContents: openFileTabs[idx].savedContents,
+                    draft: openFileTabs[idx].draft,
+                    isEditing: openFileTabs[idx].isEditing
+                )
+            } else if p.hasPrefix(oldPath + "/") {
+                let suffix = p.dropFirst(oldPath.count + 1)
+                openFileTabs[idx] = FileTab(
+                    id: openFileTabs[idx].id,
+                    path: "\(newPath)/\(suffix)",
+                    savedContents: openFileTabs[idx].savedContents,
+                    draft: openFileTabs[idx].draft,
+                    isEditing: openFileTabs[idx].isEditing
+                )
+            }
+        }
+    }
+
+    private func closeTabsAffectedByPath(_ relativePath: String) {
+        let affectedIds = openFileTabs
+            .filter { $0.path == relativePath || $0.path.hasPrefix(relativePath + "/") }
+            .map(\.id)
+        for id in affectedIds {
+            if let idx = openFileTabs.firstIndex(where: { $0.id == id }) {
+                openFileTabs.remove(at: idx)
+                if activeFileTabId == id {
+                    activeFileTabId = openFileTabs.last?.id
+                }
+            }
+        }
+    }
+
+    // MARK: - 다중 터미널 lifecycle (ADR-040 T1)
+
+    /// 새 터미널 세션 추가 + 활성화. 워크스페이스 path 자동.
+    public func createTerminalSession(label: String? = nil) {
+        guard let workspace = currentWorkspace else { return }
+        let nextLabel = label ?? TerminalSession.defaultLabel(index: terminalSessions.count)
+        let session = TerminalSession(
+            label: nextLabel,
+            workingDirectory: workspace.directoryPath
+        )
+        terminalSessions.append(session)
+        activeTerminalSessionId = session.id
+        // max 10 — overflow는 가장 오래된 것 삭제
+        if terminalSessions.count > 10 {
+            terminalSessions.removeFirst()
+        }
+    }
+
+    public func setActiveTerminalSession(_ id: UUID) {
+        guard terminalSessions.contains(where: { $0.id == id }) else { return }
+        activeTerminalSessionId = id
+    }
+
+    /// 세션 close — 활성이 닫히면 인접 세션으로 이동.
+    public func closeTerminalSession(_ id: UUID) {
+        guard let idx = terminalSessions.firstIndex(where: { $0.id == id }) else { return }
+        let wasActive = activeTerminalSessionId == id
+        terminalSessions.remove(at: idx)
+        if wasActive {
+            if idx < terminalSessions.count {
+                activeTerminalSessionId = terminalSessions[idx].id
+            } else if idx > 0 {
+                activeTerminalSessionId = terminalSessions[idx - 1].id
+            } else {
+                activeTerminalSessionId = nil
+            }
+        }
+        // 마지막 세션 close → pane 자동 닫기
+        if terminalSessions.isEmpty {
+            showTerminalPane = false
+        }
+    }
+
+    public func closeActiveTerminalSession() {
+        guard let id = activeTerminalSessionId else { return }
+        closeTerminalSession(id)
+    }
+
+    public func renameTerminalSession(_ id: UUID, to newLabel: String) {
+        let trimmed = newLabel.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty,
+              let idx = terminalSessions.firstIndex(where: { $0.id == id }) else { return }
+        terminalSessions[idx].label = trimmed
+    }
+
+    public func selectAdjacentTerminalSession(offset: Int) {
+        guard !terminalSessions.isEmpty else { return }
+        let currentIdx = activeTerminalSessionId.flatMap { id in
+            terminalSessions.firstIndex(where: { $0.id == id })
+        } ?? 0
+        let count = terminalSessions.count
+        let nextIdx = ((currentIdx + offset) % count + count) % count
+        activeTerminalSessionId = terminalSessions[nextIdx].id
+    }
+
+    /// 터미널 pane 토글 + 첫 세션 자동 생성.
+    public func toggleTerminalPane() {
+        showTerminalPane.toggle()
+        if showTerminalPane && terminalSessions.isEmpty {
+            createTerminalSession()
+        }
+    }
+
+    /// Command block stdout/stderr를 클립보드에 복사 (ADR-040 T8).
+    public func copyCommandBlockOutput(_ text: String) {
+        #if canImport(AppKit)
+        NSPasteboard.general.clearContents()
+        NSPasteboard.general.setString(text, forType: .string)
+        #endif
+    }
+
+    /// Command block을 agent 메시지에 첨부 — composer에 prepend (ADR-040 T8).
+    public func shareCommandBlockToAgent(_ block: CommandRunner.CommandResult) {
+        let header = block.success
+            ? "[명령 결과 — exit \(block.exitCode)]"
+            : "[명령 실패 — exit \(block.exitCode)]"
+        var sections: [String] = [header, "$ \(block.command)"]
+        if !block.stdout.isEmpty { sections.append("--- stdout ---\n\(block.stdout)") }
+        if !block.stderr.isEmpty { sections.append("--- stderr ---\n\(block.stderr)") }
+        let prefix = sections.joined(separator: "\n\n") + "\n\n"
+        inputText = prefix + inputText
     }
 
     /// Command Runner — workspace dir에서 명령 실행 + block 누적 (ADR-036 C4).

@@ -1,4 +1,7 @@
 import Foundation
+#if canImport(AppKit)
+import AppKit
+#endif
 
 /// 워크스페이스 디렉토리의 파일 시스템 트리 (ADR-037 D1).
 ///
@@ -125,14 +128,75 @@ public actor WorkspaceFileTree {
         return dest.relative
     }
 
-    /// 파일 또는 폴더 삭제 — 폴더는 재귀 삭제.
-    public func delete(_ relativePath: String) async throws {
+    /// 파일 또는 폴더를 다른 부모 디렉토리로 이동 (cross-parent move). ADR-040 F1.
+    /// - parameter newRelativePath: 새 위치의 전체 상대 경로 (예: "src/utils/moved.swift")
+    /// - returns: 정규화된 새 상대 경로
+    @discardableResult
+    public func move(_ relativePath: String, to newRelativePath: String) async throws -> String {
+        let source = try resolveSafePath(relativePath)
+        guard FileManager.default.fileExists(atPath: source.url.path) else {
+            throw FileTreeError.fileNotFound(path: relativePath)
+        }
+        let dest = try resolveSafePath(newRelativePath)
+        if FileManager.default.fileExists(atPath: dest.url.path) {
+            throw FileTreeError.alreadyExists(path: dest.relative)
+        }
+        // 부모 디렉토리 자동 생성
+        let parent = dest.url.deletingLastPathComponent()
+        try FileManager.default.createDirectory(at: parent, withIntermediateDirectories: true)
+        try FileManager.default.moveItem(at: source.url, to: dest.url)
+        return dest.relative
+    }
+
+    /// 파일 또는 폴더 삭제 — 폴더는 재귀 삭제. ADR-040 F2.
+    /// - parameter moveToTrash: true면 macOS 휴지통 (NSWorkspace.recycle) — 복구 가능
+    public func delete(_ relativePath: String, moveToTrash: Bool = false) async throws {
         let safe = try resolveSafePath(relativePath)
         guard FileManager.default.fileExists(atPath: safe.url.path) else {
             throw FileTreeError.fileNotFound(path: relativePath)
         }
-        try FileManager.default.removeItem(at: safe.url)
+        if moveToTrash {
+            #if canImport(AppKit)
+            try await trashViaWorkspace(url: safe.url)
+            #else
+            try FileManager.default.removeItem(at: safe.url)
+            #endif
+        } else {
+            try FileManager.default.removeItem(at: safe.url)
+        }
     }
+
+    /// 다중 파일/폴더 일괄 삭제. ADR-040 F3.
+    /// 일부 실패해도 나머지 진행 + 첫 에러 throw (best-effort).
+    public func deleteMany(_ relativePaths: [String], moveToTrash: Bool = false) async throws {
+        var firstError: Error?
+        for path in relativePaths {
+            do {
+                try await delete(path, moveToTrash: moveToTrash)
+            } catch {
+                if firstError == nil { firstError = error }
+            }
+        }
+        if let firstError {
+            throw firstError
+        }
+    }
+
+    #if canImport(AppKit)
+    /// NSWorkspace.recycle은 main thread에서만 안전 + completion handler — async wrap.
+    @MainActor
+    private func trashViaWorkspace(url: URL) async throws {
+        try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in
+            NSWorkspace.shared.recycle([url]) { _, error in
+                if let error {
+                    continuation.resume(throwing: error)
+                } else {
+                    continuation.resume()
+                }
+            }
+        }
+    }
+    #endif
 
     // MARK: - Path Safety
 
