@@ -141,6 +141,16 @@ struct RootView: View {
                 onCancel: { appModel.terminalRenameTargetId = nil }
             )
         }
+        .sheet(item: editProjectProfileBinding) { workspace in
+            EditProjectProfileSheet(
+                workspace: workspace,
+                onSave: { profile in
+                    Task { await appModel.updateProjectProfile(workspaceId: workspace.id, profile: profile) }
+                    appModel.editingProjectProfileForWorkspaceId = nil
+                },
+                onCancel: { appModel.editingProjectProfileForWorkspaceId = nil }
+            )
+        }
         .sheet(item: $bindable.renameSheetPane) { pane in
             PaneRenameSheet(
                 pane: pane,
@@ -316,6 +326,23 @@ struct RootView: View {
                     },
                     onMoveFile: { oldPath, newPath in
                         Task { await appModel.moveWorkspaceNode(at: oldPath, to: newPath) }
+                    },
+                    // ADR-049 Phase 5 — Harness UI integration
+                    harnessTabEnabled: appModel.preferences.harnessUIEnabled,
+                    harnessEntries: appModel.harness.conversationLog,
+                    harnessEstimatedTokens: appModel.harness.estimatedTotalTokens,
+                    harnessAgentCounts: appModel.harness.agentResponseCounts,
+                    harnessTasks: appModel.harness.tasks,
+                    onHarnessUpdateTaskStatus: { id, status in
+                        appModel.harness.updateTaskStatus(id, status)
+                    },
+                    onHarnessRemoveTask: { id in appModel.harness.removeTask(id) },
+                    onHarnessAddTask: {
+                        appModel.harness.addTask(
+                            title: "새 작업",
+                            description: "수동 추가된 작업 — 편집하세요",
+                            assignedAgent: appModel.currentWorkspace?.agentKind
+                        )
                     }
                 )
                 .task(id: appModel.selectedWorkspaceId) {
@@ -356,6 +383,9 @@ struct RootView: View {
                 appModel.deliverySheetTargetWorkspaceId = ws.id
                 appModel.showDeliverySheet = true
             },
+            onEditProjectProfile: { ws in
+                appModel.presentExclusiveSheet { $0.editingProjectProfileForWorkspaceId = ws.id }
+            },
             userName: "yuminai",
             updateAvailable: false
         )
@@ -389,6 +419,19 @@ struct RootView: View {
             .frame(width: 0, height: 0)
             .accessibilityHidden(true)
             .disabled(appModel.currentWorkspace == nil)
+    }
+
+    /// ADR-049 — ProjectProfile 편집 sheet binding (workspace id ↔ Workspace).
+    private var editProjectProfileBinding: Binding<Workspace?> {
+        Binding(
+            get: {
+                guard let id = appModel.editingProjectProfileForWorkspaceId else { return nil }
+                return appModel.workspaces.first { $0.id == id }
+            },
+            set: { newValue in
+                appModel.editingProjectProfileForWorkspaceId = newValue?.id
+            }
+        )
     }
 
     /// 터미널 라벨 변경 sheet binding helper (Identifiable item ↔ optional UUID 매핑).

@@ -32,6 +32,9 @@ public struct AppPreferences: Sendable, Codable, Hashable {
     /// 적합한 모델로 자동 pane 전환 + handoff prompt 자동 inject.
     /// **default false** — 명시 opt-in (사용자 인지 후 활성)
     public var harnessAutoRoutingEnabled: Bool
+    /// ADR-049 Phase 5 — Inspector에 Harness conversation view + TaskGraph mini-map 표시.
+    /// **default false** — 전통 multi-pane이 default. 옵트인하면 Inspector에 'Harness' 탭 추가.
+    public var harnessUIEnabled: Bool
     /// pane 응답에 `@<other>` mention이 있으면 자동으로 다음 turn dispatch (ADR-034 A1).
     /// **default OFF** — 무한 루프 위험, 명시적 토글 필요.
     public var agentChainEnabled: Bool
@@ -57,6 +60,7 @@ public struct AppPreferences: Sendable, Codable, Hashable {
         telegramRemoteRequiresPlan: Bool = true,
         telegramShowCostInline: Bool = true,
         harnessAutoRoutingEnabled: Bool = false,
+        harnessUIEnabled: Bool = false,
         agentChainEnabled: Bool = false,
         agentChainMaxHops: Int = 1,
         fontSizeOffset: Int = 0,
@@ -78,6 +82,7 @@ public struct AppPreferences: Sendable, Codable, Hashable {
         self.telegramRemoteRequiresPlan = telegramRemoteRequiresPlan
         self.telegramShowCostInline = telegramShowCostInline
         self.harnessAutoRoutingEnabled = harnessAutoRoutingEnabled
+        self.harnessUIEnabled = harnessUIEnabled
         self.agentChainEnabled = agentChainEnabled
         self.agentChainMaxHops = agentChainMaxHops
         self.fontSizeOffset = fontSizeOffset
@@ -103,6 +108,7 @@ public struct AppPreferences: Sendable, Codable, Hashable {
         self.telegramRemoteRequiresPlan = try c.decodeIfPresent(Bool.self, forKey: .telegramRemoteRequiresPlan) ?? true
         self.telegramShowCostInline = try c.decodeIfPresent(Bool.self, forKey: .telegramShowCostInline) ?? true
         self.harnessAutoRoutingEnabled = try c.decodeIfPresent(Bool.self, forKey: .harnessAutoRoutingEnabled) ?? false
+        self.harnessUIEnabled = try c.decodeIfPresent(Bool.self, forKey: .harnessUIEnabled) ?? false
         self.agentChainEnabled = try c.decodeIfPresent(Bool.self, forKey: .agentChainEnabled) ?? false
         self.agentChainMaxHops = try c.decodeIfPresent(Int.self, forKey: .agentChainMaxHops) ?? 1
         self.fontSizeOffset = try c.decodeIfPresent(Int.self, forKey: .fontSizeOffset) ?? 0

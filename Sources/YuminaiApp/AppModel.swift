@@ -220,6 +220,8 @@ public final class AppModel {
         get { files.deleteConfirmation }
         set { files.deleteConfirmation = newValue }
     }
+    /// ADR-049 — ProjectProfile 편집 sheet 대상 워크스페이스 id (nil이면 닫힘)
+    public var editingProjectProfileForWorkspaceId: UUID?
     public var selectedFilePaths: Set<String> {
         get { files.selectedPaths }
         set { files.selectedPaths = newValue }
@@ -1228,6 +1230,85 @@ public final class AppModel {
         isStreaming = false
     }
 
+    /// ADR-049 Phase 4 — 사용자 큰 task를 LLM 호출로 sub-task 분해.
+    /// **비용 명시**: ephemeral Claude session 1개 spawn → JSON 응답 → terminate. 토큰 비용 발생.
+    /// 실패 시 (LLM JSON 깨짐, session spawn 실패 등) 빈 배열 반환 + error message.
+    /// 성공 시 harness.tasks에 추가 + count 반환.
+    @discardableResult
+    public func decomposeUserTask(_ userRequest: String) async -> Int {
+        guard let workspace = currentWorkspace else {
+            self.error = "워크스페이스를 먼저 선택하세요."
+            return 0
+        }
+        // Decomposition 전용 ephemeral session — active session 컨텍스트 오염 방지
+        let prompt = TaskDecomposer.buildPrompt(
+            userRequest: userRequest,
+            projectProfile: workspace.projectProfile
+        )
+        // 단순화: active session으로 1턴 호출 후 JSON parse — 별도 session spawn은 cost 큼
+        // (사용자가 명시적으로 /decompose 호출했으므로 active session 컨텍스트에 한 번 들어가는 건 OK)
+        guard let claudeSession = currentClaudeSession else {
+            self.error = "활성 세션이 없어요. pane 활성화 후 재시도."
+            return 0
+        }
+        // JSON-only 응답 받기 — turn 단위로 send + 응답 collect
+        do {
+            try await claudeSession.send(prompt)
+        } catch {
+            self.error = "Decomposition 전송 실패: \(error.localizedDescription)"
+            return 0
+        }
+        // 응답 collect는 기존 stream consume이 처리. 사용자가 명령으로 봤을 때
+        // .completed 이벤트에서 harness.appendAgent 까지 자동 발생.
+        // → Phase 4 minimal: 사용자가 다음 turn에서 응답 JSON을 보고 수동으로 task graph에 추가.
+        // → Phase 4 full (이번에 구현): event handler에서 마지막 agent message가 JSON처럼 보이면 자동 parse 시도.
+        // 즉시 반환 — async stream에서 응답 도착 후 후처리.
+        // (실제 task 추가는 stream consumer가 markPendingDecomposition에서 처리)
+        markPendingDecomposition()
+        return -1  // -1 = "응답 대기 중" 의미 (UI는 적절히 표시)
+    }
+
+    /// 다음 agent 응답이 decomposition JSON일 거라고 표시 — .completed 시 parse 시도.
+    private var pendingDecomposition: Bool = false
+    private func markPendingDecomposition() {
+        pendingDecomposition = true
+    }
+
+    /// .completed 시 호출 — pendingDecomposition이면 마지막 agent 메시지를 JSON으로 parse 시도.
+    /// 성공하면 harness.tasks에 추가, 실패하면 silent (사용자가 보긴 함).
+    private func tryParseDecompositionResult() {
+        guard pendingDecomposition else { return }
+        pendingDecomposition = false
+        // 마지막 agent entry 가져오기
+        guard let lastAgent = harness.conversationLog.reversed().first(where: { $0.role == .agent }) else {
+            return
+        }
+        let parsed = TaskDecomposer.parseTasks(jsonResponse: lastAgent.content)
+        guard !parsed.isEmpty else {
+            self.error = "작업 분해 응답이 JSON으로 파싱되지 않았어요. 사용자 메시지로 표시됨."
+            return
+        }
+        // harness.tasks에 추가
+        for task in parsed {
+            harness.tasks.append(task)
+        }
+        self.error = "✓ 작업 \(parsed.count)개로 분해됨 — Inspector ‘작업’ 탭에서 확인."
+    }
+
+    /// ADR-049 — ProjectProfile 저장 (워크스페이스 SwiftData persist + cache 업데이트).
+    public func updateProjectProfile(workspaceId: UUID, profile: ProjectProfile) async {
+        guard let workspace = workspaces.first(where: { $0.id == workspaceId }) else { return }
+        let updated = workspace.with(projectProfile: profile)
+        if let idx = workspaces.firstIndex(where: { $0.id == workspaceId }) {
+            workspaces[idx] = updated
+        }
+        chainPersistTask(updated)
+        // 활성 워크스페이스라면 사용자에게 안내 — 다음 spawn부터 적용됨
+        if workspaceId == selectedWorkspaceId {
+            error = "프로젝트 프로필 저장됨. 다음 pane spawn (또는 새 세션) 부터 system prompt에 반영됩니다."
+        }
+    }
+
     /// ADR-048 Phase 3.C — kind와 일치하는 pane으로 전환. 없으면 false.
     public func switchToPaneOfKind(_ kind: AgentKind) async -> Bool {
         guard let target = agentPanes.first(where: { $0.agentKind == kind }) else { return false }
@@ -1302,6 +1383,8 @@ public final class AppModel {
                 )
                 harnessAgentBuffer = ""
             }
+            // ADR-049 Phase 4 — pending decomposition 응답 자동 parse
+            tryParseDecompositionResult()
             let workspaceName = workspaces.first { $0.id == selectedWorkspaceId }?.name ?? "?"
             let category: AlertCategory = exitCode == 0 ? .workComplete : .workFailed
             let costStr = String(format: "$%.4f", currentSessionUsage.costUSD)

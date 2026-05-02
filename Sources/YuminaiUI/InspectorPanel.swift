@@ -80,6 +80,16 @@ public struct InspectorPanel: View {
     public let onCancelInlineRename: () -> Void
     public let onAskAgentToUpdateImports: (String, String) -> Void
     public let onMoveFile: (String, String) -> Void
+    /// ADR-049 Phase 5 — Harness 탭 활성. false면 탭 hide.
+    public let harnessTabEnabled: Bool
+    // ADR-049 Phase 5 — Harness 데이터 + 콜백
+    public let harnessEntries: [ConversationEntry]
+    public let harnessEstimatedTokens: Int
+    public let harnessAgentCounts: [AgentKind: Int]
+    public let harnessTasks: [HarnessTask]
+    public let onHarnessUpdateTaskStatus: (UUID, TaskStatus) -> Void
+    public let onHarnessRemoveTask: (UUID) -> Void
+    public let onHarnessAddTask: () -> Void
 
     // Diff review (ADR-027 phase A3)
     public let pendingChanges: [ChangedFile]
@@ -180,7 +190,15 @@ public struct InspectorPanel: View {
         onCommitInlineRename: @escaping (String, String) -> Void = { _, _ in },
         onCancelInlineRename: @escaping () -> Void = {},
         onAskAgentToUpdateImports: @escaping (String, String) -> Void = { _, _ in },
-        onMoveFile: @escaping (String, String) -> Void = { _, _ in }
+        onMoveFile: @escaping (String, String) -> Void = { _, _ in },
+        harnessTabEnabled: Bool = false,
+        harnessEntries: [ConversationEntry] = [],
+        harnessEstimatedTokens: Int = 0,
+        harnessAgentCounts: [AgentKind: Int] = [:],
+        harnessTasks: [HarnessTask] = [],
+        onHarnessUpdateTaskStatus: @escaping (UUID, TaskStatus) -> Void = { _, _ in },
+        onHarnessRemoveTask: @escaping (UUID) -> Void = { _ in },
+        onHarnessAddTask: @escaping () -> Void = {}
     ) {
         self._tab = tab
         self.usage = usage
@@ -261,6 +279,14 @@ public struct InspectorPanel: View {
         self.onCancelInlineRename = onCancelInlineRename
         self.onAskAgentToUpdateImports = onAskAgentToUpdateImports
         self.onMoveFile = onMoveFile
+        self.harnessTabEnabled = harnessTabEnabled
+        self.harnessEntries = harnessEntries
+        self.harnessEstimatedTokens = harnessEstimatedTokens
+        self.harnessAgentCounts = harnessAgentCounts
+        self.harnessTasks = harnessTasks
+        self.onHarnessUpdateTaskStatus = onHarnessUpdateTaskStatus
+        self.onHarnessRemoveTask = onHarnessRemoveTask
+        self.onHarnessAddTask = onHarnessAddTask
     }
 
     public var body: some View {
@@ -276,12 +302,17 @@ public struct InspectorPanel: View {
 
     private var tabBar: some View {
         HStack(spacing: 0) {
-            ForEach(InspectorTab.allCases, id: \.self) { item in
+            ForEach(visibleTabs, id: \.self) { item in
                 tabButton(item)
             }
         }
         .padding(.horizontal, Theme.Spacing.sm)
         .padding(.vertical, 6)
+    }
+
+    /// ADR-049 — harness 탭은 preference 활성 시만 표시.
+    private var visibleTabs: [InspectorTab] {
+        InspectorTab.allCases.filter { $0 != .harness || harnessTabEnabled }
     }
 
     private func tabButton(_ item: InspectorTab) -> some View {
@@ -384,6 +415,24 @@ public struct InspectorPanel: View {
                     onConfigure: onConfigureDelivery
                 )
                 .frame(minHeight: 160, idealHeight: 240)
+            }
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+        case .harness:
+            // ADR-049 Phase 5 — Harness 통합 view + TaskGraph mini-map
+            VSplitView {
+                HarnessConversationView(
+                    entries: harnessEntries,
+                    estimatedTotalTokens: harnessEstimatedTokens,
+                    agentResponseCounts: harnessAgentCounts
+                )
+                .frame(minHeight: 200)
+                TaskGraphMiniMap(
+                    tasks: harnessTasks,
+                    onUpdateStatus: onHarnessUpdateTaskStatus,
+                    onRemove: onHarnessRemoveTask,
+                    onAddTask: onHarnessAddTask
+                )
+                .frame(minHeight: 140, idealHeight: 220)
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
@@ -674,7 +723,7 @@ public struct InspectorPanel: View {
 }
 
 public enum InspectorTab: String, CaseIterable, Sendable, Equatable {
-    case context, notes, files, changes
+    case context, notes, files, changes, harness
 
     public var label: String {
         switch self {
@@ -682,6 +731,7 @@ public enum InspectorTab: String, CaseIterable, Sendable, Equatable {
         case .notes: return "노트"
         case .files: return "파일"
         case .changes: return "변경"
+        case .harness: return "Harness"
         }
     }
 
@@ -691,6 +741,7 @@ public enum InspectorTab: String, CaseIterable, Sendable, Equatable {
         case .notes: return "doc.text"
         case .files: return "folder"
         case .changes: return "arrow.triangle.2.circlepath"
+        case .harness: return "sparkles.rectangle.stack"
         }
     }
 }

@@ -14,6 +14,7 @@ public struct SidebarView: View {
     public let onOpenSettings: () -> Void
     public let onToggleTelegramBind: (Workspace) -> Void
     public let onConfigureDelivery: (Workspace) -> Void
+    public let onEditProjectProfile: (Workspace) -> Void
     public let userName: String
     public let updateAvailable: Bool
 
@@ -29,6 +30,7 @@ public struct SidebarView: View {
         onOpenSettings: @escaping () -> Void = {},
         onToggleTelegramBind: @escaping (Workspace) -> Void = { _ in },
         onConfigureDelivery: @escaping (Workspace) -> Void = { _ in },
+        onEditProjectProfile: @escaping (Workspace) -> Void = { _ in },
         userName: String = "yuminai",
         updateAvailable: Bool = false
     ) {
@@ -43,6 +45,7 @@ public struct SidebarView: View {
         self.onOpenSettings = onOpenSettings
         self.onToggleTelegramBind = onToggleTelegramBind
         self.onConfigureDelivery = onConfigureDelivery
+        self.onEditProjectProfile = onEditProjectProfile
         self.userName = userName
         self.updateAvailable = updateAvailable
     }
@@ -114,7 +117,8 @@ public struct SidebarView: View {
                                 onSelect: { selectedId = workspace.id },
                                 onDelete: { onDelete(workspace) },
                                 onToggleTelegramBind: { onToggleTelegramBind(workspace) },
-                                onConfigureDelivery: { onConfigureDelivery(workspace) }
+                                onConfigureDelivery: { onConfigureDelivery(workspace) },
+                                onEditProjectProfile: { onEditProjectProfile(workspace) }
                             )
                         }
                     }
@@ -222,6 +226,7 @@ struct WorkspaceItemRow: View {
     let onDelete: () -> Void
     let onToggleTelegramBind: () -> Void
     let onConfigureDelivery: () -> Void
+    let onEditProjectProfile: () -> Void
 
     @State private var hovering = false
 
@@ -293,6 +298,10 @@ struct WorkspaceItemRow: View {
             Button("Delivery 자동화 설정…",
                    systemImage: "checkmark.shield",
                    action: onConfigureDelivery)
+            // ADR-049 — ProjectProfile 편집
+            Button("프로젝트 프로필 편집…",
+                   systemImage: "rectangle.stack.fill",
+                   action: onEditProjectProfile)
             Divider()
             Button("지우기", role: .destructive, action: onDelete)
         }

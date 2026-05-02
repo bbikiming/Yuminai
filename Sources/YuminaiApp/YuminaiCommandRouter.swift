@@ -72,6 +72,9 @@ public final class YuminaiCommandRouter: TelegramCommandRouter, @unchecked Senda
         case "/model":
             // ADR-048 Phase 3.C — manual model override (claude/codex)
             return await modelCommand(arg)
+        case "/decompose":
+            // ADR-049 Phase 4 — 사용자 큰 task LLM 자동 분해
+            return await decomposeCommand(arg)
         default:
             return "알 수 없는 명령: \(cmd)\n/help로 사용 가능한 명령을 확인해요."
         }
@@ -230,6 +233,17 @@ public final class YuminaiCommandRouter: TelegramCommandRouter, @unchecked Senda
         return "‘\(kind.shortLabel)’ pane이 없어요. PC에서 +로 pane 추가 후 재시도."
     }
 
+    /// ADR-049 Phase 4 — 큰 task를 LLM 호출로 sub-task 분해.
+    /// 사용법: /decompose <설명>
+    private func decomposeCommand(_ arg: String) async -> String? {
+        guard !arg.isEmpty else {
+            return "사용법: /decompose <작업 설명>\n예: /decompose 로그인 페이지 만들고 인증 API 연동\n→ Claude가 sub-task로 분해해서 task graph에 추가."
+        }
+        guard let model = appModel else { return "Yuminai 연결 안 됨" }
+        let _ = await model.decomposeUserTask(arg)
+        return "📊 작업 분해 요청 전송됨. 잠시 후 응답 + task graph 업데이트가 오면 표시됩니다.\n응답이 JSON 형식이 아니면 일반 메시지로 처리되니 명확한 분해 요청이 좋아요."
+    }
+
     /// ADR-045 M8 — 변경 파일 목록만 (요약).
     private func changesCommand() async -> String? {
         guard let model = appModel else { return "Yuminai 연결 안 됨" }
@@ -312,6 +326,7 @@ public final class YuminaiCommandRouter: TelegramCommandRouter, @unchecked Senda
     /diff         — 보류 중인 변경 diff (chunk 보존)
     /changes      — 변경 파일 목록만 요약
     /model <name> — 모델 전환 (claude/codex/auto/status)
+    /decompose <설명> — 큰 task를 sub-task로 LLM 자동 분해
 
     /start        — 처음 사용자용 안내
     /help         — 이 도움말

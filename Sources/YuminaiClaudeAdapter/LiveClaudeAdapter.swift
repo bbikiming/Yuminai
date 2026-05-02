@@ -46,13 +46,22 @@ public final actor LiveClaudeAdapter: ClaudeAdapter {
             throw YuminaiError.claudeSpawnFailed(reason: "워크스페이스 디렉토리 없음: \(workspace.directoryPath)")
         }
 
+        // ADR-049 — projectProfile을 system prompt appendix로 자동 inject (Claude --append-system-prompt)
+        // Anthropic prompt caching 활용 — 같은 system context는 cache 적용됨.
+        var combinedExtraArgs = extraArguments
+        let profileSummary = workspace.projectProfile.systemContextSummary()
+        if profileSummary != "(프로필 미설정)" {
+            let appendix = "프로젝트 컨텍스트: \(profileSummary)\n적절한 idiom과 framework convention을 따라주세요."
+            combinedExtraArgs.append(contentsOf: ["--append-system-prompt", appendix])
+        }
+
         return try LiveClaudeStreamSession(
             claudePath: claudePath,
             workspaceURL: workspaceURL,
             environment: environment,
             sessionId: UUID(),
             settings: sessionSettings,
-            extraArguments: extraArguments
+            extraArguments: combinedExtraArgs
         )
     }
 

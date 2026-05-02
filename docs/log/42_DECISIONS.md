@@ -1,6 +1,136 @@
 # Decisions Log (ADR-lite)
 
-> 최신: ADR-048 (Harness Phase 3 자동 routing + ProjectProfile)
+> 최신: ADR-049 (Harness Phase 4-5 — TaskGraph 자동 분해 + 단일 conversation UI + ProjectProfile 편집/inject)
+
+---
+
+## ADR-049 — Harness Phase 4-5 + ProjectProfile 편집/inject
+
+- **날짜**: 2026-05-02
+- **상태**: Accepted
+- **결정**: ADR-047/048 후속 — Phase 4 (TaskGraph 자동 분해) + Phase 5 (HarnessUI) + 두 polish (ProjectProfile 편집 sheet, --append-system-prompt 자동 inject) 일괄
+
+### 1. --append-system-prompt 자동 inject (Claude only)
+
+`LiveClaudeAdapter.spawn` 시 `workspace.projectProfile.systemContextSummary()`를 `--append-system-prompt` 인자로 자동 추가.
+- "프로젝트 컨텍스트: 웹 / TypeScript / Next.js + Tailwind / 백엔드 / Jest 테스트\n적절한 idiom과 framework convention을 따라주세요."
+- profile이 (프로필 미설정) 이면 skip
+- Anthropic prompt caching 활용 — 같은 system context는 cache 적용
+- Codex CLI는 `--append-system-prompt` 없음 → 이번 라운드 skip (별도 RFC 필요)
+
+### 2. EditProjectProfileSheet (워크스페이스 우클릭 → 편집)
+
+신규 `EditProjectProfileSheet` (App):
+- workspace 인자로 init → 기존 profile 미리채움
+- 7 fields: platform / 주요 언어 / 백엔드 toggle/언어 / 프레임워크(쉼표) / 테스트 / 비고
+- "디스크에서 다시 감지" 버튼 — `ProjectProfileDetector.detect(at:)` 재실행 + 폼 update + hint
+- ⌘↵ 저장 / Esc 취소
+
+SidebarView 컨텍스트 메뉴에 "프로젝트 프로필 편집…" 추가 — `appModel.editingProjectProfileForWorkspaceId`로 sheet trigger.
+
+`AppModel.updateProjectProfile(workspaceId:profile:)` — workspace immutable update + chainPersistTask + 사용자 안내 ("다음 spawn부터 적용").
+
+### 3. Phase 4 — TaskGraph 자동 분해
+
+**`TaskDecomposer` (Core)**:
+- `buildPrompt(userRequest:projectProfile:)` — 사용자 요청 + ProjectProfile + JSON schema 가이드
+- `parseTasks(jsonResponse:defaultAgent:)` — LLM JSON 응답 → `[HarnessTask]`
+  - 1차 pass: index → UUID 매핑
+  - 2차 pass: HarnessTask 생성 (dependencies는 index → UUID 변환)
+  - ```json fence 추출 (LLM이 종종 wrap)
+  - invalid JSON / agentRecommendation invalid → 빈 배열 / default fallback
+
+**AppModel 통합**:
+- `decomposeUserTask(_:)` — active session에 prompt 전송 후 `pendingDecomposition=true`
+- `.completed` 이벤트 시 `tryParseDecompositionResult()` — 마지막 agent entry parse
+- 성공: `harness.tasks` 추가 + 안내 ("✓ 작업 N개로 분해됨")
+- 실패: silent (응답은 일반 메시지로 표시)
+
+**`/decompose <설명>` Telegram 명령**:
+- 모바일에서 큰 task 분해 요청 → PC에서 task graph 자동 추가
+- 안내 메시지로 응답 (실제 결과는 inspector에 표시)
+
+### 4. Phase 5 — HarnessConversationView + TaskGraphMiniMap
+
+**`HarnessConversationView` (UI)**:
+- SharedConversationLog 기반 단일 timeline
+- header: "Harness 통합 대화" + 모델별 응답 횟수 (AgentBadge + count) + 누적 토큰
+- entry row 분기:
+  - user: 우측 정렬 + accentMuted 배경 (chat bubble)
+  - agent: 좌측 정렬 + AgentBadge (Claude 오렌지 / Codex 그린) + tokenCount 표시
+  - system: italic gray (handoff/transition note)
+- 빈 상태: EmptyStateHint
+- 자동 scroll to last entry on append
+
+**`AgentBadge` (UI)**:
+- public, size 변형 (small/medium)
+- claude: `c.circle.fill` 오렌지 / codex: code icon 그린
+
+**`TaskGraphMiniMap` (UI)**:
+- header: "작업 (N)" + 추가 버튼 + HelpHint
+- task row: status icon + title + AgentBadge + description preview + output (있으면)
+- 의존성 있으면 들여쓰기 + arrow.turn.down.right
+- isReady 체크로 status icon 미세 차이 (circle.dashed vs circle.dotted)
+- hover 시 메뉴 (status 변경 + 삭제)
+
+**InspectorPanel 통합**:
+- `InspectorTab.harness` 신규 case (`sparkles.rectangle.stack` 아이콘)
+- `harnessTabEnabled` flag — false면 visibleTabs에서 제외
+- VSplitView로 conversation view (위) + mini-map (아래)
+- 8 신규 callback (harnessEntries/Tokens/Counts/Tasks + onHarness*)
+
+### 5. AppPreferences harness toggles
+
+- `harnessAutoRoutingEnabled` (이전 ADR-048에서 도입)
+- `harnessUIEnabled` 신규 — Inspector Harness 탭 표시 여부
+- 둘 다 default false (opt-in)
+- Codable backward-compat 유지
+
+**SettingsView "Harness (다중 모델 오케스트레이션)" 섹션**:
+- 자동 routing toggle + HelpHint (비용 추정)
+- Harness 통합 view toggle + HelpHint
+
+### 격리
+
+- Core: ProjectProfile + TaskDecomposer (LLM 호출 X — pure functions)
+- App: AppModel.decomposeUserTask + tryParseDecompositionResult orchestration / EditProjectProfileSheet
+- UI: HarnessConversationView + TaskGraphMiniMap + AgentBadge + InspectorPanel.harness 탭
+- Adapter: LiveClaudeAdapter.spawn에 --append-system-prompt 추가
+
+### 결과
+
+- 신규 파일 5개:
+  - YuminaiCore/TaskDecomposer.swift (~120줄)
+  - YuminaiApp/EditProjectProfileSheet.swift (~180줄)
+  - YuminaiUI/HarnessConversationView.swift (~180줄)
+  - YuminaiUI/TaskGraphMiniMap.swift (~150줄)
+  - Tests/YuminaiCoreTests/TaskDecomposerTests.swift (8 tests)
+- 수정 파일 8개:
+  - YuminaiCore/AppPreferences.swift — harnessUIEnabled
+  - YuminaiClaudeAdapter/LiveClaudeAdapter.swift — --append-system-prompt 자동 inject
+  - YuminaiApp/AppModel.swift — decomposeUserTask + updateProjectProfile + editingProjectProfileForWorkspaceId
+  - YuminaiApp/RootView.swift — sheet binding + InspectorPanel harness props
+  - YuminaiApp/YuminaiCommandRouter.swift — /decompose 명령
+  - YuminaiUI/InspectorPanel.swift — InspectorTab.harness + visibleTabs filter
+  - YuminaiUI/SidebarView.swift — onEditProjectProfile + 컨텍스트 메뉴
+  - YuminaiUI/SettingsView.swift — Harness 섹션
+- 테스트 8 신규 (331→339 통과):
+  - TaskDecomposerTests: buildPrompt 3 / parseTasks 5 (valid/fence/invalid/invalidAgent/empty)
+- 빌드 8.99s clean
+
+### Phase 6+ 미구현 (다음 라운드 후보)
+
+- **TaskGraph 자동 진행**: ready task → 자동으로 active pane에 dispatch (사용자 confirm 후)
+- **Multi-agent 병렬 작업**: 두 pane에서 dependency 없는 task 동시 진행
+- **TaskGraph 영속화**: SwiftData에 conversationLog + tasks 영속 (현재는 메모리만)
+- **Codex --append-system-prompt 대안**: prompt prefix injection 또는 init message
+- **HarnessUI inline mode**: 메인 chat area를 통째로 harness view로 (현재는 inspector 탭)
+
+### 재검토
+
+- TaskDecomposer JSON 응답 정확도 (실제 사용 데이터 후 schema 조정)
+- Harness 탭이 실제 사용자 워크플로에 적합한지 vs 기존 multi-pane만으로 충분한지
+- `--append-system-prompt`가 token cache hit rate 개선했는지 측정
 
 ---
 

@@ -424,6 +424,24 @@ public struct SettingsView: View {
                 }
             }
 
+            // ADR-049 — Harness 토글
+            Section {
+                Toggle(isOn: $preferences.harnessAutoRoutingEnabled) {
+                    LabelWithHint(
+                        "자동 routing (모델 선택)",
+                        hint: "사용자 입력 keyword 분석 (한국어/영어) 후 적합한 모델로 자동 pane 전환. 예: ‘구현해줘’ → Codex / ‘리뷰’ → Claude. 전환 시 handoff prompt가 자동 inject돼 새 모델이 컨텍스트 catch up. 비용: 모델 전환마다 handoff prompt만큼 토큰 추가 (~4K tokens)."
+                    )
+                }
+                Toggle(isOn: $preferences.harnessUIEnabled) {
+                    LabelWithHint(
+                        "Harness 통합 view (Inspector)",
+                        hint: "Inspector에 ‘Harness’ 탭 추가 — 모든 모델 응답을 단일 timeline으로 + agent badge + TaskGraph mini-map. 전통 multi-pane은 그대로 유지."
+                    )
+                }
+            } header: {
+                Text("Harness (다중 모델 오케스트레이션)")
+            }
+
             // Agent chain (ADR-034 A1)
             Section {
                 Toggle(isOn: $preferences.agentChainEnabled) {

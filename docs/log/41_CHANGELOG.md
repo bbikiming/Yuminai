@@ -4,6 +4,43 @@
 
 ## [Unreleased] — 2026-05-02
 
+### Added — Harness Phase 4-5 (자동 분해 + 통합 UI) + ProjectProfile 편집/inject (ADR-049)
+
+**1. --append-system-prompt 자동 inject (Claude)**:
+- `LiveClaudeAdapter.spawn` 시 `workspace.projectProfile.systemContextSummary()`를 `--append-system-prompt` 인자로 자동
+- Anthropic prompt caching 활용 — 같은 system context cache 적용
+- "프로필 미설정"이면 skip
+
+**2. EditProjectProfileSheet (워크스페이스 편집)**:
+- 신규 `EditProjectProfileSheet` (App) — 7 fields + 디스크 재감지 버튼
+- SidebarView 컨텍스트 메뉴 "프로젝트 프로필 편집…" 추가
+- `AppModel.updateProjectProfile(workspaceId:profile:)` — immutable update + chainPersistTask
+
+**3. Phase 4 — TaskGraph 자동 분해**:
+- `TaskDecomposer` (Core) — buildPrompt + parseTasks (JSON schema)
+- ` ```json fence` 추출 + invalid JSON / agent fallback
+- `AppModel.decomposeUserTask(_:)` + `tryParseDecompositionResult` (.completed 후 자동 parse)
+- `/decompose <설명>` Telegram 명령
+
+**4. Phase 5 — HarnessConversationView + TaskGraphMiniMap**:
+- `HarnessConversationView` (UI) — SharedLog 기반 단일 timeline
+  - user/agent/system role별 layout (chat bubble + AgentBadge + token count)
+  - header에 모델별 응답 카운트 + 누적 토큰
+- `AgentBadge` public — claude (오렌지) / codex (그린)
+- `TaskGraphMiniMap` (UI) — task row + status icon + 의존성 들여쓰기 + hover 메뉴
+- `InspectorTab.harness` 신규 (`sparkles.rectangle.stack`)
+- `harnessTabEnabled` flag로 visibleTabs filter
+- VSplitView (conversation 위 / mini-map 아래)
+
+**5. AppPreferences 추가**:
+- `harnessUIEnabled` (default false, opt-in)
+- SettingsView "Harness (다중 모델 오케스트레이션)" 섹션 — 2 toggle (autoRouting + UI)
+
+**테스트 8 신규 (331→339 통과)**:
+- TaskDecomposerTests (8): buildPrompt 3 + parseTasks 5
+
+빌드 8.99s clean.
+
 ### Added — Harness Phase 3 (자동 routing) + ProjectProfile (ADR-048)
 
 **Phase 3 — 자동 routing + handoff inject**:
