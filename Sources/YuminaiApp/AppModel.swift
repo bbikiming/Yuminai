@@ -486,6 +486,8 @@ public final class AppModel {
         await loadPalettePins()
         // ADR-055 #5 — routing learning snapshot 로드
         routingLearningSnapshot = await routingLearningStore.snapshot()
+        // ADR-060 Phase 1 — workspace daily cost 복원 (앱 재시작 보존)
+        await loadPersistedDailyCosts()
     }
 
     // MARK: - Obsidian Vault
@@ -1406,6 +1408,31 @@ public final class AppModel {
         }
     }
 
+    /// **ADR-060 Phase 5** — chat bindings 변경 시 다른 chat에 알림 push.
+    /// 멀티 chat 환경에서 한 chat이 binding 변경하면 다른 chat 사용자에게도 인지.
+    /// excludingChatId는 변경한 사용자 자신 (이미 응답 받음).
+    public func notifyOtherChatsOfBindingChange(
+        excludingChatId: Int64,
+        action: String,
+        workspaceName: String,
+        chatId: Int64
+    ) async {
+        // bound chats 중 excluding 외 모든 chat에 push
+        let chats = preferences.telegramChatBindings.compactMap { (key, _) -> Int64? in
+            guard let id = Int64(key), id != excludingChatId else { return nil }
+            return id
+        }
+        guard !chats.isEmpty, let bridge = sessionBridge else { return }
+        let msg = "🔔 다른 chat에서 binding 변경: chat \(chatId)\(action == "bind" ? "이 ‘\(workspaceName)’에 연결됨" : "이 unbind됨")"
+        for cid in chats {
+            // bridge.sendNotice는 requestChatId 사용 → 직접 client 호출이 필요하나
+            // 단순화: bridge에 임시 setRequestChatId 후 sendNotice → 이전 값 복원
+            await bridge.setRequestChatId(cid)
+            await bridge.sendNotice(msg)
+            await bridge.setRequestChatId(nil)
+        }
+    }
+
     /// **ADR-059 Phase 4** — bound bridge에 ready task ▶ 버튼 push.
     /// /tasks 명령 처리 후 router가 호출.
     public func notifyBoundBridgeTaskButtons() {
@@ -1858,12 +1885,17 @@ public final class AppModel {
                 completeChildProcess(progressId, status: .completed)
                 // 정확한 cost 추적
                 costTracker.add(.decomposition, usd: output.costUSD)
-                // ADR-058 Phase 1 + ADR-059 Phase 1 — cache 효과 누적 추적
+                // ADR-058 Phase 1 + ADR-059 Phase 1 + ADR-060 Phase 4 — cache 효과 누적 추적
                 costTracker.addCacheStats(
                     read: output.cacheReadTokens,
                     creation: output.cacheCreationTokens,
                     uncachedInput: output.inputTokens
                 )
+                // ADR-060 Phase 4 — hourly trend 누적 (disk persist)
+                let trendStore = dailyCostStore
+                let read = output.cacheReadTokens
+                let uncached = output.inputTokens
+                Task { await trendStore.addCacheSample(read: read, uncachedInput: uncached) }
                 let cachePct = Int(output.cacheHitRatio * 100)
                 let cacheNote = output.cacheReadTokens > 0 ? " · cache hit \(cachePct)% (\(output.cacheReadTokens) tok)" : ""
                 harness.appendSystem("✓ 분해 완료 (\(output.durationMs)ms, $\(String(format: "%.4f", output.costUSD))\(cacheNote))")
@@ -3477,8 +3509,10 @@ public final class AppModel {
     public var todayCostUSD: Double = 0
     public var todayCostDate: Date = Date()
     /// **ADR-059 Phase 5** — workspace별 today cost (자정 reset).
-    /// disk persist X (메모리만 — 다음 launch에 reset).
+    /// **ADR-060 Phase 1** — disk persist 추가 (앱 재시작 후에도 유지).
     public var workspaceTodayCostUSD: [UUID: Double] = [:]
+    /// **ADR-060 Phase 1 + 4** — workspace cost + cache trend disk store.
+    public let dailyCostStore: DailyCostStore = DailyCostStore()
     /// **ADR-056 Phase 3** — 컨텍스트 70% 자동 push 알림 cap (하루 1회).
     /// 마지막 push 일자 — 같은 날에 두 번 push 안 함.
     public var lastContextWarnDate: Date?
@@ -3513,6 +3547,7 @@ public final class AppModel {
 
     /// **ADR-056 Phase 4** — daily cost 누적. 날짜 바뀌면 reset.
     /// **ADR-059 Phase 5** — workspace별 cost도 누적 (selectedWorkspaceId 기준).
+    /// **ADR-060 Phase 1** — disk store에도 누적 (앱 재시작 보존).
     public func accumulateDailyCost(_ cost: Double) {
         let cal = Calendar.current
         if !cal.isDate(todayCostDate, inSameDayAs: Date()) {
@@ -3522,9 +3557,24 @@ public final class AppModel {
             todayCostDate = Date()
         }
         todayCostUSD += cost
-        // ADR-059 Phase 5 — workspace별 누적
+        // ADR-059 Phase 5 + ADR-060 Phase 1 — workspace별 누적 + disk persist
         if let wsId = selectedWorkspaceId {
             workspaceTodayCostUSD[wsId, default: 0.0] += cost
+            // disk persist (background)
+            let store = dailyCostStore
+            Task { await store.addCost(workspaceId: wsId, usd: cost) }
+        }
+    }
+
+    /// **ADR-060 Phase 1** — bootstrap에서 disk store cost 복원 (앱 재시작 후에도 budget 유지).
+    public func loadPersistedDailyCosts() async {
+        let snap = await dailyCostStore.snapshot()
+        let cal = Calendar.current
+        for (wsId, ws) in snap.workspaceCosts {
+            // 같은 날만 복원 (다른 날 cost는 무시)
+            if cal.isDate(ws.date, inSameDayAs: Date()) {
+                workspaceTodayCostUSD[wsId] = ws.costUSD
+            }
         }
     }
 

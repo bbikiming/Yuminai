@@ -145,11 +145,23 @@ public final class YuminaiCommandRouter: TelegramCommandRouter, @unchecked Senda
 
         // ADR-045 R2.H3 — bind한 chat을 자동으로 default response chat으로 설정
         // ADR-058 Phase 3 — chat-specific binding도 동시 등록 (multi-chat 지원)
+        // ADR-060 Phase 5 — 다른 chat 사용자에게 변경 알림 push
+        let chatKey = String(requestChatId)
+        let previousBinding: UUID? = await MainActor.run { model.preferences.telegramChatBindings[chatKey] }
         await model.bindTelegramWorkspace(workspace.id, defaultChatId: requestChatId)
         await MainActor.run {
-            model.preferences.telegramChatBindings[String(requestChatId)] = workspace.id
+            model.preferences.telegramChatBindings[chatKey] = workspace.id
         }
         await model.savePreferences()
+        // ADR-060 Phase 5 — 다른 chat에 binding 변경 알림 (자기 자신 제외)
+        if previousBinding != workspace.id {
+            await model.notifyOtherChatsOfBindingChange(
+                excludingChatId: requestChatId,
+                action: "bind",
+                workspaceName: workspace.name,
+                chatId: requestChatId
+            )
+        }
         return "✓ ‘\(workspace.name)’에 이 chat 연결됐어요. (chat ID \(requestChatId) ↔ \(workspace.name))\n다른 chat에서 다른 워크스페이스를 binding하면 멀티 chat 운영 가능."
     }
 
@@ -337,11 +349,37 @@ public final class YuminaiCommandRouter: TelegramCommandRouter, @unchecked Senda
               · 세션 total: $\(String(format: "%.4f", snapshot.total))
 
             사용법:
-              /budget turn <USD>  — per-turn cap (LLM에 직접 전달)
-              /budget day <USD>   — per-day cap (외부 turn 차단)
-              /budget turn off    — per-turn cap 해제
-              /budget day off     — per-day cap 해제
+              /budget turn <USD>          — per-turn cap (LLM 직접)
+              /budget day <USD>           — global per-day cap
+              /budget workspace <이름> <USD> — workspace별 cap (ADR-060)
+              /budget [turn|day|workspace <이름>] off — 해제
             """
+        }
+
+        // ADR-060 Phase 3 — /budget workspace <name> <USD> 처리
+        if parts.count >= 3 && parts[0].lowercased() == "workspace" {
+            let wsName = parts[1]
+            let valueStr = parts[2].lowercased()
+            // workspace lookup
+            let ws: Workspace? = await MainActor.run {
+                let lower = wsName.lowercased()
+                if let exact = model.workspaces.first(where: { $0.name.lowercased() == lower }) {
+                    return exact
+                }
+                return model.workspaces.first { $0.name.lowercased().contains(lower) }
+            }
+            guard let workspace = ws else {
+                return "‘\(wsName)’과 일치하는 워크스페이스가 없어요. /list로 확인."
+            }
+            if valueStr == "off" {
+                await MainActor.run { model.preferences.workspaceDailyBudgetsUSD.removeValue(forKey: workspace.id) }
+                await model.savePreferences()
+                return "💼 ‘\(workspace.name)’ workspace per-day cap 해제됨."
+            }
+            guard let v = Double(valueStr), v > 0 else { return "잘못된 값: ‘\(valueStr)’" }
+            await MainActor.run { model.preferences.workspaceDailyBudgetsUSD[workspace.id] = v }
+            await model.savePreferences()
+            return "💼 ‘\(workspace.name)’ workspace per-day cap: $\(String(format: "%.4f", v))/일"
         }
 
         // /budget turn|day <value>

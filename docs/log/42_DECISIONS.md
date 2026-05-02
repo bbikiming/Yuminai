@@ -1,6 +1,69 @@
 # Decisions Log (ADR-lite)
 
-> 최신: ADR-059 (cache dashboard + Settings UI + ratio bar + task buttons + workspace budget)
+> 최신: ADR-060 (workspace cost persist + cache trend + workspace budget command + bind 알림)
+
+---
+
+## ADR-060 — 영속성 + 시계열 + multi-chat 알림: 5 phases
+
+- **날짜**: 2026-05-03
+- **상태**: Accepted
+
+### 결정
+
+#### Phase 1: workspace budget disk persist
+- `Sources/YuminaiCore/DailyCostStore.swift` 신설 (actor + UserDefaults JSON)
+- `addCost(workspaceId:usd:)` — 자정 자동 reset
+- `cost(workspaceId:)` — 같은 날 cost 조회
+- AppModel: `accumulateDailyCost`에서 disk store도 누적
+- `loadPersistedDailyCosts()` bootstrap에서 호출 (앱 재시작 후 budget 보존)
+
+#### Phase 2: routing learning history (시간순 trend)
+- `RoutingDecisionLogSheet.cancelTrendCard` 추가:
+  - 최근 50개 결정 dot bar (color: applied=green / cancelled=orange / skipped=gray / failed=red)
+  - 최근 10개 cancel 비율 표시
+- legend 4개 색 표시
+- 단순 시각화 (line chart 대신 sequence dot — 가벼움)
+
+#### Phase 3: /budget workspace Telegram 명령
+- `/budget workspace <name> <USD>` — workspace별 cap 설정
+- `/budget workspace <name> off` — 해제
+- workspace fuzzy lookup (이름 부분 매칭)
+- help text 업데이트
+
+#### Phase 4: cache hit hourly trend
+- `DailyCostStore.cacheTrend: [CacheHitSample]` 추가
+- `addCacheSample(read:uncachedInput:)` — hourly bucket 자동 누적
+- 24시간 cap (이상은 prune)
+- AppModel: ChildProcess 호출 후 자동 trend 추가
+- 향후 chart view (별도 ADR)
+
+#### Phase 5: chat bindings 변경 알림 push
+- `AppModel.notifyOtherChatsOfBindingChange(...)` helper
+- `/bind` 명령에서 자기 자신 외 다른 chat에 push
+- 형식: "🔔 다른 chat에서 binding 변경: chat <id>이 ‘<workspace>’에 연결됨"
+- 멀티 chat 환경에서 각 사용자가 binding 변경 인지
+
+### 적용 결과
+```
+swift build              → Build complete! (10.15s)
+swift test               → 430/430 passed (89 suites, +5 new DailyCostStore tests)
+새 파일                  → 2 (DailyCostStore.swift, DailyCostStoreTests.swift)
+수정 파일                → 4 (AppModel, RoutingDecisionLogSheet, YuminaiCommandRouter)
+```
+
+### 트레이드오프
+- **cache trend hour bucket**: 같은 hour 호출 누적. 시간 분해능은 1시간 (충분).
+- **dot bar 50개**: line chart는 SwiftUI Charts framework 의존이라 단순 Rectangle dot 사용. 시각적 직관 충분.
+- **chat binding 알림**: 멀티 chat이 활성된 환경에서만 의미 있음. 단일 chat은 noop.
+- **workspace cost disk persist**: 앱 재시작 후에도 cap 유지 — 자정 reset 정확.
+
+### 향후 (ADR-061 후보)
+- SwiftUI Charts 도입 (line chart)
+- workspace별 cache hit 분리
+- chat binding 변경 audit log
+- routing learning 자동 unmute (오래된 mute는 점차 weight ↓)
+- cache trend chart view (시계열 line chart)
 
 ---
 

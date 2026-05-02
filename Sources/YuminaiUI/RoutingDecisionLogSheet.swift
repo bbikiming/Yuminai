@@ -124,8 +124,76 @@ public struct RoutingDecisionLogSheet: View {
                 statsCard(title: "Task Kind 분포", rows: taskKindStats)
                 statsCard(title: "Keyword 빈도 (Top 10)", rows: keywordStats)
                 statsCard(title: "Fingerprint 빈도 (반복되는 같은 종류 task)", rows: fingerprintStats)
+                // ADR-060 Phase 2 — 시간순 cancel trend (최근 N개)
+                cancelTrendCard
             }
             .padding(Theme.Spacing.lg)
+        }
+    }
+
+    /// **ADR-060 Phase 2** — 최근 50개 결정의 cancel/applied 시간순 추이.
+    /// keyword별 line chart 대신 단순 sequence (운영 부담 ↓).
+    private var cancelTrendCard: some View {
+        let recent = Array(decisions.prefix(50)).reversed()  // 시간순 (오래된 → 최근)
+        return VStack(alignment: .leading, spacing: 6) {
+            Text("최근 50개 결정 시간순 추이 (ADR-060 Phase 2)")
+                .font(Theme.Typography.body.weight(.semibold))
+                .foregroundStyle(Theme.Color.text)
+            if recent.isEmpty {
+                Text("(아직 결정 없음)")
+                    .font(Theme.Typography.small)
+                    .foregroundStyle(Theme.Color.textSecondary)
+            } else {
+                // 각 결정을 dot로 표시 (color = outcome)
+                HStack(spacing: 1) {
+                    ForEach(Array(recent.enumerated()), id: \.element.id) { _, record in
+                        outcomeDot(record.outcome)
+                            .help("\(record.matchedKeyword ?? record.taskKindRaw) → \(record.selectedAgentRaw) (\(record.outcome.rawValue))")
+                    }
+                    Spacer()
+                }
+                HStack(spacing: 8) {
+                    legendDot(color: .green, label: "applied")
+                    legendDot(color: .orange, label: "cancelled")
+                    legendDot(color: .gray, label: "skipped")
+                    legendDot(color: .red, label: "failed")
+                    Spacer()
+                }
+                .padding(.top, 2)
+                // 최근 10개 cancel ratio
+                let last10 = Array(decisions.prefix(10))
+                let cancelCount = last10.filter { $0.outcome == .cancelled }.count
+                Text("최근 10개 중 cancel 비율: \(cancelCount)/10 (\(cancelCount * 10)%)")
+                    .font(Theme.Typography.micro)
+                    .foregroundStyle(Theme.Color.textSecondary)
+                    .padding(.top, 4)
+            }
+        }
+        .padding(Theme.Spacing.md)
+        .background(Theme.Color.surface)
+        .clipShape(RoundedRectangle(cornerRadius: Theme.Radius.md))
+    }
+
+    private func outcomeDot(_ outcome: RoutingDecisionRecord.Outcome) -> some View {
+        let color: Color = {
+            switch outcome {
+            case .applied: return .green
+            case .cancelled: return .orange
+            case .skipped: return .gray
+            case .failed: return .red
+            }
+        }()
+        return Rectangle()
+            .fill(color)
+            .frame(width: 8, height: 16)
+    }
+
+    private func legendDot(color: Color, label: String) -> some View {
+        HStack(spacing: 3) {
+            Rectangle().fill(color).frame(width: 8, height: 8)
+            Text(label)
+                .font(Theme.Typography.micro)
+                .foregroundStyle(Theme.Color.textTertiary)
         }
     }
 

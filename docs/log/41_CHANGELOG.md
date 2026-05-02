@@ -4,6 +4,47 @@
 
 ## [Unreleased] — 2026-05-03
 
+### Added — ADR-060 영속성 + 시계열 + multi-chat 알림 (5 phases)
+
+**Phase 1 — workspace budget disk persist**
+- DailyCostStore actor (UserDefaults JSON) — workspace별 cost + cache trend disk persist
+- AppModel.accumulateDailyCost: disk store도 누적
+- loadPersistedDailyCosts bootstrap에서 호출 (앱 재시작 보존)
+
+**Phase 2 — routing learning 시간순 trend**
+- RoutingDecisionLogSheet.cancelTrendCard 추가
+- 최근 50개 결정 dot bar (색: outcome별)
+- 최근 10개 cancel 비율 표시
+- legend 4개
+
+**Phase 3 — /budget workspace Telegram 명령**
+- /budget workspace <name> <USD> — workspace별 cap
+- /budget workspace <name> off — 해제
+- workspace fuzzy lookup
+
+**Phase 4 — cache hit hourly trend**
+- DailyCostStore.cacheTrend: [CacheHitSample]
+- addCacheSample: hourly bucket 자동 누적, 24시간 cap
+- AppModel: ChildProcess 호출 후 자동 trend 추가
+
+**Phase 5 — chat bindings 변경 알림 push**
+- AppModel.notifyOtherChatsOfBindingChange helper
+- /bind 명령에서 자기 자신 외 다른 chat에 push
+- 멀티 chat 환경 인지 강화
+
+### Tests added (+5)
+- DailyCostStoreTests: workspace cost 누적, 다른 workspace 분리, cache trend bucket, hitRatio, 0 division 안전
+
+### 빌드/테스트 결과
+- swift build → Build complete! (10.15s)
+- swift test → 430/430 passed (89 suites)
+
+### 새 / 수정 파일
+- 새: DailyCostStore.swift, DailyCostStoreTests.swift
+- 수정: AppModel, RoutingDecisionLogSheet, YuminaiCommandRouter
+
+---
+
 ### Added — ADR-059 UI/UX 마감 + workspace 격리 (5 phases)
 
 **Phase 1 — Cache hit accumulator + dashboard**
