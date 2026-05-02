@@ -4,6 +4,48 @@
 
 ## [Unreleased] — 2026-05-03
 
+### Added — ADR-064 Telegram Dashboard 고급 시각화 + 대용량 export (5 phases)
+
+**Phase 5 — EWMA forecast helper**
+- Sources/YuminaiCore/UsageForecaster.swift
+- ewmaSeries / forecastNext / forecastFuture / trend (up/down/flat)
+- TelegramUsageDashboard.forecastChart: actual PointMark + smoothed LineMark + red forecast point + trend icon
+
+**Phase 2 — workspace × chat heatmap**
+- workspaceChatHeatmap (RectangleMark)
+- foregroundStyle by intensity (count)
+- chartForegroundStyleScale gradient
+
+**Phase 4 — chat별 last activity gauge**
+- chatActivityGauge: 각 chat 가로 bar (freshness)
+- color: green/yellow/gray
+- 7일 cap
+
+**Phase 3 — CSV streaming write (대용량)**
+- CSVExporter.streamingWrite(to:headers:rowCount:rowProvider:)
+- FileHandle row-by-row (메모리 cap)
+- 100K+ rows 안전
+
+**Phase 1 — Telegram dashboard에 routing trend**
+- routingTrendChart: 4 stat blocks + RectangleMark heatmap (최근 60개)
+- timeRange filter
+
+### Tests added (+14)
+- UsageForecasterTests (10): empty, first preserved, alpha calc, minSamples nil, forecastNext, forecastFuture N, trend up/down/flat, icons
+- CSVStreamingTests (4): 100 rows, 0 rows header only, 10K large, escape
+
+### 빌드/테스트 결과
+- swift build → Build complete! (14.06s)
+- swift test → 468/468 passed (97 suites)
+
+### 새 파일
+- UsageForecaster.swift, UsageForecasterTests.swift
+
+### 수정 파일
+- CSVExporter (streaming), TelegramUsageDashboard (4 new charts), RootView (routingDecisions 전달)
+
+---
+
 ### Added — ADR-063 Telegram Dashboard 확장 + CSV/PNG export (5 phases)
 
 **Phase 2 — Daily aggregation**

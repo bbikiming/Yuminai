@@ -1,6 +1,80 @@
 # Decisions Log (ADR-lite)
 
-> 최신: ADR-063 (per-chart PNG + daily aggregation + dashboard time picker + CSV export + workspace×chat)
+> 최신: ADR-064 (EWMA forecast + heatmap + activity gauge + CSV streaming + routing trend)
+
+---
+
+## ADR-064 — Telegram Dashboard 고급 시각화 + 대용량 export (5 phases)
+
+- **날짜**: 2026-05-03
+- **상태**: Accepted
+
+### 결정
+
+#### Phase 5: EWMA forecast helper
+- `Sources/YuminaiCore/UsageForecaster.swift` 신설
+- `ewmaSeries(_:alpha:)` — EWMA 알고리즘 (alpha 0.3 default)
+- `forecastNext(_:)` — 다음 sample 예측 (minSamples=3 미만 nil)
+- `forecastFuture(_:steps:)` — N개 미래 sample
+- `trend(_:lookback:)` — Trend enum (up/down/flat) + icon
+- TelegramUsageDashboard.forecastChart:
+  - actual PointMark + smoothed LineMark (catmullRom)
+  - red forecast point (다음 sample)
+  - trend icon + 다음 cost 예상치 표시
+
+#### Phase 2: workspace × chat heatmap (RectangleMark)
+- TelegramUsageDashboard.workspaceChatHeatmap
+- RectangleMark + foregroundStyle by intensity (count)
+- chartForegroundStyleScale: blue gradient
+- annotation: count overlay (white text)
+- 색상 진하기 = 사용 빈도
+
+#### Phase 4: chat별 last activity gauge
+- TelegramUsageDashboard.chatActivityGauge
+- 각 chat 별 가로 bar (freshness ratio)
+- color: green > 70% > yellow > 30% > gray
+- formatElapsed: 초/분/시간/일 단위 변환
+- 정렬: 가장 최근 활동 chat 먼저
+
+#### Phase 3: CSV streaming write (대용량 안전)
+- `CSVExporter.streamingWrite(to:headers:rowCount:rowProvider:)` 추가
+- FileHandle 기반 row-by-row write (메모리 cap)
+- 100K rows도 메모리 안전
+- 4 unit tests (basic / 0 rows / 10K large / escape)
+
+#### Phase 1: Telegram dashboard에 routing trend
+- TelegramUsageDashboard.routingTrendChart
+- 4 stat blocks (Applied / Cancelled / Skipped / Failed)
+- RectangleMark heatmap (최근 60개 결정)
+- timeRange filter 적용
+
+### 적용 결과
+```
+swift build              → Build complete! (14.06s)
+swift test               → 468/468 passed (97 suites, +14 new)
+새 파일                  → 2 (UsageForecaster.swift, UsageForecasterTests.swift)
+수정 파일                → 4 (CSVExporter, TelegramUsageDashboard, RootView)
+```
+
+### 사용된 SwiftUI Charts API 추가
+
+- `PointMark` — actual vs forecast 시각화
+- `chartForegroundStyleScale(range:)` — gradient 매핑 (heatmap intensity)
+- `RectangleMark` 활용 (heatmap + timeline)
+
+### 트레이드오프
+
+- **EWMA forecast는 단순 MA**: trend 변화 감지에 약함. Holt-Winters는 ADR-065 후보.
+- **heatmap 색상 매핑**: count 기반 gradient — 절대값 대비 (max 기준). 작은 차이 강조 어려움.
+- **activity gauge 7일 cap**: 일주일 이상 안 쓴 chat은 모두 gray. 더 긴 cap도 옵션 가능.
+- **CSV streaming은 FileHandle**: 동기 write — 매우 큰 파일은 background task 권장.
+
+### 향후 (ADR-065 후보)
+- Holt-Winters forecast (seasonal trend)
+- Telegram dashboard에 chat별 forecast (각각)
+- usage anomaly detection (z-score)
+- export 형식 추가 (Markdown table)
+- chat activity gauge에 onClick → 해당 chat 상세
 
 ---
 

@@ -29,6 +29,8 @@ public struct TelegramUsageDashboard: View {
     public let chatIdToWorkspaceName: [String: String]
     /// **ADR-063 Phase 5** — workspace UUID(string) → name
     public let workspaceIdToName: [String: String]
+    /// **ADR-064 Phase 1** — routing decisions (telegram dashboard에 통합)
+    public let routingDecisions: [RoutingDecisionRecord]
     public let onClose: () -> Void
     public let onClearStats: () -> Void
 
@@ -72,6 +74,7 @@ public struct TelegramUsageDashboard: View {
         dailyBuckets: [DailyUsageBucket] = [],
         chatIdToWorkspaceName: [String: String],
         workspaceIdToName: [String: String] = [:],
+        routingDecisions: [RoutingDecisionRecord] = [],
         onClose: @escaping () -> Void,
         onClearStats: @escaping () -> Void
     ) {
@@ -79,6 +82,7 @@ public struct TelegramUsageDashboard: View {
         self.dailyBuckets = dailyBuckets
         self.chatIdToWorkspaceName = chatIdToWorkspaceName
         self.workspaceIdToName = workspaceIdToName
+        self.routingDecisions = routingDecisions
         self.onClose = onClose
         self.onClearStats = onClearStats
     }
@@ -94,10 +98,14 @@ public struct TelegramUsageDashboard: View {
                     summaryCards
                     hourlyTurnsChart
                     hourlyCostChart
+                    forecastChart           // ADR-064 Phase 5
                     chatRankingChart
+                    chatActivityGauge       // ADR-064 Phase 4
                     commandFrequencyChart
                     tokenBreakdownChart
-                    workspaceUsagePerChatChart  // ADR-063 Phase 5
+                    workspaceUsagePerChatChart
+                    workspaceChatHeatmap    // ADR-064 Phase 2
+                    routingTrendChart       // ADR-064 Phase 1
                 }
                 .padding(Theme.Spacing.lg)
             }
@@ -392,6 +400,241 @@ public struct TelegramUsageDashboard: View {
     }
 
     // MARK: - Helpers
+
+    // MARK: - ADR-064 Phase 5: EWMA Forecast
+
+    @ViewBuilder
+    private var forecastChart: some View {
+        chartSection(title: "사용량 forecast (EWMA)", subtitle: "ADR-064 Phase 5 — 다음 \(aggregationMode.rawValue) 예상치", chartId: "forecast") {
+            forecastContent
+        }
+    }
+
+    @ViewBuilder
+    private var forecastContent: some View {
+        let costs: [Double] = aggregationMode == .hourly
+            ? filteredHourly.map { $0.costUSD }
+            : filteredDaily.map { $0.costUSD }
+        if costs.count < UsageForecaster.minSamples {
+            emptyHint("forecast: \(UsageForecaster.minSamples)개 이상 sample 필요 (현재 \(costs.count))")
+        } else {
+            let smoothed = UsageForecaster.ewmaSeries(costs)
+            let next = UsageForecaster.forecastNext(costs) ?? 0
+            let trend = UsageForecaster.trend(costs)
+            VStack(alignment: .leading, spacing: 6) {
+                HStack(spacing: 12) {
+                    Image(systemName: trend.icon)
+                        .font(.system(size: 18))
+                        .foregroundStyle(trend == .up ? .red : (trend == .down ? .green : .gray))
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("다음 \(aggregationMode.rawValue) 예상: $\(String(format: "%.4f", next))")
+                            .font(Theme.Typography.body.weight(.medium))
+                        Text("Trend: \(trend.rawValue)")
+                            .font(Theme.Typography.micro)
+                            .foregroundStyle(Theme.Color.textTertiary)
+                    }
+                    Spacer()
+                }
+                Chart {
+                    ForEach(Array(smoothed.enumerated()), id: \.offset) { idx, value in
+                        LineMark(
+                            x: .value("Sample", idx),
+                            y: .value("Smoothed", value)
+                        )
+                        .foregroundStyle(Color.purple)
+                        .interpolationMethod(.catmullRom)
+                    }
+                    ForEach(Array(costs.enumerated()), id: \.offset) { idx, value in
+                        PointMark(
+                            x: .value("Sample", idx),
+                            y: .value("Actual", value)
+                        )
+                        .foregroundStyle(Color.gray.opacity(0.5))
+                        .symbolSize(20)
+                    }
+                    // forecast point (다음 sample)
+                    PointMark(
+                        x: .value("Sample", costs.count),
+                        y: .value("Forecast", next)
+                    )
+                    .foregroundStyle(Color.red)
+                    .symbolSize(80)
+                }
+                .frame(height: 140)
+            }
+        }
+    }
+
+    // MARK: - ADR-064 Phase 4: Chat last activity gauge
+
+    private var chatActivityGauge: some View {
+        chartSection(title: "Chat 활동 시간 (gauge)", subtitle: "ADR-064 Phase 4 — 마지막 활동 후 경과 시간", chartId: "activity_gauge") {
+            chatActivityContent
+        }
+    }
+
+    @ViewBuilder
+    private var chatActivityContent: some View {
+        let sorted = snapshot.chatStats.values.sorted { $0.lastUsedAt > $1.lastUsedAt }.prefix(10)
+        if sorted.isEmpty {
+            emptyHint("chat 활동 기록 없음")
+        } else {
+            VStack(alignment: .leading, spacing: 4) {
+                ForEach(Array(sorted), id: \.chatId) { chat in
+                    HStack(spacing: 8) {
+                        Text(chatLabel(for: chat.chatId))
+                            .font(Theme.Typography.small)
+                            .foregroundStyle(Theme.Color.text)
+                            .frame(width: 200, alignment: .leading)
+                            .lineLimit(1)
+                        let elapsed = Date().timeIntervalSince(chat.lastUsedAt)
+                        let pct = activityFreshness(elapsed: elapsed)
+                        GeometryReader { geo in
+                            ZStack(alignment: .leading) {
+                                RoundedRectangle(cornerRadius: 3)
+                                    .fill(Theme.Color.surfaceHi)
+                                RoundedRectangle(cornerRadius: 3)
+                                    .fill(activityColor(pct))
+                                    .frame(width: geo.size.width * pct)
+                            }
+                        }
+                        .frame(height: 10)
+                        Text(formatElapsed(elapsed))
+                            .font(Theme.Typography.monoSmall)
+                            .foregroundStyle(activityColor(pct))
+                            .frame(width: 80, alignment: .trailing)
+                    }
+                }
+            }
+            .padding(.vertical, 4)
+        }
+    }
+
+    /// 마지막 활동으로부터 경과 시간 → freshness ratio (1.0 = 방금, 0.0 = 일주일+).
+    private func activityFreshness(elapsed: TimeInterval) -> Double {
+        let weekSeconds: TimeInterval = 7 * 86_400
+        return max(0, 1 - elapsed / weekSeconds)
+    }
+
+    private func activityColor(_ freshness: Double) -> Color {
+        if freshness > 0.7 { return .green }
+        if freshness > 0.3 { return .yellow }
+        return .gray
+    }
+
+    private func formatElapsed(_ secs: TimeInterval) -> String {
+        if secs < 60 { return "\(Int(secs))초 전" }
+        if secs < 3600 { return "\(Int(secs / 60))분 전" }
+        if secs < 86_400 { return "\(Int(secs / 3600))시간 전" }
+        return "\(Int(secs / 86_400))일 전"
+    }
+
+    // MARK: - ADR-064 Phase 2: workspace × chat heatmap (RectangleMark)
+
+    @ViewBuilder
+    private var workspaceChatHeatmap: some View {
+        chartSection(title: "Workspace × Chat heatmap", subtitle: "ADR-064 Phase 2 — 사용 빈도 heatmap (intensity = count)", chartId: "ws_chat_heatmap") {
+            heatmapContent
+        }
+    }
+
+    @ViewBuilder
+    private var heatmapContent: some View {
+        let data: [WorkspaceUsageDatum] = snapshot.chatStats.values.flatMap { chat -> [WorkspaceUsageDatum] in
+            chat.workspaceUsageCounts.map { (wsKey, count) in
+                let wsName = workspaceIdToName[wsKey] ?? String(wsKey.prefix(8)) + "…"
+                return WorkspaceUsageDatum(
+                    chatLabel: chatLabel(for: chat.chatId),
+                    workspaceName: wsName,
+                    count: count
+                )
+            }
+        }
+        if data.isEmpty {
+            emptyHint("아직 workspace × chat 데이터 없음")
+        } else {
+            let maxCount = data.map(\.count).max() ?? 1
+            Chart {
+                ForEach(data) { d in
+                    RectangleMark(
+                        x: .value("Chat", d.chatLabel),
+                        y: .value("Workspace", d.workspaceName)
+                    )
+                    .foregroundStyle(by: .value("Intensity", d.count))
+                    .annotation(position: .overlay) {
+                        Text("\(d.count)")
+                            .font(.caption2)
+                            .foregroundStyle(.white)
+                    }
+                }
+            }
+            .chartForegroundStyleScale(range: Gradient(colors: [.blue.opacity(0.2), .blue]))
+            .frame(height: CGFloat(min(8, snapshot.chatStats.count) * 50 + 60))
+            Text("색상 진하기 = 사용 빈도 (max \(maxCount))")
+                .font(Theme.Typography.micro)
+                .foregroundStyle(Theme.Color.textTertiary)
+        }
+    }
+
+    // MARK: - ADR-064 Phase 1: Routing trend in Telegram dashboard
+
+    private var routingTrendChart: some View {
+        chartSection(title: "Routing 결정 trend (외부 turn 영향)", subtitle: "ADR-064 Phase 1 — Telegram dashboard에 routing log 통합", chartId: "routing_trend") {
+            routingTrendContent
+        }
+    }
+
+    @ViewBuilder
+    private var routingTrendContent: some View {
+        let cutoff = Date().addingTimeInterval(-Double(timeRange.hours) * 3600)
+        let filtered = routingDecisions.filter { $0.timestamp >= cutoff }
+        if filtered.isEmpty {
+            emptyHint("routing 결정 없음 (자동 routing 활성 + 외부 turn 시 누적)")
+        } else {
+            // outcome 분포 dot bar
+            let counts = Dictionary(grouping: filtered, by: \.outcome).mapValues(\.count)
+            VStack(alignment: .leading, spacing: 8) {
+                HStack(spacing: 12) {
+                    statBlock("Applied", counts[.applied] ?? 0, color: .green)
+                    statBlock("Cancelled", counts[.cancelled] ?? 0, color: .orange)
+                    statBlock("Skipped", counts[.skipped] ?? 0, color: .gray)
+                    statBlock("Failed", counts[.failed] ?? 0, color: .red)
+                    Spacer()
+                }
+                Chart {
+                    ForEach(Array(filtered.suffix(60).reversed().enumerated()), id: \.element.id) { idx, record in
+                        let color: Color = {
+                            switch record.outcome {
+                            case .applied: return .green
+                            case .cancelled: return .orange
+                            case .skipped: return .gray
+                            case .failed: return .red
+                            }
+                        }()
+                        RectangleMark(
+                            x: .value("Index", idx),
+                            y: .value("Outcome", record.outcome.rawValue)
+                        )
+                        .foregroundStyle(color)
+                    }
+                }
+                .chartXAxis(.hidden)
+                .frame(height: 100)
+            }
+        }
+    }
+
+    private func statBlock(_ label: String, _ value: Int, color: Color) -> some View {
+        VStack(alignment: .leading, spacing: 2) {
+            Text(label)
+                .font(Theme.Typography.micro)
+                .foregroundStyle(Theme.Color.textTertiary)
+                .textCase(.uppercase)
+            Text("\(value)")
+                .font(Theme.Typography.body.weight(.semibold))
+                .foregroundStyle(color)
+        }
+    }
 
     /// **ADR-063 Phase 5** — chat별 어떤 workspace를 가장 많이 사용했는지 stacked bar.
     private var workspaceUsagePerChatChart: some View {

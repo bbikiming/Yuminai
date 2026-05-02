@@ -22,6 +22,47 @@ public enum CSVExporter {
         return output
     }
 
+    // MARK: - ADR-064 Phase 3 — Streaming write (대용량 안전)
+
+    /// **ADR-064 Phase 3** — streaming write: 메모리에 전체 string 만들지 않고 row 단위로 disk write.
+    /// 대용량 (수십만 rows) 데이터 export 시 메모리 폭발 방지.
+    ///
+    /// **사용 예**:
+    /// ```swift
+    /// try CSVExporter.streamingWrite(
+    ///     to: url,
+    ///     headers: ["id", "value"],
+    ///     rowCount: 100_000,
+    ///     rowProvider: { idx in [String(idx), "value\(idx)"] }
+    /// )
+    /// ```
+    public static func streamingWrite(
+        to url: URL,
+        headers: [String],
+        rowCount: Int,
+        rowProvider: (Int) -> [String]
+    ) throws {
+        // create empty file
+        FileManager.default.createFile(atPath: url.path, contents: nil)
+        let handle = try FileHandle(forWritingTo: url)
+        defer { try? handle.close() }
+
+        // header line
+        let headerLine = headers.map(escape).joined(separator: ",") + "\n"
+        if let data = headerLine.data(using: .utf8) {
+            try handle.write(contentsOf: data)
+        }
+
+        // rows (한 row씩 write — 메모리 cap)
+        for i in 0..<rowCount {
+            let row = rowProvider(i)
+            let line = row.map(escape).joined(separator: ",") + "\n"
+            if let data = line.data(using: .utf8) {
+                try handle.write(contentsOf: data)
+            }
+        }
+    }
+
     // MARK: - Telegram Usage exports
 
     public static func exportChatStats(_ stats: [ChatUsageStats]) -> String {
