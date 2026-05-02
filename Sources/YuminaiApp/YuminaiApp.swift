@@ -52,6 +52,13 @@ struct YuminaiAppMain: App {
                 codexAdapter = nil
             }
 
+            // ADR-053 — ChildClaudeProcess (decomposition / rehearsal / parallel 격리 호출)
+            let childProcess: (any ChildClaudeProcess)? = LiveChildClaudeProcess(
+                claudePath: URL(fileURLWithPath: prefs.claudeBinaryPath),
+                codexPath: URL(fileURLWithPath: prefs.codexBinaryPath),
+                defaultSettings: prefs.defaultSessionSettings
+            )
+
             let model = AppModel(
                 workspaceStore: workspaceStore,
                 sessionStore: sessionStore,
@@ -59,6 +66,7 @@ struct YuminaiAppMain: App {
                 preferencesStore: preferencesStore,
                 claudeAdapter: claudeAdapter,
                 codexAdapter: codexAdapter,
+                childProcess: childProcess,
                 preferences: prefs
             )
             self._appModel = State(wrappedValue: model)

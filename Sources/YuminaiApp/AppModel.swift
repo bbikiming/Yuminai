@@ -23,6 +23,9 @@ public final class AppModel {
     /// codex CLI 어댑터 — workspace.agentKind == .codex일 때 사용 (ADR-026).
     /// nil이면 codex 미설치/미설정 — UI에서 선택 disabled.
     let codexAdapter: (any ClaudeAdapter)?
+    /// **ADR-053** — ChildClaudeProcess (1회성 ephemeral) — decomposition / rehearsal / parallel 격리 호출.
+    /// nil이면 mock으로 fallback (테스트/preview).
+    let childProcess: (any ChildClaudeProcess)?
 
     // MARK: 상태
     public var preferences: AppPreferences
@@ -377,6 +380,7 @@ public final class AppModel {
         preferencesStore: any AppPreferencesStore,
         claudeAdapter: any ClaudeAdapter,
         codexAdapter: (any ClaudeAdapter)? = nil,
+        childProcess: (any ChildClaudeProcess)? = nil,
         preferences: AppPreferences
     ) {
         self.workspaceStore = workspaceStore
@@ -385,6 +389,7 @@ public final class AppModel {
         self.preferencesStore = preferencesStore
         self.claudeAdapter = claudeAdapter
         self.codexAdapter = codexAdapter
+        self.childProcess = childProcess
         self.preferences = preferences
         self.activeSettings = preferences.defaultSessionSettings
         self.showInspector = preferences.showInspectorByDefault
@@ -1221,8 +1226,9 @@ public final class AppModel {
             return
         }
 
-        // BSP barrier dispatch — Phase 1 minimal: 두 task의 status를 동시에 .running으로 변경 + UI에 안내
-        // 실제 동시 LLM 호출은 향후 ChildClaudeProcess와 통합. 현재는 serial dispatch + 안내.
+        // ADR-053 — BSP barrier: 두 task 동시 dispatch
+        // - 첫 task: 메인 active session (기존 runHarnessTask)
+        // - 둘째 task: ChildClaudeProcess로 격리된 동시 호출
         for (idx, task) in pickedTasks.enumerated() {
             let pane = pickedPanes[idx]
             harness.updateTaskStatus(task.id, .running)
@@ -1230,13 +1236,82 @@ public final class AppModel {
         }
         persistCurrentHarnessState()
 
-        // 첫 task만 실제 dispatch (전통 방식). 두 번째는 user prompt — 직접 다른 pane으로 전환 후 실행
         let primary = pickedTasks[0]
-        await runHarnessTask(primary.id)
+        let secondary = pickedTasks[1]
+        let secondaryPane = pickedPanes[1]
+        guard let workspace = currentWorkspace else { return }
 
-        harness.appendSystem("✓ Pane 1 dispatch 완료. Pane 2의 ‘\(pickedTasks[1].title)’는 직접 다른 pane으로 전환 후 ▶ 실행해주세요. (실제 동시 LLM 호출은 ADR-053 ChildClaudeProcess 통합 예정)")
-        error = "병렬 실행 인프라 준비됨. 완전한 동시 LLM 호출은 다음 단계 (ChildClaudeProcess) 통합에서."
+        // ADR-053 — childProcess가 있으면 BSP barrier로 동시 dispatch
+        if let child = childProcess {
+            harness.appendSystem("⚡ BSP barrier dispatch — Pane 1 = active session, Pane 2 = child process (\(secondaryPane.agentKind.shortLabel))")
+
+            // async let으로 두 호출 동시 진행 (LangGraph BSP superstep 패턴)
+            async let primaryDone: Void = runHarnessTask(primary.id)
+            async let secondaryOutput: ChildProcessOutput = {
+                let prompt = """
+                # 병렬 task 호출 (Multi-agent BSP, ADR-053)
+
+                당신은 \(secondaryPane.agentKind.shortLabel) 모델로 호출되었습니다.
+                동시에 다른 pane에서 별개 task가 진행 중이며, 두 결과는 barrier에서 합쳐집니다.
+
+                ## Task
+                - 제목: \(secondary.title)
+                - 설명: \(secondary.description)
+
+                위 task를 수행하고 결과를 응답해주세요. 다른 task의 결과를 기다릴 필요는 없습니다.
+                """
+                do {
+                    return try await child.runOnce(
+                        prompt: prompt,
+                        in: workspace,
+                        agent: secondaryPane.agentKind,
+                        purpose: .parallel,
+                        timeoutSeconds: 180
+                    )
+                } catch {
+                    // 실패 시 빈 output 반환 (caller가 handle)
+                    return ChildProcessOutput(
+                        resultText: "[FAILED] \(error.localizedDescription)",
+                        inputTokens: 0,
+                        outputTokens: 0,
+                        costUSD: 0,
+                        durationMs: 0,
+                        exitCode: 1
+                    )
+                }
+            }()
+
+            // BSP barrier — 양쪽 await
+            _ = await primaryDone
+            let result = await secondaryOutput
+
+            // Pane 2 결과를 SharedLog + task에 반영
+            if result.exitCode == 0 {
+                harness.updateTaskStatus(secondary.id, .completed, output: result.resultText)
+                costTracker.add(.parallel, usd: result.costUSD)
+                harness.appendAgent(
+                    result.resultText,
+                    agentKind: secondaryPane.agentKind,
+                    taskId: secondary.id,
+                    tokenCount: result.outputTokens
+                )
+                harness.appendSystem("✓ Pane 2 (\(secondaryPane.agentKind.shortLabel)) 완료 — \(result.durationMs)ms, $\(String(format: "%.4f", result.costUSD))")
+            } else {
+                harness.updateTaskStatus(secondary.id, .failed, output: result.resultText)
+                // Devin coordinator 권고: 한 쪽 실패 시 다른 쪽 pause + user prompt (silent kill 금지)
+                harness.appendSystem("⚠ Pane 2 실패 — Pane 1 결과는 보존. user 검토 후 결정")
+                error = "병렬 실행 중 Pane 2 실패: \(result.resultText.prefix(200))"
+            }
+            persistCurrentHarnessState()
+        } else {
+            // childProcess 미주입 fallback — 첫 task만 dispatch + 안내
+            await runHarnessTask(primary.id)
+            harness.appendSystem("✓ Pane 1 dispatch 완료. Pane 2 동시 실행은 childProcess 미주입으로 비활성. (production 빌드에서 활성화)")
+        }
     }
+
+    /// ADR-053 — CostTracker.Bucket에 parallel 추가가 안 됐으면 routing으로 fallback.
+    /// (Bucket enum 확장은 ADR-053 doc 참조)
 
     /// ADR-050 Phase 6 — TaskGraph "▶ 실행" 액션. ready task를 active pane에 dispatch.
     /// 1. task.assignedAgent로 pane 전환 (있으면)
@@ -1607,27 +1682,59 @@ public final class AppModel {
 
     /// ADR-049 Phase 4 — 사용자 큰 task를 LLM 호출로 sub-task 분해.
     /// **비용 명시**: ephemeral Claude session 1개 spawn → JSON 응답 → terminate. 토큰 비용 발생.
-    /// 실패 시 (LLM JSON 깨짐, session spawn 실패 등) 빈 배열 반환 + error message.
+    /// 실패 시 (LLM JSON 깨짐, session spawn 실패 등) 0 반환 + error message.
     /// 성공 시 harness.tasks에 추가 + count 반환.
     ///
-    /// **ADR-052 — Decomposition cost separation**:
-    /// - Aider architect_coder.py 패턴: `editor_coder.cur_messages = []` (메인 conversation 격리)
-    /// - Cline SubagentRunner.ts 패턴: 자체 ApiHandler로 격리된 conversation 시작
-    /// - 이상적 구현: 별도 ChildClaudeProcess spawn (Phase 5 통합 인프라 — Multi-agent 병렬 실행과 공유)
-    /// - 현재 단계 (interim): active session에 호출하되 비용을 `decomposition` bucket에 별도 추적,
-    ///   사용자에게 "이 호출은 분해 전용이며 메인 cache invalidate 가능" 명시.
-    /// - prompt 레벨에서 격리 의도 표시 — ephemeralBoundary marker
+    /// **ADR-053 — ChildClaudeProcess로 진짜 격리**:
+    /// - 별도 process spawn (`claude -p ...`) — 메인 conversation 0 영향
+    /// - Aider architect_coder.py + Cline SubagentRunner.ts 패턴 적용
+    /// - 결과는 단일 String + UsageDelta로 반환 → JSON parse → harness.tasks에 합류
+    /// - 비용은 CostTracker.decomposition bucket에 정확히 add (estimate 아닌 actual)
+    /// - childProcess가 nil이면 ADR-052 fallback (active session으로 호출 + estimate)
     @discardableResult
     public func decomposeUserTask(_ userRequest: String) async -> Int {
         guard let workspace = currentWorkspace else {
             self.error = "워크스페이스를 먼저 선택하세요."
             return 0
         }
-        // ADR-052 — ephemeral session 의도 명시. active session에 들어가지만 분해 전용임을 prompt로 격리.
         let prompt = TaskDecomposer.buildPrompt(
             userRequest: userRequest,
             projectProfile: workspace.projectProfile
         )
+
+        // ADR-053 — childProcess가 있으면 진짜 격리된 호출, 없으면 fallback
+        if let child = childProcess {
+            harness.appendSystem("📋 Task 분해 호출 (격리된 child process — 메인 cache 0 영향)")
+            do {
+                let output = try await child.runOnce(
+                    prompt: prompt,
+                    in: workspace,
+                    agent: workspace.agentKind,
+                    purpose: .decomposition,
+                    timeoutSeconds: 60
+                )
+                // 정확한 cost 추적
+                costTracker.add(.decomposition, usd: output.costUSD)
+                harness.appendSystem("✓ 분해 완료 (\(output.durationMs)ms, $\(String(format: "%.4f", output.costUSD)))")
+                // JSON parse → harness.tasks 추가
+                let parsed = TaskDecomposer.parseTasks(jsonResponse: output.resultText)
+                guard !parsed.isEmpty else {
+                    self.error = "분해 응답이 JSON으로 파싱되지 않았어요. 응답: \(output.resultText.prefix(200))"
+                    return 0
+                }
+                for task in parsed {
+                    harness.tasks.append(task)
+                }
+                self.error = "✓ 작업 \(parsed.count)개로 분해됨 (격리 호출, $\(String(format: "%.4f", output.costUSD)))"
+                persistCurrentHarnessState()
+                return parsed.count
+            } catch {
+                self.error = "Decomposition 호출 실패: \(error.localizedDescription)"
+                return 0
+            }
+        }
+
+        // ADR-052 fallback — active session으로 호출 (childProcess 미주입 시)
         let ephemeralWrapped = """
         <ephemeral-decomposition cache-control="off">
         다음 호출은 task 분해 전용 ephemeral 작업입니다. 응답 후 메인 conversation은 영향받지 않습니다.
@@ -1639,13 +1746,10 @@ public final class AppModel {
             self.error = "활성 세션이 없어요. pane 활성화 후 재시도."
             return 0
         }
-        // ADR-052 — decomposition cost를 별도 bucket에 등록 (예상치)
         let estimatedTokens = ephemeralWrapped.utf8.count / 4
         let estimatedCost = CostTracker.estimateCostUSD(inputTokens: estimatedTokens, outputTokens: 500)
         costTracker.add(.decomposition, usd: estimatedCost)
-        // 사용자에게 비용 분리 안내 (XAI 투명성)
-        harness.appendSystem("📋 Task 분해 호출 (decomposition bucket: ~$\(String(format: "%.4f", estimatedCost))) — 메인 conversation cache 보호 모드")
-
+        harness.appendSystem("📋 Task 분해 호출 (fallback: active session, ~$\(String(format: "%.4f", estimatedCost)))")
         do {
             try await claudeSession.send(ephemeralWrapped)
         } catch {
@@ -1653,7 +1757,7 @@ public final class AppModel {
             return 0
         }
         markPendingDecomposition()
-        return -1  // -1 = "응답 대기 중" 의미 (UI는 적절히 표시)
+        return -1  // -1 = "응답 대기 중"
     }
 
     /// 다음 agent 응답이 decomposition JSON일 거라고 표시 — .completed 시 parse 시도.
@@ -1922,10 +2026,11 @@ public final class AppModel {
         rehearsalsByTask[id] ?? []
     }
 
-    /// ADR-052 — task에 대한 rehearsal launch.
-    /// 1. 현재 task 상태로 snapshot 저장 (없으면 새로 생성)
+    /// ADR-052 + ADR-053 — task에 대한 rehearsal launch (다른 모델로 재실행).
+    /// 1. 현재 task 상태로 snapshot 저장
     /// 2. RehearsalRun pending 상태로 record 추가
-    /// 3. 다른 모델로 ephemeral session 호출 (Phase 1 minimal: 호출 stub만 — 실제 LLM 호출은 향후 확장)
+    /// 3. ChildClaudeProcess로 격리된 호출 → 결과 + cost를 RehearsalRun에 update
+    /// 4. cost는 별도 rehearsal bucket에 누적
     public func launchRehearsal(taskId: UUID, agent: AgentKind) async {
         guard let task = harness.tasks.first(where: { $0.id == taskId }) else {
             error = "Rehearsal: task를 찾을 수 없음"
@@ -1958,8 +2063,7 @@ public final class AppModel {
         // 2. Run pending record
         let runId = UUID()
         let estimatedTokens = entries.reduce(0) { $0 + $1.content.utf8.count / 4 }
-        // 간단 비용 추정: 1K tokens = $0.003 (Sonnet 평균치) — 실제 비용은 별도 metric layer
-        let estimatedCostUSD = Double(estimatedTokens) / 1000.0 * 0.003
+        let estimatedCostUSD = CostTracker.estimateCostUSD(inputTokens: estimatedTokens, outputTokens: 1000)
         var run = RehearsalRun(
             id: runId,
             snapshotId: snapshot.id,
@@ -1973,19 +2077,96 @@ public final class AppModel {
         existing.insert(run, at: 0)
         rehearsalsByTask[taskId] = existing
 
-        // 3. Phase 1 minimal: 실제 LLM 호출 대신 stub
-        //    — 이유: 별도 Process spawn + isolated context는 ChildClaudeProcess (Phase 2 cost-separation)와
-        //    공통 인프라가 필요. ADR-053에서 통합 구현 예정.
-        //    현재는 사용자에게 "리허설 인프라 준비됨, 실제 실행은 다음 단계" 안내.
-        run.status = .completed
-        run.completedAt = Date()
-        run.durationMs = 0
-        run.resultText = "[리허설 stub] \(agent.shortLabel.capitalized)로 재실행하면 어떤 결과가 나올지 비교하는 인프라가 준비됐어요. 실제 LLM 호출은 다음 단계 (cost-separation 통합)에서 활성화됩니다.\n\n원본 결과: \(task.output ?? task.description)"
+        // 3. ADR-053 — ChildClaudeProcess로 격리된 호출 (있으면)
+        guard let child = childProcess else {
+            // childProcess 미주입 시 fallback: stub 결과
+            run.status = .completed
+            run.completedAt = Date()
+            run.durationMs = 0
+            run.resultText = "[리허설 stub] childProcess 미주입 — production app에서만 진짜 호출. 원본: \(task.output ?? task.description)"
+            await rehearsalStore.saveRun(run)
+            if let idx = rehearsalsByTask[taskId]?.firstIndex(where: { $0.id == runId }) {
+                rehearsalsByTask[taskId]?[idx] = run
+            }
+            error = "리허설 stub (childProcess 미주입). Production 빌드에선 실제 LLM 호출."
+            return
+        }
+
+        // running 표시
+        run.status = .running
         await rehearsalStore.saveRun(run)
         if let idx = rehearsalsByTask[taskId]?.firstIndex(where: { $0.id == runId }) {
             rehearsalsByTask[taskId]?[idx] = run
         }
-        error = "리허설 인프라 준비됨 — 다음 단계에서 실제 LLM 재실행 활성화 예정"
+
+        // rehearsal prompt — task 컨텍스트 + 원본 결과 비교 요청
+        let rehearsalPrompt = buildRehearsalPrompt(
+            task: task,
+            entries: entries,
+            originalAgent: snapshot.originalAgentRaw,
+            replayAgent: agent
+        )
+
+        do {
+            let output = try await child.runOnce(
+                prompt: rehearsalPrompt,
+                in: workspace,
+                agent: agent,
+                purpose: .rehearsal,
+                timeoutSeconds: 120
+            )
+            costTracker.add(.rehearsal, usd: output.costUSD)
+            run.status = .completed
+            run.completedAt = Date()
+            run.durationMs = output.durationMs
+            run.resultText = output.resultText
+            await rehearsalStore.saveRun(run)
+            if let idx = rehearsalsByTask[taskId]?.firstIndex(where: { $0.id == runId }) {
+                rehearsalsByTask[taskId]?[idx] = run
+            }
+            error = "✓ 리허설 완료: \(agent.shortLabel) (\(output.durationMs)ms, $\(String(format: "%.4f", output.costUSD)))"
+        } catch {
+            run.status = .failed
+            run.completedAt = Date()
+            run.errorMessage = error.localizedDescription
+            await rehearsalStore.saveRun(run)
+            if let idx = rehearsalsByTask[taskId]?.firstIndex(where: { $0.id == runId }) {
+                rehearsalsByTask[taskId]?[idx] = run
+            }
+            self.error = "리허설 실패: \(error.localizedDescription)"
+        }
+    }
+
+    /// ADR-053 — Rehearsal prompt builder. 원본 task description + 컨텍스트 entries.
+    private func buildRehearsalPrompt(
+        task: HarnessTask,
+        entries: [ConversationEntry],
+        originalAgent: String,
+        replayAgent: AgentKind
+    ) -> String {
+        let recentContext = entries.suffix(3).map { entry -> String in
+            let role = entry.role == .user ? "사용자" : "[\(entry.agentKind?.shortLabel ?? "?")]"
+            return "- \(role): \(entry.content.prefix(200))"
+        }.joined(separator: "\n")
+
+        return """
+        # Rehearsal — 다른 모델 비교 호출
+
+        당신은 \(replayAgent.shortLabel) 모델로 호출되었습니다.
+        원래 이 task는 \(originalAgent) 모델이 처리했고, 결과를 비교하기 위한 재실행입니다.
+        production conversation에는 영향 없는 1회성 호출입니다.
+
+        ## Task
+        - 제목: \(task.title)
+        - 설명: \(task.description)
+
+        ## 최근 컨텍스트 (참고)
+        \(recentContext)
+
+        ## 요청
+        위 task에 대한 당신의 접근 방식과 결과를 보여주세요. 코드를 작성하라면 코드를, 분석을 요청받으면 분석을.
+        \(replayAgent.shortLabel)의 강점을 살려 응답해주세요.
+        """
     }
 
     /// ADR-052 — 앱 시작 또는 워크스페이스 전환 시 rehearsal cache load (현재 task들에 대해서만).

@@ -1,6 +1,134 @@
 # Decisions Log (ADR-lite)
 
-> 최신: ADR-052 (Harness 차세대 — 5개 후보 모두 레퍼런스 기반 구현)
+> 최신: ADR-053 (ChildClaudeProcess — ADR-052 stub 3개를 진짜 LLM 호출로 통합)
+
+---
+
+## ADR-053 — ChildClaudeProcess: ADR-052 Decomposition / Rehearsal / Multi-agent parallel을 격리된 LLM 호출로 통합
+
+- **날짜**: 2026-05-02
+- **상태**: Accepted
+- **결정**: ADR-052에서 Phase 1 stub으로 남겨둔 3개 기능을 공통 ChildClaudeProcess 인프라로 통합
+
+### 컨텍스트
+ADR-052에서 5개 후보 중 3개 (Decomposition cost separation, Rehearsal, Multi-agent parallel) 가
+"실제 동시/재실행 LLM 호출은 향후 ChildClaudeProcess 통합 예정" stub으로 남았음.
+공통 인프라가 필요한 이유:
+- 셋 모두 **메인 conversation에 영향 없는 1회성 호출**
+- 셋 모두 **별도 cost bucket** 필요
+- 셋 모두 **격리된 session-id**로 spawn해야 cache 보호
+
+### 외부 검증 패턴 (ADR-052에서 검증한 것 재인용)
+- **Aider** `architect_coder.py:23,30,37-39` — `editor_coder = Coder.create(... cur_messages=[], cache_prompts=False)`
+- **Cline** `SubagentRunner.ts:243,297,393` — 자체 ApiHandler + 빈 conversation
+- **Claude Code Task tool** — 각 sub-agent 자체 context window
+- **Claude Code `--print` flag** — non-interactive single-shot mode
+
+### 결정
+
+#### 1. Core 추상화: `ChildClaudeProcess` protocol
+- `Sources/YuminaiCore/ChildClaudeProcess.swift`
+  - `func runOnce(prompt:in:agent:purpose:timeoutSeconds:) async throws -> ChildProcessOutput`
+  - `ChildProcessPurpose` enum: decomposition / rehearsal / parallel / routing
+  - `ChildProcessOutput`: resultText + inputTokens + outputTokens + costUSD + durationMs + exitCode
+  - `MockChildClaudeProcess` actor: 테스트용 fixed response
+
+#### 2. Live 구현: `LiveChildClaudeProcess`
+- `Sources/YuminaiClaudeAdapter/LiveChildClaudeProcess.swift` (actor)
+  - Claude: `claude -p <prompt> --output-format json --session-id <new-uuid> --model <m>`
+  - Codex: stdin으로 prompt 전달
+  - timeout: SIGTERM → 0.5s → SIGKILL
+  - JSON output parse: `{result, total_cost_usd, usage:{input_tokens, output_tokens}}`
+  - 실패 시 stderr/stdout 첫 200자 포함된 YuminaiError throw
+
+#### 3. AppModel DI 변경
+- `init` signature: `childProcess: (any ChildClaudeProcess)? = nil` 추가 (default nil = mock fallback)
+- `YuminaiApp.swift`: bootstrap 시 `LiveChildClaudeProcess` 자동 주입
+- `decomposeUserTask / launchRehearsal / runReadyTasksInParallel`: childProcess 있으면 진짜 호출, 없으면 ADR-052 fallback (estimate cost + stub)
+
+#### 4. Decomposition: 진짜 격리
+```swift
+let output = try await child.runOnce(
+    prompt: TaskDecomposer.buildPrompt(...),
+    agent: workspace.agentKind,
+    purpose: .decomposition
+)
+costTracker.add(.decomposition, usd: output.costUSD)  // actual cost (estimate 아님)
+let parsed = TaskDecomposer.parseTasks(jsonResponse: output.resultText)
+harness.tasks.append(contentsOf: parsed)
+```
+- 메인 conversation에 ephemeral wrap 더 이상 X — process 자체가 별개
+
+#### 5. Rehearsal: 진짜 다른 모델로 재실행
+```swift
+let output = try await child.runOnce(
+    prompt: buildRehearsalPrompt(...),
+    agent: replayAgent,  // 원본과 다른 모델
+    purpose: .rehearsal
+)
+run.resultText = output.resultText
+run.durationMs = output.durationMs
+costTracker.add(.rehearsal, usd: output.costUSD)
+```
+- TaskSnapshot은 그대로 보존 (unchanged from ADR-052)
+- RehearsalRun.status: pending → running → completed/failed 정상 transition
+
+#### 6. Multi-agent Parallel: BSP barrier로 진짜 동시
+```swift
+async let primaryDone: Void = runHarnessTask(primary.id)        // active session
+async let secondaryOutput: ChildProcessOutput = child.runOnce(   // child process
+    prompt: ..., agent: secondaryPane.agentKind, purpose: .parallel
+)
+_ = await primaryDone           // BSP barrier
+let result = await secondaryOutput
+if result.exitCode == 0 {
+    harness.updateTaskStatus(secondary.id, .completed, output: result.resultText)
+    harness.appendAgent(result.resultText, agentKind: secondaryPane.agentKind, ...)
+    costTracker.add(.parallel, usd: result.costUSD)
+} else {
+    // Devin coordinator 권고: 한 쪽 실패 시 다른 쪽 결과 보존, user prompt
+    harness.appendSystem("⚠ Pane 2 실패 — Pane 1 결과는 보존")
+}
+```
+- `async let` + `await`로 BSP barrier (LangGraph Pregel superstep 패턴)
+
+#### 7. CostTracker.Bucket에 `parallel` 추가
+- 4 → 5 buckets: main / decomposition / rehearsal / routing / **parallel**
+- `Snapshot.formatted()`: "Main: $X / Decomp / Rehearsal / Routing / Parallel / Total"
+
+### 적용 결과
+```
+swift build         → Build complete! (10.63s)
+swift test          → 383/383 passed (82 suites, +11 new tests)
+새 파일 (Core)      → 1 (ChildClaudeProcess.swift, 130줄)
+새 파일 (Adapter)   → 1 (LiveChildClaudeProcess.swift, 153줄)
+새 테스트           → 1 (ChildClaudeProcessTests.swift, 11 tests)
+수정 파일           → 4 (AppModel, YuminaiApp, CostTracker, DECISIONS+CHANGELOG)
+```
+
+### 트레이드오프
+
+- **AssociatedType vs Concrete enum**:
+  처음에 `associatedtype Purpose: ChildPurposeKind`로 디자인했으나 existential `any ChildClaudeProcess` 사용 불가
+  → 단일 `ChildProcessPurpose` enum으로 단순화. 향후 다른 purpose 추가는 enum case로.
+- **`--output-format json` 의존**:
+  Claude Code의 headless json output에 의존 — 향후 schema 변경 시 parser 업데이트 필요.
+  fallback: JSON parse 실패 시 raw stdout 반환.
+- **timeout SIGTERM/SIGKILL**:
+  process actor 격리 외부에서 pid 직접 사용 (`kill(pidValue, ...)`) — Swift Process API 제약 회피.
+- **RehearsalSheet 자동 새로고침**:
+  현재 `launchRehearsal` 후 `rehearsalsByTask` cache 직접 update. SwiftUI는 @Observable 자동 react.
+  완료까지 sheet 열려있으면 결과가 자동 표시됨.
+- **Multi-agent parallel 충돌**:
+  per-pane git worktree 분기는 본 ADR 범위 외 (ADR-054 후보).
+  현재는 keyword overlap 휴리스틱 + user prompt로 안전 보호.
+
+### 향후 (ADR-054 후보)
+- per-pane git worktree 자동 분기 (Devin VM-isolation 차용) — 동일 파일 충돌 완전 제거
+- ChildClaudeProcess: stream events (현재는 collect-then-return) → progress UI
+- LLM-based routing classifier (`ChildProcessPurpose.routing`) — 휴리스틱 keyword를 LLM 분류기로 교체
+- RehearsalSheet에 DiffMatchPatch row-per-turn 비교 view
+- Routing log: BubbleUp-style 통계 view (어떤 keyword가 가장 misroute됐나)
 
 ---
 

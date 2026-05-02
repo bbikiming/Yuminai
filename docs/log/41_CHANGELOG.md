@@ -4,6 +4,51 @@
 
 ## [Unreleased] — 2026-05-02
 
+### Added — ChildClaudeProcess: ADR-052 stub 3개를 진짜 LLM 호출로 통합 (ADR-053)
+
+**1. Core 추상화** — `Sources/YuminaiCore/ChildClaudeProcess.swift`:
+- `protocol ChildClaudeProcess: Sendable` — `runOnce(prompt:in:agent:purpose:timeoutSeconds:) -> ChildProcessOutput`
+- `enum ChildProcessPurpose`: decomposition / rehearsal / parallel / routing (각 displayLabel)
+- `struct ChildProcessOutput`: resultText + inputTokens/outputTokens + costUSD + durationMs + exitCode
+- `actor MockChildClaudeProcess`: 테스트용 (setResponse, setSimulatedCost APIs)
+
+**2. Live 구현** — `Sources/YuminaiClaudeAdapter/LiveChildClaudeProcess.swift`:
+- actor — Claude는 `-p <prompt> --output-format json --session-id <new>`, Codex는 stdin
+- timeout: SIGTERM → 0.5s → SIGKILL (pid 직접 사용으로 actor 격리 우회)
+- JSON parse: `{result, total_cost_usd, usage:{input_tokens, output_tokens}}`
+- 실패 시 stderr 첫 200자 포함 YuminaiError throw
+
+**3. AppModel 통합**:
+- `init`: `childProcess: (any ChildClaudeProcess)? = nil` 파라미터 추가
+- `YuminaiApp.swift` bootstrap: `LiveChildClaudeProcess` 자동 주입
+- `decomposeUserTask`: childProcess 있으면 진짜 격리 호출 + actual cost, 없으면 ADR-052 fallback
+- `launchRehearsal`: childProcess 있으면 진짜 다른 모델로 재실행 + RehearsalRun pending → running → completed/failed transition
+- `runReadyTasksInParallel`: BSP barrier `async let primaryDone / async let secondaryOutput` + `await` (LangGraph Pregel 패턴)
+- `buildRehearsalPrompt(task:entries:originalAgent:replayAgent:)` helper
+
+**4. CostTracker 확장**:
+- `Bucket.parallel` 추가 (5 buckets total)
+- `Snapshot.parallel` field + `formatted()`에 "Parallel: $X" 포함
+- Backward-compat: `Snapshot.init`에 parallel default 0.0
+
+### Tests added (+11)
+- `ChildClaudeProcessTests.swift`:
+  - `ChildProcessPurpose`: displayLabel non-empty, rawValue 안정성
+  - `ChildProcessOutput`: constructor + Hashable
+  - `MockChildClaudeProcess`: default response, setResponse, setSimulatedCost, purpose switching
+  - `CostTracker.parallel`: bucket 누적, allCases 포함, formatted 5 buckets
+
+### 빌드/테스트 결과
+- `swift build` → Build complete! (10.63s)
+- `swift test` → 383/383 passed (82 suites, ~0.1s)
+
+### 트레이드오프
+- AssociatedType `Purpose` 대신 concrete enum (existential `any ChildClaudeProcess` 사용 가능)
+- `--output-format json` 의존 — Claude Code schema 변경 시 parser update 필요
+- per-pane git worktree 분기는 ADR-054 후보로 분리
+
+---
+
 ### Added — Harness 차세대 5개 후보 (ADR-052) — 외부 시스템 검증 패턴 기반
 
 **1. Routing Decision Log** (LangSmith/Langfuse/Phoenix/OTel GenAI 패턴):

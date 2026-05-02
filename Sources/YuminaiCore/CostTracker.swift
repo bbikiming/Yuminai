@@ -26,6 +26,7 @@ public final class CostTracker {
         case decomposition // /decompose ephemeral session
         case rehearsal     // walk-through rehearsal 재실행
         case routing       // routing classifier (현재는 휴리스틱이라 0, 향후 LLM-based 시 사용)
+        case parallel      // ADR-053 — multi-agent parallel 두 번째 pane (BSP barrier)
     }
 
     public struct Snapshot: Sendable, Codable, Hashable {
@@ -33,18 +34,20 @@ public final class CostTracker {
         public let decomposition: Double
         public let rehearsal: Double
         public let routing: Double
-        public var total: Double { main + decomposition + rehearsal + routing }
+        public let parallel: Double
+        public var total: Double { main + decomposition + rehearsal + routing + parallel }
 
-        public init(main: Double, decomposition: Double, rehearsal: Double, routing: Double) {
+        public init(main: Double, decomposition: Double, rehearsal: Double, routing: Double, parallel: Double = 0.0) {
             self.main = main
             self.decomposition = decomposition
             self.rehearsal = rehearsal
             self.routing = routing
+            self.parallel = parallel
         }
 
         public func formatted() -> String {
-            String(format: "Main: $%.4f / Decomp: $%.4f / Rehearsal: $%.4f / Routing: $%.4f / Total: $%.4f",
-                main, decomposition, rehearsal, routing, total)
+            String(format: "Main: $%.4f / Decomp: $%.4f / Rehearsal: $%.4f / Routing: $%.4f / Parallel: $%.4f / Total: $%.4f",
+                main, decomposition, rehearsal, routing, parallel, total)
         }
     }
 
@@ -64,7 +67,8 @@ public final class CostTracker {
             main: buckets[.main] ?? 0,
             decomposition: buckets[.decomposition] ?? 0,
             rehearsal: buckets[.rehearsal] ?? 0,
-            routing: buckets[.routing] ?? 0
+            routing: buckets[.routing] ?? 0,
+            parallel: buckets[.parallel] ?? 0
         )
     }
 
