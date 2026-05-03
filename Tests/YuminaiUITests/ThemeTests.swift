@@ -49,6 +49,57 @@ struct LayoutModeTests {
         #expect(LayoutMode.regular.hidesNonEssentialToolbarItems == false)
         #expect(LayoutMode.wide.hidesNonEssentialToolbarItems == false)
     }
+
+    /// **ADR-080** — sidebarIsOverlay vs allowsInspector 모드 매트릭스 검증.
+    /// 신규 ADR 추가 시 모드 분기가 깨지지 않게 회귀 방지.
+    @Test("LayoutMode 매트릭스 — sidebar overlay × inspector 허용")
+    func layoutMatrix() {
+        let allModes: [LayoutMode] = [.tiny, .compact, .medium, .regular, .wide]
+        for mode in allModes {
+            // sidebarIsOverlay = (tiny || compact)만 true
+            let expectOverlay = (mode == .tiny || mode == .compact)
+            #expect(mode.sidebarIsOverlay == expectOverlay, "\(mode).sidebarIsOverlay 예상: \(expectOverlay)")
+
+            // allowsInspector = (regular || wide)만 true
+            let expectInspector = (mode == .regular || mode == .wide)
+            #expect(mode.allowsInspector == expectInspector, "\(mode).allowsInspector 예상: \(expectInspector)")
+        }
+    }
+
+    /// **ADR-080** — Theme.Layout 반응형 padding 함수 검증 (ADR-072 확장).
+    @Test("contentPaddingH 반응형 — 작은 화면 padding 작음")
+    func contentPaddingResponsive() {
+        let tinyPadding = Theme.Layout.contentPaddingH(for: .tiny)
+        let compactPadding = Theme.Layout.contentPaddingH(for: .compact)
+        let mediumPadding = Theme.Layout.contentPaddingH(for: .medium)
+        let regularPadding = Theme.Layout.contentPaddingH(for: .regular)
+        let widePadding = Theme.Layout.contentPaddingH(for: .wide)
+
+        // 단조 증가 (작은 화면일수록 padding 작음)
+        #expect(tinyPadding < compactPadding)
+        #expect(compactPadding < mediumPadding)
+        #expect(mediumPadding < regularPadding)
+        #expect(regularPadding == widePadding)  // regular/wide는 같음
+
+        // 절대값 sanity check
+        #expect(tinyPadding >= 4)
+        #expect(widePadding <= 48)
+    }
+
+    @Test("composerOuterPadding 반응형 — 단조 증가")
+    func composerOuterPaddingResponsive() {
+        let tiny = Theme.Layout.composerOuterPadding(for: .tiny)
+        let regular = Theme.Layout.composerOuterPadding(for: .regular)
+        #expect(tiny < regular)
+        #expect(tiny >= 4)
+    }
+
+    @Test("composerPadding 반응형")
+    func composerPaddingResponsive() {
+        let tiny = Theme.Layout.composerPadding(for: .tiny)
+        let regular = Theme.Layout.composerPadding(for: .regular)
+        #expect(tiny <= regular)
+    }
 }
 
 @Suite("Settings sheet sizing (ADR-070)")

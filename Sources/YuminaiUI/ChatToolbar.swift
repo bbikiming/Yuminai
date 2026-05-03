@@ -136,11 +136,12 @@ public struct ChatToolbar: View {
                     .padding(.leading, Theme.Spacing.sm)
             }
 
-            // ADR-079 Phase 4-5 — Git branch indicator + commit button
+            // ADR-079 Phase 4-5 + ADR-080 — Git indicator/commit (tiny에서 commit 버튼만 숨김)
             if let gitBranch {
                 gitBranchIndicator(branch: gitBranch, stats: gitDirtyStats)
                     .padding(.leading, Theme.Spacing.sm)
-                if let stats = gitDirtyStats, !stats.isEmpty {
+                if let stats = gitDirtyStats, !stats.isEmpty,
+                   !layoutMode.hidesNonEssentialToolbarItems {
                     gitCommitButton(stats: stats)
                         .padding(.leading, 4)
                 }

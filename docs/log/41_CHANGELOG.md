@@ -4,6 +4,37 @@
 
 ## [Unreleased] — 2026-05-03
 
+### Added — ADR-080 반응형 audit + 단위 테스트 보강 (사용자 follow-up)
+
+**사용자 요청**: "마친 후에도 추가적으로 화면 반응형과 단위기능 테스트 진행해 줘"
+
+**반응형 audit (ADR-079 신규 UI 점검)**
+- ChatToolbar Git "커밋" 버튼: tiny 모드에서 자동 숨김 (`hidesNonEssentialToolbarItems` 활용)
+- Git branch indicator는 tiny에서도 표시 유지 (필수 정보)
+
+**단위 테스트 보강 (+10)**
+- `iCloudSyncTests.swift` 신규 (7 tests):
+  - 기본 disabled / setEnabled 토글
+  - disabled 상태 push/pull no-op
+  - SyncSnapshot Codable round trip
+  - iCloudSyncKey 9개 검증
+- `ThemeTests.swift` 확장 (+3 tests):
+  - LayoutMode 매트릭스 (sidebar overlay × inspector 허용)
+  - contentPaddingH 반응형 단조 증가
+  - composerOuterPadding / composerPadding 단조
+
+### 빌드/테스트 결과
+- swift build → Build complete!
+- swift test → **604/604 passed** (126 suites, +10 new tests)
+- /Applications/Yuminai.app 재설치 + 실행 (PID 21180)
+
+### 수정 파일
+- Sources/YuminaiUI/ChatToolbar.swift (Git 커밋 버튼 tiny 숨김)
+- Tests/YuminaiUITests/ThemeTests.swift (+3 tests)
+- Tests/YuminaiCoreTests/iCloudSyncTests.swift (+7 tests, 신규 파일)
+
+---
+
 ### Added — ADR-079 Smart filter + Workspace duplicate + Tag drag + iCloud sync + Git integration (5 phases)
 
 **사용자 요청** (ADR-078 다음 라운드):
