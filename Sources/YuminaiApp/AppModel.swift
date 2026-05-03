@@ -4567,14 +4567,14 @@ public final class AppModel {
     /// 새 ad-hoc 대화 세션 생성 + 자동 활성화.
     /// - Parameters:
     ///   - title: 세션 제목 (예: "버그 디버깅", "리팩토링 아이디어")
-    ///   - workspaceId: 어느 워크스페이스 폴더에서 실행할지 (필수)
+    ///   - workspaceId: 어느 워크스페이스 폴더에서 실행할지. **ADR-091** — nil이면 자유 대화.
     ///   - agentKind: Claude or Codex
     ///   - settings: model + permissionMode + effort
     /// - Returns: 생성된 ChatSession id (이미 active로 설정됨).
     @discardableResult
     public func createChatSession(
         title: String,
-        workspaceId: UUID,
+        workspaceId: UUID? = nil,
         agentKind: AgentKind = .default,
         settings: SessionSettings = .default
     ) async -> UUID {
@@ -4596,17 +4596,25 @@ public final class AppModel {
         guard let session = preferences.chatSessions.first(where: { $0.id == id }) else { return }
         preferences.activeChatSessionId = id
 
-        // 1) workspace 전환 (필요 시)
-        if selectedWorkspaceId != session.workspaceId {
-            await transitionToWorkspace(session.workspaceId)
+        // 1) workspace 전환 (필요 시) — ADR-091: workspaceId가 nil이면 자유 대화 → 전환 안 함
+        if let wsId = session.workspaceId, selectedWorkspaceId != wsId {
+            await transitionToWorkspace(wsId)
         }
 
-        // 2) agent + settings 적용
-        if agentKindForActiveWorkspace != session.agentKind {
-            await setActiveAgentKind(session.agentKind)
-        }
-        if activeSettings != session.settings {
-            await updateActiveSettings(session.settings)
+        // 2) agent + settings 적용 (워크스페이스가 있을 때만 — 자유 대화는 settings만 메모리에 유지)
+        if session.workspaceId != nil {
+            if agentKindForActiveWorkspace != session.agentKind {
+                await setActiveAgentKind(session.agentKind)
+            }
+            if activeSettings != session.settings {
+                await updateActiveSettings(session.settings)
+            }
+        } else {
+            // 자유 대화: activeSettings만 갱신 (cwd 없으므로 어댑터 spawn은 chat 모드)
+            if activeSettings != session.settings {
+                activeSettings = session.settings
+                await claudeAdapter.updateSettings(session.settings)
+            }
         }
 
         // 3) lastActiveAt 갱신
@@ -4614,6 +4622,19 @@ public final class AppModel {
             preferences.chatSessions[idx].lastActiveAt = Date()
         }
         await savePreferences()
+    }
+
+    /// **ADR-091** — 자유 대화에 워크스페이스 attach (또는 detach 시 nil).
+    /// attach 시 그 workspace로 transition + agent settings 적용.
+    public func attachChatSessionToWorkspace(_ sessionId: UUID, workspaceId: UUID?) async {
+        guard let idx = preferences.chatSessions.firstIndex(where: { $0.id == sessionId }) else { return }
+        preferences.chatSessions[idx].workspaceId = workspaceId
+        preferences.chatSessions[idx].lastActiveAt = Date()
+        await savePreferences()
+        // 활성 세션이면 즉시 전환
+        if preferences.activeChatSessionId == sessionId {
+            await activateChatSession(sessionId)
+        }
     }
 
     /// ChatSession 활성 해제 — 워크스페이스 main 대화로 복귀.

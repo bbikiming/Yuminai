@@ -86,6 +86,40 @@ struct ChatSessionTests {
         #expect(sub2.contains("GPT-5 Codex"))
     }
 
+    @Test("ADR-091 — isFreeChat + subtitle(workspaceName: nil)")
+    func freeChat() {
+        let free = ChatSession(title: "자유 질문", workspaceId: nil)
+        #expect(free.isFreeChat)
+        #expect(free.workspaceId == nil)
+        let sub = free.subtitle(workspaceName: nil)
+        #expect(sub.contains("자유 대화"), "nil workspace는 '자유 대화' 라벨")
+
+        let bound = ChatSession(title: "t", workspaceId: UUID())
+        #expect(!bound.isFreeChat)
+    }
+
+    @Test("ADR-091 — with(workspaceId:) attach + detach")
+    func attachDetach() {
+        let free = ChatSession(title: "t", workspaceId: nil)
+        let wsId = UUID()
+        let attached = free.with(workspaceId: wsId)
+        #expect(attached.workspaceId == wsId)
+        #expect(!attached.isFreeChat)
+
+        let detached = attached.with(workspaceId: nil)
+        #expect(detached.isFreeChat)
+    }
+
+    @Test("ADR-091 — ChatSessionSource enum")
+    func sourceEnum() {
+        #expect(ChatSessionSource.allCases.count == 3)
+        for s in ChatSessionSource.allCases {
+            #expect(!s.displayName.isEmpty)
+            #expect(!s.subtitle.isEmpty)
+            #expect(!s.icon.isEmpty)
+        }
+    }
+
     @Test("Codable round-trip — 모든 필드 보존")
     func codableRoundTrip() throws {
         let original = ChatSession(

@@ -773,6 +773,10 @@ struct RootView: View {
             },
             onDeactivateChatSession: {
                 Task { await appModel.deactivateChatSession() }
+            },
+            // ADR-091 — 자유 대화 ↔ 워크스페이스 attach/detach
+            onAttachChatSessionToWorkspace: { sessionId, wsId in
+                Task { await appModel.attachChatSessionToWorkspace(sessionId, workspaceId: wsId) }
             }
         )
     }

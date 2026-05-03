@@ -87,6 +87,8 @@ public struct SidebarView: View {
     public let onDeleteChatSession: (UUID) -> Void
     /// **ADR-089** — 워크스페이스로 복귀 (활성 chat session 해제).
     public let onDeactivateChatSession: () -> Void
+    /// **ADR-091** — 자유 대화에 워크스페이스 attach (또는 nil로 detach).
+    public let onAttachChatSessionToWorkspace: (UUID, UUID?) -> Void
 
     public init(
         workspaces: [Workspace],
@@ -135,7 +137,8 @@ public struct SidebarView: View {
         onCreateChatSession: @escaping () -> Void = {},
         onSelectChatSession: @escaping (UUID) -> Void = { _ in },
         onDeleteChatSession: @escaping (UUID) -> Void = { _ in },
-        onDeactivateChatSession: @escaping () -> Void = {}
+        onDeactivateChatSession: @escaping () -> Void = {},
+        onAttachChatSessionToWorkspace: @escaping (UUID, UUID?) -> Void = { _, _ in }
     ) {
         self.workspaces = workspaces
         self._selectedId = selectedId
@@ -184,6 +187,7 @@ public struct SidebarView: View {
         self.onSelectChatSession = onSelectChatSession
         self.onDeleteChatSession = onDeleteChatSession
         self.onDeactivateChatSession = onDeactivateChatSession
+        self.onAttachChatSessionToWorkspace = onAttachChatSessionToWorkspace
     }
 
     public var body: some View {
@@ -290,12 +294,15 @@ public struct SidebarView: View {
                 }
                 LazyVStack(spacing: 2) {
                     ForEach(chatSessions) { session in
+                        // ADR-091 — workspaceId 옵션화 (자유 대화는 nil)
                         ChatSessionRow(
                             session: session,
-                            workspaceName: workspaceNameById(session.workspaceId),
+                            workspaceName: session.workspaceId.flatMap { workspaceNameById($0) },
                             isActive: activeChatSessionId == session.id,
+                            availableWorkspaces: workspaces,
                             onSelect: { onSelectChatSession(session.id) },
-                            onDelete: { onDeleteChatSession(session.id) }
+                            onDelete: { onDeleteChatSession(session.id) },
+                            onAttach: { wsId in onAttachChatSessionToWorkspace(session.id, wsId) }
                         )
                     }
                 }
@@ -976,8 +983,10 @@ private struct ChatSessionRow: View {
     let session: ChatSession
     let workspaceName: String?
     let isActive: Bool
+    let availableWorkspaces: [Workspace]
     let onSelect: () -> Void
     let onDelete: () -> Void
+    let onAttach: (UUID?) -> Void  // ADR-091 — nil이면 detach
     @State private var isHovering = false
 
     var body: some View {
@@ -998,12 +1007,13 @@ private struct ChatSessionRow: View {
                         .foregroundStyle(isActive ? Theme.Color.text : Theme.Color.textSecondary)
                         .lineLimit(1)
                     HStack(spacing: 4) {
-                        Image(systemName: "folder.fill")
+                        // ADR-091 — 자유 대화는 다른 아이콘 + 안내
+                        Image(systemName: locationIcon)
                             .font(.system(size: 7))
-                            .foregroundStyle(Theme.Color.textTertiary)
-                        Text(workspaceName ?? "(삭제된 워크스페이스)")
+                            .foregroundStyle(locationColor)
+                        Text(locationLabel)
                             .font(Theme.Typography.micro)
-                            .foregroundStyle(workspaceName == nil ? Theme.Color.warning : Theme.Color.textTertiary)
+                            .foregroundStyle(locationColor)
                             .lineLimit(1)
                     }
                 }
@@ -1041,9 +1051,36 @@ private struct ChatSessionRow: View {
         .buttonStyle(.plain)
         .onHover { isHovering = $0 }
         .contextMenu {
+            // ADR-091 — 워크스페이스 attach/change/detach
+            if availableWorkspaces.isEmpty {
+                Text("워크스페이스 없음 — 먼저 만드세요")
+            } else {
+                Menu("워크스페이스 지정", systemImage: "folder.badge.gearshape") {
+                    if !session.isFreeChat {
+                        Button("자유 대화로 변경 (경로 해제)", systemImage: "bubble.left.and.bubble.right") {
+                            onAttach(nil)
+                        }
+                        Divider()
+                    }
+                    ForEach(availableWorkspaces) { ws in
+                        Button {
+                            onAttach(ws.id)
+                        } label: {
+                            HStack {
+                                if session.workspaceId == ws.id {
+                                    Image(systemName: "checkmark")
+                                }
+                                Image(systemName: "folder.fill")
+                                Text(ws.name)
+                            }
+                        }
+                    }
+                }
+            }
+            Divider()
             Button("삭제", systemImage: "trash", role: .destructive, action: onDelete)
         }
-        .help("\(session.title) — \(session.subtitle(workspaceName: workspaceName ?? "(삭제됨)"))")
+        .help("\(session.title) — \(session.subtitle(workspaceName: workspaceName))")
         .accessibilityLabel("\(session.title), \(workspaceName ?? "삭제된 워크스페이스"), \(session.agentKind.displayName)")
         .accessibilityAddTraits(isActive ? .isSelected : [])
         .animation(.easeOut(duration: 0.10), value: isHovering)
@@ -1058,6 +1095,24 @@ private struct ChatSessionRow: View {
         } else {
             return Color.clear
         }
+    }
+
+    /// **ADR-091** — 위치 표시 아이콘/색상/라벨 (워크스페이스 / 자유 대화 / 삭제됨).
+    private var locationIcon: String {
+        if session.isFreeChat { return "bubble.left.and.bubble.right" }
+        if workspaceName == nil { return "exclamationmark.triangle.fill" }
+        return "folder.fill"
+    }
+
+    private var locationColor: Color {
+        if session.isFreeChat { return .purple }
+        if workspaceName == nil { return Theme.Color.warning }
+        return Theme.Color.textTertiary
+    }
+
+    private var locationLabel: String {
+        if session.isFreeChat { return "자유 대화 (경로 미지정)" }
+        return workspaceName ?? "(삭제된 워크스페이스)"
     }
 }
 
