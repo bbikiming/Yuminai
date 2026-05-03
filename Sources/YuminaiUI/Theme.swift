@@ -79,6 +79,13 @@ public enum Theme {
         public static let assistantText = text
         public static let toolText = textSecondary
 
+        /// **ADR-087 Phase 3** — Agent별 브랜드 색상 (Composer strip + 메시지 마커).
+        /// Claude=Anthropic 브랜드 오렌지, Codex=OpenAI 브랜드 그린.
+        public static let agentClaude = SwiftUI.Color(rgb: 0xD97706)  // amber/orange
+        public static let agentCodex = SwiftUI.Color(rgb: 0x10A37F)   // OpenAI teal-green
+        public static let agentClaudeMuted = SwiftUI.Color.adaptive(light: SwiftUI.Color(rgb: 0xFEF3C7), dark: SwiftUI.Color(rgb: 0x4A2D08))
+        public static let agentCodexMuted = SwiftUI.Color.adaptive(light: SwiftUI.Color(rgb: 0xD1FAE5), dark: SwiftUI.Color(rgb: 0x064237))
+
         // Helper: dark/light hex
         private static func hex(dark: UInt32, light: UInt32) -> SwiftUI.Color {
             SwiftUI.Color.adaptive(

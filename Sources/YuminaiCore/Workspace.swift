@@ -27,6 +27,10 @@ public struct Workspace: Sendable, Identifiable, Hashable, Codable {
     /// 워크스페이스 reload 시 단일 timeline 복원.
     public let savedConversationLog: [ConversationEntry]
     public let savedTasks: [HarnessTask]
+    /// **ADR-087 Phase 1** — Agent별 세션 설정 (model/permissionMode/effortLevel).
+    /// agent 전환 시 그 agent의 last-used 설정으로 swap.
+    /// 비어있는 agent는 SessionSettings.default 사용 (sonnet/default/medium).
+    public let perAgentSettings: [AgentKind: SessionSettings]
 
     public init(
         id: UUID = UUID(),
@@ -42,7 +46,8 @@ public struct Workspace: Sendable, Identifiable, Hashable, Codable {
         savedTerminalSessions: [TerminalSession] = [],
         projectProfile: ProjectProfile = .empty,
         savedConversationLog: [ConversationEntry] = [],
-        savedTasks: [HarnessTask] = []
+        savedTasks: [HarnessTask] = [],
+        perAgentSettings: [AgentKind: SessionSettings] = [:]
     ) {
         self.id = id
         self.name = name
@@ -58,6 +63,27 @@ public struct Workspace: Sendable, Identifiable, Hashable, Codable {
         self.projectProfile = projectProfile
         self.savedConversationLog = savedConversationLog
         self.savedTasks = savedTasks
+        self.perAgentSettings = perAgentSettings
+    }
+
+    /// **ADR-087 Phase 1** — backward-compat 디코더 (perAgentSettings 누락 시 빈 dict).
+    public init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        self.id = try c.decode(UUID.self, forKey: .id)
+        self.name = try c.decode(String.self, forKey: .name)
+        self.directoryPath = try c.decode(String.self, forKey: .directoryPath)
+        self.createdAt = try c.decode(Date.self, forKey: .createdAt)
+        self.lastOpenedAt = try c.decodeIfPresent(Date.self, forKey: .lastOpenedAt)
+        self.harnessTemplate = try c.decodeIfPresent(HarnessTemplateName.self, forKey: .harnessTemplate)
+        self.isArchived = try c.decodeIfPresent(Bool.self, forKey: .isArchived) ?? false
+        self.agentKind = try c.decodeIfPresent(AgentKind.self, forKey: .agentKind) ?? .default
+        self.deliveryConfig = try c.decodeIfPresent(DeliveryConfig.self, forKey: .deliveryConfig) ?? .disabled
+        self.savedPanes = try c.decodeIfPresent([AgentPane].self, forKey: .savedPanes) ?? []
+        self.savedTerminalSessions = try c.decodeIfPresent([TerminalSession].self, forKey: .savedTerminalSessions) ?? []
+        self.projectProfile = try c.decodeIfPresent(ProjectProfile.self, forKey: .projectProfile) ?? .empty
+        self.savedConversationLog = try c.decodeIfPresent([ConversationEntry].self, forKey: .savedConversationLog) ?? []
+        self.savedTasks = try c.decodeIfPresent([HarnessTask].self, forKey: .savedTasks) ?? []
+        self.perAgentSettings = try c.decodeIfPresent([AgentKind: SessionSettings].self, forKey: .perAgentSettings) ?? [:]
     }
 
     /// agentKind만 다른 새 인스턴스 반환 (불변성 유지).
@@ -68,7 +94,8 @@ public struct Workspace: Sendable, Identifiable, Hashable, Codable {
             isArchived: isArchived, agentKind: agentKind, deliveryConfig: deliveryConfig,
             savedPanes: savedPanes, savedTerminalSessions: savedTerminalSessions,
             projectProfile: projectProfile,
-            savedConversationLog: savedConversationLog, savedTasks: savedTasks
+            savedConversationLog: savedConversationLog, savedTasks: savedTasks,
+            perAgentSettings: perAgentSettings
         )
     }
 
@@ -79,7 +106,8 @@ public struct Workspace: Sendable, Identifiable, Hashable, Codable {
             isArchived: isArchived, agentKind: agentKind, deliveryConfig: deliveryConfig,
             savedPanes: savedPanes, savedTerminalSessions: savedTerminalSessions,
             projectProfile: projectProfile,
-            savedConversationLog: savedConversationLog, savedTasks: savedTasks
+            savedConversationLog: savedConversationLog, savedTasks: savedTasks,
+            perAgentSettings: perAgentSettings
         )
     }
 
@@ -90,7 +118,8 @@ public struct Workspace: Sendable, Identifiable, Hashable, Codable {
             isArchived: isArchived, agentKind: agentKind, deliveryConfig: deliveryConfig,
             savedPanes: savedPanes, savedTerminalSessions: savedTerminalSessions,
             projectProfile: projectProfile,
-            savedConversationLog: savedConversationLog, savedTasks: savedTasks
+            savedConversationLog: savedConversationLog, savedTasks: savedTasks,
+            perAgentSettings: perAgentSettings
         )
     }
 
@@ -101,7 +130,8 @@ public struct Workspace: Sendable, Identifiable, Hashable, Codable {
             isArchived: isArchived, agentKind: agentKind, deliveryConfig: deliveryConfig,
             savedPanes: savedPanes, savedTerminalSessions: savedTerminalSessions,
             projectProfile: projectProfile,
-            savedConversationLog: savedConversationLog, savedTasks: savedTasks
+            savedConversationLog: savedConversationLog, savedTasks: savedTasks,
+            perAgentSettings: perAgentSettings
         )
     }
 
@@ -112,7 +142,8 @@ public struct Workspace: Sendable, Identifiable, Hashable, Codable {
             isArchived: isArchived, agentKind: agentKind, deliveryConfig: deliveryConfig,
             savedPanes: savedPanes, savedTerminalSessions: savedTerminalSessions,
             projectProfile: projectProfile,
-            savedConversationLog: savedConversationLog, savedTasks: savedTasks
+            savedConversationLog: savedConversationLog, savedTasks: savedTasks,
+            perAgentSettings: perAgentSettings
         )
     }
 
@@ -123,8 +154,27 @@ public struct Workspace: Sendable, Identifiable, Hashable, Codable {
             isArchived: isArchived, agentKind: agentKind, deliveryConfig: deliveryConfig,
             savedPanes: savedPanes, savedTerminalSessions: savedTerminalSessions,
             projectProfile: projectProfile,
-            savedConversationLog: savedConversationLog, savedTasks: savedTasks
+            savedConversationLog: savedConversationLog, savedTasks: savedTasks,
+            perAgentSettings: perAgentSettings
         )
+    }
+
+    /// **ADR-087 Phase 1** — agent별 settings 갱신.
+    public func with(perAgentSettings: [AgentKind: SessionSettings]) -> Workspace {
+        Workspace(
+            id: id, name: name, directoryPath: directoryPath, createdAt: createdAt,
+            lastOpenedAt: lastOpenedAt, harnessTemplate: harnessTemplate,
+            isArchived: isArchived, agentKind: agentKind, deliveryConfig: deliveryConfig,
+            savedPanes: savedPanes, savedTerminalSessions: savedTerminalSessions,
+            projectProfile: projectProfile,
+            savedConversationLog: savedConversationLog, savedTasks: savedTasks,
+            perAgentSettings: perAgentSettings
+        )
+    }
+
+    /// **ADR-087 Phase 1** — 특정 agent의 effective settings (없으면 default).
+    public func settings(for kind: AgentKind) -> SessionSettings {
+        perAgentSettings[kind] ?? .default
     }
 }
 

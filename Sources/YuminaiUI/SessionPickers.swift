@@ -1,6 +1,182 @@
 import SwiftUI
 import YuminaiCore
 
+// MARK: - ADR-087 Phase 3 — Agent 색상 / 통합 picker UI helper
+
+extension AgentKind {
+    /// Agent별 브랜드 색상 (Composer strip / 메시지 마커 / picker badge).
+    public var brandColor: Color {
+        switch self {
+        case .claude: return Theme.Color.agentClaude
+        case .codex: return Theme.Color.agentCodex
+        }
+    }
+
+    public var brandMutedColor: Color {
+        switch self {
+        case .claude: return Theme.Color.agentClaudeMuted
+        case .codex: return Theme.Color.agentCodexMuted
+        }
+    }
+
+    /// 한 줄 짧은 한국어 캐치프레이즈 (UnifiedAgentModelPicker 헤더용).
+    public var tagline: String {
+        switch self {
+        case .claude: return "설계·리뷰에 강함"
+        case .codex: return "빠른 코드 생성"
+        }
+    }
+}
+
+// MARK: - ADR-087 Phase 2 — UnifiedAgentModelPicker
+//
+// Composer footer의 큰 트리거 버튼 — 한 클릭에 agent + model 동시 선택.
+// 메뉴 구조:
+//   🟠 Claude (현재 선택 시 ✓)
+//     · Haiku — 빠름·저비용
+//     · Sonnet — 균형
+//     · Opus — 최고 성능
+//   ─────
+//   🟢 Codex (Codex 미감지 시 disabled + hint)
+//     · (현재 model picker UI에서는 동일 ClaudeModel enum 사용 — Codex CLI가 sonnet/opus
+//        alias를 자체 매핑하는 것으로 가정. 향후 별도 CodexModel enum 분리 가능.)
+//     · Sonnet equivalent
+//     · Opus equivalent
+
+public struct UnifiedAgentModelPicker: View {
+    @Binding public var agent: AgentKind
+    @Binding public var model: ClaudeModel
+    public let codexAvailable: Bool
+    public let onAgentChange: (AgentKind) -> Void
+    public let onModelChange: (ClaudeModel) -> Void
+
+    public init(
+        agent: Binding<AgentKind>,
+        model: Binding<ClaudeModel>,
+        codexAvailable: Bool,
+        onAgentChange: @escaping (AgentKind) -> Void = { _ in },
+        onModelChange: @escaping (ClaudeModel) -> Void = { _ in }
+    ) {
+        self._agent = agent
+        self._model = model
+        self.codexAvailable = codexAvailable
+        self.onAgentChange = onAgentChange
+        self.onModelChange = onModelChange
+    }
+
+    public var body: some View {
+        Menu {
+            // Claude 섹션
+            Section("Claude · \(AgentKind.claude.tagline)") {
+                ForEach(ClaudeModel.allCases, id: \.self) { m in
+                    Button {
+                        select(agent: .claude, model: m)
+                    } label: {
+                        Label {
+                            VStack(alignment: .leading) {
+                                Text("\(m.displayName) — \(m.subtitle)")
+                                Text("$\(String(format: "%.2f", m.inputPricePerMillion))/M in · $\(String(format: "%.2f", m.outputPricePerMillion))/M out")
+                                    .font(.caption)
+                            }
+                        } icon: {
+                            if agent == .claude && model == m {
+                                Image(systemName: "checkmark")
+                            } else {
+                                Image(systemName: AgentKind.claude.icon)
+                            }
+                        }
+                    }
+                }
+            }
+            // Codex 섹션
+            Section("Codex · \(AgentKind.codex.tagline)") {
+                ForEach(ClaudeModel.allCases, id: \.self) { m in
+                    Button {
+                        select(agent: .codex, model: m)
+                    } label: {
+                        Label {
+                            VStack(alignment: .leading) {
+                                Text("\(m.displayName) — \(m.subtitle)")
+                                Text(codexAvailable
+                                     ? "Codex CLI가 자체 매핑"
+                                     : "codex CLI 미감지 — 설정에서 경로 확인")
+                                    .font(.caption)
+                            }
+                        } icon: {
+                            if agent == .codex && model == m {
+                                Image(systemName: "checkmark")
+                            } else {
+                                Image(systemName: AgentKind.codex.icon)
+                            }
+                        }
+                    }
+                    .disabled(!codexAvailable)
+                }
+            }
+        } label: {
+            UnifiedAgentTrigger(agent: agent, model: model)
+        }
+        .menuStyle(.borderlessButton)
+        .menuIndicator(.hidden)
+        .fixedSize()
+        .help("Agent와 모델을 한 번에 선택. 같은 워크스페이스에서 Claude ⇄ Codex 자유롭게 전환 가능.")
+        .accessibilityLabel("현재 \(agent.displayName) · \(model.displayName)")
+        .accessibilityHint("클릭하면 다른 agent + 모델 조합으로 한 번에 전환할 수 있습니다.")
+    }
+
+    private func select(agent newAgent: AgentKind, model newModel: ClaudeModel) {
+        let agentChanged = agent != newAgent
+        let modelChanged = model != newModel
+        agent = newAgent
+        model = newModel
+        // 호출자가 onAgentChange에서 setActiveAgentKind를 호출 → 그 안에서 perAgentSettings swap
+        // → activeSettings.model이 자동으로 그 agent의 last-used로 바뀜.
+        // onModelChange는 그 후 호출 (사용자가 명시적으로 모델 선택했으므로).
+        if agentChanged { onAgentChange(newAgent) }
+        if modelChanged { onModelChange(newModel) }
+    }
+}
+
+/// UnifiedAgentModelPicker의 trigger label — Composer footer에 큰 시각적 anchor.
+private struct UnifiedAgentTrigger: View {
+    let agent: AgentKind
+    let model: ClaudeModel
+    @State private var hovering = false
+
+    var body: some View {
+        HStack(spacing: 6) {
+            // Agent 색상 dot
+            Circle()
+                .fill(agent.brandColor)
+                .frame(width: 8, height: 8)
+            Image(systemName: agent.icon)
+                .font(.system(size: 11, weight: .medium))
+                .foregroundStyle(agent.brandColor)
+            Text(agent.displayName)
+                .font(Theme.Typography.label.weight(.semibold))
+                .foregroundStyle(Theme.Color.text)
+            Text("·")
+                .foregroundStyle(Theme.Color.textTertiary)
+            Text(model.displayName)
+                .font(Theme.Typography.label)
+                .foregroundStyle(Theme.Color.textSecondary)
+            Image(systemName: "chevron.up.chevron.down")
+                .font(.system(size: 8, weight: .medium))
+                .foregroundStyle(hovering ? Theme.Color.accent : Theme.Color.textTertiary)
+        }
+        .padding(.horizontal, Theme.Spacing.sm + 2)
+        .padding(.vertical, Theme.Spacing.xs + 1)
+        .background(hovering ? agent.brandMutedColor : agent.brandMutedColor.opacity(0.5))
+        .overlay(
+            RoundedRectangle(cornerRadius: Theme.Radius.sm)
+                .stroke(agent.brandColor.opacity(hovering ? 0.6 : 0.25), lineWidth: 1)
+        )
+        .clipShape(RoundedRectangle(cornerRadius: Theme.Radius.sm))
+        .animation(.easeOut(duration: 0.10), value: hovering)
+        .onHover { hovering = $0 }
+    }
+}
+
 /// Composer footer 모델 picker — Claude Code 스타일 PickerMenu.
 public struct ModelPicker: View {
     @Binding public var selection: ClaudeModel

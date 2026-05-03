@@ -492,14 +492,23 @@ public final class AppModel {
     }
 
     /// 활성 워크스페이스의 agent kind 변경 + 즉시 세션 재spawn.
+    /// **ADR-087 Phase 1** — agent 전환 시 그 agent의 last-used settings로 자동 swap.
+    /// 현재 settings는 이전 agent의 perAgentSettings에 저장 → 다음에 돌아와도 유지.
     public func setActiveAgentKind(_ kind: AgentKind) async {
         guard let id = selectedWorkspaceId,
               let workspace = workspaces.first(where: { $0.id == id }),
               workspace.agentKind != kind
         else { return }
 
-        // store에 영속
-        let updated = workspace.with(agentKind: kind)
+        // ADR-087 Phase 1 — 현재 agent의 settings를 perAgentSettings에 보존
+        // (다음에 그 agent로 돌아오면 같은 model/mode/effort로 복원)
+        var newPerAgentSettings = workspace.perAgentSettings
+        newPerAgentSettings[workspace.agentKind] = activeSettings
+
+        // store에 영속 (agentKind + perAgentSettings 동시 업데이트)
+        let updated = workspace
+            .with(agentKind: kind)
+            .with(perAgentSettings: newPerAgentSettings)
         do {
             try await workspaceStore.update(updated)
             if let idx = workspaces.firstIndex(where: { $0.id == id }) {
@@ -509,6 +518,12 @@ public final class AppModel {
             self.error = "에이전트 변경 저장 실패: \(error.localizedDescription)"
             return
         }
+
+        // ADR-087 Phase 1 — 새 agent의 last-used settings로 swap
+        // (없으면 default — sonnet/default/medium)
+        let newSettings = updated.settings(for: kind)
+        activeSettings = newSettings
+        await claudeAdapter.updateSettings(newSettings)
 
         // 현재 세션 종료 후 재spawn
         let prev = currentClaudeSession
@@ -1968,6 +1983,16 @@ public final class AppModel {
         if let workspace = currentWorkspace {
             harness.conversationLog = workspace.savedConversationLog
             harness.tasks = workspace.savedTasks
+            // ADR-087 Phase 1 — workspace 전환 시 그 workspace의 (현재 agent용) settings로 swap
+            // 새 workspace가 last-used가 다른 model이면 Composer가 즉시 반영
+            let workspaceSettings = workspace.settings(for: workspace.agentKind)
+            if workspaceSettings != activeSettings {
+                activeSettings = workspaceSettings
+                await claudeAdapter.updateSettings(workspaceSettings)
+                if let codex = codexAdapter {
+                    await codex.updateSettings(workspaceSettings)
+                }
+            }
         } else {
             harness.resetForWorkspace()
         }
@@ -2865,7 +2890,20 @@ public final class AppModel {
             return
         }
 
-        let activeAd = adapter(for: workspace)
+        // ADR-087 Phase 1 — 현재 agent의 perAgentSettings에 즉시 영속
+        var newPerAgentSettings = workspace.perAgentSettings
+        newPerAgentSettings[workspace.agentKind] = newSettings
+        let workspaceWithPerAgent = workspace.with(perAgentSettings: newPerAgentSettings)
+        do {
+            try await workspaceStore.update(workspaceWithPerAgent)
+            if let idx = workspaces.firstIndex(where: { $0.id == id }) {
+                workspaces[idx] = workspaceWithPerAgent
+            }
+        } catch {
+            // perAgentSettings 영속 실패는 critical 아님 (다음 setActiveAgentKind 시 다시 try)
+        }
+
+        let activeAd = adapter(for: workspaceWithPerAgent)
         streamConsumeTask?.cancel()
         streamConsumeTask = nil
         if let claudeSession = currentClaudeSession {
@@ -2875,7 +2913,7 @@ public final class AppModel {
         isStreaming = false
 
         do {
-            let claudeSession = try await activeAd.spawn(in: workspace)
+            let claudeSession = try await activeAd.spawn(in: workspaceWithPerAgent)
             currentClaudeSession = claudeSession
             let captured = claudeSession
             streamConsumeTask = Task { [weak self] in

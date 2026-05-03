@@ -13,6 +13,9 @@ public struct Composer: View {
     @Binding public var model: ClaudeModel
     @Binding public var permissionMode: PermissionMode
     @Binding public var effortLevel: EffortLevel
+    /// **ADR-087 Phase 2** — Composer 안에서 직접 agent 전환 가능.
+    /// nil이면 통합 picker 비활성 (기존 ModelPicker만 표시 — 후방 호환).
+    @Binding public var agentKind: AgentKind
 
     public let isStreaming: Bool
     public let placeholder: String
@@ -33,6 +36,10 @@ public struct Composer: View {
     public let onAttach: () -> Void
     public let onAttachNote: (() -> Void)?
     public let onCreatePR: (() -> Void)?
+    /// **ADR-087 Phase 2** — agent 전환 콜백 (RootView에서 setActiveAgentKind 호출).
+    public let onSelectAgent: (AgentKind) -> Void
+    /// **ADR-087 Phase 2** — Codex CLI 가용 여부 (disabled state 표시용).
+    public let codexAvailable: Bool
 
     /// `@` 입력 시 자동완성 후보 (ADR-032). 빈 배열이면 picker 비활성.
     public let mentionSuggestions: [MentionSuggestion]
@@ -45,6 +52,7 @@ public struct Composer: View {
         model: Binding<ClaudeModel>,
         permissionMode: Binding<PermissionMode>,
         effortLevel: Binding<EffortLevel>,
+        agentKind: Binding<AgentKind> = .constant(.default),
         isStreaming: Bool,
         placeholder: String = "무엇을 도와드릴까요?  `@codex` 또는 `@claude`로 다른 pane에 위임",
         attachedFiles: [URL] = [],
@@ -59,6 +67,8 @@ public struct Composer: View {
         onAttach: @escaping () -> Void = {},
         onAttachNote: (() -> Void)? = nil,
         onCreatePR: (() -> Void)? = nil,
+        onSelectAgent: @escaping (AgentKind) -> Void = { _ in },
+        codexAvailable: Bool = false,
         mentionSuggestions: [MentionSuggestion] = [],
         agentChainEnabled: Bool = false,
         layoutMode: LayoutMode = .regular
@@ -67,6 +77,7 @@ public struct Composer: View {
         self._model = model
         self._permissionMode = permissionMode
         self._effortLevel = effortLevel
+        self._agentKind = agentKind
         self.isStreaming = isStreaming
         self.placeholder = placeholder
         self.attachedFiles = attachedFiles
@@ -81,6 +92,8 @@ public struct Composer: View {
         self.onAttach = onAttach
         self.onAttachNote = onAttachNote
         self.onCreatePR = onCreatePR
+        self.onSelectAgent = onSelectAgent
+        self.codexAvailable = codexAvailable
         self.mentionSuggestions = mentionSuggestions
         self.agentChainEnabled = agentChainEnabled
         self.layoutMode = layoutMode
@@ -135,12 +148,23 @@ public struct Composer: View {
             footer
         }
         .background(Theme.Color.surface)
+        // ADR-087 Phase 3 — 좌측 4px agent 색상 strip (사용자가 어느 agent로 보내는지 즉각 인지)
+        .overlay(alignment: .leading) {
+            Rectangle()
+                .fill(agentKind.brandColor)
+                .frame(width: 3)
+                .accessibilityHidden(true)
+        }
         .overlay(
             RoundedRectangle(cornerRadius: Theme.Radius.xl)
                 .stroke(inputFocused ? Theme.Color.borderStrong : Theme.Color.borderSubtle,
                         lineWidth: Theme.Stroke.hairline)
         )
         .clipShape(RoundedRectangle(cornerRadius: Theme.Radius.xl))
+        // ADR-087 Phase 3 — Composer 전체 background에 subtle agent 색상 tint (1.5% opacity)
+        .shadow(color: agentKind.brandColor.opacity(inputFocused ? 0.12 : 0.04),
+                radius: inputFocused ? 8 : 4, y: 2)
+        .animation(.easeOut(duration: 0.20), value: agentKind)
         // ADR-072 Phase 1 — 반응형 outer padding (작은 화면에서 잘림 방지)
         .padding(.horizontal, Theme.Layout.composerOuterPadding(for: layoutMode))
         .padding(.bottom, Theme.Layout.composerOuterPadding(for: layoutMode))
@@ -293,7 +317,17 @@ public struct Composer: View {
         HStack(spacing: Theme.Spacing.sm) {
             // ADR-072 Phase 1 — 반응형 picker 표시
             if !hidesAllPickers {
-                ModelPicker(selection: $model) { _ in apply() }
+                // ADR-087 Phase 2 — 통합 Agent·Model picker (Composer 안에서 직접 agent 전환)
+                UnifiedAgentModelPicker(
+                    agent: $agentKind,
+                    model: $model,
+                    codexAvailable: codexAvailable,
+                    onAgentChange: { newAgent in
+                        // RootView가 setActiveAgentKind 호출 → perAgentSettings swap 트리거
+                        onSelectAgent(newAgent)
+                    },
+                    onModelChange: { _ in apply() }
+                )
                 ModePicker(selection: $permissionMode) { _ in apply() }
                 if !hidesSecondaryFooterItems {
                     EffortPicker(selection: $effortLevel) { _ in apply() }

@@ -1173,6 +1173,13 @@ struct ChatPane: View {
                     model: $bindable.activeSettings.model,
                     permissionMode: $bindable.activeSettings.permissionMode,
                     effortLevel: $bindable.activeSettings.effortLevel,
+                    // ADR-087 Phase 2 — Composer 안에서 직접 agent 전환 (perAgentSettings swap 자동)
+                    agentKind: Binding(
+                        get: { currentAgentKind },
+                        set: { newKind in
+                            Task { await appModel.setActiveAgentKind(newKind) }
+                        }
+                    ),
                     isStreaming: appModel.isStreaming,
                     attachedFiles: appModel.attachedFiles,
                     onRemoveAttachment: { url in appModel.removeAttachment(url) },
@@ -1194,6 +1201,10 @@ struct ChatPane: View {
                     onAttachNote: appModel.isVaultConfigured
                         ? { appModel.showNotePicker.toggle() }
                         : nil,
+                    onSelectAgent: { kind in
+                        Task { await appModel.setActiveAgentKind(kind) }
+                    },
+                    codexAvailable: appModel.codexAvailable,
                     mentionSuggestions: mentionSuggestions,
                     agentChainEnabled: appModel.preferences.agentChainEnabled,
                     layoutMode: layoutMode  // ADR-072 Phase 1
@@ -1257,7 +1268,28 @@ struct ChatPane: View {
     private var traditionalChatArea: some View {
         let activeView = ChatView(
             messages: appModel.messages,
-            assistantLabel: appModel.activePane?.displayName ?? "Claude"
+            assistantLabel: appModel.activePane?.displayName ?? "Claude",
+            // ADR-087 Phase 4 — Handoff chip
+            currentAgent: currentAgentKind,
+            otherAgentAvailable: currentAgentKind == .codex || appModel.codexAvailable,
+            isStreaming: appModel.isStreaming,
+            onHandoff: { targetAgent, lastContent in
+                Task {
+                    // 1) agent 전환 (perAgentSettings swap 자동)
+                    await appModel.setActiveAgentKind(targetAgent)
+                    // 2) Composer에 prefix inject — 이전 agent의 답변을 보고 검토 요청
+                    let prefix = """
+                    [\(currentAgentKind.displayName)의 답변을 다른 관점으로 검토해주세요]
+
+                    \(lastContent)
+
+                    ---
+                    위 답변에 대한 평가/대안/보완점을 알려주세요.
+
+                    """
+                    appModel.pendingComposerPrefix = prefix
+                }
+            }
         )
 
         // secondary pane (active 외 첫 번째) 찾기
