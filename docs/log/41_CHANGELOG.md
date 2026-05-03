@@ -4,6 +4,74 @@
 
 ## [Unreleased] — 2026-05-03
 
+### Added — ADR-075 사용량 대시보드 고도화 (Compact + Detailed + Agent/Model picker) (5 phases)
+
+**사용자 피드백** (2026-05-03):
+1. 스크롤이 생성되지 않는 비율의 팝업뷰로 설계
+2. 어떤 에이전트의 어떤 모델인지 선택 가능
+3. 보여줄 수 있는 모든 정보를 자세히 보기로 보여줌
+4. 최소한의 정보만 요약해서 보여주는 뷰를 기본값으로 + 자세히 보기 버튼
+
+**Phase 1 — Compact (default) view: 한 화면 fit**
+근거: NN/g Progressive Disclosure (정보 과부하 회피) + Apple HIG
+- `CompactDashboardView` — 핵심 정보만:
+  - **Hero stat**: 이번 세션 비용 (36pt monospaced, 가장 큰 시각 무게)
+  - **Mini stats**: 메시지 / 입력 토큰 / 출력 토큰 / 캐시 적중률 (4개)
+  - **Context gauge**: 컨텍스트 사용률 + 모델 max 대비
+  - **Model info row**: agent icon + 모델 displayName + workspace name (footer style)
+- Sheet 크기: **520×400** (스크롤 없음, 큰 화면 fit)
+- 첫 진입 default
+
+**Phase 2 — Detailed view: 모든 정보**
+- `DetailedDashboardView` — 기존 기능 + 향상:
+  - 이번 세션 / 누적 사용량 그리드
+  - Cost 분리 5 buckets 히스토그램 (한국어 라벨: 메인 대화/분해/재실행/병렬/라우팅)
+  - Cache 효과 dashboard (적중률/읽기/생성 토큰)
+  - 외부 turn 통계
+  - **모델 가격 비교표** (3개 모델 모두, 활성 모델 강조 ✓)
+- Sheet 크기: **760×680** (큰 화면 fit, 작은 화면만 스크롤)
+
+**Phase 3 — Agent + Model picker** (자세히 모드 헤더)
+- `AgentFilter` enum: 전체 / Claude / Codex
+- `ModelFilter` enum: 전체 / Haiku / Sonnet / Opus
+- Segmented picker 2개 (한국어 라벨, accessibilityLabel 적용)
+- 향후 per-(agent×model) breakdown 데이터 적용 시 즉시 활용 가능 (UI 사전 마련)
+
+**Phase 4 — 동적 sizing (YuminaiSheet 적용)**
+- `YuminaiSheet`로 wrap → footer 항상 고정 (ADR-074)
+- 모드 전환 시 sheet 크기 동적 변화 (520×400 ↔ 760×680)
+- `withAnimation(.easeInOut(0.2))`로 부드러운 전환
+
+**Phase 5 — Tests**
+- `Tests/YuminaiUITests/UsageDashboardTests.swift` (8 tests)
+  - DashboardViewMode (compact/detailed) 케이스 검증
+  - AgentFilter / ModelFilter 라벨 + 아이콘 + Identifiable
+  - 한국어 부제 (subtitle) 검증
+
+근거 문헌:
+- Apple HIG "Disclosure" — "Reveal additional details only when needed"
+- Nielsen Norman Group "Progressive Disclosure" (https://www.nngroup.com/articles/progressive-disclosure/)
+- Apple HIG "Dashboard layouts" — Hero metric pattern
+
+### Footer 동작
+- `자세히 보기` ↔ `간단히 보기` 토글 버튼
+- `닫기` 버튼 (Esc 단축키)
+- ADR-074의 YuminaiSheet에 의해 항상 하단 고정 (잘림 X)
+
+### 빌드/테스트 결과
+- swift build → Build complete!
+- swift test → **533/533 passed** (110 suites, +8 new tests)
+- /Applications/Yuminai.app 재설치 + 실행 (PID 22767)
+
+### 새 파일
+- Tests/YuminaiUITests/UsageDashboardTests.swift
+
+### 수정 파일
+- Sources/YuminaiUI/UsageDashboard.swift (전면 재작성: Compact + Detailed + filters)
+- Sources/YuminaiApp/RootView.swift (activeAgent + workspaceName 전달)
+
+---
+
 ### Added — ADR-074 Sheet 동적 sizing + 윈도우 zoom 수정 + Footer pinning (5 phases)
 
 **사용자 피드백** (2026-05-03):

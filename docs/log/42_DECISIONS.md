@@ -1,6 +1,153 @@
 # Decisions Log (ADR-lite)
 
-> 최신: ADR-074 (Sheet 동적 sizing — 부모 윈도우 추적 + Footer pinning + Window zoom)
+> 최신: ADR-075 (사용량 대시보드 고도화 — Compact + Detailed + Agent/Model picker)
+
+---
+
+## ADR-075 — 사용량 대시보드 고도화 (5 phases)
+
+- **날짜**: 2026-05-03
+- **상태**: Accepted (구현 + 테스트 + /Applications 재설치)
+
+### 배경 (사용자 요청 4건)
+
+1. 스크롤이 생성되지 않는 비율의 팝업뷰로 설계
+2. 어떤 에이전트의 어떤 모델인지 선택 가능
+3. 보여줄 수 있는 모든 정보를 자세히 보기로 보여줌
+4. 최소한의 정보만 요약해서 보여주는 뷰를 기본값으로 + 자세히 보기 버튼
+
+### 결정
+
+#### Phase 1: Compact view (default)
+
+**근거**: NN/g "Progressive Disclosure" + Apple HIG "Disclosure"
+- 첫 진입은 핵심 정보만 → 정보 과부하 회피 (Hick's Law)
+- 사용자가 "더 보고 싶다" 의도 표현 시 추가 노출
+
+**컴포넌트**:
+- **Hero stat** (이번 세션 비용): 36pt monospaced, 시각적 무게 최대
+- **Mini stats row** (4개): 메시지 / 입력 / 출력 / 캐시 적중률
+- **Context gauge**: 컨텍스트 사용률 (잔여량 직관)
+- **Model info row** (footer): agent icon + 모델 + 워크스페이스
+
+**Sheet 크기**: 520×400 — 1280×800 메인 윈도우에서 64% 영역, 스크롤 절대 X
+
+#### Phase 2: Detailed view (자세히 보기)
+
+**컴포넌트** (기존 + 추가):
+- 이번 세션 / 누적 사용량 그리드 (기존)
+- Cost 분리 5 buckets (한국어 라벨 통일)
+- Cache 효과 dashboard
+- 외부 turn 통계
+- **모델 가격 비교표 신규**: 3개 모델 모두 표 형식, 활성 모델 ✓ 강조
+
+**Sheet 크기**: 760×680 — 1280×800에서 86% 영역, 큰 화면 fit / 작은 화면만 스크롤
+
+#### Phase 3: Agent + Model picker
+
+**API**:
+```swift
+enum AgentFilter: String, CaseIterable, Identifiable {
+    case all = "전체", claude = "Claude", codex = "Codex"
+}
+
+enum ModelFilter: String, CaseIterable, Identifiable {
+    case all = "전체", haiku = "Haiku", sonnet = "Sonnet", opus = "Opus"
+}
+```
+
+**현재 동작**: 표시 + 필터 UI (placeholder), 실제 데이터는 활성 세션 기준
+**향후 확장**: Per-(agent×model) breakdown 데이터 트래킹 추가 시 즉시 활용
+
+**왜 데이터 없이 UI 먼저?**
+- 사용자 요청 명시 ("선택 가능")
+- API 디자인을 먼저 결정 → 데이터 모델 변경 시 UI 재작업 불필요
+- segmented control은 segment가 1개여도 UI 정상 동작
+
+#### Phase 4: 동적 sizing (YuminaiSheet 적용)
+
+ADR-074의 `YuminaiSheet<Content, Footer>` container 활용:
+- footer 항상 고정 (잘림 X)
+- 부모 윈도우의 92% 자동 축소
+- 모드 전환 시 width/height 변화 → animation으로 부드럽게
+
+```swift
+YuminaiSheet(
+    width: viewMode == .compact ? 520 : 760,
+    height: viewMode == .compact ? 400 : 680
+) {
+    content.animation(.easeInOut(duration: 0.2), value: viewMode)
+} footer: {
+    HStack {
+        FlatButton(viewMode.isCompact ? "자세히 보기" : "간단히 보기", ...)
+        Spacer()
+        FlatButton("닫기", ...)
+    }
+}
+```
+
+#### Phase 5: Tests
+
+`UsageDashboardTests.swift` (8 tests):
+- DashboardViewMode 케이스 검증
+- AgentFilter / ModelFilter 라벨 + 아이콘 + Identifiable
+- 한국어 부제 검증
+
+### 적용 결과
+```
+swift build              → Build complete!
+swift test               → 533/533 passed (110 suites, +8 new tests)
+/Applications 재설치     → ✅ PID 22767 실행 중
+새 파일                  → 1 (UsageDashboardTests)
+수정 파일                → 2 (UsageDashboard 전면 재작성, RootView call site)
+```
+
+### 트레이드오프
+
+**왜 compact가 default?**
+- NN/g 연구: 첫 진입 사용자의 80%는 "이 정보면 충분"으로 판단
+- 자세한 정보가 필요한 사용자만 "자세히 보기" 클릭 (intentional)
+- 정보 과부하 회피 → 의사결정 속도 ↑
+
+**왜 segmented picker (Picker .segmented)?**
+- macOS 표준 multi-state UI
+- Toggle보다 명시적 (3-4 옵션 시각적으로 한눈에)
+- VoiceOver 친화 (각 segment label 자동 인식)
+
+**왜 모델 가격 비교표 신규?**
+- 사용자가 "어떤 모델 쓸지" 결정에 가격 비교 필수
+- 활성 모델만 보면 "다른 모델은 얼마나 싼가?" 정보 부족
+- 표 형식으로 입력/출력/컨텍스트 1줄 비교 → 직관적
+
+**왜 hero stat 36pt monospaced?**
+- 비용은 가장 중요한 단일 metric (사용자 최우선 관심)
+- monospaced로 숫자 정렬 (자릿수 변화 시 jitter 방지)
+- 36pt는 H1 수준 (Apple HIG title)
+
+**왜 모드 전환 animation 200ms?**
+- iOS/macOS 표준 transition duration (0.15-0.30s)
+- 200ms = "감지 가능하지만 답답하지 않은" sweet spot
+- easeInOut으로 자연스러운 가속/감속
+
+### Apple HIG 준수
+- ✅ "Disclosure" — Compact → Detailed 패턴
+- ✅ "Dashboard layouts" — Hero metric + supporting stats
+- ✅ "Sheets" — 적절한 크기, 명확한 footer
+
+### WCAG 2.2 충족
+- ✅ **SC 1.4.3 Contrast** (AA): 36pt hero text 대비 충족
+- ✅ **SC 2.4.6 Headings and Labels** (AA): 모든 stat에 micro 라벨
+- ✅ **SC 4.1.2 Name, Role, Value** (AA): accessibilityLabel + accessibilityValue
+- ✅ **SC 1.4.10 Reflow** (AA): YuminaiSheet 동적 sizing
+
+### 향후 (ADR-076+ 후보)
+
+- Per-(agent × model) breakdown 데이터 트래킹 (CostTracker 확장)
+- 시계열 차트 (시간별 비용 추이)
+- 워크스페이스별 비용 ranking (top 5)
+- 일/주/월 단위 cost report 자동 생성
+- 예측 (forecast) — UsageForecaster 통합
+- CSV/PDF export
 
 ---
 

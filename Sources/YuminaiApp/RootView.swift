@@ -97,9 +97,12 @@ struct RootView: View {
             )
         }
         .sheet(isPresented: $bindable.showUsageDashboard) {
+            // ADR-075 — UsageDashboard 입력 helpers (RootView 스코프).
+            let activeWorkspace = appModel.workspaces.first { $0.id == appModel.selectedWorkspaceId }
             UsageDashboard(
                 currentSessionUsage: appModel.currentSessionUsage,
                 allTimeUsage: appModel.allTimeUsage,
+                activeAgent: activeWorkspace?.agentKind ?? .default,
                 activeModel: appModel.activeSettings.model,
                 costSnapshot: appModel.costTracker.snapshot(),
                 externalTurnCount: appModel.externalTurnCount,
@@ -107,6 +110,7 @@ struct RootView: View {
                 cumulativeCacheHitRatio: appModel.costTracker.cumulativeCacheHitRatio,
                 totalCacheReadTokens: appModel.costTracker.totalCacheReadTokens,
                 totalCacheCreationTokens: appModel.costTracker.totalCacheCreationTokens,
+                workspaceName: activeWorkspace?.name,
                 onClose: { appModel.showUsageDashboard = false }
             )
         }
