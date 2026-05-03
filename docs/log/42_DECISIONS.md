@@ -1,6 +1,181 @@
 # Decisions Log (ADR-lite)
 
-> 최신: ADR-077 (Drag&Drop + 폴더 색상/아이콘 + Smart folders + Pin reorder)
+> 최신: ADR-078 (Pin drop indicator + Folder reorder + Workspace search + Tag filter + Import/Export)
+
+---
+
+## ADR-078 — Pin drop indicator + Folder reorder + ⌘⇧O Search + Tag filter + Import/Export (5 phases)
+
+- **날짜**: 2026-05-03
+- **상태**: Accepted (구현 + 테스트 + /Applications 재설치)
+
+### 배경 (사용자 요청)
+
+> "Pin section drop position visual / Folder drag-to-reorder / Workspace search ⌘P / Tag-based filtering / Workspace import/export"
+
+ADR-077 다음 라운드 후보 5가지 모두 진행.
+
+### 결정
+
+#### Phase 1: Pin drop position visual indicator
+
+**문제**: ADR-077에서 pin row 위에 drop 시 swap만 가능 (insert 위치 정밀 컨트롤 X).
+
+**해결**: row 사이/끝에 6px invisible drop zone, hover 시 2px brand cyan capsule line indicator.
+
+```swift
+@State private var pinDropIndicatorIndex: Int?
+// row N 위 = index N, 마지막 row 아래 = index count
+```
+
+**왜 6px?**: 너무 두꺼우면(>10px) 사용자에게 어색, 너무 얇으면(<3px) hit target 부족 (Apple HIG 44pt → 한 line 6px 적정).
+
+#### Phase 2: Folder drag-to-reorder
+
+**별도 UTType** (`com.yuminai.folder.reorder`):
+- 워크스페이스 drag (`.yuminaiWorkspace`)와 분리
+- 폴더 헤더 drag = 폴더 자체 reorder
+- 폴더 헤더 drop = 워크스페이스 추가 (다른 UTType이라 충돌 X)
+
+**두 방식 제공** (WCAG 2.5.7 Dragging Movements alternative):
+- Drag (folder header → 다른 folder 위치)
+- Context menu "위로 이동" / "아래로 이동" (1칸씩, boundary disabled)
+
+#### Phase 3: Workspace search (⌘⇧O)
+
+**왜 ⌘⇧O가 아닌 ⌘P?**
+- ⌘P는 이미 파일 검색 (FileSearchSheet) — VSCode/Cursor 표준
+- ⌘⇧O = "Open Workspace" semantic (VS Code도 비슷한 패턴)
+- 사용자 학습 비용 ↓ (existing convention 보존)
+
+**Fuzzy scoring 가중치**:
+- 이름 prefix 100점 (가장 정확)
+- 경로 마지막 component prefix 80점 (folder name 매칭)
+- 이름 contains 50점
+- 폴더 이름 contains 30점 (cross-cutting 발견)
+- 경로 contains 20점 (마지막 폴백)
+- 핀 보너스 +10, 짧은 이름 보너스 (정확한 매칭 우선)
+
+**빈 query 동작**: 핀 우선 → lastOpenedAt 최신 순 (Apple Finder Recents 패턴)
+
+**Match row 정보**: 이름 + 경로 truncate + 폴더 라벨 + 한국어 상대시간 ("3일 전")
+
+#### Phase 4: Tag-based filtering (다중 tag)
+
+**Folder vs Tag**:
+| | Folder | Tag |
+|---|--------|-----|
+| 카디널리티 | 워크스페이스 = 0~1 폴더 | 워크스페이스 = 0~N 태그 |
+| 패턴 | mutually exclusive (Finder folder) | many-to-many (Apple Finder Tags, GitHub Labels) |
+| 분류 | hierarchical | faceted |
+| UI | sidebar 그룹 | sidebar chip bar |
+
+**근거 (NN/g "Faceted Classification")**:
+- 단일 hierarchy(folder)는 cross-cutting 분류 불가
+  - 예: "ClientA + iOS + 긴급" — folder 1개로 표현 불가
+- Multi-dimensional tag로 직교 차원 동시 적용 가능
+- folder(클라이언트)와 tag(상태/기술스택) 조합으로 깊이 있는 navigation
+
+**Filter 동작**: intersection (활성된 모든 tag를 가진 워크스페이스만 표시)
+
+**UI 디자인**:
+- 사이드바 상단 horizontal scroll chip bar
+- 활성 chip = 색상 채움 (white text), 비활성 = surface 배경
+- 워크스페이스 row에 dot indicator (max 3 + "+N")
+- 우클릭 → "태그" submenu (toggle + 새 만들기)
+- TagEditSheet (460×320, 이름 + 10색 picker + preview)
+
+**자동 정리**:
+- 워크스페이스 삭제 → tag assignment 자동 제거
+- 태그 삭제 → 모든 워크스페이스에서 자동 제거
+- orphan 방지
+
+#### Phase 5: Workspace import/export
+
+**WorkspaceArchive 형식**:
+- JSON, version-tagged (`version: 1`, future-version reject)
+- 포함: workspaces / folders / pins / tags / tagAssignments / smart folders
+- **미포함** (의도적): 채팅 세션, 시크릿(API key/Telegram token), 실제 파일
+
+**왜 일부만 포함?**
+- 채팅 세션 = sensitive (의도치 않은 공유 위험)
+- 시크릿 = Keychain 별도 (보안)
+- 파일 = 사용자 디렉토리 그대로 (이미 존재)
+
+**Import strategy** (사용자 선택):
+1. **skipExisting** (default, 안전): 같은 이름 워크스페이스 있으면 건너뜀
+2. **mergeAll**: 모두 추가 (이름 중복 가능, "(가져옴)" suffix)
+3. **replaceExisting** (위험): 기존 덮어쓰기
+
+**ID 재매핑**: 모든 strategy에서 archive UUID → 실제 UUID 매핑 추적
+- 폴더의 workspaceIds, 핀의 IDs, tag assignments 모두 재매핑
+- orphan 방지
+
+**File menu 추가**:
+- "워크스페이스 백업 내보내기…" (⌘⇧E)
+- "워크스페이스 백업 가져오기…" (⌘⇧I)
+- NSSavePanel/NSOpenPanel 표준 macOS dialog
+
+**파일 형식**: `.yuminai.json` (Yuminai-specific 확장자, JSON UTType)
+
+### 적용 결과
+```
+swift build              → Build complete!
+swift test               → 578/578 passed (121 suites, +16 new tests)
+/Applications 재설치     → ✅ PID 90975 실행 중
+새 파일                  → 5
+수정 파일                → 7
+```
+
+### 트레이드오프
+
+**왜 ⌘⇧O? (⌘P 그대로 두기)**
+- 기존 ⌘P = 파일 검색 (사용자 muscle memory)
+- VS Code 호환 패턴 유지
+- ⌘⇧O = "Open Workspace" 직관적 semantic
+
+**왜 Tag와 Folder를 별도 시스템?**
+- 카디널리티 다름 (1:N vs N:N)
+- 사용자 mental model 다름 (그룹 vs 라벨)
+- 합치면 결정 마비 ("이건 폴더? 태그?")
+- Apple Finder 모범 사례 (Folder + Tags 모두 제공)
+
+**왜 archive에 채팅 세션 미포함?**
+- 보안: 의도치 않은 sharing 위험
+- 크기: 채팅 로그가 가장 큰 metadata
+- 사용성: 백업 = "환경 복원", not "데이터 복제"
+- 향후 별도 ADR (chat session export sandbox 검토)
+
+**왜 import strategy 3개?**
+- 1개(merge) = 이름 중복 위험
+- 2개(skip/replace) = 사용자가 한 번에 결정 못 함
+- 3개 = 안전 (default) / 보존 (merge) / 강제 (replace) 명확한 의도
+
+**왜 .yuminai.json (custom 확장자)?**
+- `.json`만 쓰면 다른 JSON과 구분 X
+- `.yuminai`만 쓰면 macOS가 텍스트 에디터로 못 열음
+- `.yuminai.json` = 텍스트 에디터로 열림 + Yuminai 식별
+
+### Apple HIG 준수
+- ✅ "Drag and Drop" Visual Feedback (line indicator)
+- ✅ "Sidebars" Faceted Filtering (tag chips)
+- ✅ "File Menu" Standard Open/Save patterns
+- ✅ "Spotlight Search" pattern (fuzzy + relative time)
+
+### WCAG 2.2 충족
+- ✅ **SC 2.5.7 Dragging Movements** (AA, NEW): 모든 drag에 menu alternative
+- ✅ **SC 1.4.3 Contrast** (AA): tag chip 색상 + white text 대비 충족
+- ✅ **SC 4.1.2 Name, Role, Value** (AA): tag/folder/import accessibility
+- ✅ **SC 2.4.6 Headings and Labels** (AA): chip 라벨 명시
+
+### 향후 (ADR-079+ 후보)
+
+- **Tag groups / hierarchical tags** (Apple Finder Tags 발전형)
+- **Drag tag onto workspace** (현재는 context menu만)
+- **Smart filter** (저장된 검색 — "iOS + 긴급" 저장 → 재사용)
+- **Workspace duplicate** (한 워크스페이스 → 새 ID로 복제)
+- **Multi-window** (각 윈도우가 다른 워크스페이스)
+- **Cloud sync** (iCloud / Dropbox)
 
 ---
 

@@ -4,7 +4,7 @@ import Foundation
 ///
 /// 영속 표현은 `YuminaiPersistence.WorkspaceModel`이며, 이 struct는 actor 경계를 안전히
 /// 넘기는 도메인 표현이다.
-public struct Workspace: Sendable, Identifiable, Hashable {
+public struct Workspace: Sendable, Identifiable, Hashable, Codable {
     public let id: UUID
     public let name: String
     public let directoryPath: String

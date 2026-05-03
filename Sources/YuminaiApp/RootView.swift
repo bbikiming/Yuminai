@@ -96,6 +96,44 @@ struct RootView: View {
                 onCancel: { appModel.showCreateWorkspaceSheet = false }
             )
         }
+        // ADR-078 Phase 3 — 워크스페이스 fuzzy search sheet (⌘P)
+        .sheet(isPresented: $bindable.showWorkspaceSearchSheet) {
+            WorkspaceSearchSheet(
+                workspaces: appModel.workspaces,
+                folders: appModel.preferences.workspaceFolders,
+                pinnedIds: appModel.preferences.pinnedWorkspaceIds,
+                telegramBoundId: appModel.preferences.telegramBoundWorkspaceId,
+                chatBindings: appModel.preferences.telegramChatBindings,
+                onSelect: { id in
+                    appModel.selectedWorkspaceId = id
+                    appModel.showWorkspaceSearchSheet = false
+                },
+                onCancel: { appModel.showWorkspaceSearchSheet = false }
+            )
+        }
+        // ADR-078 Phase 4 — Tag 생성/편집 sheet
+        .sheet(isPresented: $bindable.showTagEditSheet) {
+            TagEditSheet(
+                existingTag: appModel.preferences.workspaceTags.first {
+                    $0.id == appModel.tagEditTargetId
+                },
+                onConfirm: { name, colorName in
+                    Task {
+                        if let id = appModel.tagEditTargetId {
+                            await appModel.updateTag(id: id, name: name, colorName: colorName)
+                        } else {
+                            _ = await appModel.createTag(name: name, colorName: colorName)
+                        }
+                        appModel.showTagEditSheet = false
+                        appModel.tagEditTargetId = nil
+                    }
+                },
+                onCancel: {
+                    appModel.showTagEditSheet = false
+                    appModel.tagEditTargetId = nil
+                }
+            )
+        }
         // ADR-076 Phase 4 + ADR-077 Phase 2 — 폴더 생성/편집 sheet (이름 + 색상 + 아이콘)
         .sheet(isPresented: $bindable.showFolderRenameSheet) {
             FolderEditSheet(
@@ -558,7 +596,8 @@ struct RootView: View {
             },
             onDelete: { ws in Task { await appModel.deleteWorkspace(ws) } },
             onCollapse: toggleSidebar,
-            onSearch: { /* ⌘P palette — v0.2 */ },
+            // ADR-078 Phase 3 — 워크스페이스 search sheet 활성
+            onSearch: { appModel.showWorkspaceSearchSheet = true },
             onOpenSettings: openAppSettings,
             onToggleTelegramBind: { ws in
                 Task {
@@ -605,6 +644,37 @@ struct RootView: View {
             onToggleSmartFolder: { kind in
                 Task { await appModel.toggleSmartFolder(kind) }
             },
+            // ADR-078 Phase 2 — Folder reorder
+            onMoveFolderToIndex: { folder, idx in
+                Task { await appModel.moveFolder(folder.id, to: idx) }
+            },
+            onReorderFolder: { folder, offset in
+                Task { await appModel.reorderFolder(folder.id, offset: offset) }
+            },
+            // ADR-078 Phase 4 — Tag system
+            tags: appModel.preferences.workspaceTags,
+            activeTagFilters: appModel.preferences.activeTagFilters,
+            workspaceTagIds: appModel.preferences.tagAssignments.workspaceToTags,
+            onToggleTagFilter: { tag in
+                Task { await appModel.toggleTagFilter(tag.id) }
+            },
+            onClearTagFilters: {
+                Task { await appModel.clearTagFilters() }
+            },
+            onToggleWorkspaceTag: { ws, tag in
+                Task { await appModel.toggleTag(tag.id, on: ws.id) }
+            },
+            onCreateTag: {
+                appModel.tagEditTargetId = nil
+                appModel.showTagEditSheet = true
+            },
+            onEditTag: { tag in
+                appModel.tagEditTargetId = tag.id
+                appModel.showTagEditSheet = true
+            },
+            onDeleteTag: { tag in
+                Task { await appModel.deleteTag(id: tag.id) }
+            },
             userName: "yuminai",
             updateAvailable: false
         )
@@ -628,7 +698,7 @@ struct RootView: View {
             .transition(.move(edge: .leading))
     }
 
-    /// ⌘P — 파일 검색 (Cmd+P palette) sheet.
+    /// ⌘P — 파일 검색 (Cmd+P palette) sheet. ⌘⇧O — 워크스페이스 검색 (ADR-078 Phase 3).
     private var fileSearchHotkey: some View {
         ZStack {
             Button {
@@ -644,6 +714,14 @@ struct RootView: View {
                 appModel.presentExclusiveSheet { $0.showCommandPalette = true }
             } label: { EmptyView() }
                 .keyboardShortcut("k", modifiers: .command)
+                .opacity(0)
+                .frame(width: 0, height: 0)
+                .accessibilityHidden(true)
+            // ADR-078 Phase 3 — ⌘⇧O 워크스페이스 검색 (Open Workspace)
+            Button {
+                appModel.presentExclusiveSheet { $0.showWorkspaceSearchSheet = true }
+            } label: { EmptyView() }
+                .keyboardShortcut("o", modifiers: [.command, .shift])
                 .opacity(0)
                 .frame(width: 0, height: 0)
                 .accessibilityHidden(true)

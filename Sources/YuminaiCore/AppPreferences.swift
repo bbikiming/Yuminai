@@ -100,6 +100,13 @@ public struct AppPreferences: Sendable, Codable, Hashable {
     /// **ADR-077 Phase 3** — 활성화된 smart folder kinds.
     /// 신규 사용자: `[.recentWeek]` (가장 유용). 기존 사용자: 빈 set.
     public var enabledSmartFolders: Set<SmartFolderKind>
+    /// **ADR-078 Phase 4** — 사용자 정의 태그 목록.
+    public var workspaceTags: [WorkspaceTag]
+    /// **ADR-078 Phase 4** — 워크스페이스 ↔ 태그 매핑 (many-to-many).
+    public var tagAssignments: WorkspaceTagAssignments
+    /// **ADR-078 Phase 4** — 사이드바에서 활성화된 tag 필터 (intersection 방식).
+    /// 비어있으면 필터 없음 (전체 표시).
+    public var activeTagFilters: Set<UUID>
 
     public init(
         claudeBinaryPath: String = AppPreferences.detectClaudeBinaryPath(),
@@ -137,7 +144,10 @@ public struct AppPreferences: Sendable, Codable, Hashable {
         hasCompletedOnboarding: Bool = false,  // ADR-072 Phase 4 — 새 사용자는 wizard 표시
         pinnedWorkspaceIds: [UUID] = [],  // ADR-076 Phase 1
         workspaceFolders: [WorkspaceFolder] = [],  // ADR-076 Phase 1
-        enabledSmartFolders: Set<SmartFolderKind> = SmartFolderKind.defaultEnabled  // ADR-077 Phase 3
+        enabledSmartFolders: Set<SmartFolderKind> = SmartFolderKind.defaultEnabled,  // ADR-077 Phase 3
+        workspaceTags: [WorkspaceTag] = [],  // ADR-078 Phase 4
+        tagAssignments: WorkspaceTagAssignments = WorkspaceTagAssignments(),  // ADR-078 Phase 4
+        activeTagFilters: Set<UUID> = []  // ADR-078 Phase 4
     ) {
         self.claudeBinaryPath = claudeBinaryPath
         self.codexBinaryPath = codexBinaryPath
@@ -175,6 +185,9 @@ public struct AppPreferences: Sendable, Codable, Hashable {
         self.pinnedWorkspaceIds = pinnedWorkspaceIds
         self.workspaceFolders = workspaceFolders
         self.enabledSmartFolders = enabledSmartFolders
+        self.workspaceTags = workspaceTags
+        self.tagAssignments = tagAssignments
+        self.activeTagFilters = activeTagFilters
     }
 
     // ADR-046 — 신규 필드 backward-compat: 기존 JSON에 없으면 default 적용
@@ -220,6 +233,10 @@ public struct AppPreferences: Sendable, Codable, Hashable {
         self.workspaceFolders = try c.decodeIfPresent([WorkspaceFolder].self, forKey: .workspaceFolders) ?? []
         // ADR-077 Phase 3 — 기존 사용자는 OFF (UX 변경 최소화), 신규 사용자만 default
         self.enabledSmartFolders = try c.decodeIfPresent(Set<SmartFolderKind>.self, forKey: .enabledSmartFolders) ?? []
+        // ADR-078 Phase 4 — Tag 필드들 (기존 사용자는 빈 값)
+        self.workspaceTags = try c.decodeIfPresent([WorkspaceTag].self, forKey: .workspaceTags) ?? []
+        self.tagAssignments = try c.decodeIfPresent(WorkspaceTagAssignments.self, forKey: .tagAssignments) ?? WorkspaceTagAssignments()
+        self.activeTagFilters = try c.decodeIfPresent(Set<UUID>.self, forKey: .activeTagFilters) ?? []
     }
 
     /// `claude` CLI의 가능성 높은 위치들을 순서대로 시도해 첫 번째 존재하는 경로 반환.

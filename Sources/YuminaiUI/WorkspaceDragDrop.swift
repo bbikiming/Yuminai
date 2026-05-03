@@ -53,3 +53,24 @@ public extension UTType {
     /// **ADR-077 Phase 4** — Pin 그룹 안 reorder UTType.
     static let yuminaiPinReorder = UTType(exportedAs: "com.yuminai.pin.reorder")
 }
+
+/// **ADR-078 Phase 2** — Folder 자체 reorder payload.
+/// 폴더 헤더를 drag해서 다른 폴더 위에 drop 시 폴더 순서 변경.
+public struct FolderReorderPayload: Codable, Transferable {
+    public let folderId: UUID
+    public let currentIndex: Int
+
+    public init(folderId: UUID, currentIndex: Int) {
+        self.folderId = folderId
+        self.currentIndex = currentIndex
+    }
+
+    public static var transferRepresentation: some TransferRepresentation {
+        CodableRepresentation(contentType: .yuminaiFolderReorder)
+    }
+}
+
+public extension UTType {
+    /// **ADR-078 Phase 2** — Folder reorder UTType.
+    static let yuminaiFolderReorder = UTType(exportedAs: "com.yuminai.folder.reorder")
+}

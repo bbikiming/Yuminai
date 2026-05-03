@@ -4,6 +4,95 @@
 
 ## [Unreleased] — 2026-05-03
 
+### Added — ADR-078 Pin drop indicator + Folder reorder + Workspace search + Tag filter + Import/Export (5 phases)
+
+**사용자 요청** (ADR-077 다음 라운드 후보 5가지 모두 진행):
+1. Pin section drop position visual (line indicator)
+2. Folder drag-to-reorder (폴더 자체 순서 변경)
+3. Workspace search (⌘P 활성)
+4. Tag-based filtering (다중 tag, smart folder의 발전형)
+5. Workspace import/export (백업/복원)
+
+**Phase 1 — Pin drop position indicator**
+- Pin row 사이/끝에 6px drop zone (`pinDropZone(targetIndex:)`)
+- Drag hover 시 2px brand cyan capsule line 표시 + 부드러운 fade animation
+- `pinDropIndicatorIndex: Int?` state로 위치 추적
+- AppModel.movePin(_:to:) 활용
+
+**Phase 2 — Folder drag-to-reorder**
+- `FolderReorderPayload` (Transferable, UUID + currentIndex)
+- 새 UTType `com.yuminai.folder.reorder`
+- 폴더 헤더 `.draggable(FolderReorderPayload)`
+- 폴더 사이 drop zone (folderDropZone) — pin과 동일 패턴
+- AppModel.moveFolder(_:to:) + reorderFolder(_:offset:)
+- FolderHeaderRow context menu에 "위로/아래로 이동" + boundary disabled
+
+**Phase 3 — Workspace search (⌘⇧O)**
+- `WorkspaceSearchSheet` 신규 (580×480)
+- Fuzzy scoring:
+  - 이름 prefix 100점, contains 50점
+  - 경로 마지막 component prefix 80점
+  - 폴더 이름 contains 30점
+  - 핀 보너스 +10, 짧은 이름 보너스
+- 빈 query: 핀 우선 + lastOpenedAt 최신 순
+- Match row: 이름 + 경로 + 폴더 라벨 + 상대 시간 ("3일 전")
+- ⌘⇧O 단축키 (⌘P는 파일 검색용으로 보존)
+- 사이드바 검색 버튼도 활성
+
+**Phase 4 — Tag-based filtering (다중 tag)**
+- `WorkspaceTag` struct: id + name + colorName (folder palette 공유)
+- `WorkspaceTagAssignments`: many-to-many 매핑 (workspaceToTags + helper API)
+- AppPreferences: workspaceTags + tagAssignments + activeTagFilters
+- AppModel: createTag/updateTag/deleteTag/toggleTag/toggleTagFilter/clearTagFilters
+- 사이드바 tag filter chip bar (horizontal scroll, 활성 chip 색상 강조)
+- Workspace row tag dot indicator (max 3 + "+N")
+- Workspace context menu에 "태그" submenu (toggle + 새 태그 만들기)
+- `TagEditSheet` 신규 (460×320, 이름 + 10색 picker + preview)
+- 워크스페이스 삭제 시 tag assignment 자동 정리
+
+**Phase 5 — Workspace import/export**
+- `WorkspaceArchive` struct (version + date + 모든 메타데이터)
+  - workspaces / folders / pins / tags / tagAssignments / smart folders
+  - 보안: 시크릿 + 채팅 로그 미포함 (Keychain + 별도)
+- `WorkspaceImportStrategy` enum: skipExisting / mergeAll / replaceExisting
+  - 한국어 displayName + hint (사용자 결정 도움)
+- `WorkspaceImportResult` 요약 ("워크스페이스 5개 추가, 1개 건너뜀")
+- AppModel.makeArchive() + exportArchiveToFile() + importArchiveFromFile()
+- File menu에 "워크스페이스 백업 내보내기/가져오기" (⌘⇧E / ⌘⇧I)
+- NSSavePanel/NSOpenPanel 사용 (.yuminai.json 확장자)
+- Codable backward-compat (currentVersion=1, future version은 reject)
+- Workspace 자체에 Codable conformance 추가 (depend types 모두 이미 Codable)
+
+근거:
+- Apple HIG "Drag and Drop": Visual feedback (line indicator)
+- Apple Finder Tags / GitHub Labels: many-to-many 패턴
+- NN/g "Faceted Classification": 다차원 navigation
+- WCAG 2.5.7 Dragging Movements (AA): alternative path (menu)
+- Codable 표준 + version-tagged schema (forward-compat)
+
+### 빌드/테스트 결과
+- swift build → Build complete!
+- swift test → **578/578 passed** (121 suites, +16 new tests)
+- /Applications/Yuminai.app 재설치 + 실행 (PID 90975)
+
+### 새 파일
+- Sources/YuminaiCore/WorkspaceTag.swift (Tag + assignments)
+- Sources/YuminaiCore/WorkspaceArchive.swift (백업 형식)
+- Sources/YuminaiApp/WorkspaceSearchSheet.swift (⌘⇧O)
+- Sources/YuminaiApp/TagEditSheet.swift
+- Tests/YuminaiCoreTests/WorkspaceTagAndArchiveTests.swift (+16 tests)
+
+### 수정 파일
+- Sources/YuminaiCore/Workspace.swift (Codable conformance 추가)
+- Sources/YuminaiCore/AppPreferences.swift (tag 필드 + assignments + filters)
+- Sources/YuminaiUI/WorkspaceDragDrop.swift (FolderReorderPayload + UTType)
+- Sources/YuminaiUI/SidebarView.swift (Pin/Folder drop zone + tag filter bar + tag menu)
+- Sources/YuminaiApp/AppModel.swift (folder reorder + tag CRUD + archive import/export)
+- Sources/YuminaiApp/RootView.swift (callbacks + sheet bindings + ⌘⇧O hotkey)
+- Sources/YuminaiApp/YuminaiApp.swift (File menu — import/export commands)
+
+---
+
 ### Added — ADR-077 Drag&Drop + 폴더 색상/아이콘 + Smart folders + Pin reorder (5 phases)
 
 **사용자 요청** (2026-05-03):

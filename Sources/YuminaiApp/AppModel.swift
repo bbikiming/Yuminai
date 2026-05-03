@@ -55,6 +55,12 @@ public final class AppModel {
     /// `folderRenameTargetId`가 nil이면 새 폴더 생성, 있으면 해당 폴더 이름 변경.
     public var showFolderRenameSheet: Bool = false
     public var folderRenameTargetId: UUID?
+    /// **ADR-078 Phase 3** — 워크스페이스 fuzzy search sheet (⌘P).
+    public var showWorkspaceSearchSheet: Bool = false
+    /// **ADR-078 Phase 4** — 태그 생성/편집 sheet.
+    /// `tagEditTargetId`가 nil이면 새 태그 생성, 있으면 해당 태그 편집.
+    public var showTagEditSheet: Bool = false
+    public var tagEditTargetId: UUID?
 
     // 활성 세션 설정 (toolbar에서 즉시 변경 가능)
     public var activeSettings: SessionSettings = .default
@@ -889,6 +895,8 @@ public final class AppModel {
             for idx in preferences.workspaceFolders.indices {
                 preferences.workspaceFolders[idx].workspaceIds.removeAll { $0 == workspace.id }
             }
+            // ADR-078 Phase 4 — Tag assignment에서도 제거
+            preferences.tagAssignments.removeAllAssignments(for: workspace.id)
             await savePreferences()
             await refreshWorkspaces()
         } catch {
@@ -1001,6 +1009,302 @@ public final class AppModel {
         let clampedIdx = max(0, min(preferences.pinnedWorkspaceIds.count, targetIndex))
         preferences.pinnedWorkspaceIds.insert(item, at: clampedIdx)
         await savePreferences()
+    }
+
+    // MARK: - ADR-078 Phase 2 — Folder reorder
+
+    /// 폴더 자체 순서 변경 (drag 또는 menu).
+    public func moveFolder(_ folderId: UUID, to targetIndex: Int) async {
+        guard let currentIdx = preferences.workspaceFolders.firstIndex(where: { $0.id == folderId }) else { return }
+        let item = preferences.workspaceFolders.remove(at: currentIdx)
+        // remove 후 인덱스 보정 (앞쪽이 비워졌으니 -1)
+        let adjustedTarget = currentIdx < targetIndex ? targetIndex - 1 : targetIndex
+        let clampedIdx = max(0, min(preferences.workspaceFolders.count, adjustedTarget))
+        preferences.workspaceFolders.insert(item, at: clampedIdx)
+        await savePreferences()
+    }
+
+    /// 폴더 1칸 위/아래 이동 (context menu).
+    public func reorderFolder(_ folderId: UUID, offset: Int) async {
+        guard let currentIdx = preferences.workspaceFolders.firstIndex(where: { $0.id == folderId }) else { return }
+        let newIdx = max(0, min(preferences.workspaceFolders.count - 1, currentIdx + offset))
+        guard newIdx != currentIdx else { return }
+        let item = preferences.workspaceFolders.remove(at: currentIdx)
+        preferences.workspaceFolders.insert(item, at: newIdx)
+        await savePreferences()
+    }
+
+    // MARK: - ADR-078 Phase 4 — Tag CRUD + assignment + filter
+
+    /// 새 태그 생성. 이미 같은 이름이 있으면 기존 ID 반환 (idempotent).
+    public func createTag(name: String, colorName: String = "blue") async -> UUID {
+        let trimmed = name.trimmingCharacters(in: .whitespaces)
+        if let existing = preferences.workspaceTags.first(where: { $0.name == trimmed }) {
+            return existing.id
+        }
+        let tag = WorkspaceTag(name: trimmed, colorName: colorName)
+        preferences.workspaceTags.append(tag)
+        await savePreferences()
+        return tag.id
+    }
+
+    /// 태그 이름/색상 변경.
+    public func updateTag(id: UUID, name: String, colorName: String) async {
+        guard let idx = preferences.workspaceTags.firstIndex(where: { $0.id == id }) else { return }
+        preferences.workspaceTags[idx].name = name.trimmingCharacters(in: .whitespaces)
+        preferences.workspaceTags[idx].colorName = colorName
+        await savePreferences()
+    }
+
+    /// 태그 삭제 (모든 워크스페이스에서 해당 태그도 자동 제거).
+    public func deleteTag(id: UUID) async {
+        preferences.workspaceTags.removeAll { $0.id == id }
+        preferences.tagAssignments.removeTagEverywhere(id)
+        preferences.activeTagFilters.remove(id)
+        await savePreferences()
+    }
+
+    /// 워크스페이스에 태그 추가/제거 (toggle).
+    public func toggleTag(_ tagId: UUID, on workspaceId: UUID) async {
+        let current = preferences.tagAssignments.tags(for: workspaceId)
+        if current.contains(tagId) {
+            preferences.tagAssignments.remove(tag: tagId, from: workspaceId)
+        } else {
+            preferences.tagAssignments.add(tag: tagId, to: workspaceId)
+        }
+        await savePreferences()
+    }
+
+    /// 사이드바 tag 필터 토글 (활성화된 tag intersection으로 워크스페이스 필터링).
+    public func toggleTagFilter(_ tagId: UUID) async {
+        if preferences.activeTagFilters.contains(tagId) {
+            preferences.activeTagFilters.remove(tagId)
+        } else {
+            preferences.activeTagFilters.insert(tagId)
+        }
+        await savePreferences()
+    }
+
+    /// 모든 tag 필터 해제.
+    public func clearTagFilters() async {
+        preferences.activeTagFilters.removeAll()
+        await savePreferences()
+    }
+
+    /// 활성 tag 필터에 부합하는 워크스페이스 ID set.
+    /// 빈 필터 = 전체 통과 (nil 반환).
+    public func filteredWorkspaceIds() -> Set<UUID>? {
+        guard !preferences.activeTagFilters.isEmpty else { return nil }
+        // intersection: 활성된 tag 모두 가진 워크스페이스
+        var result: Set<UUID>?
+        for tagId in preferences.activeTagFilters {
+            let wsIds = Set(preferences.tagAssignments.workspaces(withTag: tagId))
+            if let existing = result {
+                result = existing.intersection(wsIds)
+            } else {
+                result = wsIds
+            }
+        }
+        return result ?? []
+    }
+
+    // MARK: - ADR-078 Phase 5 — Workspace import/export
+
+    /// 현재 상태로 archive 생성 (export 직전 호출).
+    public func makeArchive() -> WorkspaceArchive {
+        WorkspaceArchive(
+            workspaces: workspaces,
+            folders: preferences.workspaceFolders,
+            pinnedWorkspaceIds: preferences.pinnedWorkspaceIds,
+            tags: preferences.workspaceTags,
+            tagAssignments: preferences.tagAssignments,
+            enabledSmartFolders: preferences.enabledSmartFolders
+        )
+    }
+
+    /// Archive를 import (사용자가 strategy 선택).
+    public func importArchive(_ archive: WorkspaceArchive, strategy: WorkspaceImportStrategy) async -> WorkspaceImportResult {
+        var result = WorkspaceImportResult()
+
+        // 기존 이름 → ID lookup
+        let existingByName: [String: UUID] = Dictionary(workspaces.map { ($0.name, $0.id) }, uniquingKeysWith: { a, _ in a })
+
+        // ID 재매핑 (mergeAll 또는 replaceExisting 일 때 새 UUID 사용)
+        var idRemap: [UUID: UUID] = [:]
+
+        for ws in archive.workspaces {
+            if let existingId = existingByName[ws.name] {
+                switch strategy {
+                case .skipExisting:
+                    idRemap[ws.id] = existingId
+                    result.workspacesSkipped += 1
+                case .replaceExisting:
+                    do {
+                        try await workspaceStore.delete(existingId)
+                        let newWs = Workspace(
+                            id: ws.id,
+                            name: ws.name,
+                            directoryPath: ws.directoryPath,
+                            createdAt: ws.createdAt,
+                            lastOpenedAt: ws.lastOpenedAt,
+                            harnessTemplate: ws.harnessTemplate,
+                            isArchived: ws.isArchived,
+                            agentKind: ws.agentKind,
+                            deliveryConfig: ws.deliveryConfig,
+                            savedPanes: ws.savedPanes,
+                            savedTerminalSessions: ws.savedTerminalSessions,
+                            projectProfile: ws.projectProfile,
+                            savedConversationLog: ws.savedConversationLog,
+                            savedTasks: ws.savedTasks
+                        )
+                        try await workspaceStore.create(newWs)
+                        idRemap[ws.id] = ws.id
+                        result.workspacesReplaced += 1
+                    } catch {
+                        result.workspacesSkipped += 1
+                    }
+                case .mergeAll:
+                    let newId = UUID()
+                    let renamed = Workspace(
+                        id: newId,
+                        name: "\(ws.name) (가져옴)",
+                        directoryPath: ws.directoryPath,
+                        createdAt: ws.createdAt,
+                        lastOpenedAt: ws.lastOpenedAt,
+                        harnessTemplate: ws.harnessTemplate,
+                        isArchived: ws.isArchived,
+                        agentKind: ws.agentKind,
+                        deliveryConfig: ws.deliveryConfig,
+                        savedPanes: ws.savedPanes,
+                        savedTerminalSessions: ws.savedTerminalSessions,
+                        projectProfile: ws.projectProfile,
+                        savedConversationLog: ws.savedConversationLog,
+                        savedTasks: ws.savedTasks
+                    )
+                    do {
+                        try await workspaceStore.create(renamed)
+                        idRemap[ws.id] = newId
+                        result.workspacesAdded += 1
+                    } catch {
+                        result.workspacesSkipped += 1
+                    }
+                }
+            } else {
+                // 새 워크스페이스 — ID 그대로
+                do {
+                    try await workspaceStore.create(ws)
+                    idRemap[ws.id] = ws.id
+                    result.workspacesAdded += 1
+                } catch {
+                    result.workspacesSkipped += 1
+                }
+            }
+        }
+
+        // 폴더 import (워크스페이스 ID 재매핑 적용)
+        for archiveFolder in archive.folders {
+            // 같은 이름의 폴더가 이미 있으면 skip (folder는 항상 안전)
+            if preferences.workspaceFolders.contains(where: { $0.name == archiveFolder.name }) {
+                continue
+            }
+            let remappedIds = archiveFolder.workspaceIds.compactMap { idRemap[$0] }
+            let newFolder = WorkspaceFolder(
+                id: UUID(),
+                name: archiveFolder.name,
+                workspaceIds: remappedIds,
+                isExpanded: archiveFolder.isExpanded,
+                iconName: archiveFolder.iconName,
+                colorName: archiveFolder.colorName
+            )
+            preferences.workspaceFolders.append(newFolder)
+            result.foldersAdded += 1
+        }
+
+        // 핀 import (재매핑된 ID, 기존과 중복은 제외)
+        let existingPins = Set(preferences.pinnedWorkspaceIds)
+        for pinId in archive.pinnedWorkspaceIds {
+            if let remapped = idRemap[pinId], !existingPins.contains(remapped) {
+                preferences.pinnedWorkspaceIds.append(remapped)
+            }
+        }
+
+        // 태그 import (이름 중복 = 같은 태그로 간주, mergeAll)
+        var tagIdRemap: [UUID: UUID] = [:]
+        for archiveTag in archive.tags {
+            if let existing = preferences.workspaceTags.first(where: { $0.name == archiveTag.name }) {
+                tagIdRemap[archiveTag.id] = existing.id
+            } else {
+                let newTag = WorkspaceTag(
+                    id: UUID(),
+                    name: archiveTag.name,
+                    colorName: archiveTag.colorName
+                )
+                preferences.workspaceTags.append(newTag)
+                tagIdRemap[archiveTag.id] = newTag.id
+                result.tagsAdded += 1
+            }
+        }
+
+        // 태그 assignment 재매핑 + import
+        for (oldWsId, oldTagIds) in archive.tagAssignments.workspaceToTags {
+            guard let newWsId = idRemap[oldWsId] else { continue }
+            for oldTagId in oldTagIds {
+                if let newTagId = tagIdRemap[oldTagId] {
+                    preferences.tagAssignments.add(tag: newTagId, to: newWsId)
+                }
+            }
+        }
+
+        // Smart folder 활성화 union
+        preferences.enabledSmartFolders.formUnion(archive.enabledSmartFolders)
+
+        await savePreferences()
+        await refreshWorkspaces()
+        return result
+    }
+
+    /// 사용자에게 export 위치 선택 dialog 표시 + 파일 저장.
+    public func exportArchiveToFile() async {
+        let archive = makeArchive()
+        do {
+            let data = try archive.toJSON()
+            let panel = NSSavePanel()
+            panel.allowedContentTypes = [.json]
+            panel.nameFieldStringValue = "yuminai-workspaces-\(Self.exportTimestamp()).yuminai.json"
+            panel.title = "워크스페이스 백업 저장"
+            panel.message = "워크스페이스 + 폴더 + 핀 + 태그 메타데이터를 JSON으로 저장합니다."
+            if panel.runModal() == .OK, let url = panel.url {
+                try data.write(to: url)
+                self.error = "백업 저장 완료: \(url.lastPathComponent)"  // 토스트 자리
+            }
+        } catch {
+            self.error = "백업 저장 실패: \(error.localizedDescription)"
+        }
+    }
+
+    /// 사용자에게 import file 선택 dialog 표시 + import (default strategy: skipExisting).
+    public func importArchiveFromFile(strategy: WorkspaceImportStrategy = .skipExisting) async {
+        let panel = NSOpenPanel()
+        panel.allowedContentTypes = [.json]
+        panel.allowsMultipleSelection = false
+        panel.canChooseDirectories = false
+        panel.title = "Yuminai 백업 가져오기"
+        panel.message = "이전에 저장한 .yuminai.json 파일을 선택하세요."
+        guard panel.runModal() == .OK, let url = panel.url else { return }
+        do {
+            let data = try Data(contentsOf: url)
+            let archive = try WorkspaceArchive.fromJSON(data)
+            let result = await importArchive(archive, strategy: strategy)
+            self.error = "가져오기 완료: \(result.summary)"
+        } catch {
+            self.error = "가져오기 실패: \(error.localizedDescription)"
+        }
+    }
+
+    private static func exportTimestamp() -> String {
+        let formatter = DateFormatter()
+        formatter.dateFormat = "yyyy-MM-dd-HHmm"
+        return formatter.string(from: Date())
     }
 
     /// 폴더 삭제 (안의 워크스페이스는 uncategorized로 이동, 삭제 X).
@@ -3258,6 +3562,12 @@ public final class AppModel {
         showTelegramUsageDashboard = false
         showChatBindingAuditLog = false
         showAbout = false
+        // ADR-076 + ADR-078 Phase 3 + Phase 4
+        showFolderRenameSheet = false
+        folderRenameTargetId = nil
+        showWorkspaceSearchSheet = false
+        showTagEditSheet = false
+        tagEditTargetId = nil
     }
 
     /// 새 sheet/alert을 열기 전에 다른 sheet 모두 닫고 setter 실행.

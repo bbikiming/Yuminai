@@ -99,6 +99,18 @@ struct YuminaiAppMain: App {
                 }
                 .keyboardShortcut("n", modifiers: .command)
             }
+            // ADR-078 Phase 5 — File menu에 import/export 추가
+            CommandGroup(after: .newItem) {
+                Divider()
+                Button("워크스페이스 백업 내보내기…") {
+                    Task { await appModel.exportArchiveToFile() }
+                }
+                .keyboardShortcut("e", modifiers: [.command, .shift])
+                Button("워크스페이스 백업 가져오기…") {
+                    Task { await appModel.importArchiveFromFile(strategy: .skipExisting) }
+                }
+                .keyboardShortcut("i", modifiers: [.command, .shift])
+            }
         }
 
         Settings {
