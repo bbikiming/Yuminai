@@ -112,6 +112,14 @@ public struct AppPreferences: Sendable, Codable, Hashable {
     /// **ADR-079 Phase 3** — iCloud sync 활성 여부.
     /// 켜면 preferences가 NSUbiquitousKeyValueStore에 자동 동기화 (다른 PC와).
     public var iCloudSyncEnabled: Bool
+    /// **ADR-084 Phase 1** — 텔레그램 응답 detail 레벨 (default: standard).
+    public var telegramResponseMode: TelegramResponseMode
+    /// **ADR-084 Phase 2** — 텔레그램 토큰/비용 budget.
+    public var telegramTokenBudget: TelegramTokenBudget
+    /// **ADR-084 Phase 3** — 첨부파일 정책.
+    public var telegramAttachmentPolicy: TelegramAttachmentPolicy
+    /// **ADR-084 Phase 4** — 사용자 정의 skills (default 4개로 시작).
+    public var telegramSkills: [TelegramSkill]
 
     public init(
         claudeBinaryPath: String = AppPreferences.detectClaudeBinaryPath(),
@@ -154,7 +162,11 @@ public struct AppPreferences: Sendable, Codable, Hashable {
         tagAssignments: WorkspaceTagAssignments = WorkspaceTagAssignments(),  // ADR-078 Phase 4
         activeTagFilters: Set<UUID> = [],  // ADR-078 Phase 4
         smartFilters: [SmartFilter] = [],  // ADR-079 Phase 1
-        iCloudSyncEnabled: Bool = false  // ADR-079 Phase 3 — opt-in
+        iCloudSyncEnabled: Bool = false,  // ADR-079 Phase 3 — opt-in
+        telegramResponseMode: TelegramResponseMode = .standard,  // ADR-084 Phase 1
+        telegramTokenBudget: TelegramTokenBudget = TelegramTokenBudget(),  // ADR-084 Phase 2
+        telegramAttachmentPolicy: TelegramAttachmentPolicy = TelegramAttachmentPolicy(),  // ADR-084 Phase 3
+        telegramSkills: [TelegramSkill] = TelegramSkill.defaults  // ADR-084 Phase 4 — default 4개
     ) {
         self.claudeBinaryPath = claudeBinaryPath
         self.codexBinaryPath = codexBinaryPath
@@ -197,6 +209,10 @@ public struct AppPreferences: Sendable, Codable, Hashable {
         self.activeTagFilters = activeTagFilters
         self.smartFilters = smartFilters
         self.iCloudSyncEnabled = iCloudSyncEnabled
+        self.telegramResponseMode = telegramResponseMode
+        self.telegramTokenBudget = telegramTokenBudget
+        self.telegramAttachmentPolicy = telegramAttachmentPolicy
+        self.telegramSkills = telegramSkills
     }
 
     // ADR-046 — 신규 필드 backward-compat: 기존 JSON에 없으면 default 적용
@@ -250,6 +266,12 @@ public struct AppPreferences: Sendable, Codable, Hashable {
         self.smartFilters = try c.decodeIfPresent([SmartFilter].self, forKey: .smartFilters) ?? []
         // ADR-079 Phase 3 — iCloud sync (opt-in, 기존 사용자는 false)
         self.iCloudSyncEnabled = try c.decodeIfPresent(Bool.self, forKey: .iCloudSyncEnabled) ?? false
+        // ADR-084 — 텔레그램 고도화 (기존 사용자는 default 적용)
+        self.telegramResponseMode = try c.decodeIfPresent(TelegramResponseMode.self, forKey: .telegramResponseMode) ?? .standard
+        self.telegramTokenBudget = try c.decodeIfPresent(TelegramTokenBudget.self, forKey: .telegramTokenBudget) ?? TelegramTokenBudget()
+        self.telegramAttachmentPolicy = try c.decodeIfPresent(TelegramAttachmentPolicy.self, forKey: .telegramAttachmentPolicy) ?? TelegramAttachmentPolicy()
+        // 기존 사용자도 default skills 받음 (즉시 유용)
+        self.telegramSkills = try c.decodeIfPresent([TelegramSkill].self, forKey: .telegramSkills) ?? TelegramSkill.defaults
     }
 
     /// `claude` CLI의 가능성 높은 위치들을 순서대로 시도해 첫 번째 존재하는 경로 반환.

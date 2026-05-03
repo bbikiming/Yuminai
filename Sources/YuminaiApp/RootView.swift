@@ -160,6 +160,11 @@ struct RootView: View {
             GitCherryPickSheet()
                 .environment(appModel)
         }
+        // ADR-084 — 텔레그램 고도화 sheet
+        .sheet(isPresented: $bindable.showTelegramAdvancedSheet) {
+            TelegramAdvancedSheet()
+                .environment(appModel)
+        }
         // ADR-079 Phase 4 — Git branch picker (별도 popover로 가능하나 sheet로 통일)
         .sheet(isPresented: $bindable.showGitBranchPicker) {
             GitBranchPickerSheetWrapper()

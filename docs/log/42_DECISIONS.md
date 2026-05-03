@@ -1,6 +1,155 @@
 # Decisions Log (ADR-lite)
 
-> 최신: ADR-083 (Conflict resolution + Cherry-pick + PR comment + Workflow re-run + Repo insights)
+> 최신: ADR-084 (텔레그램 고도화 — 응답 모드 + 토큰 budget + 첨부 + Skills)
+
+---
+
+## ADR-084 — 텔레그램 고도화 (5 phases)
+
+- **날짜**: 2026-05-03
+- **상태**: Accepted (구현 + 테스트 + /Applications 재설치)
+
+### 배경 (사용자 요청)
+
+> "탤래그램 연동 기능을 고도화해줘. 결론만 빠르게 소통할 건지, 토큰 소모량은 어떻게 할 것인지, 자세한 설명을 받고 첨부파일까지 받을 건지 등등 가능한 스킬과 기능들을 파악해서 설정할 수 있게 기획하고 구현해줘"
+
+ADR-046, 058, 062에서 텔레그램 기본 통합. 본 ADR에서 mobile-first 사용 시나리오에 맞춘 정밀 컨트롤 추가.
+
+### 결정
+
+#### Phase 1: 응답 모드 (4단계)
+
+**왜 4개?**
+- 2개 (간결/상세) = 너무 단순 (사용자 정밀 컨트롤 불가)
+- 5+ = 결정 마비 (Hick's Law)
+- 4개 = mobile-first 시나리오 covers:
+  - 이동 중: minimal
+  - 빠른 확인: concise
+  - 일반 작업: standard
+  - 깊이 있는 검토: detailed
+
+**Token estimate (cost 추정용)**:
+| 모드 | 추정 출력 토큰 | 비용 (Sonnet 기준) |
+|------|--------------|-------------------|
+| minimal | 50 | $0.00075 |
+| concise | 250 | $0.00375 |
+| standard | 800 | $0.012 |
+| detailed | 3000 | $0.045 |
+
+**`promptInstruction`** — system prompt에 자동 inject:
+- minimal: "Reply with ONLY the final result in 1 line. ✓ or ✗."
+- detailed: "Reply with detailed reasoning, file changes overview..."
+- 한국어 응답 명시 (모든 모드)
+
+#### Phase 2: 토큰 budget (3단계 cap)
+
+**3 axis 동시 적용**:
+1. **Per-turn** — 1번 외부 turn max output tokens
+2. **Per-day** — 하루 누적 max USD (default $5)
+3. **Per-chat** — 특정 chat의 일별 quota (multi-tenant)
+
+**`TelegramOverflowAction`** (3 옵션):
+- **warn** (default): 알림만 + 진행 (사용자 자각)
+- **block**: 외부 turn 차단 (다음 자정까지) — 안전 우선
+- **downgrade**: 응답 모드를 minimal로 강제 전환 — 비용 절감 + 진행
+
+**왜 default $5 / day?**
+- Sonnet 기준 detailed 모드 ~110번 / day 가능
+- 일반 사용자 평균 < $3 / day
+- $5 = 안전 buffer + 폭주 알림
+
+#### Phase 3: 첨부파일 송수신
+
+**`acceptIncoming` / `sendOutgoing`** 분리:
+- 사용자가 한쪽만 활성 가능
+- 보안: 받기는 끄고 보내기만 (예: PR diff 전송)
+
+**`maxIncomingSizeBytes`** (default 5MB):
+- Telegram Bot API 한도: 20MB (downloadFile)
+- 5MB = 텍스트 파일 충분 + 이미지 적절
+- Stepper 1~50MB (사용자 정의)
+
+**`allowedExtensions`** (화이트리스트):
+- default: 텍스트/code 위주 (`txt/md/json/swift/ts/js/py/yaml/toml/log`)
+- 보안: binary (.exe/.dmg) 자동 거부
+- 빈 set = 모두 허용 (사용자 명시 opt-in)
+
+#### Phase 4: Skills & Templates
+
+**`/{trigger}` 패턴**:
+- Telegram bot에서 `/test` 입력 → `prompt` template 확장 → LLM 호출
+- 사용자 정의 가능 (자주 쓰는 작업 1-tap)
+
+**`{args}` 자리표시자**:
+- `prompt = "Run {args} test"` + 입력 `/x unit` → `"Run unit test"`
+- 자리표시자 없으면 args를 prompt 끝에 append
+
+**기본 4 skills (신규 사용자 default)**:
+- `/test` — 테스트 실행 (concise) 
+- `/review` — 코드 리뷰 (standard)
+- `/summary` — 오늘 작업 요약 (concise)
+- `/status` — 상태 확인 (minimal)
+
+**Skill별 응답 모드 override**:
+- Skill에 responseMode 지정 시 global 설정 무시
+- 예: `/status`는 항상 minimal (설정과 무관)
+
+#### Phase 5: Settings Sheet UI
+
+**`TelegramAdvancedSheet`** (720×620):
+- 4 segmented sections (Picker.segmented)
+- 각 section 한국어 안내 + 미리보기
+- Skills section은 인라인 추가 form (trigger + name + prompt)
+
+**macOS 메뉴 통합** (`CommandMenu "텔레그램"`):
+- 고급 설정… (⌘⇧T)
+- 응답 모드 1-click 전환 (최소/간결/기본/상세)
+- 키보드 워크플로우 친화
+
+### 적용 결과
+```
+swift build              → Build complete!
+swift test               → 670/670 passed (143 suites, +21 new tests)
+/Applications 재설치     → ✅ PID 76203 실행 중
+새 파일                  → 3
+수정 파일                → 4
+```
+
+### 트레이드오프
+
+**왜 응답 모드가 default standard (concise 아님)?**
+- 신규 사용자가 "이 모드가 뭐지?"로 인지 부담
+- standard = "보통" 기대치 충족
+- 모바일 친화는 사용자가 의도적으로 minimal/concise 선택
+
+**왜 budget이 default 활성 ($5)?**
+- 비용 폭주 방지가 default opt-in이 안전
+- 사용자가 알림 받으면 자각 → 명시적 변경 (slider로 ↑↓)
+- nil = 무제한은 명시 선택
+
+**왜 화이트리스트 (블랙리스트 아님)?**
+- 화이트리스트 = "안전한 것만 허용" (default secure)
+- 블랙리스트 = "위험한 것만 거부" (새 위험 type 자동 통과)
+- 보안 best practice: deny by default
+
+**왜 default 4 skills?**
+- 0개 = 사용자가 처음부터 만들기 부담
+- 4개 = test/review/summary/status — 90% 모바일 use case 커버
+- 사용자가 즉시 가치 체감 (default skills로 바로 사용 가능)
+
+**왜 `{args}` placeholder + auto-append 둘 다?**
+- Placeholder = 정밀 컨트롤 ("Run {args} test")
+- Auto-append = 단순 사용 (prompt + "\n\n사용자 입력: ...")
+- 사용자 의도에 따라 선택
+
+### 향후 (ADR-085+ 후보)
+
+- **Skill marketplace** — 사용자가 skill 공유 (export/import)
+- **AI-suggested skills** — 사용 패턴 분석 → skill 추천
+- **Skill chaining** — 한 skill이 다른 skill trigger
+- **Telegram inline keyboard** — 응답에 button 포함 (사용자 1-tap 다음 step)
+- **Multi-language responses** — 한국어/영어 자동 감지
+- **Voice messages** — 사용자 음성 → STT → prompt
 
 ---
 

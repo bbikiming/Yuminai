@@ -4,6 +4,94 @@
 
 ## [Unreleased] — 2026-05-03
 
+### Added — ADR-084 텔레그램 고도화 (응답 모드 + 토큰 budget + 첨부 + Skills) (5 phases)
+
+**사용자 요청**:
+- 결론만 빠르게 / 자세한 설명 모드 선택
+- 토큰 소모량 관리
+- 첨부파일 송수신
+- 가능한 스킬과 기능 파악해서 설정 가능하게
+
+**Phase 1 — 응답 모드 (4단계)**
+- `TelegramResponseMode` enum:
+  - `minimal` (~50 tokens, ✓/✗ 한 줄, 이동 중 가장 빠름)
+  - `concise` (~250 tokens, 한 단락 요약 + 다음 단계)
+  - `standard` (~800 tokens, default — 결과 + 주요 변경/이유)
+  - `detailed` (~3000 tokens, 상세 reasoning + diff 일부)
+- `promptInstruction` — system prompt에 모드별 instruction 자동 inject
+- 한국어 displayName + hint
+- AppPreferences.telegramResponseMode (default: standard)
+
+**Phase 2 — 토큰/비용 budget (3단계 cap)**
+- `TelegramTokenBudget` struct:
+  - `perTurnMaxOutputTokens` (1턴당 max output, nil = 모드 default)
+  - `perDayMaxCostUSD` (default $5, nil = 무제한)
+  - `perChatDailyMaxUSD` (chat ID별 quota, multi-tenant)
+- `TelegramOverflowAction`: warn / block / downgrade
+  - warn: 알림만 + 진행
+  - block: 외부 turn 차단 (다음 자정까지)
+  - downgrade: 응답 모드를 minimal로 강제 전환
+
+**Phase 3 — 첨부파일 송수신**
+- `TelegramAttachmentPolicy`:
+  - `acceptIncoming` (사용자 → Yuminai)
+  - `sendOutgoing` (Yuminai → 텔레그램)
+  - `maxIncomingSizeBytes` (default 5MB, Stepper 1~50MB)
+  - `allowedExtensions` (화이트리스트, default: txt/md/json/swift/ts/js/py/yaml/toml/log)
+- `isAllowed(filename:)` — 확장자 매칭 (대소문자 무관)
+- `maxSizeDisplay` — human-readable
+
+**Phase 4 — Skills & Templates**
+- `TelegramSkill` struct (id + trigger + displayName + prompt + iconName + responseMode)
+- 사용자가 텔레그램에서 `/{trigger}` 입력 시 prompt template으로 자동 확장
+- `{args}` 자리표시자 지원 (사용자 입력 inject)
+- 신규 사용자 default 4개 skills:
+  - `/test` — 테스트 실행 (concise 모드)
+  - `/review` — 코드 리뷰 (standard 모드)
+  - `/summary` — 오늘 작업 요약 (concise 모드)
+  - `/status` — 상태 확인 (minimal 모드)
+
+**Phase 5 — Settings Sheet UI + macOS 메뉴**
+- `Sources/YuminaiApp/TelegramAdvancedSheet.swift` 신규 (720×620)
+- 4개 segmented section: 응답 모드 / 토큰 budget / 첨부 / Skills
+- 각 section 한국어 안내 + 미리보기 카드
+- Skill 인라인 추가/삭제 (trigger + display + prompt + icon)
+- macOS 메뉴 "텔레그램":
+  - 고급 설정… (⌘⇧T)
+  - 응답 모드 1-click 전환 (최소/간결/기본/상세)
+
+**Phase 6 — Tests (+21)**
+- `TelegramResponseMode` (5): allCases / displayNames / token estimate 단조 / prompt unique / Codable
+- `TelegramTokenBudget` (3): defaults / round trip / backward-compat
+- `TelegramOverflowAction` (1): allCases + 한국어
+- `TelegramAttachmentPolicy` (4): defaults / whitelist / empty whitelist / sizeDisplay
+- `TelegramSkill` (5): default 4개 / expand no args / expand with args / placeholder / Codable
+- `AppPreferences ADR-084` (3): defaults / backward-compat / round-trip skills
+
+근거:
+- Apple HIG "Disclosure" — 4단계 progressive disclosure
+- Telegram Bot API (sendDocument / downloadFile)
+- Anthropic best practices (system prompt instruction injection)
+- macOS Voice Control 친화 한국어 라벨
+
+### 빌드/테스트 결과
+- swift build → Build complete!
+- swift test → **670/670 passed** (143 suites, +21 new tests)
+- /Applications/Yuminai.app 재설치 + 실행 (PID 76203)
+
+### 새 파일
+- Sources/YuminaiCore/TelegramAdvanced.swift (4 enum/struct + default skills)
+- Sources/YuminaiApp/TelegramAdvancedSheet.swift (4-section settings UI)
+- Tests/YuminaiCoreTests/TelegramAdvancedTests.swift (+21 tests)
+
+### 수정 파일
+- Sources/YuminaiCore/AppPreferences.swift (4개 신규 필드)
+- Sources/YuminaiApp/AppModel.swift (showTelegramAdvancedSheet state)
+- Sources/YuminaiApp/RootView.swift (sheet binding)
+- Sources/YuminaiApp/YuminaiApp.swift (CommandMenu "텔레그램" + ⌘⇧T 단축키)
+
+---
+
 ### Added — ADR-083 Conflict resolution + Cherry-pick + PR comment + Workflow re-run + Repo insights (5 phases)
 
 **사용자 요청**: "이어서 진행" (ADR-082 다음 라운드)

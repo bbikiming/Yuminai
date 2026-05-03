@@ -111,6 +111,38 @@ struct YuminaiAppMain: App {
                 }
                 .keyboardShortcut("i", modifiers: [.command, .shift])
             }
+            // ADR-084 — 텔레그램 고도화 메뉴
+            CommandMenu("텔레그램") {
+                Button("고급 설정…") {
+                    appModel.showTelegramAdvancedSheet = true
+                }
+                .keyboardShortcut("t", modifiers: [.command, .shift])
+                Divider()
+                Button("응답 모드: 최소") {
+                    Task {
+                        appModel.preferences.telegramResponseMode = .minimal
+                        await appModel.savePreferences()
+                    }
+                }
+                Button("응답 모드: 간결") {
+                    Task {
+                        appModel.preferences.telegramResponseMode = .concise
+                        await appModel.savePreferences()
+                    }
+                }
+                Button("응답 모드: 기본") {
+                    Task {
+                        appModel.preferences.telegramResponseMode = .standard
+                        await appModel.savePreferences()
+                    }
+                }
+                Button("응답 모드: 상세") {
+                    Task {
+                        appModel.preferences.telegramResponseMode = .detailed
+                        await appModel.savePreferences()
+                    }
+                }
+            }
         }
 
         Settings {

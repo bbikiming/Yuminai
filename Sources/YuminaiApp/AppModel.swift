@@ -84,6 +84,8 @@ public final class AppModel {
     public var showGitConflictSheet: Bool = false
     /// **ADR-083 Phase 2** — Cherry-pick sheet.
     public var showGitCherryPickSheet: Bool = false
+    /// **ADR-084** — 텔레그램 고도화 설정 sheet.
+    public var showTelegramAdvancedSheet: Bool = false
 
     // 활성 세션 설정 (toolbar에서 즉시 변경 가능)
     public var activeSettings: SessionSettings = .default
@@ -4094,6 +4096,8 @@ public final class AppModel {
         // ADR-083
         showGitConflictSheet = false
         showGitCherryPickSheet = false
+        // ADR-084
+        showTelegramAdvancedSheet = false
     }
 
     /// 새 sheet/alert을 열기 전에 다른 sheet 모두 닫고 setter 실행.
