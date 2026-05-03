@@ -13,6 +13,8 @@ public struct ChatToolbar: View {
     public let inspectorVisible: Bool
     public let inspectorAllowed: Bool
     public let layoutBadge: String?
+    /// **ADR-070** — 현재 layout mode. `tiny`에서는 비필수 버튼 숨김.
+    public let layoutMode: LayoutMode
     public let activeAgent: AgentKind
     public let codexAvailable: Bool
     public let terminalVisible: Bool
@@ -38,6 +40,7 @@ public struct ChatToolbar: View {
         inspectorVisible: Bool,
         inspectorAllowed: Bool = true,
         layoutBadge: String? = nil,
+        layoutMode: LayoutMode = .regular,
         activeAgent: AgentKind = .default,
         codexAvailable: Bool = false,
         terminalVisible: Bool = false,
@@ -62,6 +65,7 @@ public struct ChatToolbar: View {
         self.inspectorVisible = inspectorVisible
         self.inspectorAllowed = inspectorAllowed
         self.layoutBadge = layoutBadge
+        self.layoutMode = layoutMode
         self.activeAgent = activeAgent
         self.codexAvailable = codexAvailable
         self.terminalVisible = terminalVisible
@@ -108,31 +112,67 @@ public struct ChatToolbar: View {
 
             Spacer()
 
-            IconButton(
-                terminalVisible ? "terminal.fill" : "terminal",
-                help: terminalVisible ? "터미널 숨기기 (⌘⌥T)" : "터미널 열기 (⌘⌥T)",
-                action: onToggleTerminal
-            )
-            .keyboardShortcut("t", modifiers: [.command, .option])
+            // ADR-070 Phase 1+5 — tiny 모드에서는 핵심 버튼만, 그 외는 풍부한 hover popover.
+            if !layoutMode.hidesNonEssentialToolbarItems {
+                IconButton(
+                    terminalVisible ? "terminal.fill" : "terminal",
+                    help: terminalVisible ? "터미널 숨기기 (⌘⌥T)" : "터미널 열기 (⌘⌥T)",
+                    detailedHelp: ToolbarHoverInfo(
+                        title: "터미널",
+                        body: "워크스페이스 폴더에서 직접 명령어를 실행할 수 있는 zsh/bash 터미널을 엽니다.",
+                        shortcut: "⌘⌥T"
+                    ),
+                    action: onToggleTerminal
+                )
+                .keyboardShortcut("t", modifiers: [.command, .option])
+
+                IconButton(
+                    previewVisible ? "safari.fill" : "safari",
+                    help: previewVisible ? "Preview 숨기기 (⌘⌥P)" : "Preview 열기 (⌘⌥P)",
+                    detailedHelp: ToolbarHoverInfo(
+                        title: "미리보기",
+                        body: "워크스페이스의 HTML/Markdown 파일을 브라우저처럼 즉시 렌더링합니다.",
+                        shortcut: "⌘⌥P"
+                    ),
+                    action: onTogglePreview
+                )
+                .keyboardShortcut("p", modifiers: [.command, .option])
+
+                IconButton(
+                    commandsVisible ? "rectangle.stack.fill" : "rectangle.stack",
+                    help: commandsVisible ? "명령어 숨기기 (⌘⌥R)" : "명령어 열기 (⌘⌥R)",
+                    detailedHelp: ToolbarHoverInfo(
+                        title: "자주 쓰는 명령어",
+                        body: "테스트 실행, 빌드, 린트 등 워크스페이스에 등록된 명령어를 한 번에 실행합니다.",
+                        shortcut: "⌘⌥R"
+                    ),
+                    action: onToggleCommands
+                )
+                .keyboardShortcut("r", modifiers: [.command, .option])
+            }
 
             IconButton(
-                previewVisible ? "safari.fill" : "safari",
-                help: previewVisible ? "Preview 숨기기 (⌘⌥P)" : "Preview 열기 (⌘⌥P)",
-                action: onTogglePreview
+                "chart.bar",
+                help: "사용량 대시보드 (⌘D)",
+                detailedHelp: ToolbarHoverInfo(
+                    title: "사용량 대시보드",
+                    body: "토큰 사용량, 비용, 캐시 적중률 등 LLM 사용 통계를 한 눈에 확인합니다.",
+                    shortcut: "⌘D"
+                ),
+                action: onShowDashboard
             )
-            .keyboardShortcut("p", modifiers: [.command, .option])
+            .keyboardShortcut("d", modifiers: .command)
 
             IconButton(
-                commandsVisible ? "rectangle.stack.fill" : "rectangle.stack",
-                help: commandsVisible ? "Commands 숨기기 (⌘⌥R)" : "Commands 열기 (⌘⌥R)",
-                action: onToggleCommands
+                "questionmark.circle",
+                help: "단축키 + 사용 가이드 (⌘/)",
+                detailedHelp: ToolbarHoverInfo(
+                    title: "도움말 · 단축키",
+                    body: "전체 단축키 목록과 사용 가이드를 봅니다.",
+                    shortcut: "⌘/"
+                ),
+                action: onShowShortcutHelp
             )
-            .keyboardShortcut("r", modifiers: [.command, .option])
-
-            IconButton("chart.bar", help: "사용량 대시보드 (⌘D)", action: onShowDashboard)
-                .keyboardShortcut("d", modifiers: .command)
-
-            IconButton("questionmark.circle", help: "단축키 + 사용 가이드 (⌘/)", action: onShowShortcutHelp)
 
             inspectorToggle
         }
@@ -149,7 +189,12 @@ public struct ChatToolbar: View {
         if inspectorAllowed {
             IconButton(
                 inspectorVisible ? "sidebar.right" : "sidebar.right",
-                help: inspectorVisible ? "Inspector 닫기 (⌘⌥I)" : "Inspector 열기 (⌘⌥I)",
+                help: inspectorVisible ? "정보 패널 닫기 (⌘⌥I)" : "정보 패널 열기 (⌘⌥I)",
+                detailedHelp: ToolbarHoverInfo(
+                    title: "정보 패널",
+                    body: "현재 세션의 컨텍스트, 비용 분석, 도구 호출 내역 등 상세 정보를 우측에 표시합니다.",
+                    shortcut: "⌘⌥I"
+                ),
                 action: onToggleInspector
             )
             .keyboardShortcut("i", modifiers: [.command, .option])
@@ -158,7 +203,7 @@ public struct ChatToolbar: View {
                 .font(.system(size: 14, weight: .medium))
                 .foregroundStyle(Theme.Color.textDisabled)
                 .frame(width: 28, height: 28)
-                .help("Inspector — 창을 더 넓혀주세요 (1080px↑)")
+                .help("정보 패널 — 창을 더 넓혀주세요 (1080px 이상)")
         }
     }
 

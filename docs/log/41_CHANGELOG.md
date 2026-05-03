@@ -4,6 +4,81 @@
 
 ## [Unreleased] — 2026-05-03
 
+### Added — ADR-070 UX 개선 + 반응형 강화 (5 phases — 사용자 피드백 반영)
+
+**사용자 피드백** (2026-05-03 보조 모니터 + Settings UX):
+1. 보조 모니터(960×640)에서 잘려서 표시
+2. Routing 학습 메뉴 정렬 안 맞음
+3. 영어 단어 많아 비전공자 이해 어려움
+4. Harness 설정이 Telegram 안에 있는 게 부적절
+5. 우측 상단 toolbar 버튼 hover 안내 부족
+
+**Phase 1 — 반응형 레이아웃 강화**
+- `Theme.Layout.minWindowWidth`: 600 → 460 (보조 모니터 split-view 가능)
+- `Theme.Layout.minWindowHeight`: 480 → 360
+- `LayoutMode.tiny` 추가 (< 600px) — toolbar 비필수 버튼 자동 숨김
+- `Theme.Layout.breakpointTiny: 600` 신규
+- `Theme.Layout.settings*` 신규 (min 460×360, ideal 720×560, maxHeight 제거)
+- ChatToolbar `tiny` 모드에서 터미널/Preview/Commands 버튼 숨김 (대시보드/도움말은 유지)
+
+**Phase 2 — Routing 학습 메뉴 정렬**
+- `RoutingLearningPanel` Form/Section 패턴으로 재구성
+- 다른 탭과 동일한 alignment + section header HelpHint
+- LazyVGrid `alignment: .leading` 명시
+
+**Phase 3 — UX 라이팅 전면 개선** (한국어 친화)
+근거: Apple HIG "Use familiar language" + NN/g Heuristic #2 (Match between system and the real world) + Microsoft Voice "Be human"
+- `Anthropic` 탭 → `API 키`
+- `Routing 학습` → `자동 선택 학습`
+- `Muted Keywords` → `차단된 단어`
+- `Cancel 학습 진행` → `학습 중인 단어`
+- `TaskKind` → `작업 유형` (codeGeneration → 코드 생성, debugging → 디버깅 등)
+- `binary 3회 OR weight ratio ≥ 0.5` → `3회 취소 또는 50% 이상 취소율`
+- `Anomaly threshold (z-score)` → `이상치 감지 민감도`
+- `Inspector` → `정보 패널`
+- `Inline mode` → `통합 보기`
+- `Hook 이벤트 포함` → `도구 사용 이벤트 받기`
+- `Harness` → `다중 모델 자동 전환`
+- `Cancel countdown` → `전환 대기 시간`
+- `agent → agent 자동 답장` → `에이전트 자동 답장`
+- `최대 hop` → `최대 연쇄 횟수`
+- `Multi-agent 병렬 실행` → `여러 에이전트 동시 실행`
+- `routing log raw prompt` → `전환 결정 로그에 원본 입력 저장`
+
+**Phase 4 — Harness 설정 분리 (Telegram → 자동화 탭)**
+근거 (IA 원칙):
+- Telegram = "외부 알림 채널 (channel)"
+- Harness = "내부 모델 동작 정책 (engine)"
+- 두 도메인은 멘탈 모델이 다름 → mutually exclusive 카테고리로 분리 (Apple Settings 패턴)
+- 새 탭: `자동화` (systemImage: `wand.and.stars`)
+- 이동: 다중 모델 자동 전환 + 에이전트 자동 답장 + 학습 슬라이더들
+- Telegram 탭은 진짜 Telegram (연결 / 알림 정책 / 외부 사용 안전)만 유지
+
+**Phase 5 — Toolbar 버튼 풍부한 hover 안내**
+- `ToolbarHoverInfo` struct 신규 (title + body + shortcut)
+- `IconButton` `detailedHelp:` 파라미터 추가
+- macOS 기본 .help() (1.5초 delay) 대신 400ms hover 후 즉시 popover
+- 6개 toolbar 버튼 모두 적용 (터미널/Preview/Commands/대시보드/도움말/정보패널)
+
+### 빌드/테스트 결과
+- swift build → Build complete! (13.99s)
+- swift test → **501/501 passed** (104 suites, +6 new tests)
+- /Applications/Yuminai.app 재설치 + 실행 (PID 67334)
+
+### 새 파일
+- (없음 — 기존 파일만 개선)
+
+### 수정 파일
+- Sources/YuminaiUI/Theme.swift (`tiny` mode + breakpointTiny + settings* sizes)
+- Sources/YuminaiUI/SettingsView.swift (전체 재작성 — UX 라이팅 + 자동화 탭 추가)
+- Sources/YuminaiUI/RoutingLearningPanel.swift (Form 패턴 + 한글 라벨)
+- Sources/YuminaiUI/ChatToolbar.swift (layoutMode 파라미터 + detailedHelp 적용)
+- Sources/YuminaiUI/FlatComponents.swift (IconButton.detailedHelp + ToolbarHoverInfo)
+- Sources/YuminaiApp/RootView.swift (ChatPane.layoutMode + 한글 layoutModeBadge)
+- Tests/YuminaiUITests/ThemeTests.swift (tiny mode + 새 테스트 6개)
+
+---
+
 ### Added — ADR-069 배포 인프라 확장 (Universal + Sparkle + Custom DMG + Notarization + App Store) (5 phases)
 
 **Phase 1 — Universal binary (arm64 + x86_64)**

@@ -329,7 +329,8 @@ struct RootView: View {
                 onToggleInspector: toggleInspector,
                 inspectorAllowed: layoutMode.allowsInspector,
                 inspectorVisible: inspectorVisible,
-                layoutModeBadge: layoutModeBadge
+                layoutModeBadge: layoutModeBadge,
+                layoutMode: layoutMode
             )
 
             if inspectorVisible {
@@ -716,9 +717,11 @@ struct RootView: View {
         .frame(width: 0, height: 0)
     }
 
-    /// compact/medium 모드에서 toolbar에 작게 표시.
+    /// compact/medium/tiny 모드에서 toolbar에 작게 표시.
+    /// **ADR-070** — `tiny` 모드 추가 (보조 모니터 / 작은 화면).
     private var layoutModeBadge: String? {
         switch layoutMode {
+        case .tiny: return "작은화면"
         case .compact: return "compact"
         case .medium: return "medium"
         case .regular, .wide: return nil
@@ -817,6 +820,8 @@ struct ChatPane: View {
     let inspectorAllowed: Bool
     let inspectorVisible: Bool
     let layoutModeBadge: String?
+    /// **ADR-070** — 현재 layout mode (tiny에서 toolbar 일부 숨김).
+    let layoutMode: LayoutMode
 
     var body: some View {
         @Bindable var bindable = appModel
@@ -831,6 +836,7 @@ struct ChatPane: View {
                 inspectorVisible: inspectorVisible,
                 inspectorAllowed: inspectorAllowed,
                 layoutBadge: layoutModeBadge,
+                layoutMode: layoutMode,
                 activeAgent: currentAgentKind,
                 codexAvailable: appModel.codexAvailable,
                 terminalVisible: appModel.showTerminalPane,

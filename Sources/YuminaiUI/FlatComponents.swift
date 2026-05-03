@@ -178,20 +178,46 @@ public struct FlatButton: View {
 
 // MARK: - IconButton (작은 toolbar 아이콘)
 
+/// **ADR-070 Phase 5** — IconButton hover 시 즉시 표시할 풍부한 안내 정보.
+public struct ToolbarHoverInfo: Sendable, Equatable {
+    public let title: String
+    public let body: String
+    public let shortcut: String?
+
+    public init(title: String, body: String, shortcut: String? = nil) {
+        self.title = title
+        self.body = body
+        self.shortcut = shortcut
+    }
+}
+
 public struct IconButton: View {
     let icon: String
     let size: CGFloat
     let action: () -> Void
     var help: String?
+    /// **ADR-070 Phase 5** — 풍부한 hover popover (제목 + 본문 + 단축키).
+    /// 지정 시 macOS 기본 .help() (1.5초 delay) 대신 즉각적인 popover로 안내.
+    var detailedHelp: ToolbarHoverInfo?
 
-    public init(_ icon: String, size: CGFloat = 14, help: String? = nil, action: @escaping () -> Void) {
+    public init(
+        _ icon: String,
+        size: CGFloat = 14,
+        help: String? = nil,
+        detailedHelp: ToolbarHoverInfo? = nil,
+        action: @escaping () -> Void
+    ) {
         self.icon = icon
         self.size = size
         self.help = help
+        self.detailedHelp = detailedHelp
         self.action = action
     }
 
     @State private var hovering = false
+    @State private var showPopover = false
+    /// hover 시작 시간 — 짧은 delay 후 popover 표시.
+    @State private var hoverTask: Task<Void, Never>?
 
     public var body: some View {
         Button(action: action) {
@@ -206,8 +232,60 @@ public struct IconButton: View {
                 .animation(.easeOut(duration: 0.10), value: hovering)
         }
         .buttonStyle(PressedScaleStyle(scale: 0.92))
-        .onHover { hovering = $0 }
+        .onHover { isHovering in
+            hovering = isHovering
+            handleHoverChange(isHovering)
+        }
         .help(help ?? "")
+        .popover(isPresented: $showPopover, arrowEdge: .bottom) {
+            if let info = detailedHelp {
+                hoverPopoverContent(info)
+            }
+        }
+    }
+
+    private func handleHoverChange(_ isHovering: Bool) {
+        guard detailedHelp != nil else { return }
+        hoverTask?.cancel()
+        if isHovering {
+            // 짧은 delay (400ms) 후 popover — 빠른 hover 통과 시 표시 안 됨
+            hoverTask = Task { @MainActor in
+                try? await Task.sleep(for: .milliseconds(400))
+                if !Task.isCancelled && hovering {
+                    showPopover = true
+                }
+            }
+        } else {
+            showPopover = false
+        }
+    }
+
+    @ViewBuilder
+    private func hoverPopoverContent(_ info: ToolbarHoverInfo) -> some View {
+        VStack(alignment: .leading, spacing: 6) {
+            HStack(spacing: 6) {
+                Text(info.title)
+                    .font(Theme.Typography.body.weight(.semibold))
+                    .foregroundStyle(Theme.Color.text)
+                Spacer()
+                if let shortcut = info.shortcut {
+                    Text(shortcut)
+                        .font(Theme.Typography.monoSmall)
+                        .foregroundStyle(Theme.Color.textTertiary)
+                        .padding(.horizontal, 6)
+                        .padding(.vertical, 2)
+                        .background(Theme.Color.surfaceHi)
+                        .clipShape(RoundedRectangle(cornerRadius: 3))
+                }
+            }
+            Text(info.body)
+                .font(Theme.Typography.small)
+                .foregroundStyle(Theme.Color.textSecondary)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+        .padding(Theme.Spacing.md)
+        .frame(width: 260, alignment: .leading)
+        .background(Theme.Color.bg)
     }
 }
 

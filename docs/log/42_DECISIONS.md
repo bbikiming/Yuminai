@@ -1,6 +1,153 @@
 # Decisions Log (ADR-lite)
 
-> 최신: ADR-069 (배포 인프라 확장 — Universal binary + Sparkle + Custom DMG + Notarization 가이드 + App Store 검토)
+> 최신: ADR-070 (UX 개선 — 반응형 + 한국어 라이팅 + 정보 구조 재정비 + Toolbar 안내)
+
+---
+
+## ADR-070 — UX 개선 + 반응형 강화 (5 phases — 사용자 피드백 반영)
+
+- **날짜**: 2026-05-03
+- **상태**: Accepted (구현 + 테스트 + /Applications 재설치 완료)
+
+### 배경 (사용자 피드백 5건)
+
+1. **반응형 부족**: 사용자 보조 모니터 960×640. 설정창이 minWidth 640, maxHeight 760으로 잘려서 표시. 메인 윈도우 minWidth 600도 split-view 어려움.
+2. **Routing 학습 메뉴 정렬 어긋남**: 다른 탭들은 Form + Section + LabeledContent로 grid 정렬. Routing 학습만 자체 VStack을 써서 alignment 어긋남.
+3. **영어 단어 다수**: "Muted Keywords", "TaskKind", "Anomaly threshold (z-score)", "Hook 이벤트", "Inspector", "Inline mode", "Harness", "Cancel countdown", "agent → agent", "hop", "Multi-agent" 등 비전공자 이해 어려움.
+4. **Harness 설정이 Telegram 탭에 있음**: Harness는 모델 동작 정책 (engine), Telegram은 알림 채널 (channel). 두 도메인이 섞여 있어 발견성 낮고 사용성 혼란.
+5. **Toolbar 버튼 hover 안내 부족**: macOS 기본 `.help()`는 1.5초 delay라 빠른 hover 시 표시 안 됨. 비전공자가 "이 버튼이 뭐지" 빠르게 파악 불가.
+
+### 결정
+
+#### Phase 1: 반응형 레이아웃 강화
+
+**`Theme.Layout`**:
+- `minWindowWidth: 600 → 460` (사용자 960px 모니터에서 split-view 가능)
+- `minWindowHeight: 480 → 360`
+- `breakpointTiny: 600` 신규 (< 600 = `LayoutMode.tiny`)
+- `settingsMinWidth: 460`, `settingsMinHeight: 360`, `settingsIdealWidth: 720`, `settingsIdealHeight: 560`
+- 설정창 `maxHeight` 제거 — 큰 모니터에서 자유롭게 늘어남
+
+**`LayoutMode.tiny` 추가**:
+- `sidebarIsOverlay = true`
+- `allowsInspector = false`
+- `hidesNonEssentialToolbarItems = true` 신규 — 터미널/Preview/Commands 버튼 숨김 (대시보드/도움말/정보패널은 유지)
+
+#### Phase 2: Routing 학습 메뉴 정렬 통일
+
+`RoutingLearningPanel` 재구성:
+- Section header에 HelpHint 적용 (다른 탭과 동일 패턴)
+- LazyVGrid `alignment: .leading` 명시
+- 학습 progress row의 column width 명시 (100/flexible/60)
+- 사용자 정의 단어 입력 row LabeledContent 형식
+
+#### Phase 3: UX 라이팅 전면 개선 (한국어 친화)
+
+**근거 문헌**:
+- Apple HIG: "Use familiar language. Avoid jargon."
+- Nielsen Norman Group Heuristic #2: "Match between system and the real world"
+- Microsoft Voice and tone: "Be human. Be friendly."
+- 한국 UX 라이팅 패턴: 외래어/한자어 → 순한국어 우선
+
+**주요 변경표**:
+| Before | After |
+|--------|-------|
+| Routing 학습 | 자동 선택 학습 |
+| Anthropic | API 키 |
+| Muted Keywords | 차단된 단어 |
+| Cancel 학습 진행 | 학습 중인 단어 |
+| TaskKind | 작업 유형 |
+| codeGeneration | 코드 생성 |
+| binary 3회 OR weight ratio ≥ 0.5 | 3회 취소 또는 50% 이상 취소율 |
+| Anomaly threshold (z-score) | 이상치 감지 민감도 |
+| Hook 이벤트 포함 | 도구 사용 이벤트 받기 |
+| Inspector | 정보 패널 |
+| Inline mode | 통합 보기 |
+| Harness | 다중 모델 자동 전환 |
+| Cancel countdown | 전환 대기 시간 |
+| agent → agent 자동 답장 | 에이전트 자동 답장 |
+| 최대 hop | 최대 연쇄 횟수 |
+| Multi-agent 병렬 실행 | 여러 에이전트 동시 실행 |
+| routing log raw prompt | 전환 결정 로그에 원본 입력 저장 |
+
+#### Phase 4: Harness/Agent Chain 분리 (Telegram → 자동화 탭)
+
+**IA(Information Architecture) 원칙 분석**:
+- Telegram = "외부 알림 채널" (channel)
+  - 연결 (token, chat id, allowed users)
+  - 알림 정책 (완료/에러/의사결정)
+  - 외부 turn 안전장치 (Plan 모드 강제, 비용 가시화 등)
+- Harness = "내부 모델 동작 정책" (engine)
+  - 자동 모델 선택 (routing)
+  - 통합 보기 (UI mode)
+  - 학습 슬라이더 (anomaly threshold, retention)
+- Agent Chain = "에이전트 협업 정책" (engine)
+
+→ Harness + Agent Chain은 Telegram과 mutually exclusive 카테고리. Apple Settings 패턴 (Notifications / Privacy / General 등)과 동일.
+
+**구현**:
+- 새 탭 `자동화` (systemImage: `wand.and.stars`)
+- 위치: `텔레그램 알림` 다음, `API 키` 앞
+- 이동: 다중 모델 자동 전환 + 에이전트 자동 답장 + 학습 슬라이더들
+- Telegram 탭은 진짜 Telegram만 유지 (연결 / 멀티 chat / cokacdir / 알림 정책 / 외부 사용 안전)
+
+#### Phase 5: Toolbar 버튼 풍부한 hover 안내
+
+**문제**: macOS 기본 `.help()`는 1.5초 delay → 사용자가 빠르게 hover하면 안내 못 봄.
+
+**해결**: `ToolbarHoverInfo` 구조 + `IconButton.detailedHelp` 파라미터
+- 400ms hover 후 즉각 popover (260px wide)
+- popover 내용: 제목 (semibold) + 단축키 뱃지 + 본문 설명
+- macOS 기본 `.help()`도 fallback으로 유지 (스크린리더 + 더 긴 hover)
+- 6개 버튼 모두 적용:
+  - 터미널 — "워크스페이스 폴더에서 명령어 실행" (⌘⌥T)
+  - 미리보기 — "HTML/Markdown 즉시 렌더링" (⌘⌥P)
+  - 자주 쓰는 명령어 — "테스트 빌드 린트" (⌘⌥R)
+  - 사용량 대시보드 — "토큰/비용/캐시 통계" (⌘D)
+  - 도움말 · 단축키 — "단축키 목록" (⌘/)
+  - 정보 패널 — "컨텍스트 비용 도구 호출" (⌘⌥I)
+
+### 적용 결과
+```
+swift build              → Build complete! (13.99s)
+swift test               → 501/501 passed (104 suites, +6 new tests)
+/Applications 재설치     → ✅ PID 67334 실행 중
+새 파일                  → 0 (기존 파일만 개선)
+수정 파일                → 7
+```
+
+### 트레이드오프
+
+**왜 minWindowWidth를 460으로 낮췄나?**
+- 사용자 보조 모니터 960px → split-view 시 최소 460px 필요
+- 너무 작으면 toolbar 등 UI 깨짐 위험 → `tiny` mode로 안전하게 적응 (비필수 버튼 숨김)
+- 460 미만은 macOS가 거부 (Yuminai 핵심 UI element 표시 불가)
+
+**왜 Settings에 maxHeight 제거?**
+- 큰 모니터(1440×900)에서 max 760 고정은 공간 낭비
+- minHeight 360으로 작은 모니터 대응, max는 화면에 맞게 자유롭게
+
+**왜 Harness를 별도 "자동화" 탭으로?**
+- Telegram = channel, Harness = engine — 멘탈 모델 다름
+- "고급" 명칭 vs "자동화" 명칭 검토 → "자동화"가 더 직관적 (`wand.and.stars` 아이콘 부합)
+- 향후 ADR에서 Routing 학습 탭도 자동화로 이동 검토 가능 (지금은 데이터 view라 별도 유지)
+
+**왜 hover popover 400ms delay?**
+- 0ms = 마우스 통과만 해도 표시 → 노이즈
+- 1500ms (macOS 기본) = 사용자 인내심 한계
+- 400ms = "고의적 호버" 판별 + 즉각성 균형 (Material Design tooltip pattern 참고)
+
+**왜 일부 영어 그대로 유지?**
+- 고유명사 (`Claude`, `Codex`, `Anthropic`, `cokacdir`, `Telegram`)
+- 표준 약어 (`API`, `URL`, `JSON`, `CLI`)
+- 워크스페이스 등 사용자가 이미 익숙한 도메인 용어
+
+### 향후 (ADR-071+ 후보)
+- 한국어 외 다국어(영어/일본어) 지원 (`String Catalog` (.xcstrings))
+- 접근성 (VoiceOver labels for all icon buttons)
+- 다크/라이트 mode 동적 전환 + 시스템 따라가기 옵션
+- "초보자 모드" — 자동화 탭 자체를 숨기는 옵션
+- Routing 학습 탭을 자동화 탭으로 통합 (단일 화면 검토)
 
 ---
 

@@ -11,6 +11,7 @@ public enum SecretStatus: Sendable, Equatable {
 
 /// macOS 시스템 설정 룩 — `.formStyle(.grouped)` + `LabeledContent` 표준 패턴.
 ///
+/// **ADR-070** — UX 라이팅 전면 개선 + Harness/Agent Chain을 텔레그램에서 분리한 "자동화" 탭으로 이동.
 /// 모든 Section은 `Section { } header: { } footer: { }` 명시적 형식 사용 (macOS 26 ambiguity 회피).
 public struct SettingsView: View {
     @Binding public var preferences: AppPreferences
@@ -76,18 +77,27 @@ public struct SettingsView: View {
             editTab
                 .tabItem { Label("편집", systemImage: "pencil.and.outline") }
             telegramTab
-                .tabItem { Label("텔레그램", systemImage: "paperplane") }
+                .tabItem { Label("텔레그램 알림", systemImage: "paperplane") }
+            // ADR-070 Phase 4 — Harness/Agent Chain은 텔레그램에서 분리 → "자동화" 탭
+            automationTab
+                .tabItem { Label("자동화", systemImage: "wand.and.stars") }
             anthropicTab
-                .tabItem { Label("Anthropic", systemImage: "key") }
+                .tabItem { Label("API 키", systemImage: "key") }
             // ADR-056 Phase 5 — Routing learning tab
             routingLearningTab
-                .tabItem { Label("Routing 학습", systemImage: "brain.head.profile") }
+                .tabItem { Label("자동 선택 학습", systemImage: "brain.head.profile") }
         }
-        .frame(minWidth: 640, idealWidth: 720, maxWidth: 880,
-               minHeight: 480, idealHeight: 560, maxHeight: 760)
+        // ADR-070 Phase 1 — 보조 모니터(960×640)에서도 잘림 없이 표시. maxHeight 제거.
+        .frame(
+            minWidth: Theme.Layout.settingsMinWidth,
+            idealWidth: Theme.Layout.settingsIdealWidth,
+            minHeight: Theme.Layout.settingsMinHeight,
+            idealHeight: Theme.Layout.settingsIdealHeight
+        )
     }
 
-    /// **ADR-056 Phase 5** — Routing learning tab.
+    /// **ADR-056 Phase 5 + ADR-070 Phase 2** — 자동 선택 학습 탭.
+    /// Form + Section 패턴으로 다른 탭과 정렬 통일.
     private var routingLearningTab: some View {
         Form {
             Section {
@@ -97,15 +107,24 @@ public struct SettingsView: View {
                     onAddCustom: onAddCustomKeyword,
                     onRemoveCustom: onRemoveCustomKeyword
                 )
+                .padding(.vertical, 4)
             } header: {
-                Text("Routing 자동 학습 (ADR-055/056)")
+                HStack(spacing: 4) {
+                    Text("자동 모델 선택 학습")
+                    HelpHint(
+                        "사용자 입력 단어를 분석해 알맞은 모델로 자동 전환합니다. 잘못 판단했다면 취소해 주세요. 같은 단어에서 \(RoutingLearningStore.muteThreshold)회 취소되면 자동으로 차단됩니다.",
+                        title: "자동 모델 선택이란?",
+                        placement: .trailing
+                    )
+                }
             } footer: {
-                Text("자동 routing이 잘못 판단했다고 cancel하면 해당 keyword가 기록됩니다. 3회 도달 시 자동 mute. 사용자 정의 keyword는 base보다 우선 매칭됩니다.")
-                    .font(Theme.Typography.micro)
-                    .foregroundStyle(Theme.Color.textSecondary)
+                Text("자동 전환이 잘못 판단했다고 취소하면 단어가 기록됩니다. \(RoutingLearningStore.muteThreshold)회 도달 시 자동으로 차단되며, 사용자 정의 단어는 기본 단어보다 우선 매칭됩니다.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
             }
         }
-        .padding()
+        .formStyle(.grouped)
+        .scrollContentBackground(.hidden)
     }
 
     // MARK: - 일반
@@ -125,7 +144,7 @@ public struct SettingsView: View {
                 HStack(spacing: 4) {
                     Text("Claude CLI")
                     HelpHint(
-                        "Yuminai가 채팅 전송 시 spawn하는 Claude Code CLI입니다. `which claude` 결과를 자동 감지합니다. Claude Code OAuth/로그인이 돼있으면 Anthropic API Key 입력은 비워둬도 됩니다.",
+                        "Yuminai가 채팅 전송 시 실행하는 Claude Code CLI입니다. `which claude` 결과를 자동 감지합니다. Claude Code에 OAuth로 로그인되어 있으면 ‘API 키’ 탭은 비워둬도 됩니다.",
                         title: "Claude CLI 경로",
                         placement: .trailing
                     )
@@ -149,7 +168,7 @@ public struct SettingsView: View {
                     HStack(spacing: 6) {
                         Image(systemName: codexInstalled ? "checkmark.circle.fill" : "questionmark.circle")
                             .foregroundStyle(codexInstalled ? .green : .secondary)
-                        Text(codexInstalled ? "감지됨" : "미감지")
+                        Text(codexInstalled ? "감지됨" : "감지되지 않음")
                             .font(.callout)
                             .foregroundStyle(.secondary)
                     }
@@ -158,13 +177,13 @@ public struct SettingsView: View {
                 HStack(spacing: 4) {
                     Text("Codex CLI")
                     HelpHint(
-                        "OpenAI Codex CLI입니다. 설치돼 있으면 워크스페이스마다 toolbar에서 Claude ↔ Codex 전환이 가능합니다. 두 에이전트는 같은 프로젝트 폴더를 공유하므로 한 쪽이 만든 파일을 다른 쪽이 즉시 봅니다.",
+                        "OpenAI Codex CLI입니다. 설치되어 있으면 워크스페이스마다 toolbar에서 Claude ↔ Codex 전환이 가능합니다. 두 에이전트는 같은 프로젝트 폴더를 공유하므로 한 쪽이 만든 파일을 다른 쪽이 즉시 봅니다.",
                         title: "Codex CLI",
                         placement: .trailing
                     )
                 }
             } footer: {
-                Text("Codex가 설치돼 있으면 워크스페이스마다 ‘에이전트’를 Claude/Codex로 전환할 수 있어요. 같은 프로젝트 폴더 안에서 두 에이전트가 파일을 공유합니다.")
+                Text("Codex가 설치되어 있으면 워크스페이스마다 ‘에이전트’를 Claude/Codex로 전환할 수 있어요. 같은 프로젝트 폴더 안에서 두 에이전트가 파일을 공유합니다.")
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }
@@ -181,9 +200,9 @@ public struct SettingsView: View {
                     .textFieldStyle(.roundedBorder)
                 }
             } header: {
-                Text("Obsidian")
+                Text("Obsidian 통합")
             } footer: {
-                Text("v0.2에서 노트 인라인 주입에 사용됩니다.")
+                Text("노트를 채팅에 인라인으로 첨부할 수 있어요.")
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }
@@ -200,10 +219,14 @@ public struct SettingsView: View {
                     .fixedSize()
                 }
                 Toggle(isOn: $preferences.showInspectorByDefault) {
-                    Text("새 창 열 때 Inspector 표시")
+                    Text("새 창 열 때 정보 패널 표시")
                 }
             } header: {
                 Text("외관")
+            } footer: {
+                Text("정보 패널은 컨텍스트 사용량, 비용, 도구 호출 내역을 우측에 보여줍니다.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
             }
         }
         .formStyle(.grouped)
@@ -262,8 +285,8 @@ public struct SettingsView: View {
             Section {
                 Toggle(isOn: $preferences.defaultSessionSettings.includeHookEvents) {
                     VStack(alignment: .leading, spacing: 2) {
-                        Text("Hook 이벤트 포함")
-                        Text("Claude의 lifecycle 이벤트(PreToolUse 등)를 받습니다.")
+                        Text("도구 사용 이벤트 받기")
+                        Text("Claude의 lifecycle 이벤트(파일 편집 시작/종료 등)를 받습니다.")
                             .font(.caption)
                             .foregroundStyle(.secondary)
                     }
@@ -298,14 +321,14 @@ public struct SettingsView: View {
                 Toggle(isOn: $preferences.editPreferences.autoFormat) {
                     VStack(alignment: .leading, spacing: 2) {
                         Text("자동 포맷팅")
-                        Text("Edit/Write 후 프로젝트의 포맷터를 자동 실행합니다.")
+                        Text("파일 편집 후 프로젝트의 포맷터를 자동 실행합니다.")
                             .font(.caption)
                             .foregroundStyle(.secondary)
                     }
                 }
                 Toggle(isOn: $preferences.editPreferences.showDiffOnEdit) {
                     VStack(alignment: .leading, spacing: 2) {
-                        Text("변경 후 diff 미리보기")
+                        Text("변경 후 비교 미리보기")
                         Text("파일이 수정되면 변경 내용을 인라인으로 보여줘요.")
                             .font(.caption)
                             .foregroundStyle(.secondary)
@@ -322,7 +345,7 @@ public struct SettingsView: View {
             } header: {
                 Text("편집 동작")
             } footer: {
-                Text("실제 편집 정책은 Claude CLI의 권한 모드 + 워크스페이스 settings.json이 함께 결정합니다.")
+                Text("실제 편집 정책은 Claude CLI의 권한 모드와 워크스페이스의 settings.json이 함께 결정합니다.")
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }
@@ -331,16 +354,16 @@ public struct SettingsView: View {
         .scrollContentBackground(.hidden)
     }
 
-    // MARK: - 텔레그램
+    // MARK: - 텔레그램 알림 (ADR-070 Phase 4 — Harness 분리 후 순수 Telegram만)
 
     private var telegramTab: some View {
         Form {
             Section {
                 Toggle(isOn: $preferences.telegramEnabled) {
-                    Text("텔레그램 알림 켜기")
+                    Text("텔레그램으로 알림 받기")
                 }
                 if preferences.telegramEnabled {
-                    LabeledContent("Bot 토큰") {
+                    LabeledContent("봇 토큰") {
                         SecretField(
                             status: telegramTokenStatus,
                             onSave: onUpdateTelegramToken,
@@ -394,7 +417,7 @@ public struct SettingsView: View {
             } header: {
                 Text("연결")
             } footer: {
-                Text("BotFather에서 받은 토큰과, 본인 Telegram 계정의 user ID를 입력하세요.")
+                Text("BotFather에서 받은 토큰과 본인 Telegram 계정의 사용자 ID를 입력하세요.")
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }
@@ -420,9 +443,9 @@ public struct SettingsView: View {
                         }
                     }
                 } header: {
-                    Text("멀티 chat 바인딩 (ADR-058 Phase 3)")
+                    Text("워크스페이스별 채팅 연결")
                 } footer: {
-                    Text("각 Telegram chat에 다른 워크스페이스 binding 가능. /bind 명령으로 chat에서 직접 등록.")
+                    Text("각 Telegram 채팅에 다른 워크스페이스를 연결할 수 있습니다. /bind 명령으로 채팅에서 직접 등록할 수도 있어요.")
                         .font(.caption)
                         .foregroundStyle(.secondary)
                 }
@@ -447,7 +470,7 @@ public struct SettingsView: View {
                 } header: {
                     Text("cokacdir 통합")
                 } footer: {
-                    Text("⚠ cokacdir 봇 서버가 같은 토큰으로 동시에 실행 중이면 두 곳에서 Telegram update를 나눠 가져 메시지가 한쪽에만 도착할 수 있어요. Yuminai를 쓰는 동안에는 cokacdir의 해당 봇을 잠시 꺼두는 걸 권장해요.")
+                    Text("⚠ cokacdir 봇 서버가 같은 토큰으로 동시에 실행 중이면 두 곳에서 Telegram 업데이트를 나눠 가져 메시지가 한쪽에만 도착할 수 있어요. Yuminai를 쓰는 동안에는 cokacdir의 해당 봇을 잠시 꺼두는 걸 권장해요.")
                         .font(.caption)
                         .foregroundStyle(.secondary)
                 }
@@ -458,52 +481,74 @@ public struct SettingsView: View {
                     Toggle("의사결정 필요 시", isOn: $preferences.telegramAlertPolicy.sendOnDecisionRequired)
                 } header: {
                     Text("알림 정책")
+                } footer: {
+                    Text("어떤 상황에서 텔레그램 알림을 받을지 선택하세요.")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
                 }
 
                 // ADR-046 — 외부 turn 안전장치
                 Section {
                     Toggle(isOn: $preferences.telegramRemoteRequiresPlan) {
                         LabelWithHint(
-                            "외부 turn은 Plan 모드 강제",
-                            hint: "지하철에서 모바일로 명령 보낼 때 destructive 작업(rm, git reset 등)이 PC confirmation 없이 실행되지 않게 1턴 동안 plan-mode로 강제합니다. agent가 계획만 보여주면 사용자가 ‘진행해 줘’로 명시 승인."
+                            "외부 명령은 계획만 보여주기",
+                            hint: "지하철에서 모바일로 명령을 보낼 때 위험한 작업(rm, git reset 등)이 PC 확인 없이 실행되지 않도록 1턴 동안 ‘계획’ 모드로 강제합니다. 에이전트가 계획만 보여주면 사용자가 ‘진행해 줘’로 명시 승인."
                         )
                     }
                     Toggle(isOn: $preferences.telegramShowCostInline) {
                         LabelWithHint(
-                            "비용 가시화 (/status)",
-                            hint: "외부 turn 횟수 + 누적 비용 + 컨텍스트 % 를 /status 응답에 포함. 70%↑ 컨텍스트는 새 세션 권장 안내."
+                            "비용 가시화 (/status 명령)",
+                            hint: "외부 명령 횟수 + 누적 비용 + 컨텍스트 % 를 /status 응답에 포함. 70% 이상 컨텍스트는 새 세션 권장 안내."
                         )
                     }
                     Toggle(isOn: $preferences.telegramForwardAssistant) {
                         LabelWithHint(
-                            "Assistant 응답 forward",
+                            "에이전트 응답을 텔레그램으로 전송",
                             hint: "Claude 응답 본문을 chunk로 텔레그램에 자동 전송. 끄면 알림(완료/에러)만 도착."
                         )
                     }
                     Toggle(isOn: $preferences.telegramForwardToolCalls) {
                         LabelWithHint(
-                            "Tool 호출 요약 forward",
+                            "도구 호출 요약을 텔레그램으로 전송",
                             hint: "🔧 Bash / Edit / Write 등 도구 사용을 텔레그램에 표시. 위험 작업(rm -rf 등)은 🚨 알림으로 강조."
                         )
                     }
                 } header: {
                     Text("외부 사용 안전")
+                } footer: {
+                    Text("모바일에서 원격으로 작업을 보낼 때 안전장치를 설정합니다.")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
                 }
             }
+        }
+        .formStyle(.grouped)
+        .scrollContentBackground(.hidden)
+    }
 
-            // ADR-049 — Harness 토글
+    // MARK: - 자동화 (ADR-070 Phase 4 — Harness + Agent Chain 분리)
+    //
+    // 분리 근거 (UX 라이팅 문헌 + IA 원칙):
+    // - 텔레그램 = "외부 알림 채널 (channel)"
+    // - 자동화 = "내부 모델 동작 정책 (engine)"
+    // - 두 도메인은 멘탈 모델이 다름 → 분리가 NN/g Heuristic #2
+    //   ("Match between system and the real world")에 부합
+    // - Apple Settings 패턴: Notifications / Privacy / General 등 mutually exclusive
+
+    private var automationTab: some View {
+        Form {
             Section {
                 Toggle(isOn: $preferences.harnessAutoRoutingEnabled) {
                     LabelWithHint(
-                        "자동 routing (모델 선택)",
-                        hint: "사용자 입력 keyword 분석 (한국어/영어) 후 적합한 모델로 자동 pane 전환. 예: ‘구현해줘’ → Codex / ‘리뷰’ → Claude. 전환 시 handoff prompt가 자동 inject돼 새 모델이 컨텍스트 catch up. 비용: 모델 전환마다 handoff prompt만큼 토큰 추가 (~4K tokens)."
+                        "자동 모델 선택",
+                        hint: "사용자 입력 단어를 분석해 (한국어/영어 모두) 적합한 모델로 자동 전환합니다. 예: ‘구현해줘’ → Codex / ‘리뷰’ → Claude. 전환 시 이전 대화 요약(handoff prompt)이 자동으로 새 모델에 전달돼 컨텍스트가 끊기지 않아요. 비용: 모델 전환마다 약 4K 토큰 추가."
                     )
                 }
                 if preferences.harnessAutoRoutingEnabled {
                     HStack {
                         LabelWithHint(
-                            "Cancel countdown (초)",
-                            hint: "ADR-051 — 자동 routing 전 사용자가 개입할 수 있는 시간. 0이면 즉시 전환, 3 권장. Esc 또는 banner 버튼으로 취소."
+                            "전환 대기 시간 (초)",
+                            hint: "자동 전환 전에 사용자가 개입할 수 있는 시간입니다. 0이면 즉시 전환, 3초 권장. Esc 키 또는 banner 버튼으로 취소할 수 있어요."
                         )
                         Spacer()
                         Stepper(value: $preferences.harnessRoutingCountdownSeconds, in: 0...10) {
@@ -514,35 +559,35 @@ public struct SettingsView: View {
                 }
                 Toggle(isOn: $preferences.harnessUIEnabled) {
                     LabelWithHint(
-                        "Harness 통합 view (Inspector 탭)",
-                        hint: "Inspector에 ‘Harness’ 탭 추가 — 모든 모델 응답을 단일 timeline으로 + agent badge + TaskGraph mini-map. 전통 multi-pane은 그대로 유지."
+                        "통합 타임라인 보기 (정보 패널 안)",
+                        hint: "정보 패널에 ‘통합 보기’ 탭이 추가됩니다 — 모든 모델 응답을 하나의 타임라인으로 + 에이전트 뱃지 + 작업 그래프 미니맵. 기존 다중 화면은 그대로 유지."
                     )
                 }
                 Toggle(isOn: $preferences.harnessInlineModeEnabled) {
                     LabelWithHint(
-                        "Inline mode (메인 chat 교체)",
-                        hint: "ADR-051 — 메인 chat area를 Harness 통합 view로 교체. multi-pane이 안 보임. ⌘K Command Palette에서 빠른 토글 가능."
+                        "통합 보기를 메인 화면으로 사용",
+                        hint: "메인 채팅 영역을 통합 보기로 교체합니다. 다중 화면이 보이지 않아요. ⌘K 명령 팔레트에서 빠른 토글이 가능합니다."
                     )
                 }
                 // ADR-052 — 새 토글들
                 Divider().padding(.vertical, 4)
                 Toggle(isOn: $preferences.multiAgentParallelEnabled) {
                     LabelWithHint(
-                        "Multi-agent 병렬 실행 (실험적)",
-                        hint: "ADR-052 — 두 pane에서 dependency-free task 동시 실행 (BSP barrier merge 패턴, LangGraph/CrewAI 차용). Cognition Devin 권고: 비용 ~2x, 충돌 위험 있음. dependency 검증 후 ⌘K → ‘병렬 실행’으로 launch."
+                        "여러 에이전트 동시 실행 (실험적)",
+                        hint: "두 화면에서 의존성 없는 작업을 동시에 실행합니다 (BSP barrier merge 패턴). 비용 약 2배, 충돌 위험 있음. 의존성 검증 후 ⌘K → ‘병렬 실행’으로 시작하세요."
                     )
                 }
                 Toggle(isOn: $preferences.routingLogRawPrompts) {
                     LabelWithHint(
-                        "Routing log: raw prompt 저장",
-                        hint: "ADR-052 — 자동 routing 결정의 사용자 prompt를 disk에 보존 (privacy 위험). 끄면 80자 prefix만. OTel GenAI semconv ‘sensitive PII’ 가이드를 따라 default OFF."
+                        "전환 결정 로그에 원본 입력 저장",
+                        hint: "자동 전환 결정의 사용자 입력을 디스크에 보존합니다 (개인정보 위험). 끄면 80자 미리보기만 저장. 기본값은 OFF (보안 권장)."
                     )
                 }
                 // ADR-059 Phase 2 — Auto new session slider
                 HStack {
                     LabelWithHint(
                         "자동 새 세션 (컨텍스트 %)",
-                        hint: "ADR-058 Phase 5 — 컨텍스트가 이 % 도달하면 active pane을 자동으로 재spawn (clean start). 0% = 비활성. 위험: 진행 중 작업 컨텍스트 손실 가능."
+                        hint: "컨텍스트가 이 % 도달하면 활성 화면을 자동으로 새로고침(clean start)합니다. 0%로 두면 비활성. 위험: 진행 중 작업 컨텍스트 손실 가능."
                     )
                     Spacer()
                     let pct = Binding<Double>(
@@ -551,27 +596,27 @@ public struct SettingsView: View {
                     )
                     Slider(value: pct, in: 0...95, step: 5)
                         .frame(width: 180)
-                    Text(preferences.autoNewSessionContextThreshold.map { "\(Int($0 * 100))%" } ?? "off")
+                    Text(preferences.autoNewSessionContextThreshold.map { "\(Int($0 * 100))%" } ?? "꺼짐")
                         .font(Theme.Typography.monoSmall)
-                        .frame(width: 40, alignment: .trailing)
+                        .frame(width: 50, alignment: .trailing)
                 }
                 // ADR-066 Phase 2 — Anomaly Z-score threshold slider
                 HStack {
                     LabelWithHint(
-                        "Anomaly threshold (z-score)",
-                        hint: "ADR-066 Phase 2 — Telegram dashboard의 anomaly detection 민감도. 2.0=95% (default, 표준), 3.0=99.7% (덜 민감), 1.5=87% (더 민감)."
+                        "이상치 감지 민감도",
+                        hint: "텔레그램 사용량 대시보드의 이상치 감지 민감도. 2.0=95% (기본, 표준), 3.0=99.7% (덜 민감), 1.5=87% (더 민감)."
                     )
                     Spacer()
                     Slider(value: $preferences.anomalyZScoreThreshold, in: 1.0...4.0, step: 0.1)
                         .frame(width: 180)
                     Text(String(format: "%.1f", preferences.anomalyZScoreThreshold))
                         .font(Theme.Typography.monoSmall)
-                        .frame(width: 40, alignment: .trailing)
+                        .frame(width: 50, alignment: .trailing)
                 }
                 HStack {
                     LabelWithHint(
-                        "Routing log retention (일)",
-                        hint: "ADR-052 — 메모리에 유지할 routing decision 일수. disk 파일은 별도 manual cleanup 필요."
+                        "전환 결정 보존 기간 (일)",
+                        hint: "메모리에 유지할 자동 전환 결정 일수입니다. 디스크 파일은 별도로 수동 정리 필요."
                     )
                     Spacer()
                     Stepper(value: $preferences.routingLogRetentionDays, in: 1...30) {
@@ -580,35 +625,53 @@ public struct SettingsView: View {
                     .frame(width: 140)
                 }
             } header: {
-                Text("Harness (다중 모델 오케스트레이션)")
+                HStack(spacing: 4) {
+                    Text("다중 모델 자동 전환")
+                    HelpHint(
+                        "Claude / Codex 등 여러 LLM을 같은 워크스페이스에서 자동으로 전환하며 사용하는 기능입니다. 입력 단어에 따라 적합한 모델이 선택됩니다.",
+                        title: "다중 모델 자동 전환이란?",
+                        placement: .trailing
+                    )
+                }
+            } footer: {
+                Text("이 기능은 여러 LLM을 자동으로 전환하며 사용하는 고급 기능입니다. 처음에는 ‘자동 모델 선택’만 켜고 사용해 보세요.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
             }
 
             // Agent chain (ADR-034 A1)
             Section {
                 Toggle(isOn: $preferences.agentChainEnabled) {
                     LabelWithHint(
-                        "agent → agent 자동 답장",
-                        hint: "응답 본문에 `@<other>` 멘션이 있으면 자동으로 다음 turn을 그 pane에서 시작합니다. 진정한 multi-agent 협업이 가능하지만 무한 루프 위험이 있어 hop 제한을 둡니다."
+                        "에이전트 간 자동 답장",
+                        hint: "응답 본문에 `@<다른에이전트>` 멘션이 있으면 자동으로 다음 답장을 그 에이전트가 작성합니다. 진정한 multi-agent 협업이 가능하지만 무한 루프 위험이 있어 횟수 제한을 둡니다."
                     )
                 }
                 if preferences.agentChainEnabled {
                     HStack {
                         LabelWithHint(
-                            "최대 hop",
-                            hint: "한 사용자 turn 후 자동 답장이 몇 번까지 chain할 수 있는지. 같은 pane 재방문은 자동 차단."
+                            "최대 연쇄 횟수",
+                            hint: "한 사용자 입력 후 자동 답장이 몇 번까지 이어질 수 있는지. 같은 에이전트 재방문은 자동 차단."
                         )
                         Spacer()
-                        // ADR-042 R2.M20 — 5 hops은 토큰 폭발 위험 (각 hop 마다 응답 prepend 누적). 3으로 cap.
+                        // ADR-042 R2.M20 — 5 hops은 토큰 폭발 위험. 3으로 cap.
                         Stepper(value: $preferences.agentChainMaxHops, in: 1...3) {
-                            Text("\(preferences.agentChainMaxHops) hop").font(Theme.Typography.monoSmall)
+                            Text("\(preferences.agentChainMaxHops)회").font(Theme.Typography.monoSmall)
                         }
                         .frame(width: 140)
                     }
                 }
             } header: {
-                Text("Agent Chain")
+                HStack(spacing: 4) {
+                    Text("에이전트 자동 답장")
+                    HelpHint(
+                        "한 에이전트의 응답에 다른 에이전트가 자동으로 답장하는 기능입니다. 예: Claude 응답에 ‘@codex 구현해줘’가 있으면 Codex가 자동으로 답장.",
+                        title: "에이전트 자동 답장이란?",
+                        placement: .trailing
+                    )
+                }
             } footer: {
-                Text("기본 OFF. 사용자 명시 입력만으로 작동하는 게 안전한 default. ON 시에도 hop 제한과 같은 pane 재방문 차단으로 무한 루프를 방지합니다.")
+                Text("기본값은 꺼짐입니다. 사용자 입력만으로 작동하는 게 안전한 기본 설정입니다. 켜더라도 횟수 제한과 같은 에이전트 재방문 차단으로 무한 루프를 방지합니다.")
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }
@@ -617,12 +680,12 @@ public struct SettingsView: View {
         .scrollContentBackground(.hidden)
     }
 
-    // MARK: - Anthropic
+    // MARK: - API 키 (이전 "Anthropic")
 
     private var anthropicTab: some View {
         Form {
             Section {
-                LabeledContent("API Key") {
+                LabeledContent("API 키") {
                     SecretField(
                         status: anthropicKeyStatus,
                         onSave: onUpdateAnthropicKey,
@@ -630,9 +693,9 @@ public struct SettingsView: View {
                     )
                 }
             } header: {
-                Text("Anthropic API Key")
+                Text("Anthropic API 키")
             } footer: {
-                Text("Claude CLI에서 이미 OAuth/로그인이 되어있으면 비워두세요. (대부분의 경우 이게 더 편해요)")
+                Text("Claude CLI에 OAuth로 이미 로그인되어 있다면 비워두세요. (대부분의 경우 이게 더 편해요)")
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }
@@ -690,7 +753,7 @@ struct SecretField: View {
                         isEditing = false
                     }
                 } else {
-                    Button(status == .set ? "바꾸기…" : "넣기…") {
+                    Button(status == .set ? "바꾸기…" : "입력하기…") {
                         isEditing = true
                     }
                     if status == .set {
@@ -705,7 +768,7 @@ struct SecretField: View {
     private var statusBadge: some View {
         switch status {
         case .notSet:
-            Text("아직 안 넣음")
+            Text("아직 설정하지 않음")
                 .font(.caption)
                 .foregroundStyle(.secondary)
         case .set:

@@ -166,27 +166,43 @@ public enum Theme {
 
         public static let sheetWidth: CGFloat = 580
 
-        // MARK: - Responsive breakpoints
+        // MARK: - Responsive breakpoints (ADR-070 — 보조 모니터 + 작은 화면 대응)
 
-        /// 최소 윈도우 너비 — 그 이하로는 macOS가 리사이즈 거부.
-        public static let minWindowWidth: CGFloat = 600
-        public static let minWindowHeight: CGFloat = 480
+        /// 최소 윈도우 너비 — 보조 모니터(960×640) 절반에 두 윈도우 가능하도록.
+        /// **ADR-070**: 600 → 460으로 낮춤 (사용자 960px 모니터에서 2-up 가능).
+        public static let minWindowWidth: CGFloat = 460
+        /// 최소 윈도우 높이 — 작은 노트북 (1280×800)에서도 dock + menubar 빼고 적응.
+        /// **ADR-070**: 480 → 360으로 낮춤.
+        public static let minWindowHeight: CGFloat = 360
 
         /// chat 본문 최소 너비 (sidebar/inspector 들어와도 chat이 이 이하면 layout 적응).
-        public static let minChatWidth: CGFloat = 520
+        public static let minChatWidth: CGFloat = 460
 
         /// 모드 분기점.
+        /// **ADR-070** — `tiny` 추가 (보조 모니터 / split-view 대응).
+        public static let breakpointTiny: CGFloat = 600        // 미만 = tiny (toolbar 일부 숨김)
         public static let breakpointCompact: CGFloat = 760     // 미만 = compact
         public static let breakpointMedium: CGFloat = 1080     // 미만 = medium (inspector 강제 숨김)
         public static let breakpointWide: CGFloat = 1440       // 미만 = regular, 이상 = wide
 
         /// `width`에 해당하는 layout mode.
         public static func mode(for width: CGFloat) -> LayoutMode {
+            if width < breakpointTiny { return .tiny }
             if width < breakpointCompact { return .compact }
             if width < breakpointMedium { return .medium }
             if width < breakpointWide { return .regular }
             return .wide
         }
+
+        // MARK: - Settings sheet (ADR-070 — 작은 화면 대응)
+
+        /// **ADR-070**: 설정창 최소 너비 — 사용자 모니터 960px에서 2/3 차지 가능.
+        public static let settingsMinWidth: CGFloat = 460
+        /// **ADR-070**: 설정창 최소 높이 — 작은 모니터 640px에서도 표시.
+        public static let settingsMinHeight: CGFloat = 360
+        /// **ADR-070**: 설정창 ideal 사이즈.
+        public static let settingsIdealWidth: CGFloat = 720
+        public static let settingsIdealHeight: CGFloat = 560
     }
 
     // MARK: - Animation
@@ -199,8 +215,10 @@ public enum Theme {
 }
 
 /// 반응형 layout 모드 — 윈도우 너비에 따라 결정.
+/// **ADR-070** — `tiny` 추가 (보조 모니터 / 작은 화면 대응).
 public enum LayoutMode: Sendable, Equatable {
-    case compact   // < 760: sidebar overlay only, inspector 강제 hidden
+    case tiny      // < 600: toolbar 일부 숨김 (사용량/도움말만), sidebar overlay
+    case compact   // 600~760: sidebar overlay only, inspector 강제 hidden
     case medium    // 760~1080: sidebar inline, inspector 강제 hidden
     case regular   // 1080~1440: sidebar inline, inspector 옵션
     case wide      // ≥ 1440: 모두 inline 가능
@@ -208,14 +226,20 @@ public enum LayoutMode: Sendable, Equatable {
     /// inspector를 사용자가 켤 수 있는 모드인지.
     public var allowsInspector: Bool {
         switch self {
-        case .compact, .medium: return false
+        case .tiny, .compact, .medium: return false
         case .regular, .wide: return true
         }
     }
 
     /// sidebar가 inline이 아니라 overlay 모드인지.
     public var sidebarIsOverlay: Bool {
-        self == .compact
+        self == .tiny || self == .compact
+    }
+
+    /// **ADR-070** — toolbar에서 비필수 버튼(터미널/Preview/Commands) 숨김 모드.
+    /// `tiny`에서는 화면 width가 부족 → 핵심 버튼만 표시.
+    public var hidesNonEssentialToolbarItems: Bool {
+        self == .tiny
     }
 }
 
