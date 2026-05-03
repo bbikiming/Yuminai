@@ -61,6 +61,13 @@ public final class AppModel {
     /// `tagEditTargetId`가 nil이면 새 태그 생성, 있으면 해당 태그 편집.
     public var showTagEditSheet: Bool = false
     public var tagEditTargetId: UUID?
+    /// **ADR-079 Phase 4** — Git status 캐시 (현재 워크스페이스).
+    public var gitBranch: String?
+    public var gitDirtyStats: DirtyStats?
+    /// **ADR-079 Phase 5** — Git commit sheet (메시지 입력).
+    public var showGitCommitSheet: Bool = false
+    /// **ADR-079 Phase 4** — Git branch picker popover.
+    public var showGitBranchPicker: Bool = false
 
     // 활성 세션 설정 (toolbar에서 즉시 변경 가능)
     public var activeSettings: SessionSettings = .default
@@ -1301,6 +1308,157 @@ public final class AppModel {
         }
     }
 
+    // MARK: - ADR-079 Phase 1 — Smart filter + Workspace duplicate
+
+    /// 현재 active tag filter + folder를 named smart filter로 저장.
+    public func saveCurrentAsSmartFilter(name: String, folderId: UUID? = nil, colorName: String = "accent") async -> UUID {
+        let filter = SmartFilter(
+            name: name.trimmingCharacters(in: .whitespaces),
+            tagIds: preferences.activeTagFilters,
+            folderId: folderId,
+            colorName: colorName
+        )
+        preferences.smartFilters.append(filter)
+        await savePreferences()
+        return filter.id
+    }
+
+    /// Smart filter 적용 (tag 활성화 + folder 자동 expand).
+    public func applySmartFilter(_ filterId: UUID) async {
+        guard let filter = preferences.smartFilters.first(where: { $0.id == filterId }) else { return }
+        preferences.activeTagFilters = filter.tagIds
+        if let folderId = filter.folderId,
+           let idx = preferences.workspaceFolders.firstIndex(where: { $0.id == folderId }) {
+            preferences.workspaceFolders[idx].isExpanded = true
+        }
+        await savePreferences()
+    }
+
+    /// Smart filter 삭제.
+    public func deleteSmartFilter(_ filterId: UUID) async {
+        preferences.smartFilters.removeAll { $0.id == filterId }
+        await savePreferences()
+    }
+
+    /// 워크스페이스 복제 (새 UUID, "(복사본)" suffix). 폴더/태그 assignment도 같이 복제.
+    public func duplicateWorkspace(_ workspaceId: UUID) async {
+        guard let original = workspaces.first(where: { $0.id == workspaceId }) else { return }
+        let newWs = Workspace(
+            id: UUID(),
+            name: "\(original.name) (복사본)",
+            directoryPath: original.directoryPath,
+            createdAt: Date(),
+            lastOpenedAt: nil,
+            harnessTemplate: original.harnessTemplate,
+            isArchived: false,
+            agentKind: original.agentKind,
+            deliveryConfig: original.deliveryConfig,
+            savedPanes: [],  // 새 세션 (이전 채팅 X)
+            savedTerminalSessions: [],
+            projectProfile: original.projectProfile,
+            savedConversationLog: [],
+            savedTasks: []
+        )
+        do {
+            try await workspaceStore.create(newWs)
+            // 같은 폴더에 추가
+            if let folder = preferences.workspaceFolders.first(where: { $0.workspaceIds.contains(workspaceId) }),
+               let idx = preferences.workspaceFolders.firstIndex(where: { $0.id == folder.id }) {
+                preferences.workspaceFolders[idx].workspaceIds.append(newWs.id)
+            }
+            // 같은 태그 적용
+            let tagIds = preferences.tagAssignments.tags(for: workspaceId)
+            for tagId in tagIds {
+                preferences.tagAssignments.add(tag: tagId, to: newWs.id)
+            }
+            await savePreferences()
+            await refreshWorkspaces()
+            // 자동 선택
+            await selectWorkspace(newWs.id)
+        } catch {
+            self.error = error.localizedDescription
+        }
+    }
+
+    // MARK: - ADR-079 Phase 4-5 — Git integration (Claude Code 패턴 단순화)
+
+    /// 현재 워크스페이스의 Git status를 새로 fetch (workspace 선택 시 + commit 후 호출).
+    public func refreshGitStatus() async {
+        guard let ws = workspaces.first(where: { $0.id == selectedWorkspaceId }) else {
+            gitBranch = nil
+            gitDirtyStats = nil
+            return
+        }
+        let url = URL(fileURLWithPath: ws.directoryPath)
+        let runner = GitRunner(workspaceURL: url)
+        guard await runner.isRepository() else {
+            gitBranch = nil
+            gitDirtyStats = nil
+            return
+        }
+        let manager = GitBranchManager(runner: runner)
+        do {
+            self.gitBranch = try await manager.currentBranch()
+            self.gitDirtyStats = try await manager.dirtyStats()
+        } catch {
+            self.gitBranch = nil
+            self.gitDirtyStats = nil
+        }
+    }
+
+    /// 현재 워크스페이스의 GitBranchManager를 생성 (현재 워크스페이스가 git repo가 아니면 nil).
+    public func makeGitManager() async -> GitBranchManager? {
+        guard let ws = workspaces.first(where: { $0.id == selectedWorkspaceId }) else { return nil }
+        let url = URL(fileURLWithPath: ws.directoryPath)
+        let runner = GitRunner(workspaceURL: url)
+        guard await runner.isRepository() else { return nil }
+        return GitBranchManager(runner: runner)
+    }
+
+    /// 브랜치 전환.
+    public func switchGitBranch(_ name: String) async {
+        guard let manager = await makeGitManager() else { return }
+        do {
+            try await manager.switchBranch(name)
+            await refreshGitStatus()
+        } catch {
+            self.error = "브랜치 전환 실패: \(error.localizedDescription)"
+        }
+    }
+
+    /// 새 브랜치 생성.
+    public func createGitBranch(_ name: String) async {
+        guard let manager = await makeGitManager() else { return }
+        do {
+            try await manager.createBranch(name)
+            await refreshGitStatus()
+        } catch {
+            self.error = "브랜치 생성 실패: \(error.localizedDescription)"
+        }
+    }
+
+    /// 현재 변경사항 commit (auto-stage all + Co-Authored-By).
+    public func commitChanges(message: String) async {
+        guard let manager = await makeGitManager() else { return }
+        let trimmed = message.trimmingCharacters(in: .whitespacesAndNewlines)
+        let finalMessage = trimmed.isEmpty
+            ? AutoCommitMessageGenerator.generate(stats: gitDirtyStats ?? DirtyStats(modified: 0, added: 0, deleted: 0, untracked: 0))
+            : trimmed
+        do {
+            let sha = try await manager.commitAll(message: finalMessage)
+            self.error = "✓ 커밋 완료: \(sha) — \(finalMessage)"
+            await refreshGitStatus()
+        } catch {
+            self.error = "커밋 실패: \(error.localizedDescription)"
+        }
+    }
+
+    /// 현재 워크스페이스 브랜치 목록 (UI에서 사용).
+    public func gitBranches() async -> [BranchInfo] {
+        guard let manager = await makeGitManager() else { return [] }
+        return (try? await manager.localBranches()) ?? []
+    }
+
     private static func exportTimestamp() -> String {
         let formatter = DateFormatter()
         formatter.dateFormat = "yyyy-MM-dd-HHmm"
@@ -1343,6 +1501,8 @@ public final class AppModel {
             return
         }
         await startSession(in: workspace)
+        // ADR-079 Phase 4 — 워크스페이스 진입 시 git status 자동 fetch
+        await refreshGitStatus()
     }
 
     private func startSession(in workspace: Workspace) async {
@@ -3568,6 +3728,9 @@ public final class AppModel {
         showWorkspaceSearchSheet = false
         showTagEditSheet = false
         tagEditTargetId = nil
+        // ADR-079 Phase 4-5
+        showGitCommitSheet = false
+        showGitBranchPicker = false
     }
 
     /// 새 sheet/alert을 열기 전에 다른 sheet 모두 닫고 setter 실행.

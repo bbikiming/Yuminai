@@ -10,6 +10,14 @@ public struct ChatToolbar: View {
     public let workspaces: [Workspace]
     public let selectedWorkspaceId: UUID?
     public let isStreaming: Bool
+    /// **ADR-079 Phase 4** — Git branch (nil이면 git repo 아님 → indicator 숨김).
+    public let gitBranch: String?
+    /// **ADR-079 Phase 4** — Git dirty stats (nil이면 표시 X).
+    public let gitDirtyStats: DirtyStats?
+    /// **ADR-079 Phase 4** — branch picker 클릭 콜백.
+    public let onShowGitBranchPicker: () -> Void
+    /// **ADR-079 Phase 5** — commit sheet 진입 콜백.
+    public let onShowGitCommit: () -> Void
     public let inspectorVisible: Bool
     public let inspectorAllowed: Bool
     public let layoutBadge: String?
@@ -37,6 +45,10 @@ public struct ChatToolbar: View {
         workspaces: [Workspace] = [],
         selectedWorkspaceId: UUID? = nil,
         isStreaming: Bool,
+        gitBranch: String? = nil,
+        gitDirtyStats: DirtyStats? = nil,
+        onShowGitBranchPicker: @escaping () -> Void = {},
+        onShowGitCommit: @escaping () -> Void = {},
         inspectorVisible: Bool,
         inspectorAllowed: Bool = true,
         layoutBadge: String? = nil,
@@ -59,6 +71,10 @@ public struct ChatToolbar: View {
     ) {
         self.workspaceName = workspaceName
         self.workspacePath = workspacePath
+        self.gitBranch = gitBranch
+        self.gitDirtyStats = gitDirtyStats
+        self.onShowGitBranchPicker = onShowGitBranchPicker
+        self.onShowGitCommit = onShowGitCommit
         self.workspaces = workspaces
         self.selectedWorkspaceId = selectedWorkspaceId
         self.isStreaming = isStreaming
@@ -118,6 +134,16 @@ public struct ChatToolbar: View {
             if let layoutBadge {
                 modeBadge(layoutBadge)
                     .padding(.leading, Theme.Spacing.sm)
+            }
+
+            // ADR-079 Phase 4-5 — Git branch indicator + commit button
+            if let gitBranch {
+                gitBranchIndicator(branch: gitBranch, stats: gitDirtyStats)
+                    .padding(.leading, Theme.Spacing.sm)
+                if let stats = gitDirtyStats, !stats.isEmpty {
+                    gitCommitButton(stats: stats)
+                        .padding(.leading, 4)
+                }
             }
 
             Spacer()
@@ -352,6 +378,57 @@ public struct ChatToolbar: View {
         .help("이 워크스페이스에서 사용할 에이전트")
         .accessibilityLabel("현재 에이전트 \(activeAgent.displayName)")
         .accessibilityHint("클릭하면 다른 에이전트(Claude / Codex)로 전환할 수 있는 메뉴가 열립니다.")
+    }
+
+    /// **ADR-079 Phase 4** — Git branch indicator (클릭 시 picker popover).
+    private func gitBranchIndicator(branch: String, stats: DirtyStats?) -> some View {
+        Button(action: onShowGitBranchPicker) {
+            HStack(spacing: 5) {
+                Image(systemName: "arrow.triangle.branch")
+                    .font(.system(size: 10, weight: .medium))
+                    .foregroundStyle(Theme.Color.textSecondary)
+                Text(branch)
+                    .font(Theme.Typography.monoSmall)
+                    .foregroundStyle(Theme.Color.text)
+                    .lineLimit(1)
+                    .truncationMode(.middle)
+                if let stats, !stats.isEmpty {
+                    // dirty 마커 (작은 점)
+                    Circle()
+                        .fill(Color.orange)
+                        .frame(width: 5, height: 5)
+                }
+            }
+            .padding(.horizontal, Theme.Spacing.sm)
+            .padding(.vertical, 3)
+            .background(Theme.Color.surfaceHi.opacity(0.5))
+            .clipShape(RoundedRectangle(cornerRadius: Theme.Radius.sm))
+        }
+        .buttonStyle(.plain)
+        .help("Git 브랜치: \(branch)" + (stats?.isEmpty == false ? " · \(stats!.summary)" : " · 깨끗함"))
+        .accessibilityLabel("Git 브랜치 \(branch)")
+        .accessibilityHint("탭하여 브랜치 선택 또는 새 브랜치 만들기")
+    }
+
+    /// **ADR-079 Phase 5** — 1-click commit 버튼 (dirty 시에만 표시).
+    private func gitCommitButton(stats: DirtyStats) -> some View {
+        Button(action: onShowGitCommit) {
+            HStack(spacing: 4) {
+                Image(systemName: "checkmark.shield.fill")
+                    .font(.system(size: 10, weight: .semibold))
+                Text("커밋")
+                    .font(Theme.Typography.micro.weight(.medium))
+            }
+            .foregroundStyle(.white)
+            .padding(.horizontal, Theme.Spacing.sm)
+            .padding(.vertical, 3)
+            .background(Theme.Color.accent)
+            .clipShape(RoundedRectangle(cornerRadius: Theme.Radius.sm))
+        }
+        .buttonStyle(.plain)
+        .help("Git 커밋 만들기 (\(stats.summary))")
+        .accessibilityLabel("Git 커밋 만들기")
+        .accessibilityHint(stats.summary)
     }
 
     private var streamingBadge: some View {

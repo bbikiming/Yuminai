@@ -74,3 +74,22 @@ public extension UTType {
     /// **ADR-078 Phase 2** — Folder reorder UTType.
     static let yuminaiFolderReorder = UTType(exportedAs: "com.yuminai.folder.reorder")
 }
+
+/// **ADR-079 Phase 2** — Tag → Workspace drag payload.
+/// 태그 chip을 workspace row 위로 drag → tag 추가.
+public struct TagAssignmentPayload: Codable, Transferable {
+    public let tagId: UUID
+
+    public init(tagId: UUID) {
+        self.tagId = tagId
+    }
+
+    public static var transferRepresentation: some TransferRepresentation {
+        CodableRepresentation(contentType: .yuminaiTagAssignment)
+    }
+}
+
+public extension UTType {
+    /// **ADR-079 Phase 2** — Tag drag UTType.
+    static let yuminaiTagAssignment = UTType(exportedAs: "com.yuminai.tag.assignment")
+}

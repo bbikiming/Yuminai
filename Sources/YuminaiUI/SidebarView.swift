@@ -303,6 +303,8 @@ public struct SidebarView: View {
             .animation(.easeOut(duration: 0.10), value: isActive)
         }
         .buttonStyle(.plain)
+        // ADR-079 Phase 2 — 태그 chip을 workspace row 위로 drag → tag 추가
+        .draggable(TagAssignmentPayload(tagId: tag.id))
         .contextMenu {
             Button("이름·색상 편집…", systemImage: "pencil") { onEditTag(tag) }
             Divider()
@@ -311,7 +313,7 @@ public struct SidebarView: View {
             }
         }
         .accessibilityLabel("\(tag.name) 태그\(isActive ? ", 활성 필터" : "")")
-        .accessibilityHint("탭하여 필터 토글. 우클릭으로 편집/삭제.")
+        .accessibilityHint("탭하여 필터 토글. 워크스페이스로 드래그하여 태그 추가. 우클릭으로 편집/삭제.")
     }
 
     // MARK: - Workspace list
@@ -717,6 +719,13 @@ public struct SidebarView: View {
             onCreateNewTag: onCreateTag
         )
         .modifier(WorkspaceDragModifier(workspaceId: workspace.id, isPinReorder: pinIndex != nil))
+        // ADR-079 Phase 2 — tag drop target (chip → workspace = tag 추가)
+        .dropDestination(for: TagAssignmentPayload.self) { items, _ in
+            guard let item = items.first,
+                  let tag = tags.first(where: { $0.id == item.tagId }) else { return false }
+            onToggleWorkspaceTag(workspace, tag)
+            return true
+        }
     }
 }
 

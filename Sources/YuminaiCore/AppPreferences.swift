@@ -107,6 +107,11 @@ public struct AppPreferences: Sendable, Codable, Hashable {
     /// **ADR-078 Phase 4** — 사이드바에서 활성화된 tag 필터 (intersection 방식).
     /// 비어있으면 필터 없음 (전체 표시).
     public var activeTagFilters: Set<UUID>
+    /// **ADR-079 Phase 1** — 저장된 smart filter 목록 (사용자가 자주 쓰는 tag 조합).
+    public var smartFilters: [SmartFilter]
+    /// **ADR-079 Phase 3** — iCloud sync 활성 여부.
+    /// 켜면 preferences가 NSUbiquitousKeyValueStore에 자동 동기화 (다른 PC와).
+    public var iCloudSyncEnabled: Bool
 
     public init(
         claudeBinaryPath: String = AppPreferences.detectClaudeBinaryPath(),
@@ -147,7 +152,9 @@ public struct AppPreferences: Sendable, Codable, Hashable {
         enabledSmartFolders: Set<SmartFolderKind> = SmartFolderKind.defaultEnabled,  // ADR-077 Phase 3
         workspaceTags: [WorkspaceTag] = [],  // ADR-078 Phase 4
         tagAssignments: WorkspaceTagAssignments = WorkspaceTagAssignments(),  // ADR-078 Phase 4
-        activeTagFilters: Set<UUID> = []  // ADR-078 Phase 4
+        activeTagFilters: Set<UUID> = [],  // ADR-078 Phase 4
+        smartFilters: [SmartFilter] = [],  // ADR-079 Phase 1
+        iCloudSyncEnabled: Bool = false  // ADR-079 Phase 3 — opt-in
     ) {
         self.claudeBinaryPath = claudeBinaryPath
         self.codexBinaryPath = codexBinaryPath
@@ -188,6 +195,8 @@ public struct AppPreferences: Sendable, Codable, Hashable {
         self.workspaceTags = workspaceTags
         self.tagAssignments = tagAssignments
         self.activeTagFilters = activeTagFilters
+        self.smartFilters = smartFilters
+        self.iCloudSyncEnabled = iCloudSyncEnabled
     }
 
     // ADR-046 — 신규 필드 backward-compat: 기존 JSON에 없으면 default 적용
@@ -237,6 +246,10 @@ public struct AppPreferences: Sendable, Codable, Hashable {
         self.workspaceTags = try c.decodeIfPresent([WorkspaceTag].self, forKey: .workspaceTags) ?? []
         self.tagAssignments = try c.decodeIfPresent(WorkspaceTagAssignments.self, forKey: .tagAssignments) ?? WorkspaceTagAssignments()
         self.activeTagFilters = try c.decodeIfPresent(Set<UUID>.self, forKey: .activeTagFilters) ?? []
+        // ADR-079 Phase 1
+        self.smartFilters = try c.decodeIfPresent([SmartFilter].self, forKey: .smartFilters) ?? []
+        // ADR-079 Phase 3 — iCloud sync (opt-in, 기존 사용자는 false)
+        self.iCloudSyncEnabled = try c.decodeIfPresent(Bool.self, forKey: .iCloudSyncEnabled) ?? false
     }
 
     /// `claude` CLI의 가능성 높은 위치들을 순서대로 시도해 첫 번째 존재하는 경로 반환.

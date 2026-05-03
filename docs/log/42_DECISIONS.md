@@ -1,6 +1,153 @@
 # Decisions Log (ADR-lite)
 
-> 최신: ADR-078 (Pin drop indicator + Folder reorder + Workspace search + Tag filter + Import/Export)
+> 최신: ADR-079 (Smart filter + Workspace duplicate + Tag drag + iCloud sync + Git integration)
+
+---
+
+## ADR-079 — Smart filter + Workspace duplicate + Tag drag + iCloud sync + Git (Claude Code 패턴) (5 phases)
+
+- **날짜**: 2026-05-03
+- **상태**: Accepted (구현 + 테스트 + /Applications 재설치)
+
+### 배경 (사용자 요청)
+
+> "다음 라운드 이어서 진행 / 클라우드는 iCloud + Git 두 가지만 / Git의 경우 클로드 코드와 같은 브랜치 관리, 자동 커밋 등을 사용성 있게 단순화한 버전으로"
+
+ADR-078 다음 라운드 + Cloud sync 범위 명시 + **Git이 핵심**.
+
+### 결정
+
+#### Phase 1: Smart Filter + Workspace Duplicate
+
+**Smart Filter** = "저장된 tag/folder 조합":
+- macOS Finder Smart Folders / JetBrains Scopes 패턴
+- NN/g Heuristic 6 "Recognition rather than Recall" — 조건 저장으로 매번 재구성 부담 ↓
+- AppModel.saveCurrentAsSmartFilter — 현재 활성 filter를 1-click 저장
+- AppModel.applySmartFilter — 저장된 filter 1-click 활성
+
+**Workspace Duplicate** = 한 워크스페이스 → 새 UUID 복제:
+- 폴더/태그 assignment 자동 복제 (사용자 mental model 보존)
+- 채팅/터미널 세션은 미복제 (새 세션 시작)
+- "(복사본)" suffix + 자동 select
+
+#### Phase 2: Drag Tag onto Workspace
+
+ADR-077의 drag system 확장:
+- `TagAssignmentPayload` (별도 UTType `com.yuminai.tag.assignment`)
+- Tag chip = draggable, workspace row = drop target
+- Drop 시 tag toggle (이미 있으면 제거)
+
+#### Phase 3: iCloud sync (preferences)
+
+**왜 NSUbiquitousKeyValueStore?** (CloudKit 아님)
+- Preferences = 작은 데이터 (~수 KB) → 1MB limit 충분
+- 자동 동기화 (manual schema X)
+- CloudKit은 workspaces (SwiftData) 동기화용 → 별도 ADR
+
+**동기화 항목** (9개):
+- pinned / folders / tags / assignments / activeFilters / smartFilters / smartFolders
+- beginnerMode / hasCompletedOnboarding
+
+**미동기화 항목** (의도적):
+- claude/codex binary path (PC별 다름)
+- telegram chat (PC별 봇 다를 수 있음)
+- 시크릿 (Keychain 자체 iCloud 동기화 활용)
+
+**`iCloudSyncEnabled` opt-in** (Apple HIG Sync 권고).
+
+#### Phase 4: Git Status & Branch Management (Claude Code 단순화)
+
+**Claude Code 4단계 → 3단계로 압축**:
+1. Status: branch + dirty (실시간 표시)
+2. Switch: 브랜치 전환 + 새 브랜치 (popover)
+3. Auto-commit: 1-click → message 자동 생성 + Co-Authored-By
+
+**`GitBranchManager` actor** (GitRunner 위에 빌드):
+- currentBranch / localBranches / isDirty / dirtyStats
+- switchBranch (auto-stash before switch)
+- createBranch (default base = current)
+- commitAll (auto-stage all + Co-Authored-By footer)
+- recentCommits (한국어 friendly relative dates)
+
+**`DirtyStats`** (modified/added/deleted/untracked + 한국어 summary):
+- "수정 3, 추가 1, 추적 안 됨 2"
+- isEmpty boundary (commit 가능 여부)
+
+**ChatToolbar Git indicator**:
+- `arrow.triangle.branch` icon + branch name (truncate)
+- dirty 시 small orange dot
+- 클릭 → branch picker popover
+
+**`GitBranchPickerPopover`** (320 wide):
+- 브랜치 목록 (current ✓ + 마지막 commit 상대 시간)
+- "새 브랜치 만들기" inline TextField
+- async 로딩 (`GitBranchPickerSheetWrapper`)
+
+#### Phase 5: Git Auto-Commit (Claude Code 패턴)
+
+**`AutoCommitMessageGenerator`** (Conventional Commits):
+- 단일 추가 → `feat: N개 파일 추가`
+- 단일 수정 → `fix: N개 파일 수정`
+- 단일 삭제 → `chore: N개 파일 삭제`
+- 혼합 → `chore: 수정 N, 추가 N, ...`
+
+**`GitCommitSheet`** (540×420):
+- Header: "Git 커밋 만들기" + branch indicator
+- DirtyStats card (수정/추가/삭제/추적안됨 stat blocks)
+- 자동 생성된 message TextField (사용자 수정 가능)
+- 안내: "모든 변경사항이 자동 staging됨 + Co-Authored-By: Claude (Yuminai)"
+- 1-click 커밋 + 결과 토스트 ("✓ 커밋 완료: abc123 — feat: ...")
+
+**ChatToolbar "커밋" 버튼** (dirty 시에만 표시):
+- Brand cyan filled background (시각적 강조)
+- icon: `checkmark.shield.fill`
+- 클릭 → GitCommitSheet
+
+### 적용 결과
+```
+swift build              → Build complete!
+swift test               → 594/594 passed (125 suites, +16 new tests)
+/Applications 재설치     → ✅ PID 18878 실행 중
+새 파일                  → 7
+수정 파일                → 6
+```
+
+### 트레이드오프
+
+**왜 NSUbiquitousKeyValueStore (CloudKit 아님)?**
+- preferences = 작은 데이터 (수 KB) → KVS 1MB limit 충분
+- workspaces (SwiftData) 동기화는 CKShare 등 복잡 → 별도 ADR
+- KVS는 자동 sync + low-friction setup
+
+**왜 Git 기능 단순화 (Claude Code 그대로 X)?**
+- Claude Code = developer-focused (rebase, cherry-pick 등 고급)
+- Yuminai = vibe-coding workspace (사용성 우선)
+- 핵심 3개만: status / switch / commit
+- 고급 git은 터미널 활용 (사용자 자유)
+
+**왜 Auto-Commit이 1-click이 아니고 sheet?**
+- 사용자 confirm 필수 (실수 commit 방지)
+- Message 자동 생성하지만 수정 가능
+- DirtyStats 미리보기로 의도 확인
+
+**왜 Co-Authored-By: Claude (Yuminai)?**
+- AI 도구 사용 명시 (code review 시 추적)
+- Anthropic Claude Code와 동일 패턴 (호환성)
+- 향후 다중 agent 지원 시 agent별 footer 분리 가능
+
+### Apple HIG + WCAG 충족
+- ✅ Apple HIG Sync (opt-in)
+- ✅ Apple HIG Drag and Drop (tag → workspace)
+- ✅ NN/g Recognition rather than Recall (smart filter)
+- ✅ WCAG 1.4.3 / 2.4.6 / 4.1.2
+
+### 향후 (ADR-080+ 후보)
+- iCloud workspaces sync (CloudKit + CKShare) — 별도 ADR
+- Git rebase / cherry-pick (advanced UI)
+- Git push/pull integration
+- AI-generated commit messages (Claude API 활용)
+- GitHub PR creation (gh CLI 통합)
+- Conflict resolution UI
 
 ---
 

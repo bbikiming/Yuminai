@@ -4,6 +4,92 @@
 
 ## [Unreleased] — 2026-05-03
 
+### Added — ADR-079 Smart filter + Workspace duplicate + Tag drag + iCloud sync + Git integration (5 phases)
+
+**사용자 요청** (ADR-078 다음 라운드):
+1. Tag groups / hierarchical tags → 단순화 (smart filter로 대체)
+2. Drag tag onto workspace
+3. Smart filter (저장된 검색)
+4. Workspace duplicate
+5. Cloud sync (iCloud + Git만 — Dropbox 등 제외)
+6. **Git: Claude Code 같은 브랜치 관리 + 자동 커밋 (단순화 버전)**
+
+**Phase 1 — Smart Filter + Workspace Duplicate**
+- `SmartFilter` struct (id + name + tagIds + folderId + iconName + colorName)
+- AppPreferences.smartFilters
+- AppModel: saveCurrentAsSmartFilter / applySmartFilter / deleteSmartFilter
+- AppModel.duplicateWorkspace — 새 UUID + "(복사본)" suffix + 폴더/태그 복제
+- 자동 select (duplicated 워크스페이스로 즉시 진입)
+
+**Phase 2 — Drag Tag onto Workspace**
+- `TagAssignmentPayload` Transferable + UTType `com.yuminai.tag.assignment`
+- Tag chip `.draggable(TagAssignmentPayload)`
+- WorkspaceItemRow `.dropDestination(for: TagAssignmentPayload)` → tag toggle
+
+**Phase 3 — iCloud sync (preferences)**
+- `iCloudPreferencesSync` (NSUbiquitousKeyValueStore wrapper)
+- `iCloudSyncKey` enum (9 keys: pinned/folders/tags/assignments/filters/smartFilters/smartFolders/beginnerMode/onboarding)
+- `SyncSnapshot` Codable (동기화 가능한 preferences subset)
+- AppPreferences.iCloudSyncEnabled (opt-in)
+- 미동기화: claude/codex path, telegram chat (PC별 다름), 시크릿 (Keychain 자동)
+
+**Phase 4 — Git Status & Branch Management (Claude Code 패턴 단순화)**
+- `GitBranchManager` actor (GitRunner 위에 빌드)
+  - currentBranch / localBranches / isDirty / dirtyStats
+  - switchBranch (auto-stash) / createBranch
+  - commitAll (auto-stage all + Co-Authored-By footer)
+  - recentCommits (한국어 friendly)
+- `BranchInfo` (name + lastCommitRelative + isCurrent)
+- `DirtyStats` (modified/added/deleted/untracked + 한국어 summary)
+- AppModel: gitBranch + gitDirtyStats state + refreshGitStatus
+- selectWorkspace 시 자동 git status fetch
+- `GitBranchPickerPopover` + `GitBranchPickerSheetWrapper` (async branch loading)
+- ChatToolbar에 Git branch indicator + dirty marker
+
+**Phase 5 — Git Auto-Commit (Claude Code 패턴)**
+- `AutoCommitMessageGenerator` — DirtyStats 기반 conventional commit message
+  - 단일 추가 → "feat: N개 파일 추가"
+  - 단일 수정 → "fix: N개 파일 수정"
+  - 혼합 → "chore: 수정 N, 추가 N"
+- AppModel.commitChanges(message:) — auto-stage + commit + Co-Authored-By: Claude (Yuminai)
+- `GitCommitSheet` (540×420)
+  - Branch + DirtyStats 카드 (수정/추가/삭제/추적안됨 stat blocks)
+  - 자동 생성된 message TextField (사용자 수정 가능)
+  - "모든 변경사항이 자동 staging됨" 안내
+  - 1-click 커밋 + 결과 토스트
+- ChatToolbar에 "커밋" 버튼 (dirty 시에만 표시, brand cyan)
+
+근거:
+- Apple "Designing for iCloud": KVS = preferences, CloudKit = large data
+- Apple HIG Sync: opt-in (privacy)
+- Claude Code git workflow 영감 (4단계 → 3단계 단순화)
+- Conventional Commits 표준 (feat/fix/chore prefix)
+- macOS Finder Smart Folders / JetBrains Scopes (저장된 검색)
+
+### 빌드/테스트 결과
+- swift build → Build complete!
+- swift test → **594/594 passed** (125 suites, +16 new tests)
+- /Applications/Yuminai.app 재설치 + 실행 (PID 18878)
+
+### 새 파일
+- Sources/YuminaiCore/SmartFilter.swift
+- Sources/YuminaiCore/iCloudSync.swift
+- Sources/YuminaiCore/GitBranchManager.swift
+- Sources/YuminaiApp/GitCommitSheet.swift
+- Sources/YuminaiApp/GitBranchPickerPopover.swift
+- Sources/YuminaiApp/GitBranchPickerSheetWrapper.swift
+- Tests/YuminaiCoreTests/SmartFilterAndGitTests.swift (+16 tests)
+
+### 수정 파일
+- Sources/YuminaiCore/AppPreferences.swift (smartFilters + iCloudSyncEnabled)
+- Sources/YuminaiUI/WorkspaceDragDrop.swift (TagAssignmentPayload UTType)
+- Sources/YuminaiUI/SidebarView.swift (tag chip draggable + workspace row drop)
+- Sources/YuminaiUI/ChatToolbar.swift (Git branch indicator + commit button)
+- Sources/YuminaiApp/AppModel.swift (smart filter + duplicate + git refresh/commit/branch)
+- Sources/YuminaiApp/RootView.swift (Git sheet bindings)
+
+---
+
 ### Added — ADR-078 Pin drop indicator + Folder reorder + Workspace search + Tag filter + Import/Export (5 phases)
 
 **사용자 요청** (ADR-077 다음 라운드 후보 5가지 모두 진행):

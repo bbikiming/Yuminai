@@ -111,6 +111,27 @@ struct RootView: View {
                 onCancel: { appModel.showWorkspaceSearchSheet = false }
             )
         }
+        // ADR-079 Phase 5 — Git commit sheet
+        .sheet(isPresented: $bindable.showGitCommitSheet) {
+            if let branch = appModel.gitBranch, let stats = appModel.gitDirtyStats {
+                GitCommitSheet(
+                    branch: branch,
+                    stats: stats,
+                    onCommit: { msg in
+                        Task {
+                            await appModel.commitChanges(message: msg)
+                            appModel.showGitCommitSheet = false
+                        }
+                    },
+                    onCancel: { appModel.showGitCommitSheet = false }
+                )
+            }
+        }
+        // ADR-079 Phase 4 — Git branch picker (별도 popover로 가능하나 sheet로 통일)
+        .sheet(isPresented: $bindable.showGitBranchPicker) {
+            GitBranchPickerSheetWrapper()
+                .environment(appModel)
+        }
         // ADR-078 Phase 4 — Tag 생성/편집 sheet
         .sheet(isPresented: $bindable.showTagEditSheet) {
             TagEditSheet(
@@ -999,6 +1020,10 @@ struct ChatPane: View {
                 workspaces: appModel.workspaces,
                 selectedWorkspaceId: appModel.selectedWorkspaceId,
                 isStreaming: appModel.isStreaming,
+                gitBranch: appModel.gitBranch,
+                gitDirtyStats: appModel.gitDirtyStats,
+                onShowGitBranchPicker: { appModel.showGitBranchPicker = true },
+                onShowGitCommit: { appModel.showGitCommitSheet = true },
                 inspectorVisible: inspectorVisible,
                 inspectorAllowed: inspectorAllowed,
                 layoutBadge: layoutModeBadge,
