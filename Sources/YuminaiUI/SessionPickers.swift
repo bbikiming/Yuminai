@@ -173,21 +173,38 @@ public struct UnifiedAgentModelPicker: View {
 }
 
 /// UnifiedAgentModelPicker의 trigger label — Composer footer에 큰 시각적 anchor.
-/// **ADR-088** — model 표시 라벨을 string으로 받아 ClaudeModel/CodexModel 둘 다 지원.
+/// **ADR-088 + ADR-090** — model 표시 라벨을 string으로 받아 ClaudeModel/CodexModel 둘 다 지원.
+/// 정교화: 그라디언트 배경 + spring scale + pulsing dot.
 private struct UnifiedAgentTrigger: View {
     let agent: AgentKind
     let modelLabel: String
     @State private var hovering = false
+    @State private var pressed = false
 
     var body: some View {
-        HStack(spacing: 6) {
-            // Agent 색상 dot
-            Circle()
-                .fill(agent.brandColor)
-                .frame(width: 8, height: 8)
+        HStack(spacing: 7) {
+            // Agent 색상 dot — pulsing animation
+            ZStack {
+                Circle()
+                    .fill(agent.brandColor.opacity(0.30))
+                    .frame(width: 14, height: 14)
+                    .scaleEffect(hovering ? 1.4 : 1.0)
+                    .opacity(hovering ? 0.0 : 0.8)
+                    .animation(
+                        hovering
+                            ? .easeOut(duration: 0.6).repeatForever(autoreverses: false)
+                            : .easeOut(duration: 0.20),
+                        value: hovering
+                    )
+                Circle()
+                    .fill(agent.brandColor)
+                    .frame(width: 8, height: 8)
+            }
+            .accessibilityHidden(true)
             Image(systemName: agent.icon)
-                .font(.system(size: 11, weight: .medium))
+                .font(.system(size: 11, weight: .semibold))
                 .foregroundStyle(agent.brandColor)
+                .symbolRenderingMode(.hierarchical)
             Text(agent.displayName)
                 .font(Theme.Typography.label.weight(.semibold))
                 .foregroundStyle(Theme.Color.text)
@@ -196,20 +213,35 @@ private struct UnifiedAgentTrigger: View {
             Text(modelLabel)
                 .font(Theme.Typography.label)
                 .foregroundStyle(Theme.Color.textSecondary)
+                .contentTransition(.opacity)
             Image(systemName: "chevron.up.chevron.down")
-                .font(.system(size: 8, weight: .medium))
-                .foregroundStyle(hovering ? Theme.Color.accent : Theme.Color.textTertiary)
+                .font(.system(size: 8, weight: .bold))
+                .foregroundStyle(hovering ? agent.brandColor : Theme.Color.textTertiary)
+                .padding(.leading, 2)
         }
-        .padding(.horizontal, Theme.Spacing.sm + 2)
-        .padding(.vertical, Theme.Spacing.xs + 1)
-        .background(hovering ? agent.brandMutedColor : agent.brandMutedColor.opacity(0.5))
+        .padding(.horizontal, Theme.Spacing.md - 1)
+        .padding(.vertical, Theme.Spacing.xs + 2)
+        .background(triggerBackground)
         .overlay(
-            RoundedRectangle(cornerRadius: Theme.Radius.sm)
-                .stroke(agent.brandColor.opacity(hovering ? 0.6 : 0.25), lineWidth: 1)
+            RoundedRectangle(cornerRadius: Theme.Radius.md)
+                .stroke(agent.brandColor.opacity(hovering ? 0.5 : 0.20), lineWidth: hovering ? 1.2 : 0.8)
         )
-        .clipShape(RoundedRectangle(cornerRadius: Theme.Radius.sm))
-        .animation(.easeOut(duration: 0.10), value: hovering)
+        .clipShape(RoundedRectangle(cornerRadius: Theme.Radius.md))
+        .scaleEffect(pressed ? 0.97 : 1.0)
+        .shadow(color: agent.brandColor.opacity(hovering ? 0.20 : 0.08), radius: hovering ? 6 : 2, y: 1)
+        .animation(.easeOut(duration: 0.12), value: hovering)
+        .animation(.spring(response: 0.20, dampingFraction: 0.7), value: pressed)
         .onHover { hovering = $0 }
+    }
+
+    private var triggerBackground: some View {
+        LinearGradient(
+            colors: hovering
+                ? [agent.brandMutedColor, agent.brandMutedColor.opacity(0.7)]
+                : [agent.brandMutedColor.opacity(0.6), agent.brandMutedColor.opacity(0.4)],
+            startPoint: .top,
+            endPoint: .bottom
+        )
     }
 }
 

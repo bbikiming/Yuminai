@@ -239,7 +239,7 @@ public struct SidebarView: View {
             .frame(maxHeight: 320)
     }
 
-    // MARK: - ADR-089 Sidebar 섹션 라벨
+    // MARK: - ADR-089 + ADR-090 Sidebar 섹션 라벨 (정교화)
 
     private func sidebarSectionLabel(
         title: String,
@@ -248,10 +248,15 @@ public struct SidebarView: View {
         color: SwiftUI.Color
     ) -> some View {
         HStack(spacing: 6) {
-            Image(systemName: icon)
-                .font(.system(size: 9, weight: .medium))
-                .foregroundStyle(color)
-                .accessibilityHidden(true)
+            ZStack {
+                Circle()
+                    .fill(color.opacity(0.15))
+                    .frame(width: 16, height: 16)
+                Image(systemName: icon)
+                    .font(.system(size: 8, weight: .semibold))
+                    .foregroundStyle(color)
+            }
+            .accessibilityHidden(true)
             Text(title)
                 .font(Theme.Typography.micro.weight(.semibold))
                 .foregroundStyle(Theme.Color.text)
@@ -260,6 +265,10 @@ public struct SidebarView: View {
             Text(subtitle)
                 .font(Theme.Typography.micro)
                 .foregroundStyle(Theme.Color.textTertiary)
+                .padding(.horizontal, 5)
+                .padding(.vertical, 1)
+                .background(Theme.Color.surfaceHi.opacity(0.5))
+                .clipShape(Capsule())
             Spacer()
         }
         .padding(.horizontal, Theme.Layout.sidebarPadding)
@@ -271,126 +280,136 @@ public struct SidebarView: View {
 
     private var chatSessionsSection: some View {
         VStack(spacing: 0) {
-            HStack(spacing: 4) {
-                Image(systemName: "bubble.left.and.text.bubble.right.fill")
-                    .font(.system(size: 9, weight: .medium))
-                    .foregroundStyle(Theme.Color.warning)
-                    .accessibilityHidden(true)
-                Text("대화 세션")
-                    .font(Theme.Typography.micro.weight(.semibold))
-                    .foregroundStyle(Theme.Color.text)
-                    .textCase(.uppercase)
-                    .tracking(0.6)
-                Text("Ad-hoc")
-                    .font(Theme.Typography.micro)
-                    .foregroundStyle(Theme.Color.textTertiary)
-                Spacer()
-                Button(action: onCreateChatSession) {
-                    Image(systemName: "plus")
-                        .font(.system(size: 10, weight: .semibold))
-                        .foregroundStyle(Theme.Color.textSecondary)
-                        .frame(width: 18, height: 18)
-                        .background(Theme.Color.surfaceHi.opacity(0.5))
-                        .clipShape(Circle())
-                }
-                .buttonStyle(.plain)
-                .help("새 대화 세션 (⌘⇧N) — 빠른 질문/실험용")
-                .accessibilityLabel("새 대화 세션 만들기")
-            }
-            .padding(.horizontal, Theme.Layout.sidebarPadding)
-            .padding(.top, Theme.Spacing.md)
-            .padding(.bottom, Theme.Spacing.xs)
-
+            chatSessionsHeader
             if chatSessions.isEmpty {
                 chatSessionEmptyHint
             } else {
                 if activeChatSessionId != nil {
-                    Button(action: onDeactivateChatSession) {
-                        HStack(spacing: 6) {
-                            Image(systemName: "arrow.uturn.backward")
-                                .font(.system(size: 9))
-                            Text("워크스페이스 main 대화로 복귀")
-                                .font(Theme.Typography.small)
-                            Spacer()
-                        }
-                        .foregroundStyle(Theme.Color.textSecondary)
-                        .padding(.horizontal, Theme.Layout.sidebarPadding)
-                        .padding(.vertical, 4)
-                    }
-                    .buttonStyle(.plain)
-                    .help("이 워크스페이스의 main 대화로 돌아가기")
+                    deactivateRow
+                        .transition(.opacity.combined(with: .move(edge: .top)))
                 }
-                VStack(spacing: 1) {
+                LazyVStack(spacing: 2) {
                     ForEach(chatSessions) { session in
-                        chatSessionRow(session)
+                        ChatSessionRow(
+                            session: session,
+                            workspaceName: workspaceNameById(session.workspaceId),
+                            isActive: activeChatSessionId == session.id,
+                            onSelect: { onSelectChatSession(session.id) },
+                            onDelete: { onDeleteChatSession(session.id) }
+                        )
                     }
                 }
+                .animation(.spring(response: 0.30, dampingFraction: 0.85), value: activeChatSessionId)
             }
         }
     }
 
-    private var chatSessionEmptyHint: some View {
-        VStack(spacing: 4) {
-            Text("아직 대화 세션이 없어요")
+    private var chatSessionsHeader: some View {
+        HStack(spacing: 6) {
+            ZStack {
+                Circle()
+                    .fill(Color.orange.opacity(0.15))
+                    .frame(width: 16, height: 16)
+                Image(systemName: "bubble.left.and.text.bubble.right.fill")
+                    .font(.system(size: 8, weight: .semibold))
+                    .foregroundStyle(.orange)
+            }
+            .accessibilityHidden(true)
+            Text("대화 세션")
+                .font(Theme.Typography.micro.weight(.semibold))
+                .foregroundStyle(Theme.Color.text)
+                .textCase(.uppercase)
+                .tracking(0.6)
+            Text("Ad-hoc")
                 .font(Theme.Typography.micro)
                 .foregroundStyle(Theme.Color.textTertiary)
+                .padding(.horizontal, 5)
+                .padding(.vertical, 1)
+                .background(Theme.Color.surfaceHi.opacity(0.5))
+                .clipShape(Capsule())
+            if !chatSessions.isEmpty {
+                Text("\(chatSessions.count)")
+                    .font(Theme.Typography.micro.weight(.medium))
+                    .foregroundStyle(Theme.Color.textSecondary)
+                    .padding(.horizontal, 5)
+                    .padding(.vertical, 1)
+                    .background(Theme.Color.surface)
+                    .clipShape(Capsule())
+                    .contentTransition(.numericText())
+            }
+            Spacer()
             Button(action: onCreateChatSession) {
-                Text("+ 첫 대화 시작하기")
-                    .font(Theme.Typography.small.weight(.medium))
+                Image(systemName: "plus")
+                    .font(.system(size: 10, weight: .bold))
                     .foregroundStyle(Theme.Color.accent)
+                    .frame(width: 20, height: 20)
+                    .background(Theme.Color.accent.opacity(0.10))
+                    .clipShape(Circle())
+                    .overlay(
+                        Circle().stroke(Theme.Color.accent.opacity(0.20), lineWidth: 0.5)
+                    )
+            }
+            .buttonStyle(.plain)
+            .help("새 대화 세션 (⌘⇧N) — 빠른 질문/실험용")
+            .accessibilityLabel("새 대화 세션 만들기")
+        }
+        .padding(.horizontal, Theme.Layout.sidebarPadding)
+        .padding(.top, Theme.Spacing.md)
+        .padding(.bottom, Theme.Spacing.xs)
+    }
+
+    private var deactivateRow: some View {
+        Button(action: onDeactivateChatSession) {
+            HStack(spacing: 6) {
+                Image(systemName: "arrow.uturn.backward.circle.fill")
+                    .font(.system(size: 11))
+                    .foregroundStyle(Theme.Color.textSecondary)
+                Text("워크스페이스 main 대화로 복귀")
+                    .font(Theme.Typography.small)
+                    .foregroundStyle(Theme.Color.textSecondary)
+                Spacer()
+            }
+            .padding(.horizontal, Theme.Layout.sidebarPadding)
+            .padding(.vertical, 6)
+            .background(Theme.Color.surface.opacity(0.5))
+            .overlay(alignment: .bottom) { FlatHDivider().opacity(0.4) }
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .help("이 워크스페이스의 main 대화로 돌아가기")
+    }
+
+    private var chatSessionEmptyHint: some View {
+        VStack(spacing: 6) {
+            ZStack {
+                Circle()
+                    .fill(Color.orange.opacity(0.10))
+                    .frame(width: 36, height: 36)
+                Image(systemName: "bubble.left.and.text.bubble.right")
+                    .font(.system(size: 14, weight: .light))
+                    .foregroundStyle(.orange)
+            }
+            Text("아직 대화 세션이 없어요")
+                .font(Theme.Typography.small.weight(.medium))
+                .foregroundStyle(Theme.Color.textSecondary)
+            Button(action: onCreateChatSession) {
+                HStack(spacing: 4) {
+                    Image(systemName: "plus.circle.fill")
+                        .font(.system(size: 10))
+                    Text("첫 대화 시작하기")
+                        .font(Theme.Typography.small.weight(.medium))
+                }
+                .foregroundStyle(Theme.Color.accent)
+                .padding(.horizontal, 10)
+                .padding(.vertical, 4)
+                .background(Theme.Color.accent.opacity(0.10))
+                .clipShape(Capsule())
             }
             .buttonStyle(.plain)
         }
         .frame(maxWidth: .infinity, alignment: .center)
         .padding(.horizontal, Theme.Layout.sidebarPadding)
-        .padding(.vertical, Theme.Spacing.sm)
-    }
-
-    private func chatSessionRow(_ session: ChatSession) -> some View {
-        let isActive = activeChatSessionId == session.id
-        let workspaceName = workspaceNameById(session.workspaceId) ?? "(삭제된 워크스페이스)"
-        return Button {
-            onSelectChatSession(session.id)
-        } label: {
-            HStack(alignment: .top, spacing: 6) {
-                Image(systemName: session.agentKind.icon)
-                    .font(.system(size: 9))
-                    .foregroundStyle(session.agentKind.brandColor)
-                    .padding(.top, 3)
-                    .accessibilityHidden(true)
-                VStack(alignment: .leading, spacing: 1) {
-                    Text(session.title)
-                        .font(Theme.Typography.small.weight(isActive ? .semibold : .regular))
-                        .foregroundStyle(isActive ? Theme.Color.text : Theme.Color.textSecondary)
-                        .lineLimit(1)
-                    Text(workspaceName)
-                        .font(Theme.Typography.micro)
-                        .foregroundStyle(Theme.Color.textTertiary)
-                        .lineLimit(1)
-                }
-                Spacer()
-            }
-            .padding(.horizontal, Theme.Layout.sidebarPadding)
-            .padding(.vertical, 5)
-            .background(isActive ? Theme.Color.accentMuted : Color.clear)
-            .overlay(alignment: .leading) {
-                if isActive {
-                    Rectangle()
-                        .fill(Theme.Color.accent)
-                        .frame(width: 2)
-                }
-            }
-            .contentShape(Rectangle())
-        }
-        .buttonStyle(.plain)
-        .contextMenu {
-            Button("삭제", systemImage: "trash", role: .destructive) {
-                onDeleteChatSession(session.id)
-            }
-        }
-        .help("\(session.title) — \(session.subtitle(workspaceName: workspaceName))")
-        .accessibilityLabel("\(session.title), \(workspaceName), \(session.agentKind.displayName)")
-        .accessibilityAddTraits(isActive ? .isSelected : [])
+        .padding(.vertical, Theme.Spacing.md)
     }
 
     // MARK: - Top header (collapse + search + smart folders menu)
@@ -947,6 +966,97 @@ public struct SidebarView: View {
                   let tag = tags.first(where: { $0.id == item.tagId }) else { return false }
             onToggleWorkspaceTag(workspace, tag)
             return true
+        }
+    }
+}
+
+// MARK: - ADR-090 ChatSessionRow (별도 component로 분리 — 호버 state 격리)
+
+private struct ChatSessionRow: View {
+    let session: ChatSession
+    let workspaceName: String?
+    let isActive: Bool
+    let onSelect: () -> Void
+    let onDelete: () -> Void
+    @State private var isHovering = false
+
+    var body: some View {
+        Button(action: onSelect) {
+            HStack(alignment: .top, spacing: 8) {
+                ZStack {
+                    Circle()
+                        .fill(session.agentKind.brandMutedColor)
+                        .frame(width: 22, height: 22)
+                    Image(systemName: session.agentKind.icon)
+                        .font(.system(size: 9, weight: .semibold))
+                        .foregroundStyle(session.agentKind.brandColor)
+                }
+                .accessibilityHidden(true)
+                VStack(alignment: .leading, spacing: 1) {
+                    Text(session.title)
+                        .font(Theme.Typography.small.weight(isActive ? .semibold : .regular))
+                        .foregroundStyle(isActive ? Theme.Color.text : Theme.Color.textSecondary)
+                        .lineLimit(1)
+                    HStack(spacing: 4) {
+                        Image(systemName: "folder.fill")
+                            .font(.system(size: 7))
+                            .foregroundStyle(Theme.Color.textTertiary)
+                        Text(workspaceName ?? "(삭제된 워크스페이스)")
+                            .font(Theme.Typography.micro)
+                            .foregroundStyle(workspaceName == nil ? Theme.Color.warning : Theme.Color.textTertiary)
+                            .lineLimit(1)
+                    }
+                }
+                Spacer(minLength: 0)
+                if !session.savedMessages.isEmpty {
+                    Text("\(session.savedMessages.count)")
+                        .font(Theme.Typography.micro)
+                        .foregroundStyle(Theme.Color.textTertiary)
+                        .padding(.horizontal, 4)
+                        .padding(.vertical, 1)
+                        .background(Theme.Color.surface)
+                        .clipShape(Capsule())
+                        .accessibilityLabel("메시지 \(session.savedMessages.count)개")
+                }
+            }
+            .padding(.horizontal, Theme.Layout.sidebarPadding)
+            .padding(.vertical, 6)
+            .background(rowBackground)
+            .overlay(alignment: .leading) {
+                if isActive {
+                    Rectangle()
+                        .fill(
+                            LinearGradient(
+                                colors: [Theme.Color.accent, Theme.Color.accent.opacity(0.6)],
+                                startPoint: .top,
+                                endPoint: .bottom
+                            )
+                        )
+                        .frame(width: 3)
+                        .transition(.move(edge: .leading).combined(with: .opacity))
+                }
+            }
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .onHover { isHovering = $0 }
+        .contextMenu {
+            Button("삭제", systemImage: "trash", role: .destructive, action: onDelete)
+        }
+        .help("\(session.title) — \(session.subtitle(workspaceName: workspaceName ?? "(삭제됨)"))")
+        .accessibilityLabel("\(session.title), \(workspaceName ?? "삭제된 워크스페이스"), \(session.agentKind.displayName)")
+        .accessibilityAddTraits(isActive ? .isSelected : [])
+        .animation(.easeOut(duration: 0.10), value: isHovering)
+        .animation(.spring(response: 0.30, dampingFraction: 0.85), value: isActive)
+    }
+
+    private var rowBackground: Color {
+        if isActive {
+            return Theme.Color.accent.opacity(0.10)
+        } else if isHovering {
+            return Theme.Color.surfaceHi.opacity(0.7)
+        } else {
+            return Color.clear
         }
     }
 }

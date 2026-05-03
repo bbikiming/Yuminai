@@ -53,60 +53,74 @@ struct TelegramErrorLogSheet: View {
     }
 
     private var header: some View {
-        VStack(alignment: .leading, spacing: 4) {
-            HStack(spacing: 8) {
-                Image(systemName: "exclamationmark.bubble.fill")
-                    .foregroundStyle(.orange)
-                    .accessibilityHidden(true)
-                Text("텔레그램 에러 로그")
-                    .font(Theme.Typography.title)
-                    .foregroundStyle(Theme.Color.text)
-            }
-            Text("최근 발생한 텔레그램 통신 오류. 카테고리별 통계로 패턴 파악 가능.")
-                .font(Theme.Typography.small)
-                .foregroundStyle(Theme.Color.textSecondary)
-                .fixedSize(horizontal: false, vertical: true)
-        }
+        HeaderHero(
+            icon: "exclamationmark.bubble.fill",
+            iconTint: .orange,
+            title: "텔레그램 에러 로그",
+            subtitle: "최근 발생한 통신 오류와 카테고리별 통계. 패턴이 있는지 한눈에 확인."
+        )
     }
 
     private var statsCard: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            Text("카테고리별 통계")
-                .font(Theme.Typography.micro)
-                .foregroundStyle(Theme.Color.textTertiary)
-                .textCase(.uppercase)
-                .tracking(0.6)
-            if stats.isEmpty {
-                Text("에러 없음 ✓")
-                    .font(Theme.Typography.small)
-                    .foregroundStyle(Theme.Color.success)
-            } else {
-                HStack(spacing: 12) {
-                    ForEach([TelegramErrorEntry.Category.auth, .rateLimit, .network, .server, .parsing, .other], id: \.self) { cat in
-                        if let count = stats[cat], count > 0 {
-                            statBadge(category: cat, count: count)
+        CardSection(style: .elevated) {
+            VStack(alignment: .leading, spacing: 10) {
+                SectionHeaderRow(
+                    icon: "chart.bar.fill",
+                    iconColor: .orange,
+                    title: "카테고리별 통계",
+                    caption: stats.isEmpty ? nil : "최근 \(entries.count)건"
+                )
+                if stats.isEmpty {
+                    HStack(spacing: 8) {
+                        Image(systemName: "checkmark.seal.fill")
+                            .font(.system(size: 14, weight: .medium))
+                            .foregroundStyle(Theme.Color.success)
+                            .symbolEffect(.bounce, value: stats.isEmpty)
+                        Text("에러 없음 — 정상 동작 중")
+                            .font(Theme.Typography.small.weight(.medium))
+                            .foregroundStyle(Theme.Color.success)
+                    }
+                    .padding(.vertical, 4)
+                } else {
+                    LazyVGrid(columns: [GridItem(.adaptive(minimum: 90), spacing: 8)], spacing: 8) {
+                        ForEach([TelegramErrorEntry.Category.auth, .rateLimit, .network, .server, .parsing, .other], id: \.self) { cat in
+                            if let count = stats[cat], count > 0 {
+                                statBadge(category: cat, count: count)
+                            }
                         }
                     }
-                    Spacer()
                 }
             }
         }
-        .padding(Theme.Spacing.md)
-        .background(Theme.Color.surface)
-        .clipShape(RoundedRectangle(cornerRadius: Theme.Radius.md))
     }
 
     private func statBadge(category: TelegramErrorEntry.Category, count: Int) -> some View {
         let color = categoryColor(category)
-        return VStack(alignment: .leading, spacing: 2) {
-            Text(categoryLabel(category))
-                .font(Theme.Typography.micro)
-                .foregroundStyle(Theme.Color.textTertiary)
-                .textCase(.uppercase)
+        return VStack(alignment: .leading, spacing: 4) {
+            HStack(spacing: 4) {
+                Circle()
+                    .fill(color)
+                    .frame(width: 6, height: 6)
+                Text(categoryLabel(category))
+                    .font(Theme.Typography.micro.weight(.medium))
+                    .foregroundStyle(Theme.Color.textSecondary)
+                    .textCase(.uppercase)
+                    .tracking(0.4)
+            }
             Text("\(count)")
-                .font(Theme.Typography.title)
+                .font(.system(size: 22, weight: .semibold, design: .rounded))
                 .foregroundStyle(color)
+                .contentTransition(.numericText())
         }
+        .padding(.horizontal, 10)
+        .padding(.vertical, 8)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(color.opacity(0.08))
+        .overlay(
+            RoundedRectangle(cornerRadius: Theme.Radius.md)
+                .stroke(color.opacity(0.20), lineWidth: 0.5)
+        )
+        .clipShape(RoundedRectangle(cornerRadius: Theme.Radius.md))
         .accessibilityElement(children: .combine)
         .accessibilityLabel("\(categoryLabel(category)) \(count)개")
     }
@@ -114,23 +128,34 @@ struct TelegramErrorLogSheet: View {
     @ViewBuilder
     private var entryList: some View {
         if loading {
-            HStack { Spacer(); ProgressView(); Spacer() }
-                .frame(maxHeight: .infinity)
+            VStack(spacing: 8) {
+                ProgressView()
+                    .controlSize(.small)
+                Text("로딩 중…")
+                    .font(Theme.Typography.micro)
+                    .foregroundStyle(Theme.Color.textTertiary)
+            }
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
         } else if entries.isEmpty {
-            EmptyStateHint(
-                icon: "checkmark.circle",
+            AnimatedEmptyState(
+                icon: "checkmark.seal.fill",
+                iconTint: Theme.Color.success,
                 title: "에러 없음",
-                message: "최근 텔레그램 통신 오류가 없어요. 정상 동작 중."
-            )
-            .frame(maxHeight: .infinity)
+                message: "최근 텔레그램 통신 오류가 없어요. 정상 동작 중입니다."
+            ) {
+                EmptyView()
+            }
         } else {
             ScrollView {
-                VStack(spacing: 4) {
+                LazyVStack(spacing: 6) {
                     ForEach(entries) { entry in
                         entryRow(entry)
+                            .transition(.opacity.combined(with: .move(edge: .top)))
                     }
                 }
+                .padding(.bottom, 4)
             }
+            .scrollIndicators(.visible)
         }
     }
 
