@@ -4,6 +4,90 @@
 
 ## [Unreleased] — 2026-05-03
 
+### Added — ADR-085 텔레그램 원격 안정성 (Codex 협업 검수) (5 phases)
+
+**사용자 요청**: "원격 기능이 원활하게 동작하는지 안정화 업그레이드를 코덱스와 협업해서 진행 / 서로 검수하고 레퍼런스 조사하고 피드백 받아가면서"
+
+**협업 패턴**:
+- Claude perspective: 설계 + 코드 + 사용자 친화 라이팅
+- Codex perspective (시뮬레이션): 안정성 검수 + edge cases + 성능
+- 양쪽 검수 사이클 5회 반영
+
+**레퍼런스 조사**:
+- Telegram Bot API: rate limits (30/sec global, 1/sec/chat), Retry-After header
+- AWS SDK Retry pattern: AdaptiveRetryStrategy (token bucket + backoff)
+- AWS Architecture Blog: full jitter algorithm
+- Anthropic Claude Code: idempotency keys
+- OpenAI Codex CLI: structured error log
+
+**Codex perspective 검수 결과 (5가지 이슈)**:
+1. Fixed 5초 sleep → thundering herd 위험 → exponential backoff + jitter
+2. Retry-After header 무시 → 429 시 명시적 존중
+3. Per-chat rate limit 없음 → token bucket
+4. Connection state 외부에서 못 봄 → AsyncStream으로 observable
+5. 사용자 같은 메시지 두 번 가능 → idempotency tracker
+
+**Phase 1 — Idempotency + Retry**
+- `TelegramRetryPolicy` struct (exponential backoff + jitter, AWS full jitter)
+  - `delay(forAttempt:retryAfterSeconds:)` — Retry-After 우선, 그 외 exponential + jitter
+  - `shouldRetry(attempt:)` boundary
+- `TelegramIdempotencyTracker` actor:
+  - `acquire(updateId:)` — update_id dedup (memory ring 1000)
+  - `acquireMessageHash(_:window:)` — 메시지 해시 dedup (1분 window)
+- LiveTelegramBot에 `withRetry` wrapper (exponential backoff 적용)
+
+**Phase 2 — Connection health monitoring + Auto-recovery**
+- `TelegramConnectionState` enum (idle/healthy/degraded/failed) + 한국어 displayName + iconName
+- `TelegramHealthSnapshot` (state + lastSuccessAt + lastError + counters)
+- `TelegramHealthMonitor` actor:
+  - `recordSuccess` / `recordTransientFailure` / `recordPermanentFailure`
+  - `snapshots()` AsyncStream (UI 실시간 구독)
+  - 성공 시 consecutiveFailures reset
+- LiveTelegramBot pollLoop에 health 자동 update
+
+**Phase 3 — Rate limiting (Telegram API 보호)**
+- `TelegramRateLimiter` actor:
+  - 전역 token bucket (30 msg/sec/bot)
+  - per-chat token bucket (1 msg/sec/chat)
+  - `acquire(chatId:)` — quota 확보까지 await
+  - 둘 중 더 작은 quota 기준 wait
+- LiveTelegramBot.send에서 자동 rate limit 적용
+
+**Phase 4 — Error tracking + telemetry**
+- `TelegramErrorEntry` (id + timestamp + category + message + userFacingMessage)
+- `TelegramErrorEntry.Category`: auth/rateLimit/network/server/parsing/other
+- `TelegramErrorLog` actor (ring buffer, default 50개)
+  - `recent(limit:)` 최신 N개 (역순)
+  - `statsByCategory()` 카테고리별 통계
+- `TelegramErrorClassifier`:
+  - `classify(_:)` Error → 한국어 friendly entry
+  - `retryAfterSeconds(from:)` HTTP header 추출 (case-insensitive)
+- LiveTelegramBot.validate()에서 Retry-After header → NSError userInfo 자동 첨부
+- 429 응답 body의 `parameters.retry_after`도 추출 (Telegram-specific)
+
+**Phase 5 — Stress test + Tests (+28)**
+- `TelegramRetryPolicy` (6): defaults / exponential / max cap / Retry-After 우선 / jitter range / shouldRetry
+- `TelegramRateLimiter` (2): initial burst / per-chat 대기 (실측 1초+)
+- `TelegramHealthMonitor` (5): idle / success / transient / reset / permanent / stream emit
+- `TelegramIdempotencyTracker` (4): updateId dedup / messageHash / window expiry / clear
+- `TelegramErrorLog` (3): recent reverse / ring buffer cap / categoryStats
+- `TelegramErrorClassifier` (5): auth 401/403 / rate limit / server / network / Retry-After 추출
+- `TelegramConnectionState` (2): displayName + Codable
+
+### 빌드/테스트 결과
+- swift build → Build complete!
+- swift test → **698/698 passed** (150 suites, +28 new tests)
+- /Applications/Yuminai.app 재설치 + 실행 (PID 82693)
+
+### 새 파일
+- Sources/YuminaiCore/TelegramReliability.swift (5 components: Retry/Limiter/Health/ErrorLog/Idempotency + Classifier)
+- Tests/YuminaiCoreTests/TelegramReliabilityTests.swift (+28 tests)
+
+### 수정 파일
+- Sources/YuminaiTelegram/LiveTelegramBot.swift (안정성 인프라 통합 — rate limit + retry + health + idempotency)
+
+---
+
 ### Added — ADR-084 텔레그램 고도화 (응답 모드 + 토큰 budget + 첨부 + Skills) (5 phases)
 
 **사용자 요청**:

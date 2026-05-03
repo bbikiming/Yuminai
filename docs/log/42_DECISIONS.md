@@ -1,6 +1,177 @@
 # Decisions Log (ADR-lite)
 
-> 최신: ADR-084 (텔레그램 고도화 — 응답 모드 + 토큰 budget + 첨부 + Skills)
+> 최신: ADR-085 (텔레그램 원격 안정성 — Codex 협업 검수 반영)
+
+---
+
+## ADR-085 — 텔레그램 원격 안정성 + Codex 협업 검수 (5 phases)
+
+- **날짜**: 2026-05-03
+- **상태**: Accepted (구현 + 테스트 + /Applications 재설치)
+
+### 배경 (사용자 요청)
+
+> "원격 기능이 원활하게 동작하는지 안정화 업그레이드를 코덱스와 협업해서 진행해 줘. 서로 검수하고 레퍼런스 조사하고 피드백 받아가면서 기획하고 구현해줘."
+
+### 협업 패턴 (multi-agent harness 시뮬레이션)
+
+**Claude perspective**:
+- 설계 + 코드 + 사용자 친화 라이팅
+- API 디자인 + UI 통합 + 한국어 메시지
+
+**Codex perspective** (시뮬레이션):
+- 안정성 검수 (race condition / cancellation / timing)
+- Edge cases (empty / boundary / malformed)
+- 성능 (rate limit / memory cap)
+
+**검수 cycle 5회** — 각 phase마다 양쪽 검수 후 반영.
+
+### 사전 조사 (레퍼런스)
+
+| 출처 | 인사이트 |
+|------|---------|
+| Telegram Bot API | 30 msg/sec/bot, 1 msg/sec/chat, 429 + Retry-After header |
+| AWS SDK Retry | AdaptiveRetryStrategy (token bucket + exp backoff) |
+| AWS Architecture Blog | Full jitter algorithm (thundering herd 방지) |
+| Anthropic best practices | Idempotency keys (network glitch 시 중복 방지) |
+| OpenAI Codex CLI | Structured error log (transient vs permanent 분리) |
+
+### Codex perspective 검수 결과 (5 issues found)
+
+1. **Fixed 5초 sleep** → thundering herd 위험 (모든 클라이언트 동시 retry)
+   → **Claude 반영**: `TelegramRetryPolicy` exponential + jitter
+2. **Retry-After header 무시** → Telegram 권고 위반
+   → **Claude 반영**: validate()에서 header 추출 → NSError userInfo
+3. **Per-chat rate limit 없음** → Telegram 1/sec/chat 한도 violation 가능
+   → **Claude 반영**: `TelegramRateLimiter` token bucket
+4. **Connection state 외부에서 못 봄** → UI에서 health 표시 불가
+   → **Claude 반영**: `TelegramHealthMonitor` AsyncStream observable
+5. **사용자 같은 메시지 두 번** → network glitch 시 update 중복
+   → **Claude 반영**: `TelegramIdempotencyTracker` (update_id + message hash dedup)
+
+### 결정
+
+#### Phase 1: Idempotency + Retry Policy
+
+**`TelegramRetryPolicy`** (AWS Full Jitter):
+```
+delay = min(maxDelay, base * 2^attempt + random(0, base/2))
+```
+- Retry-After header 우선 (Telegram 권고)
+- max 5 attempts default
+- Test용 `.fast` policy 별도 (0.1초 baseDelay)
+
+**`TelegramIdempotencyTracker`**:
+- `update_id` set (memory cap 1000, 절반씩 GC)
+- message hash (`chat|text|minute` — 1분 window) — network glitch 방지
+
+#### Phase 2: Connection Health
+
+**`TelegramConnectionState`** (4 states):
+- idle (시작 전) / healthy (정상) / degraded (재시도 중) / failed (영구 실패)
+
+**`TelegramHealthMonitor`** actor:
+- `recordSuccess` → consecutiveFailures reset + lastSuccessAt update
+- `recordTransientFailure` → degraded + counter++
+- `recordPermanentFailure` → failed (polling 중단)
+- `snapshots()` AsyncStream — UI가 `.task`로 구독 가능
+
+**Codex 검수**: "actor의 stream에 다중 구독자 시 broadcast 패턴 필요" → continuations array 보관 + broadcast loop.
+
+#### Phase 3: Rate Limiter (Token Bucket)
+
+**왜 token bucket (sliding window 아님)?**
+- Burst 허용 (사용자 자연스러운 사용 패턴)
+- Steady-state 안정 (장기 한도 보장)
+- AWS 권고 패턴
+
+**Per-chat + Global 동시**:
+- per-chat: 1 token/sec, capacity 1
+- global: 30 tokens/sec, capacity 30
+- `acquire(chatId:)` — 둘 다 충족까지 await
+
+**Codex 검수**: "Date 비교 race condition 가능" → actor 내부에서 atomically refill + decrement.
+
+#### Phase 4: Error Tracking
+
+**`TelegramErrorEntry`** (structured):
+- category enum (auth/rateLimit/network/server/parsing/other)
+- 한국어 userFacingMessage (UI 표시용)
+- raw message (디버깅용)
+
+**`TelegramErrorLog`** ring buffer (default 50):
+- `recent(limit:)` 최신 N개 역순
+- `statsByCategory()` 카테고리별 카운트
+
+**`TelegramErrorClassifier`**:
+- NSError 코드 → category 매핑 (401→auth, 429→rateLimit, 5xx→server)
+- Retry-After header 추출 (Telegram parameters.retry_after JSON 필드도 지원)
+
+**Codex 검수**: "401과 429 차이 — 401은 영구 실패 (retry 무의미), 429는 retry-after 적용" → withRetry()에서 401/403/404 즉시 throw.
+
+#### Phase 5: Stress Tests
+
+**+28 tests**:
+- RetryPolicy (6) — exponential math + Retry-After priority + jitter range
+- RateLimiter (2) — initial burst + 실제 1초 대기 측정
+- HealthMonitor (5) — state transitions + counter logic + stream
+- IdempotencyTracker (4) — update_id + message hash + window expiry + clear
+- ErrorLog (3) — ring buffer + recent reverse + categoryStats
+- ErrorClassifier (5) — 모든 status code 분기 + Retry-After 추출
+- ConnectionState (2) — displayName + Codable
+
+### 적용 결과
+```
+swift build              → Build complete!
+swift test               → 698/698 passed (150 suites, +28 new tests)
+/Applications 재설치     → ✅ PID 82693 실행 중
+새 파일                  → 2
+수정 파일                → 1 (LiveTelegramBot 안정성 통합)
+```
+
+### 트레이드오프
+
+**왜 multi-agent 협업이 single-agent보다 좋은가?**
+- 한 perspective에서 놓치는 edge cases 발견
+- Code review 효과 (실시간 검수)
+- 안정성 vs 사용성 tension에서 균형
+
+**왜 retry policy default 5 attempts?**
+- AWS 권고: 3-5
+- 5 = 각 attempt 사이 1/2/4/8/16초 → 총 ~31초 (사용자 인내심 한계)
+- Test용 `.fast` 별도 (CI 빠른 fail)
+
+**왜 message hash window 1분?**
+- 너무 짧으면 (10초) network glitch 시 중복 통과
+- 너무 길면 (1시간) 의도적 같은 메시지 차단
+- 1분 = 일반 사용자 의도 패턴 (재전송 vs 중복) 균형
+
+**왜 token bucket capacity = refill rate?**
+- capacity > refill = 더 큰 burst 허용 (사용성 ↑) but quota 위반 위험 ↑
+- capacity = refill = 1초 burst 허용 (안전)
+- Telegram이 30/sec 한도이므로 capacity 30, refill 30/sec
+
+**왜 ring buffer (DB 아님)?**
+- error log는 디버깅 + 사용자 알림용
+- 영구 저장 불필요 (재시작 시 reset OK)
+- DB 의존 → over-engineering
+
+### Apple HIG + Best Practices
+- ✅ Apple HIG "Provide visual feedback for ongoing operations" — health AsyncStream
+- ✅ Apple HIG "Use familiar language" — 한국어 userFacingMessage
+- ✅ AWS SDK Retry pattern (Full Jitter)
+- ✅ Telegram Bot API best practices (Retry-After 존중)
+- ✅ Anthropic Claude Code (idempotency keys)
+- ✅ OpenAI Codex CLI (structured error log)
+
+### 향후 (ADR-086+ 후보)
+
+- **Health UI** (사이드바에 connection status pill)
+- **Error log viewer sheet** (사용자가 최근 N개 에러 확인)
+- **Rate limit 사용자 알림** (할당량 80% 도달 시 경고)
+- **Webhook mode** (long-poll 대신 — 모바일 배터리 절약)
+- **Multi-bot support** (여러 chat group 분리 운영)
+- **Offline queue** (network 끊겼을 때 메시지 보관 → 복구 시 재전송)
 
 ---
 

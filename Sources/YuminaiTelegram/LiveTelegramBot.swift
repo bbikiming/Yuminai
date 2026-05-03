@@ -7,11 +7,25 @@ import YuminaiCore
 /// - 모바일 명령 수신: `incoming` + `startPolling()` (long polling, 앱 실행 중일 때만)
 ///
 /// 화이트리스트(`allowedUserIds`)에 없는 user의 메시지는 silently drop.
+///
+/// **ADR-085** — Codex 협업 검수 반영:
+/// - Rate limiter (per-chat token bucket)
+/// - Retry policy (exponential backoff + jitter + Retry-After 존중)
+/// - Health monitor (connection state observable)
+/// - Idempotency tracker (update_id + message hash dedup)
+/// - Error log (ring buffer)
 public final actor LiveTelegramBot: TelegramClient {
     private let token: String
     private let allowedUserIds: Set<Int64>
     private let session: URLSession
     private let baseURL: URL
+
+    // ADR-085 안정성 인프라 (모두 actor — concurrent safe)
+    public let rateLimiter: TelegramRateLimiter
+    public let healthMonitor: TelegramHealthMonitor
+    public let errorLog: TelegramErrorLog
+    public let idempotency: TelegramIdempotencyTracker
+    public let retryPolicy: TelegramRetryPolicy
 
     private var pollingTask: Task<Void, Never>?
     private var lastUpdateId: Int64 = 0
@@ -25,14 +39,19 @@ public final actor LiveTelegramBot: TelegramClient {
     public init(
         token: String,
         allowedUserIds: Set<Int64>,
-        session: URLSession = .shared
+        session: URLSession = .shared,
+        retryPolicy: TelegramRetryPolicy = .default
     ) {
         self.token = token
         self.allowedUserIds = allowedUserIds
         self.session = session
-        // baseURL이 nil이 될 일이 없는 형식이지만 force-unwrap 회피
         self.baseURL = URL(string: "https://api.telegram.org/bot\(token)")
             ?? URL(string: "https://api.telegram.org")!
+        self.retryPolicy = retryPolicy
+        self.rateLimiter = TelegramRateLimiter()
+        self.healthMonitor = TelegramHealthMonitor()
+        self.errorLog = TelegramErrorLog()
+        self.idempotency = TelegramIdempotencyTracker()
 
         var cont: AsyncStream<IncomingTelegramMessage>.Continuation!
         self.incoming = AsyncStream<IncomingTelegramMessage> { c in cont = c }
@@ -40,14 +59,58 @@ public final actor LiveTelegramBot: TelegramClient {
     }
 
     public func send(_ text: String, to chatId: Int64) async throws -> SentTelegramMessage {
-        // ADR-045 R1.M2 — Markdown escape 누락으로 응답 누락 방지
-        // 1차 시도: MarkdownV2 (escape 적용) → 실패 시 plain text fallback
-        do {
-            return try await sendInternal(text: text, to: chatId, parseMode: "MarkdownV2", escape: true)
-        } catch let nsError as NSError where nsError.domain == "TelegramBot" && nsError.code == 400 {
-            // 400 Bad Request — Markdown 파싱 실패 가능 → plain text로 재시도
-            return try await sendInternal(text: text, to: chatId, parseMode: nil, escape: false)
+        // ADR-085 — Rate limiter 적용 (per-chat token bucket)
+        await rateLimiter.acquire(chatId: chatId)
+        // ADR-085 — Retry policy 적용 (exponential backoff + jitter)
+        return try await withRetry(operation: "send", chatId: chatId) {
+            // ADR-045 R1.M2 — Markdown escape 누락으로 응답 누락 방지
+            do {
+                return try await self.sendInternal(text: text, to: chatId, parseMode: "MarkdownV2", escape: true)
+            } catch let nsError as NSError where nsError.domain == "TelegramBot" && nsError.code == 400 {
+                // 400 Bad Request — Markdown 파싱 실패 → plain text 재시도 (이건 retry policy 외)
+                return try await self.sendInternal(text: text, to: chatId, parseMode: nil, escape: false)
+            }
         }
+    }
+
+    /// **ADR-085** — 재시도 가능한 operation wrapper.
+    /// - Auth 실패 (401/403/404) → 즉시 throw (retry 무의미)
+    /// - 429 → Retry-After 존중
+    /// - 5xx / network → exponential backoff retry
+    /// - 그 외 → 즉시 throw
+    private func withRetry<T>(
+        operation: String,
+        chatId: Int64? = nil,
+        block: () async throws -> T
+    ) async throws -> T {
+        var lastError: Error?
+        for attempt in 0..<retryPolicy.maxAttempts {
+            do {
+                let result = try await block()
+                return result
+            } catch let nsError as NSError {
+                lastError = nsError
+                // Auth 실패는 retry 무의미
+                if nsError.domain == "TelegramBot",
+                   [401, 403, 404, 400].contains(nsError.code) {
+                    let entry = TelegramErrorClassifier.classify(nsError)
+                    await errorLog.record(entry)
+                    throw nsError
+                }
+                // Retry 가능 — log + sleep
+                let entry = TelegramErrorClassifier.classify(nsError)
+                await errorLog.record(entry)
+                await healthMonitor.recordTransientFailure(entry.userFacingMessage)
+                if !retryPolicy.shouldRetry(attempt: attempt) {
+                    throw nsError
+                }
+                // Retry-After header 추출 (429 케이스)
+                let retryAfter = (nsError.userInfo["Retry-After"] as? Double)
+                let delay = retryPolicy.delay(forAttempt: attempt, retryAfterSeconds: retryAfter)
+                try? await Task.sleep(for: .milliseconds(Int(delay * 1000)))
+            }
+        }
+        throw lastError ?? URLError(.unknown)
     }
 
     private func sendInternal(text: String, to chatId: Int64, parseMode: String?, escape: Bool) async throws -> SentTelegramMessage {
@@ -224,31 +287,60 @@ public final actor LiveTelegramBot: TelegramClient {
     }
 
     private func pollLoop() async {
+        var consecutiveFailures = 0
         while !Task.isCancelled {
             do {
                 let updates = try await fetchUpdates(offset: lastUpdateId + 1)
+                consecutiveFailures = 0  // 성공 시 reset
+
+                var processed = 0
                 for update in updates {
                     if update.updateId > lastUpdateId {
                         lastUpdateId = update.updateId
                     }
-                    // ADR-045 — bot reflection 방지 (allowlist 통과해도 추가 검증)
+                    // ADR-085 Phase 1 — Idempotency check (update_id dedup)
+                    let isNew = await idempotency.acquire(updateId: update.updateId)
+                    guard isNew else { continue }
+
+                    // ADR-045 — bot reflection 방지
                     guard !update.isFromBot else { continue }
                     if allowedUserIds.contains(update.userId) {
-                        incomingContinuation.yield(update)
+                        // ADR-085 Phase 1 — message hash dedup (1분 window)
+                        let hash = "\(update.chatId)|\(update.text ?? "")|\(Int(update.receivedAt.timeIntervalSince1970 / 60))"
+                        if await idempotency.acquireMessageHash(hash) {
+                            incomingContinuation.yield(update)
+                            processed += 1
+                        }
                     }
                 }
+                // ADR-085 Phase 2 — health 성공 기록
+                await healthMonitor.recordSuccess(updatesProcessed: processed)
             } catch let nsError as NSError {
-                // ADR-045 R1.H4 — auth 영구 실패는 polling 중단 (5초 retry spam 방지)
+                // ADR-045 R1.H4 — auth 영구 실패는 polling 중단
                 if nsError.domain == "TelegramBot",
                    [401, 403, 404].contains(nsError.code) {
                     let reason = telegramFatalReason(code: nsError.code)
                     fatalAuthError = reason
+                    let entry = TelegramErrorClassifier.classify(nsError)
+                    await errorLog.record(entry)
+                    await healthMonitor.recordPermanentFailure(reason)
                     return  // polling 중단
                 }
-                // 네트워크/일시 에러 (5xx, 429 rate limit, network timeout) — 5초 후 재시도
-                try? await Task.sleep(for: .seconds(5))
+                // ADR-085 Phase 1 — Exponential backoff + jitter (fixed 5초 X)
+                let entry = TelegramErrorClassifier.classify(nsError)
+                await errorLog.record(entry)
+                await healthMonitor.recordTransientFailure(entry.userFacingMessage)
+                let retryAfter = nsError.userInfo["Retry-After"] as? Double
+                let delay = retryPolicy.delay(forAttempt: consecutiveFailures, retryAfterSeconds: retryAfter)
+                consecutiveFailures += 1
+                try? await Task.sleep(for: .milliseconds(Int(delay * 1000)))
             } catch {
-                try? await Task.sleep(for: .seconds(5))
+                let entry = TelegramErrorClassifier.classify(error)
+                await errorLog.record(entry)
+                await healthMonitor.recordTransientFailure(entry.userFacingMessage)
+                let delay = retryPolicy.delay(forAttempt: consecutiveFailures)
+                consecutiveFailures += 1
+                try? await Task.sleep(for: .milliseconds(Int(delay * 1000)))
             }
         }
     }
@@ -294,10 +386,22 @@ public final actor LiveTelegramBot: TelegramClient {
         }
         guard 200...299 ~= http.statusCode else {
             let body = String(data: data, encoding: .utf8) ?? "<binary>"
+            // ADR-085 — Retry-After header를 NSError userInfo에 포함 (retry policy가 활용)
+            var userInfo: [String: Any] = [NSLocalizedDescriptionKey: body]
+            if let retryAfter = TelegramErrorClassifier.retryAfterSeconds(from: http.allHeaderFields) {
+                userInfo["Retry-After"] = retryAfter
+            }
+            // 429 응답은 Telegram이 JSON body에 parameters.retry_after 줄 수 있음
+            if http.statusCode == 429,
+               let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+               let params = json["parameters"] as? [String: Any],
+               let retryAfter = params["retry_after"] as? Double {
+                userInfo["Retry-After"] = retryAfter
+            }
             throw NSError(
                 domain: "TelegramBot",
                 code: http.statusCode,
-                userInfo: [NSLocalizedDescriptionKey: body]
+                userInfo: userInfo
             )
         }
     }
