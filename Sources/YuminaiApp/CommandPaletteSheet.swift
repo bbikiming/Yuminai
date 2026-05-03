@@ -30,7 +30,8 @@ struct CommandPaletteSheet: View {
             FlatHDivider()
             resultsList
         }
-        .frame(width: 560, height: 460)
+        // ADR-073 — 반응형. 내부 ScrollView 있어 wrap=false.
+        .yuminaiSheetFrame(width: 560, height: 460, wrapInScrollView: false)
         .background(Theme.Color.bg)
         .onAppear { inputFocused = true }
     }

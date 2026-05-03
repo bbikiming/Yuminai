@@ -22,7 +22,8 @@ public struct ShortcutHelpSheet: View {
                 .padding(Theme.Spacing.lg)
             }
         }
-        .frame(width: 560, height: 640)
+        // ADR-073 — 반응형. 내부 ScrollView 있어 wrap=false.
+        .yuminaiSheetFrame(width: 560, height: 640, wrapInScrollView: false)
         .background(Theme.Color.bg)
     }
 

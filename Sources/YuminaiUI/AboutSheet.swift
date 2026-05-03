@@ -87,7 +87,8 @@ public struct AboutSheet: View {
             }
             .padding(Theme.Spacing.md)
         }
-        .frame(width: 480, height: 620)
+        // ADR-073 — 반응형. About은 ScrollView 없어 wrap=true.
+        .yuminaiSheetFrame(width: 480, height: 620, wrapInScrollView: true)
         .background(Theme.Color.bg)
     }
 

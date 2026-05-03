@@ -47,7 +47,8 @@ struct PaneRenameSheet: View {
             }
         }
         .padding(Theme.Spacing.xl)
-        .frame(width: 420)
+        // ADR-073 — 너비만 반응형.
+        .yuminaiSheetFrame(width: 420)
         .background(Theme.Color.bg)
     }
 

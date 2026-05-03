@@ -24,7 +24,8 @@ struct FileSearchSheet: View {
             FlatHDivider()
             resultsList
         }
-        .frame(width: 540, height: 400)
+        // ADR-073 — 반응형. 내부 ScrollView 있어 wrap=false.
+        .yuminaiSheetFrame(width: 540, height: 400, wrapInScrollView: false)
         .background(Theme.Color.bg)
         .onAppear { inputFocused = true }
         // ↑↓ 화살표 navigation — TextField focus 중에도 동작 (ADR-038 R2).

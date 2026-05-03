@@ -51,7 +51,8 @@ public struct ChatDetailSheet: View {
             Divider()
             footer
         }
-        .frame(width: 680, height: 600)
+        // ADR-073 — 반응형. 내부 ScrollView 있어 wrap=false.
+        .yuminaiSheetFrame(width: 680, height: 600, wrapInScrollView: false)
         .background(Theme.Color.bg)
     }
 

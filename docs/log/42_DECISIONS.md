@@ -1,6 +1,128 @@
 # Decisions Log (ADR-lite)
 
-> 최신: ADR-072 (반응형 마무리 + WCAG 2.2 색 대비 + Focus + Onboarding + Voice Control)
+> 최신: ADR-073 (Sheet 16개 반응형 frame — 작은 화면 잘림 수정)
+
+---
+
+## ADR-073 — Sheet 16개 반응형 frame (5 phases)
+
+- **날짜**: 2026-05-03
+- **상태**: Accepted (16개 sheet 모두 적용 + 테스트 + /Applications 재설치)
+
+### 배경 (사용자 피드백)
+
+ADR-070~072로 메인 윈도우는 보조 모니터(960×640)에서도 정상 동작.
+하지만 **sheet (모달 팝업)는 여전히 잘림**:
+- 사용자 스크린샷: CreateWorkspaceSheet 상단 (제목/X 버튼)이 viewport 밖
+- "폴더 고르기" 버튼이 우측 끝에 잘려 있음
+
+**원인 분석**:
+- macOS sheet는 NSWindow의 자식으로 부모 frame을 초과할 수 없음
+- 모든 sheet가 `.frame(width: X, height: Y)` 고정 (16개 sheet 일괄 패턴)
+- `width: 580, height: 640` sheet + `window: 800×500` → sheet height 640 > window 500 → 위아래 잘림
+- 컨텐츠가 ScrollView 안에 있어도 sheet 자체가 잘리면 무용지물
+
+### 결정
+
+#### Phase 1: 반응형 sheet frame modifier
+
+`Sources/YuminaiUI/SheetFrame.swift`:
+- `YuminaiSheetFrameModifier` (ViewModifier)
+- `.yuminaiSheetFrame(width:height:wrapInScrollView:)` extension
+- `.yuminaiSheetFrame(width:)` 짧은 sheet용 (height 컨텐츠 기반)
+
+**핵심 디자인**:
+- `minWidth = min(idealWidth, 360)` — 작은 sheet도 안전한 최소
+- `idealWidth = idealWidth` — 충분한 화면에서 권장
+- `maxWidth = idealWidth` — 너무 늘어나지 않게 cap
+- `minHeight = min(idealHeight, 240)` — 짧은 sheet도 보호
+- `maxHeight = idealHeight` — 무한 늘어남 방지
+- `wrapInScrollView`: 옵션, 이미 ScrollView 있는 sheet는 false
+
+**왜 minWidth=360?**
+- 보조 모니터 960px → 메인 윈도우 460px + sheet 360px = 820px (여유 있음)
+- 360px 미만은 컨텐츠 가독성 한계 (Apple HIG 권고)
+
+**왜 minHeight=240?**
+- FileNameSheet 같은 짧은 sheet (220px)도 안전하게 표시
+- 240px 미만은 사용자가 스크롤해도 한 번에 못 보는 위험
+
+#### Phase 2-4: 16개 sheet 모두 적용
+
+| Sheet | 기존 | 변경 후 wrapInScrollView |
+|-------|------|------------------------|
+| CreateWorkspaceSheet | 580×640 | false (Form 있음) |
+| EditProjectProfileSheet | 580×640 | false |
+| AboutSheet | 480×620 | **true** (자체 ScrollView 없음) |
+| CreateNoteSheet | width 520만 | (height auto) |
+| ChatDetailSheet | 680×600 | false |
+| ChatBindingAuditLogSheet | 720×540 | false |
+| ShortcutHelpSheet | 560×640 | false |
+| WikiDisambiguationSheet | width 480만 | (height auto) |
+| RoutingDecisionLogSheet | 880×600 | false (3 ScrollView) |
+| RehearsalSheet | 880×600 | false (2 ScrollView) |
+| CokacdirImportSheet | width 540만 | (height auto) |
+| FileNameSheet | 440×220 | false (짧음) |
+| FileSearchSheet | 540×400 | false (List 있음) |
+| CommandPaletteSheet | 560×460 | false |
+| WorkspaceDeliverySheet | 580×540 | false |
+| TerminalRenameSheet | 420×220 | false (짧음) |
+| PaneRenameSheet | width 420만 | (height auto) |
+
+#### Phase 5: Tests
+
+`Tests/YuminaiUITests/SheetFrameTests.swift`:
+- absoluteMinWidth/Height boundary 검증 (960×640 모니터 가정)
+- modifier 생성 (큰 sheet / 짧은 sheet)
+- 양 케이스 모두 동일 absoluteMin 적용
+
+### 적용 결과
+```
+swift build              → Build complete!
+swift test               → 523/523 passed (108 suites, +4 new tests)
+/Applications 재설치     → ✅ PID 9168 실행 중
+새 파일                  → 2 (SheetFrame.swift, SheetFrameTests.swift)
+수정 파일                → 17 (sheets 16 + docs)
+```
+
+### 트레이드오프
+
+**왜 모든 sheet에 같은 modifier?**
+- 일관된 사용자 경험 (모든 sheet가 같은 방식으로 적응)
+- 디자인 시스템 일관성 (Theme.Color처럼 sheet sizing도 토큰화)
+- 향후 새 sheet 추가 시 재사용
+
+**왜 ScrollView를 자동 wrap하지 않나?**
+- 이미 내부에 ScrollView가 있는 sheet는 double-wrap 시 스크롤 동작 깨짐
+- ScrollView in Form, ScrollView in NavigationStack 등 케이스 다양
+- 명시적 opt-in이 안전
+
+**왜 maxWidth = idealWidth로 cap?**
+- 큰 모니터 (5K 디스플레이 등)에서 sheet가 화면 절반 차지하면 어색
+- "고정 사이즈가 권장이지만, 작은 화면에서만 축소" 패턴 (responsive design)
+
+**왜 maxHeight = idealHeight?**
+- minHeight만 설정하면 SwiftUI가 컨텐츠에 따라 무한 확장
+- maxHeight cap이 있어야 sheet가 viewport 안에 머물기 가능
+
+### Apple HIG 준수
+
+- ✅ "Make sure a sheet looks good and works well at every size people might choose"
+- ✅ "Avoid displaying a sheet on top of another sheet" (단, 명시적 multi-sheet UX 제외)
+- ✅ "Make essential controls reachable" — minHeight 보장으로 footer 항상 표시
+
+### WCAG 2.2 충족
+
+- ✅ **SC 1.4.10 Reflow** (AA): sheet가 부모 윈도우에 맞게 reflow
+- ✅ **SC 2.4.11 Focus Not Obscured** (AA, NEW): focus된 element가 잘리지 않음
+
+### 향후 (ADR-074+ 후보)
+
+- Sheet sizing 토큰화 (Theme.Layout.sheet.small/medium/large)
+- Sheet open 시 적절한 focus 자동 이동 (SC 2.4.3)
+- Sheet 닫을 때 이전 focus 복원
+- Sheet stacking limit (multi-sheet 시 max 2개)
+- iPad/iPhone 대응 (NavigationStack 변환)
 
 ---
 

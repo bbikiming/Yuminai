@@ -39,7 +39,8 @@ public struct CreateWorkspaceSheet: View {
             }
             .padding(Theme.Spacing.xxl)
         }
-        .frame(width: Theme.Layout.sheetWidth, height: 640)
+        // ADR-073 — 작은 화면(960×640)에서도 잘리지 않게 반응형. 내부에 ScrollView가 이미 있어 wrapInScrollView=false.
+        .yuminaiSheetFrame(width: Theme.Layout.sheetWidth, height: 640, wrapInScrollView: false)
         .background(Theme.Color.bg)
     }
 

@@ -22,7 +22,8 @@ struct FileNameSheet: View {
             Divider()
             footer
         }
-        .frame(width: 440, height: 220)
+        // ADR-073 — 짧은 sheet (220px). 작은 화면에서도 잘 표시됨.
+        .yuminaiSheetFrame(width: 440, height: 220, wrapInScrollView: false)
         .background(Theme.Color.bg)
         .onAppear {
             name = intent.initialName

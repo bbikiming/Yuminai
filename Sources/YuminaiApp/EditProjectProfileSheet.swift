@@ -52,7 +52,8 @@ struct EditProjectProfileSheet: View {
             }
             .padding(Theme.Spacing.xxl)
         }
-        .frame(width: Theme.Layout.sheetWidth, height: 640)
+        // ADR-073 — 반응형. 내부 ScrollView 있어 wrapInScrollView=false.
+        .yuminaiSheetFrame(width: Theme.Layout.sheetWidth, height: 640, wrapInScrollView: false)
         .background(Theme.Color.bg)
     }
 

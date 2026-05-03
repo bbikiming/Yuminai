@@ -52,7 +52,8 @@ struct TerminalRenameSheet: View {
             }
             .padding(Theme.Spacing.md)
         }
-        .frame(width: 420, height: 220)
+        // ADR-073 — 짧은 sheet (220px).
+        .yuminaiSheetFrame(width: 420, height: 220, wrapInScrollView: false)
         .background(Theme.Color.bg)
         .onAppear {
             label = session.label

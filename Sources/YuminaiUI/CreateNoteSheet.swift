@@ -70,7 +70,8 @@ public struct CreateNoteSheet: View {
             }
         }
         .padding(Theme.Spacing.xxl)
-        .frame(width: 520)
+        // ADR-073 — 너비만 반응형 (높이는 컨텐츠 기반).
+        .yuminaiSheetFrame(width: 520)
         .background(Theme.Color.bg)
     }
 

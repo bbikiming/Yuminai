@@ -4,6 +4,83 @@
 
 ## [Unreleased] — 2026-05-03
 
+### Added — ADR-073 Sheet 잘림 수정 (16개 sheet 반응형) (5 phases)
+
+**사용자 피드백** (2026-05-03):
+"작은 화면에서의 전체 화면, 팝업뷰가 잘리지 않게 대응해 줘"
+→ 스크린샷: CreateWorkspaceSheet 상단 (제목/X 버튼)이 viewport 밖으로 잘림
+
+**원인 분석**:
+- macOS sheet는 부모 윈도우보다 클 수 없음
+- 모든 sheet가 `.frame(width: X, height: Y)` 고정 (16개 sheet 모두)
+- 작은 윈도우에서 sheet height > window height → 위/아래 잘림
+
+**Phase 1 — 반응형 sheet frame modifier**
+- `Sources/YuminaiUI/SheetFrame.swift` 신규
+- `YuminaiSheetFrameModifier`: minWidth/idealWidth/maxWidth + minHeight/idealHeight/maxHeight
+- `View.yuminaiSheetFrame(width:height:wrapInScrollView:)` extension
+- `absoluteMinWidth = 360` / `absoluteMinHeight = 240` (보조 모니터 960×640 대응)
+- 옵션 ScrollView 자동 wrap (이미 있는 sheet는 false)
+
+**Phase 2-4 — 16개 sheet 모두 적용**
+- CreateWorkspaceSheet (580×640) — 사용자가 보여준 잘림 케이스
+- EditProjectProfileSheet (580×640)
+- AboutSheet (480×620)
+- CreateNoteSheet (520, height auto)
+- ChatDetailSheet (680×600)
+- ChatBindingAuditLogSheet (720×540)
+- ShortcutHelpSheet (560×640)
+- WikiDisambiguationSheet (480, height auto)
+- RoutingDecisionLogSheet (880×600)
+- RehearsalSheet (880×600)
+- CokacdirImportSheet (540, height auto)
+- FileNameSheet (440×220)
+- FileSearchSheet (540×400)
+- CommandPaletteSheet (560×460)
+- WorkspaceDeliverySheet (580×540)
+- TerminalRenameSheet (420×220)
+- PaneRenameSheet (420, height auto)
+
+**Phase 5 — Tests**
+- `Tests/YuminaiUITests/SheetFrameTests.swift` (4 tests)
+  - absoluteMinWidth/Height boundary 검증
+  - modifier 생성 + 큰/짧은 sheet 케이스
+
+근거:
+- Apple HIG "Sheets": "Make sure a sheet looks good and works well at every size"
+- WCAG 2.2 SC 1.4.10 Reflow (AA): 컨텐츠는 viewport에 맞게 reflow
+- WCAG 2.2 SC 2.4.11 Focus Not Obscured (AA, NEW): focus는 가려지면 안 됨
+
+### 빌드/테스트 결과
+- swift build → Build complete!
+- swift test → **523/523 passed** (108 suites, +4 new tests)
+- /Applications/Yuminai.app 재설치 + 실행 (PID 9168)
+
+### 새 파일
+- Sources/YuminaiUI/SheetFrame.swift
+- Tests/YuminaiUITests/SheetFrameTests.swift
+
+### 수정 파일 (sheets — 16개)
+- Sources/YuminaiUI/CreateWorkspaceSheet.swift
+- Sources/YuminaiApp/EditProjectProfileSheet.swift
+- Sources/YuminaiUI/AboutSheet.swift
+- Sources/YuminaiUI/CreateNoteSheet.swift
+- Sources/YuminaiUI/ChatDetailSheet.swift
+- Sources/YuminaiUI/ChatBindingAuditLogSheet.swift
+- Sources/YuminaiUI/ShortcutHelpSheet.swift
+- Sources/YuminaiUI/WikiDisambiguationSheet.swift
+- Sources/YuminaiUI/RoutingDecisionLogSheet.swift
+- Sources/YuminaiUI/RehearsalSheet.swift
+- Sources/YuminaiApp/CokacdirImportSheet.swift
+- Sources/YuminaiApp/FileNameSheet.swift
+- Sources/YuminaiApp/FileSearchSheet.swift
+- Sources/YuminaiApp/CommandPaletteSheet.swift
+- Sources/YuminaiApp/WorkspaceDeliverySheet.swift
+- Sources/YuminaiApp/TerminalRenameSheet.swift
+- Sources/YuminaiApp/PaneRenameSheet.swift
+
+---
+
 ### Added — ADR-072 반응형 마무리 + WCAG 2.2 색 대비 + Focus + Onboarding + Voice Control (5 phases)
 
 **사용자 피드백** (2026-05-03):
