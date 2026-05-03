@@ -170,6 +170,11 @@ struct RootView: View {
             TelegramErrorLogSheet()
                 .environment(appModel)
         }
+        // ADR-089 — 새 ad-hoc 대화 세션 생성
+        .sheet(isPresented: $bindable.showNewChatSessionSheet) {
+            NewChatSessionSheet()
+                .environment(appModel)
+        }
         // ADR-086 Phase 4 — Multi-bot manager
         .sheet(isPresented: $bindable.showTelegramBotManagerSheet) {
             TelegramBotManagerSheet()
@@ -750,6 +755,24 @@ struct RootView: View {
             telegramHealth: appModel.telegramHealth,
             onOpenTelegramErrorLog: {
                 appModel.showTelegramErrorLogSheet = true
+            },
+            // ADR-089 — Chat sessions
+            chatSessions: appModel.recentChatSessions(),
+            activeChatSessionId: appModel.preferences.activeChatSessionId,
+            workspaceNameById: { wsId in
+                appModel.workspaces.first { $0.id == wsId }?.name
+            },
+            onCreateChatSession: {
+                appModel.presentExclusiveSheet { $0.showNewChatSessionSheet = true }
+            },
+            onSelectChatSession: { id in
+                Task { await appModel.activateChatSession(id) }
+            },
+            onDeleteChatSession: { id in
+                Task { await appModel.deleteChatSession(id) }
+            },
+            onDeactivateChatSession: {
+                Task { await appModel.deactivateChatSession() }
             }
         )
     }

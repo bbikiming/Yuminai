@@ -49,6 +49,8 @@ public final class AppModel {
     public var showCokacdirImportSheet: Bool = false
 
     public var showCreateWorkspaceSheet: Bool = false
+    /// **ADR-089** — 새 ad-hoc 대화 세션 생성 sheet.
+    public var showNewChatSessionSheet: Bool = false
     public var showUsageDashboard: Bool = false
     public var showInspector: Bool = false
     /// **ADR-076 Phase 4** — 폴더 이름 입력/변경 sheet.
@@ -4144,6 +4146,8 @@ public final class AppModel {
         showTelegramAdvancedSheet = false
         showTelegramErrorLogSheet = false
         showTelegramBotManagerSheet = false
+        // ADR-089
+        showNewChatSessionSheet = false
     }
 
     /// 새 sheet/alert을 열기 전에 다른 sheet 모두 닫고 setter 실행.
@@ -4556,6 +4560,111 @@ public final class AppModel {
     public func removeBotChatBinding(_ id: UUID) async {
         preferences.telegramBotChatBindings.removeAll { $0.id == id }
         await savePreferences()
+    }
+
+    // MARK: - ADR-089 ChatSession (ad-hoc 대화) management
+
+    /// 새 ad-hoc 대화 세션 생성 + 자동 활성화.
+    /// - Parameters:
+    ///   - title: 세션 제목 (예: "버그 디버깅", "리팩토링 아이디어")
+    ///   - workspaceId: 어느 워크스페이스 폴더에서 실행할지 (필수)
+    ///   - agentKind: Claude or Codex
+    ///   - settings: model + permissionMode + effort
+    /// - Returns: 생성된 ChatSession id (이미 active로 설정됨).
+    @discardableResult
+    public func createChatSession(
+        title: String,
+        workspaceId: UUID,
+        agentKind: AgentKind = .default,
+        settings: SessionSettings = .default
+    ) async -> UUID {
+        let session = ChatSession(
+            title: title,
+            workspaceId: workspaceId,
+            agentKind: agentKind,
+            settings: settings
+        )
+        preferences.chatSessions.append(session)
+        preferences.activeChatSessionId = session.id
+        await savePreferences()
+        return session.id
+    }
+
+    /// ChatSession 활성화 (사이드바에서 클릭).
+    /// 활성화하면 그 session의 workspaceId로 transition + agentKind/settings도 swap.
+    public func activateChatSession(_ id: UUID) async {
+        guard let session = preferences.chatSessions.first(where: { $0.id == id }) else { return }
+        preferences.activeChatSessionId = id
+
+        // 1) workspace 전환 (필요 시)
+        if selectedWorkspaceId != session.workspaceId {
+            await transitionToWorkspace(session.workspaceId)
+        }
+
+        // 2) agent + settings 적용
+        if agentKindForActiveWorkspace != session.agentKind {
+            await setActiveAgentKind(session.agentKind)
+        }
+        if activeSettings != session.settings {
+            await updateActiveSettings(session.settings)
+        }
+
+        // 3) lastActiveAt 갱신
+        if let idx = preferences.chatSessions.firstIndex(where: { $0.id == id }) {
+            preferences.chatSessions[idx].lastActiveAt = Date()
+        }
+        await savePreferences()
+    }
+
+    /// ChatSession 활성 해제 — 워크스페이스 main 대화로 복귀.
+    public func deactivateChatSession() async {
+        preferences.activeChatSessionId = nil
+        await savePreferences()
+    }
+
+    /// ChatSession 제목 변경.
+    public func renameChatSession(_ id: UUID, to newTitle: String) async {
+        guard let idx = preferences.chatSessions.firstIndex(where: { $0.id == id }) else { return }
+        preferences.chatSessions[idx].title = newTitle
+        await savePreferences()
+    }
+
+    /// ChatSession 삭제 (영구).
+    public func deleteChatSession(_ id: UUID) async {
+        preferences.chatSessions.removeAll { $0.id == id }
+        if preferences.activeChatSessionId == id {
+            preferences.activeChatSessionId = nil
+        }
+        await savePreferences()
+    }
+
+    /// ChatSession archive 토글 (목록에서 숨김 — 영구 삭제 ≠ archive).
+    public func toggleChatSessionArchive(_ id: UUID) async {
+        guard let idx = preferences.chatSessions.firstIndex(where: { $0.id == id }) else { return }
+        preferences.chatSessions[idx].isArchived.toggle()
+        await savePreferences()
+    }
+
+    /// 현재 active ChatSession (없으면 nil).
+    public var activeChatSession: ChatSession? {
+        guard let id = preferences.activeChatSessionId else { return nil }
+        return preferences.chatSessions.first { $0.id == id }
+    }
+
+    /// 활성 워크스페이스의 agent kind helper (활성 chat session 또는 workspace에서).
+    private var agentKindForActiveWorkspace: AgentKind {
+        if let session = activeChatSession {
+            return session.agentKind
+        }
+        return workspaces.first { $0.id == selectedWorkspaceId }?.agentKind ?? .default
+    }
+
+    /// 최근 활성순으로 정렬된 chat sessions (archived 제외, 옵션으로 포함).
+    public func recentChatSessions(includeArchived: Bool = false) -> [ChatSession] {
+        let filtered = includeArchived
+            ? preferences.chatSessions
+            : preferences.chatSessions.filter { !$0.isArchived }
+        return filtered.sorted { $0.lastActiveAt > $1.lastActiveAt }
     }
 
     /// bound workspace가 있을 때만 bridge 생성. 없으면 nil.

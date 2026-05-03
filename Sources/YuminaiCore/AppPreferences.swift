@@ -132,6 +132,10 @@ public struct AppPreferences: Sendable, Codable, Hashable {
     public var telegramUpdateMode: TelegramUpdateMode
     /// **ADR-086 Phase 5** — Webhook URL (mode == .webhook 시 사용).
     public var telegramWebhookURL: String?
+    /// **ADR-089** — Ad-hoc 대화 세션 목록 (워크스페이스와 별개).
+    public var chatSessions: [ChatSession]
+    /// **ADR-089** — 현재 활성 ChatSession ID (nil이면 워크스페이스 main 대화).
+    public var activeChatSessionId: UUID?
 
     public init(
         claudeBinaryPath: String = AppPreferences.detectClaudeBinaryPath(),
@@ -184,7 +188,9 @@ public struct AppPreferences: Sendable, Codable, Hashable {
         telegramBotChatBindings: [BotChatBinding] = [],
         telegramRateLimitAlert: RateLimitAlertConfig = RateLimitAlertConfig(),  // ADR-086 Phase 2
         telegramUpdateMode: TelegramUpdateMode = .longPoll,  // ADR-086 Phase 5
-        telegramWebhookURL: String? = nil
+        telegramWebhookURL: String? = nil,
+        chatSessions: [ChatSession] = [],  // ADR-089
+        activeChatSessionId: UUID? = nil
     ) {
         self.claudeBinaryPath = claudeBinaryPath
         self.codexBinaryPath = codexBinaryPath
@@ -237,6 +243,8 @@ public struct AppPreferences: Sendable, Codable, Hashable {
         self.telegramRateLimitAlert = telegramRateLimitAlert
         self.telegramUpdateMode = telegramUpdateMode
         self.telegramWebhookURL = telegramWebhookURL
+        self.chatSessions = chatSessions
+        self.activeChatSessionId = activeChatSessionId
     }
 
     // ADR-046 — 신규 필드 backward-compat: 기존 JSON에 없으면 default 적용
@@ -303,6 +311,9 @@ public struct AppPreferences: Sendable, Codable, Hashable {
         self.telegramRateLimitAlert = try c.decodeIfPresent(RateLimitAlertConfig.self, forKey: .telegramRateLimitAlert) ?? RateLimitAlertConfig()
         self.telegramUpdateMode = try c.decodeIfPresent(TelegramUpdateMode.self, forKey: .telegramUpdateMode) ?? .longPoll
         self.telegramWebhookURL = try c.decodeIfPresent(String.self, forKey: .telegramWebhookURL)
+        // ADR-089 — ChatSession (기존 사용자는 빈 배열로 시작)
+        self.chatSessions = try c.decodeIfPresent([ChatSession].self, forKey: .chatSessions) ?? []
+        self.activeChatSessionId = try c.decodeIfPresent(UUID.self, forKey: .activeChatSessionId)
     }
 
     /// `claude` CLI의 가능성 높은 위치들을 순서대로 시도해 첫 번째 존재하는 경로 반환.

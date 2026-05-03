@@ -73,6 +73,20 @@ public struct SidebarView: View {
     public let telegramHealth: TelegramHealthSnapshot
     /// **ADR-086 Phase 1** — Health pill click → 에러 로그 sheet 열기.
     public let onOpenTelegramErrorLog: () -> Void
+    /// **ADR-089** — 활성 chat sessions (lastActiveAt desc로 정렬됨).
+    public let chatSessions: [ChatSession]
+    /// **ADR-089** — 현재 활성 chat session id (강조 표시용).
+    public let activeChatSessionId: UUID?
+    /// **ADR-089** — 워크스페이스 이름 lookup용 (chatSession.workspaceId → name).
+    public let workspaceNameById: (UUID) -> String?
+    /// **ADR-089** — 새 대화 세션 만들기 sheet 열기.
+    public let onCreateChatSession: () -> Void
+    /// **ADR-089** — chat session 클릭 → activate.
+    public let onSelectChatSession: (UUID) -> Void
+    /// **ADR-089** — chat session 삭제.
+    public let onDeleteChatSession: (UUID) -> Void
+    /// **ADR-089** — 워크스페이스로 복귀 (활성 chat session 해제).
+    public let onDeactivateChatSession: () -> Void
 
     public init(
         workspaces: [Workspace],
@@ -114,7 +128,14 @@ public struct SidebarView: View {
         userName: String = "yuminai",
         updateAvailable: Bool = false,
         telegramHealth: TelegramHealthSnapshot = TelegramHealthSnapshot(),
-        onOpenTelegramErrorLog: @escaping () -> Void = {}
+        onOpenTelegramErrorLog: @escaping () -> Void = {},
+        chatSessions: [ChatSession] = [],
+        activeChatSessionId: UUID? = nil,
+        workspaceNameById: @escaping (UUID) -> String? = { _ in nil },
+        onCreateChatSession: @escaping () -> Void = {},
+        onSelectChatSession: @escaping (UUID) -> Void = { _ in },
+        onDeleteChatSession: @escaping (UUID) -> Void = { _ in },
+        onDeactivateChatSession: @escaping () -> Void = {}
     ) {
         self.workspaces = workspaces
         self._selectedId = selectedId
@@ -156,6 +177,13 @@ public struct SidebarView: View {
         self.updateAvailable = updateAvailable
         self.telegramHealth = telegramHealth
         self.onOpenTelegramErrorLog = onOpenTelegramErrorLog
+        self.chatSessions = chatSessions
+        self.activeChatSessionId = activeChatSessionId
+        self.workspaceNameById = workspaceNameById
+        self.onCreateChatSession = onCreateChatSession
+        self.onSelectChatSession = onSelectChatSession
+        self.onDeleteChatSession = onDeleteChatSession
+        self.onDeactivateChatSession = onDeactivateChatSession
     }
 
     public var body: some View {
@@ -166,7 +194,20 @@ public struct SidebarView: View {
             if !tags.isEmpty {
                 tagFilterBar
             }
-            workspaceList
+            ScrollView {
+                VStack(spacing: 0) {
+                    // ADR-089 — 워크스페이스(프로젝트) 명시 라벨
+                    sidebarSectionLabel(
+                        title: "워크스페이스",
+                        subtitle: "프로젝트 (영속)",
+                        icon: "folder.fill",
+                        color: Theme.Color.accent
+                    )
+                    workspaceListContent
+                    // ADR-089 — Ad-hoc 대화 세션 section (워크스페이스 아래)
+                    chatSessionsSection
+                }
+            }
             Spacer(minLength: 0)
             if updateAvailable {
                 UpdateCard()
@@ -186,6 +227,170 @@ public struct SidebarView: View {
         }
         .frame(width: Theme.Layout.sidebarWidth)
         .background(Theme.Color.bgSidebar)
+    }
+
+    /// **ADR-089** — workspaceList의 ScrollView를 제외한 inner content (재사용용).
+    /// 기존 workspaceList는 자체 ScrollView를 가졌으므로, 새 outer ScrollView 안에서
+    /// content만 분리.
+    private var workspaceListContent: some View {
+        // 기존 workspaceList의 body를 재활용 — 단순화 위해 그대로 호출
+        // (workspaceList는 이미 ScrollView 포함이므로 frame 제한 적용)
+        workspaceList
+            .frame(maxHeight: 320)
+    }
+
+    // MARK: - ADR-089 Sidebar 섹션 라벨
+
+    private func sidebarSectionLabel(
+        title: String,
+        subtitle: String,
+        icon: String,
+        color: SwiftUI.Color
+    ) -> some View {
+        HStack(spacing: 6) {
+            Image(systemName: icon)
+                .font(.system(size: 9, weight: .medium))
+                .foregroundStyle(color)
+                .accessibilityHidden(true)
+            Text(title)
+                .font(Theme.Typography.micro.weight(.semibold))
+                .foregroundStyle(Theme.Color.text)
+                .textCase(.uppercase)
+                .tracking(0.6)
+            Text(subtitle)
+                .font(Theme.Typography.micro)
+                .foregroundStyle(Theme.Color.textTertiary)
+            Spacer()
+        }
+        .padding(.horizontal, Theme.Layout.sidebarPadding)
+        .padding(.top, Theme.Spacing.md)
+        .padding(.bottom, Theme.Spacing.xs)
+    }
+
+    // MARK: - ADR-089 Chat sessions section
+
+    private var chatSessionsSection: some View {
+        VStack(spacing: 0) {
+            HStack(spacing: 4) {
+                Image(systemName: "bubble.left.and.text.bubble.right.fill")
+                    .font(.system(size: 9, weight: .medium))
+                    .foregroundStyle(Theme.Color.warning)
+                    .accessibilityHidden(true)
+                Text("대화 세션")
+                    .font(Theme.Typography.micro.weight(.semibold))
+                    .foregroundStyle(Theme.Color.text)
+                    .textCase(.uppercase)
+                    .tracking(0.6)
+                Text("Ad-hoc")
+                    .font(Theme.Typography.micro)
+                    .foregroundStyle(Theme.Color.textTertiary)
+                Spacer()
+                Button(action: onCreateChatSession) {
+                    Image(systemName: "plus")
+                        .font(.system(size: 10, weight: .semibold))
+                        .foregroundStyle(Theme.Color.textSecondary)
+                        .frame(width: 18, height: 18)
+                        .background(Theme.Color.surfaceHi.opacity(0.5))
+                        .clipShape(Circle())
+                }
+                .buttonStyle(.plain)
+                .help("새 대화 세션 (⌘⇧N) — 빠른 질문/실험용")
+                .accessibilityLabel("새 대화 세션 만들기")
+            }
+            .padding(.horizontal, Theme.Layout.sidebarPadding)
+            .padding(.top, Theme.Spacing.md)
+            .padding(.bottom, Theme.Spacing.xs)
+
+            if chatSessions.isEmpty {
+                chatSessionEmptyHint
+            } else {
+                if activeChatSessionId != nil {
+                    Button(action: onDeactivateChatSession) {
+                        HStack(spacing: 6) {
+                            Image(systemName: "arrow.uturn.backward")
+                                .font(.system(size: 9))
+                            Text("워크스페이스 main 대화로 복귀")
+                                .font(Theme.Typography.small)
+                            Spacer()
+                        }
+                        .foregroundStyle(Theme.Color.textSecondary)
+                        .padding(.horizontal, Theme.Layout.sidebarPadding)
+                        .padding(.vertical, 4)
+                    }
+                    .buttonStyle(.plain)
+                    .help("이 워크스페이스의 main 대화로 돌아가기")
+                }
+                VStack(spacing: 1) {
+                    ForEach(chatSessions) { session in
+                        chatSessionRow(session)
+                    }
+                }
+            }
+        }
+    }
+
+    private var chatSessionEmptyHint: some View {
+        VStack(spacing: 4) {
+            Text("아직 대화 세션이 없어요")
+                .font(Theme.Typography.micro)
+                .foregroundStyle(Theme.Color.textTertiary)
+            Button(action: onCreateChatSession) {
+                Text("+ 첫 대화 시작하기")
+                    .font(Theme.Typography.small.weight(.medium))
+                    .foregroundStyle(Theme.Color.accent)
+            }
+            .buttonStyle(.plain)
+        }
+        .frame(maxWidth: .infinity, alignment: .center)
+        .padding(.horizontal, Theme.Layout.sidebarPadding)
+        .padding(.vertical, Theme.Spacing.sm)
+    }
+
+    private func chatSessionRow(_ session: ChatSession) -> some View {
+        let isActive = activeChatSessionId == session.id
+        let workspaceName = workspaceNameById(session.workspaceId) ?? "(삭제된 워크스페이스)"
+        return Button {
+            onSelectChatSession(session.id)
+        } label: {
+            HStack(alignment: .top, spacing: 6) {
+                Image(systemName: session.agentKind.icon)
+                    .font(.system(size: 9))
+                    .foregroundStyle(session.agentKind.brandColor)
+                    .padding(.top, 3)
+                    .accessibilityHidden(true)
+                VStack(alignment: .leading, spacing: 1) {
+                    Text(session.title)
+                        .font(Theme.Typography.small.weight(isActive ? .semibold : .regular))
+                        .foregroundStyle(isActive ? Theme.Color.text : Theme.Color.textSecondary)
+                        .lineLimit(1)
+                    Text(workspaceName)
+                        .font(Theme.Typography.micro)
+                        .foregroundStyle(Theme.Color.textTertiary)
+                        .lineLimit(1)
+                }
+                Spacer()
+            }
+            .padding(.horizontal, Theme.Layout.sidebarPadding)
+            .padding(.vertical, 5)
+            .background(isActive ? Theme.Color.accentMuted : Color.clear)
+            .overlay(alignment: .leading) {
+                if isActive {
+                    Rectangle()
+                        .fill(Theme.Color.accent)
+                        .frame(width: 2)
+                }
+            }
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .contextMenu {
+            Button("삭제", systemImage: "trash", role: .destructive) {
+                onDeleteChatSession(session.id)
+            }
+        }
+        .help("\(session.title) — \(session.subtitle(workspaceName: workspaceName))")
+        .accessibilityLabel("\(session.title), \(workspaceName), \(session.agentKind.displayName)")
+        .accessibilityAddTraits(isActive ? .isSelected : [])
     }
 
     // MARK: - Top header (collapse + search + smart folders menu)

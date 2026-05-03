@@ -24,7 +24,8 @@ public struct Session: Sendable, Identifiable, Hashable {
 }
 
 /// 세션 안의 단일 메시지. 사용자 입력 또는 Claude 응답.
-public struct Message: Sendable, Identifiable, Hashable {
+/// **ADR-089** — ChatSession 영속화를 위해 Codable 추가.
+public struct Message: Sendable, Identifiable, Hashable, Codable {
     public let id: UUID
     public let sessionId: UUID
     public let role: Role

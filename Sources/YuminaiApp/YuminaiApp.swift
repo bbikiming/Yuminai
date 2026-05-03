@@ -98,6 +98,11 @@ struct YuminaiAppMain: App {
                     appModel.showCreateWorkspaceSheet = true
                 }
                 .keyboardShortcut("n", modifiers: .command)
+                // ADR-089 — 새 ad-hoc 대화 세션
+                Button("새 대화 세션") {
+                    appModel.showNewChatSessionSheet = true
+                }
+                .keyboardShortcut("n", modifiers: [.command, .shift])
             }
             // ADR-078 Phase 5 — File menu에 import/export 추가
             CommandGroup(after: .newItem) {
