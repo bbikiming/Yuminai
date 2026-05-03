@@ -167,6 +167,7 @@ struct TelegramBotManagerSheet: View {
                 .font(.system(size: 16))
                 .foregroundStyle(Theme.Color.folderColor(for: bot.colorName))
                 .frame(width: 28)
+                .accessibilityHidden(true)
             VStack(alignment: .leading, spacing: 3) {
                 HStack(spacing: 6) {
                     Text(bot.displayName)
@@ -211,15 +212,18 @@ struct TelegramBotManagerSheet: View {
             Button("편집") { editingBotId = bot.id }
                 .buttonStyle(.plain)
                 .foregroundStyle(Theme.Color.accent)
+                .accessibilityLabel("\(bot.displayName) 봇 편집")
             Button("삭제", role: .destructive) {
                 Task { await appModel.removeTelegramBot(bot.id) }
             }
             .buttonStyle(.plain)
             .foregroundStyle(Theme.Color.danger)
+            .accessibilityLabel("\(bot.displayName) 봇 삭제")
         }
         .padding(Theme.Spacing.md)
         .background(Theme.Color.surface)
         .clipShape(RoundedRectangle(cornerRadius: Theme.Radius.sm))
+        .accessibilityElement(children: .contain)
     }
 
     // MARK: - 그룹
@@ -284,6 +288,7 @@ struct TelegramBotManagerSheet: View {
                 .font(.system(size: 16))
                 .foregroundStyle(Theme.Color.folderColor(for: group.colorName))
                 .frame(width: 28)
+                .accessibilityHidden(true)
             VStack(alignment: .leading, spacing: 3) {
                 HStack(spacing: 6) {
                     Text(group.displayName)
@@ -308,15 +313,18 @@ struct TelegramBotManagerSheet: View {
             Button("편집") { editingGroupId = group.id }
                 .buttonStyle(.plain)
                 .foregroundStyle(Theme.Color.accent)
+                .accessibilityLabel("\(group.displayName) 그룹 편집")
             Button("삭제", role: .destructive) {
                 Task { await appModel.removeTelegramBotGroup(group.id) }
             }
             .buttonStyle(.plain)
             .foregroundStyle(Theme.Color.danger)
+            .accessibilityLabel("\(group.displayName) 그룹 삭제")
         }
         .padding(Theme.Spacing.md)
         .background(Theme.Color.surface)
         .clipShape(RoundedRectangle(cornerRadius: Theme.Radius.sm))
+        .accessibilityElement(children: .contain)
     }
 
     // MARK: - Chat ↔ Workspace 매핑
@@ -396,6 +404,7 @@ struct TelegramBotManagerSheet: View {
                 .font(.system(size: 14))
                 .foregroundStyle(Theme.Color.accent)
                 .frame(width: 28)
+                .accessibilityHidden(true)
             VStack(alignment: .leading, spacing: 3) {
                 HStack(spacing: 6) {
                     Text(bot?.displayName ?? "(삭제된 봇)")
@@ -434,15 +443,18 @@ struct TelegramBotManagerSheet: View {
             Button("편집") { editingBindingId = binding.id }
                 .buttonStyle(.plain)
                 .foregroundStyle(Theme.Color.accent)
+                .accessibilityLabel("Chat \(binding.chatId) 매핑 편집")
             Button("삭제", role: .destructive) {
                 Task { await appModel.removeBotChatBinding(binding.id) }
             }
             .buttonStyle(.plain)
             .foregroundStyle(Theme.Color.danger)
+            .accessibilityLabel("Chat \(binding.chatId) 매핑 삭제")
         }
         .padding(Theme.Spacing.md)
         .background(Theme.Color.surface)
         .clipShape(RoundedRectangle(cornerRadius: Theme.Radius.sm))
+        .accessibilityElement(children: .contain)
     }
 }
 
