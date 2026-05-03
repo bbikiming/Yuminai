@@ -120,6 +120,18 @@ public struct AppPreferences: Sendable, Codable, Hashable {
     public var telegramAttachmentPolicy: TelegramAttachmentPolicy
     /// **ADR-084 Phase 4** — 사용자 정의 skills (default 4개로 시작).
     public var telegramSkills: [TelegramSkill]
+    /// **ADR-086 Phase 3** — Multi-bot configs (그룹 운영).
+    public var telegramBots: [TelegramBotConfig]
+    /// **ADR-086 Phase 3** — Bot groups.
+    public var telegramBotGroups: [TelegramBotGroup]
+    /// **ADR-086 Phase 3** — Bot ↔ chat ↔ workspace 3-way bindings.
+    public var telegramBotChatBindings: [BotChatBinding]
+    /// **ADR-086 Phase 2** — Rate limit 알림 설정.
+    public var telegramRateLimitAlert: RateLimitAlertConfig
+    /// **ADR-086 Phase 5** — Update receiving mode.
+    public var telegramUpdateMode: TelegramUpdateMode
+    /// **ADR-086 Phase 5** — Webhook URL (mode == .webhook 시 사용).
+    public var telegramWebhookURL: String?
 
     public init(
         claudeBinaryPath: String = AppPreferences.detectClaudeBinaryPath(),
@@ -166,7 +178,13 @@ public struct AppPreferences: Sendable, Codable, Hashable {
         telegramResponseMode: TelegramResponseMode = .standard,  // ADR-084 Phase 1
         telegramTokenBudget: TelegramTokenBudget = TelegramTokenBudget(),  // ADR-084 Phase 2
         telegramAttachmentPolicy: TelegramAttachmentPolicy = TelegramAttachmentPolicy(),  // ADR-084 Phase 3
-        telegramSkills: [TelegramSkill] = TelegramSkill.defaults  // ADR-084 Phase 4 — default 4개
+        telegramSkills: [TelegramSkill] = TelegramSkill.defaults,  // ADR-084 Phase 4
+        telegramBots: [TelegramBotConfig] = [],  // ADR-086 Phase 3
+        telegramBotGroups: [TelegramBotGroup] = [],
+        telegramBotChatBindings: [BotChatBinding] = [],
+        telegramRateLimitAlert: RateLimitAlertConfig = RateLimitAlertConfig(),  // ADR-086 Phase 2
+        telegramUpdateMode: TelegramUpdateMode = .longPoll,  // ADR-086 Phase 5
+        telegramWebhookURL: String? = nil
     ) {
         self.claudeBinaryPath = claudeBinaryPath
         self.codexBinaryPath = codexBinaryPath
@@ -213,6 +231,12 @@ public struct AppPreferences: Sendable, Codable, Hashable {
         self.telegramTokenBudget = telegramTokenBudget
         self.telegramAttachmentPolicy = telegramAttachmentPolicy
         self.telegramSkills = telegramSkills
+        self.telegramBots = telegramBots
+        self.telegramBotGroups = telegramBotGroups
+        self.telegramBotChatBindings = telegramBotChatBindings
+        self.telegramRateLimitAlert = telegramRateLimitAlert
+        self.telegramUpdateMode = telegramUpdateMode
+        self.telegramWebhookURL = telegramWebhookURL
     }
 
     // ADR-046 — 신규 필드 backward-compat: 기존 JSON에 없으면 default 적용
@@ -272,6 +296,13 @@ public struct AppPreferences: Sendable, Codable, Hashable {
         self.telegramAttachmentPolicy = try c.decodeIfPresent(TelegramAttachmentPolicy.self, forKey: .telegramAttachmentPolicy) ?? TelegramAttachmentPolicy()
         // 기존 사용자도 default skills 받음 (즉시 유용)
         self.telegramSkills = try c.decodeIfPresent([TelegramSkill].self, forKey: .telegramSkills) ?? TelegramSkill.defaults
+        // ADR-086 — Multi-bot + offline queue + alerts + webhook (기존 사용자는 빈 값/default)
+        self.telegramBots = try c.decodeIfPresent([TelegramBotConfig].self, forKey: .telegramBots) ?? []
+        self.telegramBotGroups = try c.decodeIfPresent([TelegramBotGroup].self, forKey: .telegramBotGroups) ?? []
+        self.telegramBotChatBindings = try c.decodeIfPresent([BotChatBinding].self, forKey: .telegramBotChatBindings) ?? []
+        self.telegramRateLimitAlert = try c.decodeIfPresent(RateLimitAlertConfig.self, forKey: .telegramRateLimitAlert) ?? RateLimitAlertConfig()
+        self.telegramUpdateMode = try c.decodeIfPresent(TelegramUpdateMode.self, forKey: .telegramUpdateMode) ?? .longPoll
+        self.telegramWebhookURL = try c.decodeIfPresent(String.self, forKey: .telegramWebhookURL)
     }
 
     /// `claude` CLI의 가능성 높은 위치들을 순서대로 시도해 첫 번째 존재하는 경로 반환.

@@ -22,6 +22,7 @@ struct TelegramAdvancedSheet: View {
         case budget = "토큰 budget"
         case attachments = "첨부파일"
         case skills = "Skills"
+        case connection = "연결 + 알림"
 
         var id: String { rawValue }
         var icon: String {
@@ -30,6 +31,7 @@ struct TelegramAdvancedSheet: View {
             case .budget: return "dollarsign.circle.fill"
             case .attachments: return "paperclip.circle.fill"
             case .skills: return "wand.and.stars"
+            case .connection: return "antenna.radiowaves.left.and.right"
             }
         }
     }
@@ -93,6 +95,7 @@ struct TelegramAdvancedSheet: View {
                 case .budget: budgetSection(prefs: prefs)
                 case .attachments: attachmentSection(prefs: prefs)
                 case .skills: skillsSection(prefs: prefs)
+                case .connection: connectionSection(prefs: prefs)
                 }
             }
             .padding(.bottom, Theme.Spacing.md)
@@ -400,5 +403,101 @@ struct TelegramAdvancedSheet: View {
         .padding(.vertical, 6)
         .background(Theme.Color.surface)
         .clipShape(RoundedRectangle(cornerRadius: Theme.Radius.sm))
+    }
+
+    // MARK: - Phase 5 — Connection mode + Rate limit alert (ADR-086)
+
+    private func connectionSection(prefs: Binding<AppPreferences>) -> some View {
+        VStack(alignment: .leading, spacing: Theme.Spacing.lg) {
+            // Update mode (LongPoll vs Webhook)
+            VStack(alignment: .leading, spacing: 8) {
+                Text("Update 수신 모드")
+                    .font(Theme.Typography.body.weight(.semibold))
+                    .foregroundStyle(Theme.Color.text)
+                Text("LongPoll: 즉시 수신 + 배터리 소모. Webhook: 배터리 절약 + HTTPS 공개 URL 필요.")
+                    .font(Theme.Typography.small)
+                    .foregroundStyle(Theme.Color.textSecondary)
+                    .fixedSize(horizontal: false, vertical: true)
+                Picker("수신 모드", selection: prefs.telegramUpdateMode) {
+                    ForEach(TelegramUpdateMode.allCases) { mode in
+                        Text(mode.displayName).tag(mode)
+                    }
+                }
+                .pickerStyle(.segmented)
+                .labelsHidden()
+                Text(prefs.wrappedValue.telegramUpdateMode.hint)
+                    .font(Theme.Typography.micro)
+                    .foregroundStyle(Theme.Color.textTertiary)
+                    .fixedSize(horizontal: false, vertical: true)
+                if prefs.wrappedValue.telegramUpdateMode == .webhook {
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text("Webhook URL (HTTPS)")
+                            .font(Theme.Typography.micro)
+                            .foregroundStyle(Theme.Color.textTertiary)
+                            .textCase(.uppercase)
+                        TextField("https://your.domain/telegram/webhook", text: Binding(
+                            get: { prefs.wrappedValue.telegramWebhookURL ?? "" },
+                            set: { prefs.wrappedValue.telegramWebhookURL = $0.isEmpty ? nil : $0 }
+                        ))
+                        .textFieldStyle(.roundedBorder)
+                        .autocorrectionDisabled()
+                        Text("ngrok / Cloudflare Tunnel / 공개 도메인이 필요. 텔레그램 BotFather에서 setWebhook 명령으로 등록해야 합니다.")
+                            .font(Theme.Typography.micro)
+                            .foregroundStyle(Theme.Color.textSecondary)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+                    .padding(Theme.Spacing.md)
+                    .background(Theme.Color.surface)
+                    .clipShape(RoundedRectangle(cornerRadius: Theme.Radius.md))
+                }
+            }
+
+            Divider()
+
+            // Rate limit alert
+            VStack(alignment: .leading, spacing: 8) {
+                Text("사용량 알림")
+                    .font(Theme.Typography.body.weight(.semibold))
+                    .foregroundStyle(Theme.Color.text)
+                Text("일별 budget의 일정 비율 도달 시 텔레그램으로 경고 메시지 자동 전송.")
+                    .font(Theme.Typography.small)
+                    .foregroundStyle(Theme.Color.textSecondary)
+                    .fixedSize(horizontal: false, vertical: true)
+                Toggle("텔레그램으로 경고 알림 보내기", isOn: prefs.telegramRateLimitAlert.notifyViaTelegram)
+                if prefs.wrappedValue.telegramRateLimitAlert.notifyViaTelegram {
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text("알림 임계값 (%)")
+                            .font(Theme.Typography.micro)
+                            .foregroundStyle(Theme.Color.textTertiary)
+                            .textCase(.uppercase)
+                        HStack {
+                            Slider(value: prefs.telegramRateLimitAlert.thresholdRatio, in: 0.5...1.0, step: 0.05)
+                                .frame(maxWidth: 240)
+                            Text("\(Int(prefs.wrappedValue.telegramRateLimitAlert.thresholdRatio * 100))%")
+                                .font(Theme.Typography.monoSmall)
+                                .foregroundStyle(Theme.Color.text)
+                                .frame(width: 50, alignment: .trailing)
+                        }
+                    }
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text("Cooldown (분)")
+                            .font(Theme.Typography.micro)
+                            .foregroundStyle(Theme.Color.textTertiary)
+                            .textCase(.uppercase)
+                        Stepper(
+                            value: Binding(
+                                get: { Int(prefs.wrappedValue.telegramRateLimitAlert.cooldownSeconds / 60) },
+                                set: { prefs.wrappedValue.telegramRateLimitAlert.cooldownSeconds = TimeInterval($0 * 60) }
+                            ),
+                            in: 5...720, step: 5
+                        ) {
+                            Text("\(Int(prefs.wrappedValue.telegramRateLimitAlert.cooldownSeconds / 60))분")
+                                .font(Theme.Typography.monoSmall)
+                        }
+                        .frame(maxWidth: 240)
+                    }
+                }
+            }
+        }
     }
 }

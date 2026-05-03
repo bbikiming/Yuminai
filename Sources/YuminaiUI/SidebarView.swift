@@ -69,6 +69,10 @@ public struct SidebarView: View {
     public let onDeleteTag: (WorkspaceTag) -> Void
     public let userName: String
     public let updateAvailable: Bool
+    /// **ADR-086 Phase 1** — 텔레그램 health snapshot (사이드바 하단 pill 표시용).
+    public let telegramHealth: TelegramHealthSnapshot
+    /// **ADR-086 Phase 1** — Health pill click → 에러 로그 sheet 열기.
+    public let onOpenTelegramErrorLog: () -> Void
 
     public init(
         workspaces: [Workspace],
@@ -108,7 +112,9 @@ public struct SidebarView: View {
         onEditTag: @escaping (WorkspaceTag) -> Void = { _ in },
         onDeleteTag: @escaping (WorkspaceTag) -> Void = { _ in },
         userName: String = "yuminai",
-        updateAvailable: Bool = false
+        updateAvailable: Bool = false,
+        telegramHealth: TelegramHealthSnapshot = TelegramHealthSnapshot(),
+        onOpenTelegramErrorLog: @escaping () -> Void = {}
     ) {
         self.workspaces = workspaces
         self._selectedId = selectedId
@@ -148,6 +154,8 @@ public struct SidebarView: View {
         self.onDeleteTag = onDeleteTag
         self.userName = userName
         self.updateAvailable = updateAvailable
+        self.telegramHealth = telegramHealth
+        self.onOpenTelegramErrorLog = onOpenTelegramErrorLog
     }
 
     public var body: some View {
@@ -164,6 +172,15 @@ public struct SidebarView: View {
                 UpdateCard()
                     .padding(.horizontal, Theme.Layout.sidebarPadding)
                     .padding(.bottom, Theme.Spacing.sm)
+            }
+            // ADR-086 Phase 1 — 텔레그램 활성/오류 상황에서만 표시
+            if telegramAvailable || telegramHealth.state != .idle {
+                HStack {
+                    TelegramHealthPill(snapshot: telegramHealth, onTap: onOpenTelegramErrorLog)
+                    Spacer()
+                }
+                .padding(.horizontal, Theme.Layout.sidebarPadding)
+                .padding(.bottom, Theme.Spacing.xs)
             }
             BottomUserCard(name: userName, onSettings: onOpenSettings)
         }

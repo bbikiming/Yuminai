@@ -165,6 +165,16 @@ struct RootView: View {
             TelegramAdvancedSheet()
                 .environment(appModel)
         }
+        // ADR-086 Phase 1 — 텔레그램 에러 로그 viewer
+        .sheet(isPresented: $bindable.showTelegramErrorLogSheet) {
+            TelegramErrorLogSheet()
+                .environment(appModel)
+        }
+        // ADR-086 Phase 4 — Multi-bot manager
+        .sheet(isPresented: $bindable.showTelegramBotManagerSheet) {
+            TelegramBotManagerSheet()
+                .environment(appModel)
+        }
         // ADR-079 Phase 4 — Git branch picker (별도 popover로 가능하나 sheet로 통일)
         .sheet(isPresented: $bindable.showGitBranchPicker) {
             GitBranchPickerSheetWrapper()
@@ -735,7 +745,12 @@ struct RootView: View {
                 Task { await appModel.deleteTag(id: tag.id) }
             },
             userName: "yuminai",
-            updateAvailable: false
+            updateAvailable: false,
+            // ADR-086 Phase 1 — Telegram health pill
+            telegramHealth: appModel.telegramHealth,
+            onOpenTelegramErrorLog: {
+                appModel.showTelegramErrorLogSheet = true
+            }
         )
     }
 

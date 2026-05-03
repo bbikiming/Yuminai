@@ -4,6 +4,56 @@
 
 ## [Unreleased] — 2026-05-03
 
+### Added — ADR-086 텔레그램 멀티봇 + 모니터링 + 새 앱 아이콘 (5 phases)
+
+**사용자 요청** (3개):
+1. "Health UI / Error log viewer / Rate limit / Webhook / Multi-bot / Offline queue 모두 진행"
+2. "멀티 봇 서포트를 매우 상세하게 기획해서 강화 / 하나의 텔레그램 봇으로 다양한 터미널·프로젝트 / 여러 봇들을 그룹으로 운영"
+3. "보라/파랑 그라디언트 Y 스타일로 코덱스의 도움을 받아서 앱 아이콘 변경"
+
+**Phase 1 — Health UI + Error log viewer**
+- `TelegramHealthPill` (YuminaiUI) — 사이드바 하단 connection status pill (idle/healthy/degraded/failed 색상 + icon)
+- `TelegramErrorLogSheet` (YuminaiApp) — 720×600 sheet, 카테고리별 통계 + 최근 N개 에러 + raw 메시지 토글 + 초기화
+- AppModel: `telegramHealth` AsyncStream observer, `telegramRecentErrors/Stats/ClearErrorLog`
+- SidebarView: `telegramHealth` + `onOpenTelegramErrorLog` props 추가, BottomUserCard 위에 pill 표시
+- 텔레그램 메뉴: "에러 로그…" 메뉴 항목 추가
+
+**Phase 2 — Offline queue + Rate limit alert**
+- `PendingTelegramMessage` struct (id/botId/chatId/text/queuedAt/attemptCount)
+- `TelegramOfflineQueue` actor — drop-oldest 전략 (default maxQueueSize=100), `flush(sender:)` → (sent, dropped) tuple
+- `RateLimitAlertConfig` struct — thresholdRatio (0.8) + notifyViaTelegram + cooldownSeconds (3600)
+- `RateLimitAlertTracker` actor — `report(usedToday:dailyBudget:)` + `shouldAlert(now:)` + `markAlerted` + 한국어 alert message
+- LiveTelegramBot에 `offlineQueue` 통합 + `sendOrEnqueue(_:to:botId:)` + `flushOfflineQueueIfPossible()`
+
+**Phase 3 — Multi-bot core (3-tier hierarchy)**
+- `TelegramBotConfig` struct (id/displayName/username/keychainKey/groupId/allowedUserIds/enabled/iconName/colorName/notes)
+- `TelegramBotGroup` struct (id/displayName/iconName/colorName/responseModeOverride/budgetOverride/sharedSkillIds)
+- `BotChatBinding` struct — 3-way (botId × chatId × workspace) 매핑 + `allowedWorkspaceIds` (/switch 화이트리스트) + nickname
+- `TelegramBotRegistry` actor — Bot/Group/Binding CRUD + `switchWorkspace(botId:chatId:to:)` + `effectiveResponseMode/Budget` (group override → bot → global)
+- AppPreferences: `telegramBots`, `telegramBotGroups`, `telegramBotChatBindings` 필드 + 백워드 컴팻 디코더
+
+**Phase 4 — TelegramBotManagerSheet UI**
+- 760×620 sheet, 3개 섹션 (봇 목록 / 그룹 / Chat ↔ Workspace 매핑)
+- BotEditSheet — 표시 이름, username, keychain key, 권한 (allowed user IDs), 외형 (icon/color), 메모
+- GroupEditSheet — 표시 이름, 아이콘, 색상, 응답 모드 override (선택)
+- BindingEditSheet — 봇 선택, chat ID, nickname, 활성 워크스페이스, /switch 허용 목록
+- AppModel CRUD methods: `addTelegramBot/updateTelegramBot/removeTelegramBot/assignBot/...`
+- 텔레그램 메뉴: "Multi-Bot 관리…" (⌘⇧M) 추가
+
+**Phase 5 — Webhook mode + 새 앱 아이콘**
+- `TelegramUpdateMode` enum (longPoll/webhook) + 한국어 displayName + hint
+- AppPreferences: `telegramUpdateMode` + `telegramWebhookURL`
+- TelegramAdvancedSheet에 "연결 + 알림" 섹션 추가 (webhook URL 설정 + rate alert threshold/cooldown 슬라이더)
+- 새 앱 아이콘 (보라 #7C3AED → 파랑 #3B82F6 그라디언트 Y) — 흰색 squircle + Y 모양 + 상단 삼각형 + 좌우 < > arrows + circle outline + 4개 orbital dots + circuit lines
+  - SVG 작성 → rsvg-convert로 10개 size (16~512@2x) → iconutil로 .icns
+
+**Tests** (25개 신규 통과 / 723개 전체 통과)
+- `TelegramBotRegistryTests` (9 tests) — addBot/duplicate/removeCascade/binding/switchWorkspace/group reassign/effectiveMode
+- `TelegramOfflineQueueTests` (5 tests) — enqueue/dropOldest/flushSuccess/flushDropped/clear
+- `RateLimitAlertTrackerTests` (6 tests) — defaults/below/above/cooldown/disabled/message
+- `TelegramUpdateModeTests` (3 tests) — allCases/displayProperties/Codable
+- `TelegramBotConfigCodableTests` (2 tests) — round-trip + backward-compat (legacy JSON)
+
 ### Added — ADR-085 텔레그램 원격 안정성 (Codex 협업 검수) (5 phases)
 
 **사용자 요청**: "원격 기능이 원활하게 동작하는지 안정화 업그레이드를 코덱스와 협업해서 진행 / 서로 검수하고 레퍼런스 조사하고 피드백 받아가면서"

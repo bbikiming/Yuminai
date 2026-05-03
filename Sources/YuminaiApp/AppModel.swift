@@ -86,6 +86,12 @@ public final class AppModel {
     public var showGitCherryPickSheet: Bool = false
     /// **ADR-084** — 텔레그램 고도화 설정 sheet.
     public var showTelegramAdvancedSheet: Bool = false
+    /// **ADR-086 Phase 1** — 텔레그램 health snapshot (사이드바 pill용 + sheet).
+    public var telegramHealth: TelegramHealthSnapshot = TelegramHealthSnapshot()
+    /// **ADR-086 Phase 1** — Error log viewer sheet.
+    public var showTelegramErrorLogSheet: Bool = false
+    /// **ADR-086 Phase 4** — Multi-bot manager sheet.
+    public var showTelegramBotManagerSheet: Bool = false
 
     // 활성 세션 설정 (toolbar에서 즉시 변경 가능)
     public var activeSettings: SessionSettings = .default
@@ -4096,8 +4102,10 @@ public final class AppModel {
         // ADR-083
         showGitConflictSheet = false
         showGitCherryPickSheet = false
-        // ADR-084
+        // ADR-084 + ADR-086
         showTelegramAdvancedSheet = false
+        showTelegramErrorLogSheet = false
+        showTelegramBotManagerSheet = false
     }
 
     /// 새 sheet/alert을 열기 전에 다른 sheet 모두 닫고 setter 실행.
@@ -4418,6 +4426,98 @@ public final class AppModel {
         } catch {
             logger.error("Telegram pump 시작 실패: \(error.localizedDescription)")
         }
+        // ADR-086 Phase 1 — health snapshot observer (사이드바 pill 실시간 업데이트)
+        Task { [weak self] in
+            for await snapshot in await bot.healthMonitor.snapshots() {
+                await MainActor.run {
+                    self?.telegramHealth = snapshot
+                }
+            }
+        }
+    }
+
+    // MARK: - ADR-086 Phase 1 — Telegram error log access
+
+    public func telegramRecentErrors(limit: Int = 20) async -> [TelegramErrorEntry] {
+        guard let bot = telegramBot as? LiveTelegramBot else { return [] }
+        return await bot.errorLog.recent(limit: limit)
+    }
+
+    public func telegramErrorStats() async -> [TelegramErrorEntry.Category: Int] {
+        guard let bot = telegramBot as? LiveTelegramBot else { return [:] }
+        return await bot.errorLog.statsByCategory()
+    }
+
+    public func telegramClearErrorLog() async {
+        guard let bot = telegramBot as? LiveTelegramBot else { return }
+        await bot.errorLog.clear()
+    }
+
+    // MARK: - ADR-086 Phase 4 — Multi-bot management
+
+    /// 새 봇 추가 (token은 keychain에 별도 저장).
+    public func addTelegramBot(_ config: TelegramBotConfig) async {
+        // 중복 ID 방지
+        guard !preferences.telegramBots.contains(where: { $0.id == config.id }) else { return }
+        preferences.telegramBots.append(config)
+        await savePreferences()
+    }
+
+    /// 봇 설정 update.
+    public func updateTelegramBot(_ config: TelegramBotConfig) async {
+        guard let idx = preferences.telegramBots.firstIndex(where: { $0.id == config.id }) else { return }
+        preferences.telegramBots[idx] = config
+        await savePreferences()
+    }
+
+    /// 봇 제거 (관련 binding 도 cascade delete).
+    /// (그룹 멤버십은 TelegramBotConfig.groupId로 관리되므로 별도 cascade 불필요)
+    public func removeTelegramBot(_ id: UUID) async {
+        preferences.telegramBots.removeAll { $0.id == id }
+        preferences.telegramBotChatBindings.removeAll { $0.botId == id }
+        await savePreferences()
+    }
+
+    /// 봇을 그룹에 할당 또는 그룹에서 제거 (groupId nil = 그룹 없음).
+    public func assignBot(_ botId: UUID, toGroup groupId: UUID?) async {
+        guard let idx = preferences.telegramBots.firstIndex(where: { $0.id == botId }) else { return }
+        preferences.telegramBots[idx].groupId = groupId
+        await savePreferences()
+    }
+
+    /// 그룹 add.
+    public func addTelegramBotGroup(_ group: TelegramBotGroup) async {
+        guard !preferences.telegramBotGroups.contains(where: { $0.id == group.id }) else { return }
+        preferences.telegramBotGroups.append(group)
+        await savePreferences()
+    }
+
+    public func updateTelegramBotGroup(_ group: TelegramBotGroup) async {
+        guard let idx = preferences.telegramBotGroups.firstIndex(where: { $0.id == group.id }) else { return }
+        preferences.telegramBotGroups[idx] = group
+        await savePreferences()
+    }
+
+    public func removeTelegramBotGroup(_ id: UUID) async {
+        preferences.telegramBotGroups.removeAll { $0.id == id }
+        await savePreferences()
+    }
+
+    /// Chat binding upsert (botId + chatId 조합으로 unique).
+    public func upsertBotChatBinding(_ binding: BotChatBinding) async {
+        if let idx = preferences.telegramBotChatBindings.firstIndex(where: {
+            $0.botId == binding.botId && $0.chatId == binding.chatId
+        }) {
+            preferences.telegramBotChatBindings[idx] = binding
+        } else {
+            preferences.telegramBotChatBindings.append(binding)
+        }
+        await savePreferences()
+    }
+
+    public func removeBotChatBinding(_ id: UUID) async {
+        preferences.telegramBotChatBindings.removeAll { $0.id == id }
+        await savePreferences()
     }
 
     /// bound workspace가 있을 때만 bridge 생성. 없으면 nil.

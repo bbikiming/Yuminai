@@ -117,6 +117,15 @@ struct YuminaiAppMain: App {
                     appModel.showTelegramAdvancedSheet = true
                 }
                 .keyboardShortcut("t", modifiers: [.command, .shift])
+                // ADR-086 Phase 4 — Multi-bot 관리
+                Button("Multi-Bot 관리…") {
+                    appModel.showTelegramBotManagerSheet = true
+                }
+                .keyboardShortcut("m", modifiers: [.command, .shift])
+                // ADR-086 Phase 1 — 에러 로그
+                Button("에러 로그…") {
+                    appModel.showTelegramErrorLogSheet = true
+                }
                 Divider()
                 Button("응답 모드: 최소") {
                     Task {

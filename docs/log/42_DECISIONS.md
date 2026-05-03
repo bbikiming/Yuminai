@@ -1,6 +1,58 @@
 # Decisions Log (ADR-lite)
 
-> 최신: ADR-085 (텔레그램 원격 안정성 — Codex 협업 검수 반영)
+> 최신: ADR-086 (텔레그램 멀티봇 + 모니터링 + 새 앱 아이콘)
+
+---
+
+## ADR-086 — 텔레그램 멀티봇 + 모니터링 + 새 앱 아이콘 (5 phases)
+
+- **날짜**: 2026-05-03
+- **상태**: Accepted (구현 + 25개 신규 테스트 + /Applications 재설치)
+
+### 배경 (사용자 요청)
+
+> "Health UI / Error log viewer / Rate limit / Webhook / Multi-bot / Offline queue 모두 진행"
+> "멀티 봇 서포트를 매우 상세하게 기획해서 강화 / 하나의 텔레그램 봇으로 다양한 터미널·프로젝트 / 여러 봇들을 그룹으로 운영"
+> "보라/파랑 그라디언트 Y 스타일로 코덱스의 도움을 받아서 앱 아이콘 변경"
+
+### 결정
+
+**Multi-bot 3-tier hierarchy**
+- BotGroup (정책 묶음) → BotConfig (개별 봇) → BotChatBinding (chat-workspace 매핑)
+- 시나리오 A: 1봇 × N워크스페이스 (chat 별 워크스페이스 다름)
+- 시나리오 B: N봇 × M그룹 (팀별 격리)
+- effective settings cascade: group override → bot setting → global default
+
+**Offline queue 전략**
+- drop-oldest (max=100) — newer 메시지가 더 가치 있음 가정
+- maxAttempts=5 후 silent drop (UI에 카운트 표시)
+- network 복구 후 자동 flush (다음 send() 성공 시)
+
+**Rate limit alert**
+- per-day budget 기반 (per-turn은 즉시성 ↓)
+- threshold 기본 80% (사용자 조정 가능 50~100%)
+- cooldown 1시간 default (스팸 방지)
+
+**Webhook vs LongPoll**
+- LongPoll default 유지 (배포 단순)
+- Webhook은 advanced 사용자용 (HTTPS URL 필요, ngrok/Cloudflare Tunnel 안내)
+
+**앱 아이콘 디자인 (Codex 협업)**
+- 흰색 squircle (macOS Big Sur+ spec)
+- 보라(#7C3AED) → 파랑(#3B82F6) 그라디언트 Y (Yuminai의 Y + multi-agent 수렴)
+- 상단 삼각형 (focus/play 메타포)
+- 좌우 < > arrows (CLI/code editor)
+- Circle outline + 4 orbital dots (orbital connections)
+- Subtle circuit lines (개발 환경)
+
+### 영향
+
+- AppPreferences 6개 필드 추가 (모두 backward-compat)
+- 신규 액터 3개 (TelegramBotRegistry, TelegramOfflineQueue, RateLimitAlertTracker)
+- 신규 sheet 2개 (TelegramErrorLogSheet, TelegramBotManagerSheet)
+- 신규 UI 컴포넌트 1개 (TelegramHealthPill)
+- AppIcon.svg/png/icns + iconset 10개 size 모두 갱신
+- 25개 신규 테스트 (총 723개 통과)
 
 ---
 

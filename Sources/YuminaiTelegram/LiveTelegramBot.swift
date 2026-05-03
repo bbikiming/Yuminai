@@ -26,6 +26,8 @@ public final actor LiveTelegramBot: TelegramClient {
     public let errorLog: TelegramErrorLog
     public let idempotency: TelegramIdempotencyTracker
     public let retryPolicy: TelegramRetryPolicy
+    /// **ADR-086 Phase 2** — Network failure 시 메시지 보관 → 복구 시 재전송.
+    public let offlineQueue: TelegramOfflineQueue
 
     private var pollingTask: Task<Void, Never>?
     private var lastUpdateId: Int64 = 0
@@ -52,6 +54,7 @@ public final actor LiveTelegramBot: TelegramClient {
         self.healthMonitor = TelegramHealthMonitor()
         self.errorLog = TelegramErrorLog()
         self.idempotency = TelegramIdempotencyTracker()
+        self.offlineQueue = TelegramOfflineQueue()
 
         var cont: AsyncStream<IncomingTelegramMessage>.Continuation!
         self.incoming = AsyncStream<IncomingTelegramMessage> { c in cont = c }
@@ -69,6 +72,43 @@ public final actor LiveTelegramBot: TelegramClient {
             } catch let nsError as NSError where nsError.domain == "TelegramBot" && nsError.code == 400 {
                 // 400 Bad Request — Markdown 파싱 실패 → plain text 재시도 (이건 retry policy 외)
                 return try await self.sendInternal(text: text, to: chatId, parseMode: nil, escape: false)
+            }
+        }
+    }
+
+    /// **ADR-086 Phase 2** — `send()`를 시도하되, network 오류 발생 시 offline queue에 enqueue.
+    /// botId는 호출자가 제공해야 (멀티 봇 식별용; 단일 봇 모드면 zero UUID).
+    /// - Returns: `SentTelegramMessage` (성공) 또는 `nil` (queue됨).
+    @discardableResult
+    public func sendOrEnqueue(_ text: String, to chatId: Int64, botId: UUID = UUID()) async -> SentTelegramMessage? {
+        do {
+            let result = try await send(text, to: chatId)
+            // 성공 시 큐 flush 시도 (network 복구 후 자연스러운 retry trigger)
+            await flushOfflineQueueIfPossible()
+            return result
+        } catch {
+            // Network 또는 transient error → enqueue
+            let pending = PendingTelegramMessage(
+                botId: botId,
+                chatId: chatId,
+                text: text
+            )
+            await offlineQueue.enqueue(pending)
+            return nil
+        }
+    }
+
+    /// **ADR-086 Phase 2** — Offline queue를 flush. 성공한 메시지는 제거, 실패는 attempt + 1.
+    /// - Returns: (sent, dropped) tuple.
+    @discardableResult
+    public func flushOfflineQueueIfPossible() async -> (sent: Int, dropped: Int) {
+        return await offlineQueue.flush { [weak self] msg in
+            guard let self else { return false }
+            do {
+                _ = try await self.send(msg.text, to: msg.chatId)
+                return true
+            } catch {
+                return false
             }
         }
     }
