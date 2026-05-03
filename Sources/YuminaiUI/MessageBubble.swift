@@ -36,6 +36,7 @@ public struct UserMessageBlock: View {
             Rectangle()
                 .fill(Theme.Color.userAccent)
                 .frame(width: Theme.Stroke.bar)
+                .accessibilityHidden(true)
 
             VStack(alignment: .leading, spacing: 4) {
                 Text(displayContent)
@@ -51,6 +52,10 @@ public struct UserMessageBlock: View {
         .clipShape(RoundedRectangle(cornerRadius: Theme.Radius.lg))
         .padding(.horizontal, Theme.Layout.contentPaddingH)
         .padding(.vertical, Theme.Spacing.sm)
+        // ADR-071 Phase 4 — VoiceOver: 사용자 메시지임을 명시
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel("내 메시지")
+        .accessibilityValue(displayContent)
     }
 
     private var displayContent: String {
@@ -83,6 +88,10 @@ public struct AssistantMessageBlock: View {
         }
         .padding(.horizontal, Theme.Layout.contentPaddingH)
         .padding(.vertical, Theme.Spacing.md)
+        // ADR-071 Phase 4 — VoiceOver: 에이전트 응답임을 명시
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel("\(label) 답장")
+        .accessibilityValue(displayContent)
     }
 
     private var displayContent: String {
@@ -102,6 +111,7 @@ public struct ToolMessageBlock: View {
                 .font(.system(size: 5))
                 .foregroundStyle(Theme.Color.success)
                 .padding(.top, 6)
+                .accessibilityHidden(true)
             Text(message.content)
                 .font(Theme.Typography.small)
                 .foregroundStyle(Theme.Color.toolText)
@@ -110,6 +120,10 @@ public struct ToolMessageBlock: View {
         }
         .padding(.horizontal, Theme.Layout.contentPaddingH)
         .padding(.vertical, 3)
+        // ADR-071 Phase 4 — VoiceOver: 도구 호출임을 명시
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel("도구 호출")
+        .accessibilityValue(message.content)
     }
 }
 
@@ -126,5 +140,9 @@ public struct SystemMessageBlock: View {
             .frame(maxWidth: .infinity, alignment: .center)
             .padding(.horizontal, Theme.Layout.contentPaddingH)
             .padding(.vertical, Theme.Spacing.xs)
+            // ADR-071 Phase 4 — VoiceOver: 시스템 안내임을 명시
+            .accessibilityElement(children: .combine)
+            .accessibilityLabel("시스템 안내")
+            .accessibilityValue(message.content)
     }
 }

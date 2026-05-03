@@ -242,6 +242,21 @@ public struct IconButton: View {
                 hoverPopoverContent(info)
             }
         }
+        // ADR-071 Phase 2 — VoiceOver: detailedHelp.title 우선, fallback help
+        .accessibilityLabel(accessibilityText)
+        .accessibilityHint(detailedHelp?.body ?? "")
+    }
+
+    /// ADR-071 Phase 2 — VoiceOver용 raw label.
+    /// 우선순위: detailedHelp.title → help → "버튼".
+    private var accessibilityText: String {
+        if let info = detailedHelp {
+            if let shortcut = info.shortcut {
+                return "\(info.title), 단축키 \(shortcut)"
+            }
+            return info.title
+        }
+        return help ?? "버튼"
     }
 
     private func handleHoverChange(_ isHovering: Bool) {
@@ -344,6 +359,9 @@ public struct SendButton: View {
             .onHover { hovering = $0 }
             .keyboardShortcut(.escape, modifiers: [])
             .help("응답을 중단합니다 (Esc)")
+            // ADR-071 Phase 4 — VoiceOver
+            .accessibilityLabel("응답 중단")
+            .accessibilityHint("에이전트가 작성 중인 응답을 중단합니다. 단축키 Escape.")
         } else {
             Button(action: onSend) {
                 HStack(spacing: 6) {
@@ -370,6 +388,9 @@ public struct SendButton: View {
             .disabled(!isEnabled)
             .opacity(isEnabled ? 1.0 : 0.5)
             .help("메시지를 보냅니다 (⌘ Return)")
+            // ADR-071 Phase 4 — VoiceOver
+            .accessibilityLabel("메시지 보내기")
+            .accessibilityHint(isEnabled ? "메시지를 에이전트에게 전송합니다. 단축키 Command Return." : "메시지를 입력하면 활성화됩니다.")
         }
     }
 }

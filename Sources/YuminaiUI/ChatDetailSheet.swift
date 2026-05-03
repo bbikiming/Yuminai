@@ -136,6 +136,10 @@ public struct ChatDetailSheet: View {
         .padding(Theme.Spacing.md)
         .background(Theme.Color.surface)
         .clipShape(RoundedRectangle(cornerRadius: Theme.Radius.md))
+        // ADR-071 Phase 3 — VoiceOver
+        .accessibilityElement(children: .contain)
+        .accessibilityLabel("워크스페이스 사용 분포 차트")
+        .accessibilityValue(counts.isEmpty ? "데이터 없음" : "\(counts.count)개 워크스페이스, 총 \(counts.values.reduce(0, +))회 사용")
     }
 
     /// **ADR-065 Phase 2 + ADR-066 Phase 3 + 5** — chat별 forecast + multiplicative + CI.
@@ -211,6 +215,12 @@ public struct ChatDetailSheet: View {
         .padding(Theme.Spacing.md)
         .background(Theme.Color.surface)
         .clipShape(RoundedRectangle(cornerRadius: Theme.Radius.md))
+        // ADR-071 Phase 3 — VoiceOver
+        .accessibilityElement(children: .contain)
+        .accessibilityLabel("비용 예측 차트, EWMA 및 Holt-Winters 모델, 95% 신뢰구간 포함")
+        .accessibilityValue(costs.count < UsageForecaster.minSamples
+                            ? "샘플 부족, \(costs.count)개"
+                            : "샘플 \(costs.count)개")
     }
 
     /// **ADR-065 Phase 3 + ADR-066 Phase 2** — anomaly detection (threshold from preferences).

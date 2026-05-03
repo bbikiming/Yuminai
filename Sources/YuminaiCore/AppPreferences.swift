@@ -78,6 +78,15 @@ public struct AppPreferences: Sendable, Codable, Hashable {
     public var agentChainMaxHops: Int
     public var fontSizeOffset: Int
     public var showInspectorByDefault: Bool
+    /// **ADR-071 Phase 1** — 초보자 모드. 켜면 고급 설정 탭/섹션이 숨겨져 첫 사용자 친화적.
+    /// - 새 설치: default `true` (init 기본값)
+    /// - 기존 사용자 (저장된 JSON에 필드 없음): default `false` (Codable decode에서 덮어씀)
+    /// 숨겨지는 항목:
+    /// - 자동화 탭 (Harness + Agent Chain)
+    /// - 자동 선택 학습 탭
+    /// - 모델·모드 탭의 최대 비용 입력
+    /// - 텔레그램 탭의 cokacdir 통합 + 외부 사용 안전 일부
+    public var beginnerMode: Bool
 
     public init(
         claudeBinaryPath: String = AppPreferences.detectClaudeBinaryPath(),
@@ -110,7 +119,8 @@ public struct AppPreferences: Sendable, Codable, Hashable {
         agentChainEnabled: Bool = false,
         agentChainMaxHops: Int = 1,
         fontSizeOffset: Int = 0,
-        showInspectorByDefault: Bool = false
+        showInspectorByDefault: Bool = false,
+        beginnerMode: Bool = true  // ADR-071 Phase 1 — 새 사용자는 초보자 모드로 시작
     ) {
         self.claudeBinaryPath = claudeBinaryPath
         self.codexBinaryPath = codexBinaryPath
@@ -143,6 +153,7 @@ public struct AppPreferences: Sendable, Codable, Hashable {
         self.agentChainMaxHops = agentChainMaxHops
         self.fontSizeOffset = fontSizeOffset
         self.showInspectorByDefault = showInspectorByDefault
+        self.beginnerMode = beginnerMode
     }
 
     // ADR-046 — 신규 필드 backward-compat: 기존 JSON에 없으면 default 적용
@@ -179,6 +190,8 @@ public struct AppPreferences: Sendable, Codable, Hashable {
         self.agentChainMaxHops = try c.decodeIfPresent(Int.self, forKey: .agentChainMaxHops) ?? 1
         self.fontSizeOffset = try c.decodeIfPresent(Int.self, forKey: .fontSizeOffset) ?? 0
         self.showInspectorByDefault = try c.decodeIfPresent(Bool.self, forKey: .showInspectorByDefault) ?? false
+        // ADR-071 Phase 1 — 기존 사용자는 false (이미 고급 옵션 사용 중일 가능성). 신규는 init() default true.
+        self.beginnerMode = try c.decodeIfPresent(Bool.self, forKey: .beginnerMode) ?? false
     }
 
     /// `claude` CLI의 가능성 높은 위치들을 순서대로 시도해 첫 번째 존재하는 경로 반환.

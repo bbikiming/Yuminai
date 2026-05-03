@@ -42,6 +42,9 @@ public struct HelpHint: View {
         .popover(isPresented: $showPopover, arrowEdge: placement.arrowEdge) {
             popoverContent
         }
+        // ADR-071 Phase 2 — VoiceOver: 도움말 버튼임을 명시 + 내용 읽기
+        .accessibilityLabel(title.map { "\($0) 도움말" } ?? "도움말")
+        .accessibilityHint(message)
     }
 
     private var popoverContent: some View {

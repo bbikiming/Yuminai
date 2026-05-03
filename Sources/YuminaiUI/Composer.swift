@@ -217,6 +217,9 @@ public struct Composer: View {
                 .padding(.vertical, Theme.Layout.composerPadding - 8)
                 .frame(minHeight: 80, maxHeight: Theme.Layout.composerMaxHeight - 80)
                 .focused($inputFocused)
+                // ADR-071 Phase 4 — VoiceOver
+                .accessibilityLabel("메시지 입력")
+                .accessibilityHint(text.isEmpty ? placeholder : "메시지 작성 중. Enter 키로 전송, Shift+Enter로 줄바꿈.")
                 .onChange(of: text) { _, newValue in
                     let trimmed = newValue.trimmingCharacters(in: .whitespacesAndNewlines)
                     let mentionInProgress = trimmed.hasPrefix("@") &&

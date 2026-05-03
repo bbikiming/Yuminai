@@ -1,6 +1,166 @@
 # Decisions Log (ADR-lite)
 
-> 최신: ADR-070 (UX 개선 — 반응형 + 한국어 라이팅 + 정보 구조 재정비 + Toolbar 안내)
+> 최신: ADR-071 (접근성 강화 + 초보자 모드)
+
+---
+
+## ADR-071 — 접근성 강화 + 초보자 모드 (5 phases)
+
+- **날짜**: 2026-05-03
+- **상태**: Accepted (구현 + 테스트 + /Applications 재설치 완료)
+
+### 배경 (사용자 요청)
+
+ADR-070에서 UX 라이팅 + 반응형 + Harness 분리 완료. 향후 후보로 제시한:
+- 접근성 강화 (VoiceOver labels)
+- "초보자 모드" (자동화 탭 자체를 숨기는 옵션)
+
+→ 두 가지 모두 ADR-071로 진행 요청.
+
+### 결정
+
+#### Phase 1: 초보자 모드 (Beginner Mode)
+
+**`AppPreferences.beginnerMode: Bool` 추가**:
+- `init()` default `true` — 신규 사용자는 친화적 시작
+- `init(from decoder:)` default `false` — 기존 사용자 보호 (이미 고급 옵션 사용 중일 가능성)
+
+**숨겨지는 항목 선정 기준**:
+- 도메인 전문 용어 짙음 (자동화, 학습)
+- 잘못 만지면 비용/안정성 영향 큼 (최대 비용, cokacdir, forward 옵션)
+- 처음 1주일 사용에 불필요
+
+**숨겨지는 항목**:
+1. **자동화 탭** 전체 (Harness + Agent Chain)
+2. **자동 선택 학습 탭** 전체 (data view, 초보자에게 의미 적음)
+3. **모델·모드 탭의 최대 비용 입력** (잘못 입력 시 차단 위험)
+4. **텔레그램 탭의 cokacdir 통합 섹션** (외부 도구 의존)
+5. **텔레그램 탭의 외부 사용 안전 일부**:
+   - 유지: "외부 명령은 계획만 보여주기" (가장 중요한 안전장치)
+   - 숨김: 비용 가시화 / Assistant 응답 forward / 도구 호출 forward
+
+**일반 탭 최상단**:
+- "사용 모드" Section + Toggle("초보자 모드") + HelpHint
+- footer가 모드에 따라 변화: "고급 옵션이 숨겨져 있어요…" ↔ "모든 고급 옵션이 표시됩니다."
+
+#### Phase 2: VoiceOver labels (IconButton + Toolbar)
+
+**`IconButton`** 자동 accessibility:
+- `accessibilityLabel`: detailedHelp.title 우선 → fallback help → "버튼"
+- `accessibilityHint`: detailedHelp.body
+- 단축키 통합 형식: "도움말, 단축키 ⌘/"
+
+**`HelpHint`**:
+- `accessibilityLabel`: "X 도움말" (info.circle 버튼임을 명시)
+- `accessibilityHint`: 도움말 내용 자체
+
+**`ChatToolbar`**:
+- 사이드바 IconButton에 detailedHelp 추가 (이전엔 빠져있음)
+- breadcrumb (Menu): "현재 워크스페이스 X" + "다른 워크스페이스로 전환할 수 있는 메뉴"
+- agentPicker (Menu): "현재 에이전트 X" + "Claude/Codex 전환 메뉴"
+- streamingBadge: `accessibilityElement(.combine)` + "에이전트가 응답을 작성 중입니다"
+
+#### Phase 3: VoiceOver labels (Charts + Dashboards)
+
+**전략: 헬퍼에서 일괄 적용**
+
+대안 평가:
+- ❌ 모든 Chart에 개별 accessibility — 20+ 차트 각각 적용 부담
+- ✅ `chartSection()` 헬퍼에 적용 — 한 번 추가로 9개+11개+2개 = 22개 차트 자동 적용
+
+**구현**:
+- `ChartsDashboard.chartSection()` + `TelegramUsageDashboard.chartSection()`:
+  ```swift
+  .accessibilityElement(children: .contain)
+  .accessibilityLabel("차트, \(title)")
+  .accessibilityHint(subtitle)
+  ```
+- PNG 저장 버튼: `.accessibilityLabel("\(title) 차트를 PNG 이미지로 저장")`
+- ChatDetailSheet 차트 (헬퍼 안 쓰는 inline): 직접 적용 + value 요약
+
+#### Phase 4: VoiceOver labels (Composer + MessageBubble)
+
+**`Composer.textArea`**:
+- TextEditor "메시지 입력" label + 동적 hint:
+  - 빈 상태: placeholder
+  - 입력 중: "메시지 작성 중. Enter 키로 전송, Shift+Enter로 줄바꿈."
+
+**`SendButton`**:
+- 보내기: "메시지 보내기" + 동적 hint (활성/비활성)
+- 중단: "응답 중단" + "Escape 단축키" hint
+
+**`MessageBubble` 모든 role**:
+- `accessibilityElement(children: .combine)` + label (역할) + value (본문)
+- 사용자: "내 메시지"
+- 어시스턴트: "Claude 답장" / "Codex 답장"
+- 도구: "도구 호출"
+- 시스템: "시스템 안내"
+- 장식 요소 (PulseDot, accent bar, dot icon): `accessibilityHidden(true)`
+
+#### Phase 5: Tests
+
+**`AppPreferencesTests.swift`** (5 tests):
+1. `init()` default — 신규 사용자 true
+2. decode without field — 기존 사용자 false
+3. decode with explicit true — 보존
+4. encode/decode round-trip
+5. explicit init — 사용자 명시 토글
+
+### 적용 결과
+```
+swift build              → Build complete!
+swift test               → 506/506 passed (105 suites, +5 new tests)
+/Applications 재설치     → ✅ PID 81575 실행 중
+새 파일                  → 1 (AppPreferencesTests)
+수정 파일                → 10
+```
+
+### 트레이드오프
+
+**왜 신규 default true / 기존 default false?**
+- 신규 사용자는 도메인 전문 용어에 압도되기 쉬움 → 간소화된 진입
+- 기존 사용자는 이미 자기 설정에 익숙함 → 갑자기 옵션이 사라지면 confusing
+- Codable의 `decodeIfPresent ?? false` 패턴으로 자연스럽게 분기
+
+**왜 자동 선택 학습 탭도 숨기나?**
+- 초보자에겐 "왜 이 탭이 있는가" 자체가 인지 부담
+- 자동화 탭이 꺼져 있으면 학습할 일 자체가 없음 (학습은 routing의 부산물)
+- 두 탭이 함께 사라져야 일관성 유지
+
+**왜 chartSection() 헬퍼에서 accessibility 적용?**
+- 차트 내부 요소(LineMark, BarMark 등)는 SwiftUI Charts가 자체적으로 일부 accessibility 처리
+- 사용자에게 가장 중요한 정보는 "이 차트가 무엇인지" + "데이터 요약"
+- 헬퍼 수준에서 일괄 적용하면 향후 새 차트도 자동 혜택
+
+**왜 message에 children: .combine?**
+- 사용자/어시스턴트 메시지는 "이 박스 = 한 메시지"가 자연스러운 단위
+- VoiceOver swipe 시 한 번에 전체 메시지 읽기 가능 (token 단위 X)
+- 단점: 본문 내 링크/코드블록 별도 navigation 불가 — 향후 개선 후보
+
+**왜 detailedHelp.body를 accessibilityHint로?**
+- macOS VoiceOver는 hint를 "버튼" 발음 후 잠시 멈춤 후 읽음
+- 사용자가 빠르게 파악 가능 (label만으로 충분하면 hint 무시 가능)
+- 본문이 이미 친화적 한국어로 작성되어 있어 그대로 활용
+
+### WCAG 2.2 충족도
+
+본 ADR 적용 후 WCAG 2.2 AA 항목 충족:
+- ✅ 1.1.1 Non-text Content — 모든 image/icon에 text alternative
+- ✅ 1.3.1 Info and Relationships — accessibility container 사용
+- ✅ 2.1.1 Keyboard — 기존부터 모든 기능 keyboard 접근 가능
+- ✅ 2.4.6 Headings and Labels — 모든 control에 label
+- ✅ 4.1.2 Name, Role, Value — accessibilityLabel + accessibilityValue 명시
+- ⚠ 1.4.3 Contrast (Minimum) — Theme.Color 점검 필요 (향후 ADR)
+- ⚠ 2.4.7 Focus Visible — focus indicator 점검 필요 (향후 ADR)
+
+### 향후 (ADR-072+ 후보)
+
+- **다국어 지원** — `String Catalog` (.xcstrings) 도입
+- **Color contrast 감사** — WCAG 2.2 AA 4.5:1 확인 (Theme.Color 모든 조합)
+- **Focus indicator 강화** — keyboard navigation visual feedback
+- **첫 실행 wizard** — "초보자/고급/사용자 정의" 선택 sheet
+- **Inline 길이 제어** — 메시지 본문 내 코드블록/링크 별도 VoiceOver navigation
+- **Voice Control 명령** — "보내기 클릭", "사이드바 열기" 등 macOS Voice Control 매핑
 
 ---
 

@@ -4,6 +4,78 @@
 
 ## [Unreleased] — 2026-05-03
 
+### Added — ADR-071 접근성 + 초보자 모드 (5 phases — 사용자 피드백)
+
+**사용자 피드백** (2026-05-03):
+- 접근성 강화 (VoiceOver labels)
+- "초보자 모드" — 자동화 탭 자체를 숨기는 옵션
+
+**Phase 1 — 초보자 모드 (Beginner Mode)**
+- `AppPreferences.beginnerMode: Bool` 신규 (init 기본값 `true` — 신규 사용자, decode 기본값 `false` — 기존 사용자 보호)
+- 초보자 모드 ON 시 숨겨지는 항목:
+  - 자동화 탭 (Harness + Agent Chain)
+  - 자동 선택 학습 탭
+  - 모델·모드 탭의 최대 비용 입력
+  - 텔레그램 탭의 cokacdir 통합 섹션
+  - 텔레그램 탭의 외부 사용 안전 일부 (계획 모드만 유지)
+- 일반 탭 최상단에 "사용 모드" Section + 토글 + HelpHint
+- footer 텍스트가 모드 변화에 따라 동적으로 안내
+
+**Phase 2 — VoiceOver labels (IconButton + Toolbar)**
+- `IconButton`: `accessibilityLabel` (detailedHelp.title 우선, fallback help) + `accessibilityHint` (detailedHelp.body)
+- `IconButton`: 단축키가 있으면 "이름, 단축키 ⌘D" 형식으로 통합
+- `HelpHint`: `accessibilityLabel("X 도움말")` + `accessibilityHint(message)`
+- `ChatToolbar`:
+  - 사이드바 IconButton에 detailedHelp 추가
+  - breadcrumb (워크스페이스 메뉴)에 명시 label + hint
+  - agentPicker에 명시 label + hint
+  - streamingBadge accessibilityElement(.combine) — "에이전트가 응답을 작성 중"
+
+**Phase 3 — VoiceOver labels (Charts + Dashboards)**
+- `ChartsDashboard.chartSection()` 헬퍼에 `accessibilityElement(children: .contain)` + label + hint 추가 → 9개 차트 모두 자동 적용
+- `TelegramUsageDashboard.chartSection()` 동일 + PNG 저장 버튼 명시 label
+- `ChatDetailSheet.workspaceUsageSection`: "워크스페이스 사용 분포 차트" + value (개수/총합)
+- `ChatDetailSheet.forecastSection`: "비용 예측 차트, EWMA 및 Holt-Winters 모델, 95% 신뢰구간 포함" + value (샘플 개수)
+
+**Phase 4 — VoiceOver labels (Composer + MessageBubble)**
+- `Composer.textArea`: TextEditor에 "메시지 입력" label + 동적 hint (placeholder or "Enter 전송, Shift+Enter 줄바꿈")
+- `SendButton`: "메시지 보내기" + hint (활성/비활성 상태 반영) / "응답 중단" + hint (Esc 단축키)
+- `UserMessageBlock`: "내 메시지" label + value (본문)
+- `AssistantMessageBlock`: "Claude 답장" / "Codex 답장" label + value
+- `ToolMessageBlock`: "도구 호출" label + value
+- `SystemMessageBlock`: "시스템 안내" label + value
+- 장식 요소 (PulseDot, accent bar, dot icon)에 `accessibilityHidden(true)` 적용
+
+**Phase 5 — Tests**
+- `Tests/YuminaiCoreTests/AppPreferencesTests.swift` 신규 — 5개 테스트
+  - 신규 사용자 default true
+  - 기존 사용자 (decode without field) default false
+  - 명시적 true 보존
+  - encode/decode round-trip
+  - 사용자 명시 init
+
+### 빌드/테스트 결과
+- swift build → Build complete!
+- swift test → **506/506 passed** (105 suites, +5 new tests)
+- /Applications/Yuminai.app 재설치 + 실행 (PID 81575)
+
+### 새 파일
+- Tests/YuminaiCoreTests/AppPreferencesTests.swift
+
+### 수정 파일
+- Sources/YuminaiCore/AppPreferences.swift (`beginnerMode` 필드)
+- Sources/YuminaiUI/SettingsView.swift (탭 조건부 숨김 + "사용 모드" Section + accessibility 추가)
+- Sources/YuminaiUI/FlatComponents.swift (IconButton + SendButton accessibility)
+- Sources/YuminaiUI/HelpHint.swift (accessibility labels)
+- Sources/YuminaiUI/ChatToolbar.swift (sidebar detailedHelp + breadcrumb/agent labels + streamingBadge)
+- Sources/YuminaiUI/ChartsDashboard.swift (chartSection accessibility)
+- Sources/YuminaiUI/TelegramUsageDashboard.swift (chartSection + PNG button)
+- Sources/YuminaiUI/ChatDetailSheet.swift (workspace donut + forecast chart)
+- Sources/YuminaiUI/Composer.swift (TextEditor accessibility)
+- Sources/YuminaiUI/MessageBubble.swift (모든 메시지 블록 accessibility)
+
+---
+
 ### Added — ADR-070 UX 개선 + 반응형 강화 (5 phases — 사용자 피드백 반영)
 
 **사용자 피드백** (2026-05-03 보조 모니터 + Settings UX):

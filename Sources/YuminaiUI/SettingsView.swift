@@ -72,20 +72,31 @@ public struct SettingsView: View {
         TabView {
             generalTab
                 .tabItem { Label("일반", systemImage: "gearshape") }
+                .accessibilityLabel("일반 설정 탭")
             modelTab
                 .tabItem { Label("모델·모드", systemImage: "cpu") }
+                .accessibilityLabel("모델 및 모드 설정 탭")
             editTab
                 .tabItem { Label("편집", systemImage: "pencil.and.outline") }
+                .accessibilityLabel("편집 동작 설정 탭")
             telegramTab
                 .tabItem { Label("텔레그램 알림", systemImage: "paperplane") }
-            // ADR-070 Phase 4 — Harness/Agent Chain은 텔레그램에서 분리 → "자동화" 탭
-            automationTab
-                .tabItem { Label("자동화", systemImage: "wand.and.stars") }
+                .accessibilityLabel("텔레그램 알림 설정 탭")
+            // ADR-071 Phase 1 — 자동화 탭은 초보자 모드에서 숨김
+            if !preferences.beginnerMode {
+                automationTab
+                    .tabItem { Label("자동화", systemImage: "wand.and.stars") }
+                    .accessibilityLabel("자동화 설정 탭")
+            }
             anthropicTab
                 .tabItem { Label("API 키", systemImage: "key") }
-            // ADR-056 Phase 5 — Routing learning tab
-            routingLearningTab
-                .tabItem { Label("자동 선택 학습", systemImage: "brain.head.profile") }
+                .accessibilityLabel("API 키 설정 탭")
+            // ADR-071 Phase 1 — 자동 선택 학습 탭은 초보자 모드에서 숨김
+            if !preferences.beginnerMode {
+                routingLearningTab
+                    .tabItem { Label("자동 선택 학습", systemImage: "brain.head.profile") }
+                    .accessibilityLabel("자동 선택 학습 설정 탭")
+            }
         }
         // ADR-070 Phase 1 — 보조 모니터(960×640)에서도 잘림 없이 표시. maxHeight 제거.
         .frame(
@@ -207,6 +218,30 @@ public struct SettingsView: View {
                     .foregroundStyle(.secondary)
             }
 
+            // ADR-071 Phase 1 — 사용 모드 (초보자 / 고급) 선택
+            Section {
+                Toggle(isOn: $preferences.beginnerMode) {
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("초보자 모드")
+                        Text(preferences.beginnerMode
+                             ? "고급 옵션이 숨겨져 있어요. 익숙해지면 끄고 ‘자동화’와 ‘자동 선택 학습’ 탭을 사용해 보세요."
+                             : "모든 고급 옵션이 표시됩니다.")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
+                }
+                .accessibilityHint("초보자 모드를 켜면 자동화 탭과 자동 선택 학습 탭이 숨겨집니다.")
+            } header: {
+                HStack(spacing: 4) {
+                    Text("사용 모드")
+                    HelpHint(
+                        "초보자 모드는 자주 쓰지 않는 고급 옵션을 숨겨 첫 사용을 더 단순하게 만들어 줍니다. 숨겨지는 항목: 자동화 탭(다중 모델 자동 전환, 에이전트 자동 답장), 자동 선택 학습 탭, 모델·모드 탭의 최대 비용, 텔레그램의 cokacdir 통합. 익숙해지면 토글을 끄세요.",
+                        title: "초보자 모드란?",
+                        placement: .trailing
+                    )
+                }
+            }
+
             Section {
                 LabeledContent("폰트 크기 보정") {
                     Stepper(
@@ -217,10 +252,13 @@ public struct SettingsView: View {
                             .monospacedDigit()
                     }
                     .fixedSize()
+                    .accessibilityLabel("폰트 크기 보정")
+                    .accessibilityValue("\(preferences.fontSizeOffset >= 0 ? "+" : "")\(preferences.fontSizeOffset) 포인트")
                 }
                 Toggle(isOn: $preferences.showInspectorByDefault) {
                     Text("새 창 열 때 정보 패널 표시")
                 }
+                .accessibilityHint("정보 패널은 컨텍스트 사용량, 비용, 도구 호출 내역을 우측에 보여줍니다.")
             } header: {
                 Text("외관")
             } footer: {
@@ -292,14 +330,18 @@ public struct SettingsView: View {
                     }
                 }
 
-                LabeledContent("최대 비용 (USD)") {
-                    TextField(
-                        "제한 없음",
-                        value: $preferences.defaultSessionSettings.maxBudgetUSD,
-                        format: .number
-                    )
-                    .textFieldStyle(.roundedBorder)
-                    .frame(width: 120)
+                // ADR-071 Phase 1 — 최대 비용은 고급 옵션 (초보자 모드에서 숨김)
+                if !preferences.beginnerMode {
+                    LabeledContent("최대 비용 (USD)") {
+                        TextField(
+                            "제한 없음",
+                            value: $preferences.defaultSessionSettings.maxBudgetUSD,
+                            format: .number
+                        )
+                        .textFieldStyle(.roundedBorder)
+                        .frame(width: 120)
+                        .accessibilityLabel("세션당 최대 비용, 미국 달러")
+                    }
                 }
             } header: {
                 Text("실행 옵션")
@@ -452,27 +494,32 @@ public struct SettingsView: View {
             }
 
             if preferences.telegramEnabled {
-                Section {
-                    HStack(spacing: 8) {
-                        Image(systemName: "square.and.arrow.down.on.square")
-                            .foregroundStyle(Color.accentColor)
-                        VStack(alignment: .leading, spacing: 2) {
-                            Text("이 PC의 cokacdir에서 봇 가져오기")
-                                .font(.callout.weight(.medium))
-                            Text("`~/.cokacdir/workspace/bot_settings.json`에서 봇과 chat id를 자동으로 채워요.")
-                                .font(.caption)
-                                .foregroundStyle(.secondary)
+                // ADR-071 Phase 1 — cokacdir 통합은 고급 (초보자 모드에서 숨김)
+                if !preferences.beginnerMode {
+                    Section {
+                        HStack(spacing: 8) {
+                            Image(systemName: "square.and.arrow.down.on.square")
+                                .foregroundStyle(Color.accentColor)
+                                .accessibilityHidden(true)
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text("이 PC의 cokacdir에서 봇 가져오기")
+                                    .font(.callout.weight(.medium))
+                                Text("`~/.cokacdir/workspace/bot_settings.json`에서 봇과 chat id를 자동으로 채워요.")
+                                    .font(.caption)
+                                    .foregroundStyle(.secondary)
+                            }
+                            Spacer()
+                            Button("열기…", action: onImportFromCokacdir)
+                                .accessibilityLabel("cokacdir 봇 설정 가져오기")
                         }
-                        Spacer()
-                        Button("열기…", action: onImportFromCokacdir)
+                        .padding(.vertical, 2)
+                    } header: {
+                        Text("cokacdir 통합")
+                    } footer: {
+                        Text("⚠ cokacdir 봇 서버가 같은 토큰으로 동시에 실행 중이면 두 곳에서 Telegram 업데이트를 나눠 가져 메시지가 한쪽에만 도착할 수 있어요. Yuminai를 쓰는 동안에는 cokacdir의 해당 봇을 잠시 꺼두는 걸 권장해요.")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
                     }
-                    .padding(.vertical, 2)
-                } header: {
-                    Text("cokacdir 통합")
-                } footer: {
-                    Text("⚠ cokacdir 봇 서버가 같은 토큰으로 동시에 실행 중이면 두 곳에서 Telegram 업데이트를 나눠 가져 메시지가 한쪽에만 도착할 수 있어요. Yuminai를 쓰는 동안에는 cokacdir의 해당 봇을 잠시 꺼두는 걸 권장해요.")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
                 }
 
                 Section {
@@ -487,7 +534,7 @@ public struct SettingsView: View {
                         .foregroundStyle(.secondary)
                 }
 
-                // ADR-046 — 외부 turn 안전장치
+                // ADR-046 — 외부 turn 안전장치 (초보자 모드: 핵심만 / 고급: 모두)
                 Section {
                     Toggle(isOn: $preferences.telegramRemoteRequiresPlan) {
                         LabelWithHint(
@@ -495,28 +542,33 @@ public struct SettingsView: View {
                             hint: "지하철에서 모바일로 명령을 보낼 때 위험한 작업(rm, git reset 등)이 PC 확인 없이 실행되지 않도록 1턴 동안 ‘계획’ 모드로 강제합니다. 에이전트가 계획만 보여주면 사용자가 ‘진행해 줘’로 명시 승인."
                         )
                     }
-                    Toggle(isOn: $preferences.telegramShowCostInline) {
-                        LabelWithHint(
-                            "비용 가시화 (/status 명령)",
-                            hint: "외부 명령 횟수 + 누적 비용 + 컨텍스트 % 를 /status 응답에 포함. 70% 이상 컨텍스트는 새 세션 권장 안내."
-                        )
-                    }
-                    Toggle(isOn: $preferences.telegramForwardAssistant) {
-                        LabelWithHint(
-                            "에이전트 응답을 텔레그램으로 전송",
-                            hint: "Claude 응답 본문을 chunk로 텔레그램에 자동 전송. 끄면 알림(완료/에러)만 도착."
-                        )
-                    }
-                    Toggle(isOn: $preferences.telegramForwardToolCalls) {
-                        LabelWithHint(
-                            "도구 호출 요약을 텔레그램으로 전송",
-                            hint: "🔧 Bash / Edit / Write 등 도구 사용을 텔레그램에 표시. 위험 작업(rm -rf 등)은 🚨 알림으로 강조."
-                        )
+                    // ADR-071 Phase 1 — 나머지는 고급 (초보자 모드에서 숨김)
+                    if !preferences.beginnerMode {
+                        Toggle(isOn: $preferences.telegramShowCostInline) {
+                            LabelWithHint(
+                                "비용 가시화 (/status 명령)",
+                                hint: "외부 명령 횟수 + 누적 비용 + 컨텍스트 % 를 /status 응답에 포함. 70% 이상 컨텍스트는 새 세션 권장 안내."
+                            )
+                        }
+                        Toggle(isOn: $preferences.telegramForwardAssistant) {
+                            LabelWithHint(
+                                "에이전트 응답을 텔레그램으로 전송",
+                                hint: "Claude 응답 본문을 chunk로 텔레그램에 자동 전송. 끄면 알림(완료/에러)만 도착."
+                            )
+                        }
+                        Toggle(isOn: $preferences.telegramForwardToolCalls) {
+                            LabelWithHint(
+                                "도구 호출 요약을 텔레그램으로 전송",
+                                hint: "🔧 Bash / Edit / Write 등 도구 사용을 텔레그램에 표시. 위험 작업(rm -rf 등)은 🚨 알림으로 강조."
+                            )
+                        }
                     }
                 } header: {
                     Text("외부 사용 안전")
                 } footer: {
-                    Text("모바일에서 원격으로 작업을 보낼 때 안전장치를 설정합니다.")
+                    Text(preferences.beginnerMode
+                         ? "초보자 모드에서는 가장 중요한 안전장치(계획 모드)만 표시됩니다."
+                         : "모바일에서 원격으로 작업을 보낼 때 안전장치를 설정합니다.")
                         .font(.caption)
                         .foregroundStyle(.secondary)
                 }

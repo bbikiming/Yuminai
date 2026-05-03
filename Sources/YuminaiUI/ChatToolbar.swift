@@ -85,7 +85,16 @@ public struct ChatToolbar: View {
 
     public var body: some View {
         HStack(spacing: Theme.Spacing.md) {
-            IconButton("sidebar.left", help: "사이드바 (⌘⌥1)", action: onToggleSidebar)
+            IconButton(
+                "sidebar.left",
+                help: "사이드바 (⌘⌥1)",
+                detailedHelp: ToolbarHoverInfo(
+                    title: "사이드바",
+                    body: "워크스페이스 목록과 파일 트리를 좌측에 표시/숨김합니다.",
+                    shortcut: "⌘⌥1"
+                ),
+                action: onToggleSidebar
+            )
 
             breadcrumb
                 .padding(.leading, Theme.Spacing.xs)
@@ -269,6 +278,8 @@ public struct ChatToolbar: View {
         .fixedSize()
         .onHover { breadcrumbHovering = $0 }
         .help(workspacePath ?? workspaceName)
+        .accessibilityLabel("현재 워크스페이스 \(workspaceName)")
+        .accessibilityHint("클릭하면 다른 워크스페이스로 전환할 수 있는 메뉴가 열립니다.")
     }
 
     @State private var agentHovering = false
@@ -332,11 +343,14 @@ public struct ChatToolbar: View {
         .fixedSize()
         .onHover { agentHovering = $0 }
         .help("이 워크스페이스에서 사용할 에이전트")
+        .accessibilityLabel("현재 에이전트 \(activeAgent.displayName)")
+        .accessibilityHint("클릭하면 다른 에이전트(Claude / Codex)로 전환할 수 있는 메뉴가 열립니다.")
     }
 
     private var streamingBadge: some View {
         HStack(spacing: 6) {
             PulseDot(color: Theme.Color.accent, size: 6)
+                .accessibilityHidden(true)
             Text("응답 중")
                 .font(Theme.Typography.micro)
                 .foregroundStyle(Theme.Color.accent)
@@ -345,5 +359,7 @@ public struct ChatToolbar: View {
         .padding(.vertical, 2)
         .background(Theme.Color.accentMuted)
         .clipShape(RoundedRectangle(cornerRadius: Theme.Radius.sm))
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel("에이전트가 응답을 작성 중입니다")
     }
 }

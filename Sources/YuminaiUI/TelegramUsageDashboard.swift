@@ -880,6 +880,7 @@ public struct TelegramUsageDashboard: View {
                 }
                 .buttonStyle(.plain)
                 .help("이 chart를 PNG로 저장")
+                .accessibilityLabel("\(title) 차트를 PNG 이미지로 저장")
             }
             renderedContent
                 .padding(.top, 4)
@@ -887,6 +888,10 @@ public struct TelegramUsageDashboard: View {
         .padding(Theme.Spacing.md)
         .background(Theme.Color.surface)
         .clipShape(RoundedRectangle(cornerRadius: Theme.Radius.md))
+        // ADR-071 Phase 3 — VoiceOver: 차트 섹션 단일 element + title/subtitle 안내
+        .accessibilityElement(children: .contain)
+        .accessibilityLabel("차트, \(title)")
+        .accessibilityHint(subtitle)
     }
 
     private func emptyHint(_ message: String) -> some View {

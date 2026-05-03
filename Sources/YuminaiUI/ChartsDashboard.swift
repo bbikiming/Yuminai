@@ -628,6 +628,10 @@ public struct ChartsDashboard: View {
         .padding(Theme.Spacing.md)
         .background(Theme.Color.surface)
         .clipShape(RoundedRectangle(cornerRadius: Theme.Radius.md))
+        // ADR-071 Phase 3 — VoiceOver: 차트 섹션을 단일 element로 묶고 title+subtitle을 label로
+        .accessibilityElement(children: .contain)
+        .accessibilityLabel("차트, \(title)")
+        .accessibilityHint(subtitle)
     }
 
     private func emptyHint(_ message: String) -> some View {
