@@ -45,23 +45,29 @@ extension AgentKind {
 
 public struct UnifiedAgentModelPicker: View {
     @Binding public var agent: AgentKind
-    @Binding public var model: ClaudeModel
+    @Binding public var claudeModel: ClaudeModel
+    @Binding public var codexModel: CodexModel
     public let codexAvailable: Bool
     public let onAgentChange: (AgentKind) -> Void
-    public let onModelChange: (ClaudeModel) -> Void
+    public let onClaudeModelChange: (ClaudeModel) -> Void
+    public let onCodexModelChange: (CodexModel) -> Void
 
     public init(
         agent: Binding<AgentKind>,
-        model: Binding<ClaudeModel>,
+        claudeModel: Binding<ClaudeModel>,
+        codexModel: Binding<CodexModel>,
         codexAvailable: Bool,
         onAgentChange: @escaping (AgentKind) -> Void = { _ in },
-        onModelChange: @escaping (ClaudeModel) -> Void = { _ in }
+        onClaudeModelChange: @escaping (ClaudeModel) -> Void = { _ in },
+        onCodexModelChange: @escaping (CodexModel) -> Void = { _ in }
     ) {
         self._agent = agent
-        self._model = model
+        self._claudeModel = claudeModel
+        self._codexModel = codexModel
         self.codexAvailable = codexAvailable
         self.onAgentChange = onAgentChange
-        self.onModelChange = onModelChange
+        self.onClaudeModelChange = onClaudeModelChange
+        self.onCodexModelChange = onCodexModelChange
     }
 
     public var body: some View {
@@ -70,7 +76,7 @@ public struct UnifiedAgentModelPicker: View {
             Section("Claude · \(AgentKind.claude.tagline)") {
                 ForEach(ClaudeModel.allCases, id: \.self) { m in
                     Button {
-                        select(agent: .claude, model: m)
+                        selectClaude(m)
                     } label: {
                         Label {
                             VStack(alignment: .leading) {
@@ -79,7 +85,7 @@ public struct UnifiedAgentModelPicker: View {
                                     .font(.caption)
                             }
                         } icon: {
-                            if agent == .claude && model == m {
+                            if agent == .claude && claudeModel == m {
                                 Image(systemName: "checkmark")
                             } else {
                                 Image(systemName: AgentKind.claude.icon)
@@ -88,22 +94,24 @@ public struct UnifiedAgentModelPicker: View {
                     }
                 }
             }
-            // Codex 섹션
+            // ADR-088 — Codex 섹션은 CodexModel (OpenAI 모델들)로 교체
             Section("Codex · \(AgentKind.codex.tagline)") {
-                ForEach(ClaudeModel.allCases, id: \.self) { m in
+                if !codexAvailable {
+                    Text("codex CLI 미감지 — 설정에서 경로 확인")
+                        .font(.caption)
+                }
+                ForEach(CodexModel.knownCases, id: \.self) { m in
                     Button {
-                        select(agent: .codex, model: m)
+                        selectCodex(m)
                     } label: {
                         Label {
                             VStack(alignment: .leading) {
                                 Text("\(m.displayName) — \(m.subtitle)")
-                                Text(codexAvailable
-                                     ? "Codex CLI가 자체 매핑"
-                                     : "codex CLI 미감지 — 설정에서 경로 확인")
+                                Text("$\(String(format: "%.2f", m.inputPricePerMillion))/M in · $\(String(format: "%.2f", m.outputPricePerMillion))/M out")
                                     .font(.caption)
                             }
                         } icon: {
-                            if agent == .codex && model == m {
+                            if agent == .codex && codexModel == m {
                                 Image(systemName: "checkmark")
                             } else {
                                 Image(systemName: AgentKind.codex.icon)
@@ -112,35 +120,63 @@ public struct UnifiedAgentModelPicker: View {
                     }
                     .disabled(!codexAvailable)
                 }
+                // 사용자 정의 (~/.codex/config.toml의 model 필드와 동일하게)
+                if case .custom(let raw) = codexModel {
+                    Divider()
+                    Button {
+                        selectCodex(.custom(raw))
+                    } label: {
+                        Label {
+                            VStack(alignment: .leading) {
+                                Text(raw)
+                                Text("사용자 정의 (~/.codex/config.toml)")
+                                    .font(.caption)
+                            }
+                        } icon: {
+                            Image(systemName: agent == .codex ? "checkmark" : "person.crop.circle.badge.questionmark")
+                        }
+                    }
+                    .disabled(!codexAvailable)
+                }
             }
         } label: {
-            UnifiedAgentTrigger(agent: agent, model: model)
+            UnifiedAgentTrigger(
+                agent: agent,
+                modelLabel: agent == .claude ? claudeModel.displayName : codexModel.displayName
+            )
         }
         .menuStyle(.borderlessButton)
         .menuIndicator(.hidden)
         .fixedSize()
         .help("Agent와 모델을 한 번에 선택. 같은 워크스페이스에서 Claude ⇄ Codex 자유롭게 전환 가능.")
-        .accessibilityLabel("현재 \(agent.displayName) · \(model.displayName)")
+        .accessibilityLabel("현재 \(agent.displayName) · \(agent == .claude ? claudeModel.displayName : codexModel.displayName)")
         .accessibilityHint("클릭하면 다른 agent + 모델 조합으로 한 번에 전환할 수 있습니다.")
     }
 
-    private func select(agent newAgent: AgentKind, model newModel: ClaudeModel) {
-        let agentChanged = agent != newAgent
-        let modelChanged = model != newModel
-        agent = newAgent
-        model = newModel
-        // 호출자가 onAgentChange에서 setActiveAgentKind를 호출 → 그 안에서 perAgentSettings swap
-        // → activeSettings.model이 자동으로 그 agent의 last-used로 바뀜.
-        // onModelChange는 그 후 호출 (사용자가 명시적으로 모델 선택했으므로).
-        if agentChanged { onAgentChange(newAgent) }
-        if modelChanged { onModelChange(newModel) }
+    private func selectClaude(_ newModel: ClaudeModel) {
+        let agentChanged = agent != .claude
+        let modelChanged = claudeModel != newModel
+        agent = .claude
+        claudeModel = newModel
+        if agentChanged { onAgentChange(.claude) }
+        if modelChanged { onClaudeModelChange(newModel) }
+    }
+
+    private func selectCodex(_ newModel: CodexModel) {
+        let agentChanged = agent != .codex
+        let modelChanged = codexModel != newModel
+        agent = .codex
+        codexModel = newModel
+        if agentChanged { onAgentChange(.codex) }
+        if modelChanged { onCodexModelChange(newModel) }
     }
 }
 
 /// UnifiedAgentModelPicker의 trigger label — Composer footer에 큰 시각적 anchor.
+/// **ADR-088** — model 표시 라벨을 string으로 받아 ClaudeModel/CodexModel 둘 다 지원.
 private struct UnifiedAgentTrigger: View {
     let agent: AgentKind
-    let model: ClaudeModel
+    let modelLabel: String
     @State private var hovering = false
 
     var body: some View {
@@ -157,7 +193,7 @@ private struct UnifiedAgentTrigger: View {
                 .foregroundStyle(Theme.Color.text)
             Text("·")
                 .foregroundStyle(Theme.Color.textTertiary)
-            Text(model.displayName)
+            Text(modelLabel)
                 .font(Theme.Typography.label)
                 .foregroundStyle(Theme.Color.textSecondary)
             Image(systemName: "chevron.up.chevron.down")

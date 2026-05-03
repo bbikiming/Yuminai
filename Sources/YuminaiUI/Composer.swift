@@ -11,6 +11,8 @@ import YuminaiCore
 public struct Composer: View {
     @Binding public var text: String
     @Binding public var model: ClaudeModel
+    /// **ADR-088** — Codex CLI용 별도 모델 binding.
+    @Binding public var codexModel: CodexModel
     @Binding public var permissionMode: PermissionMode
     @Binding public var effortLevel: EffortLevel
     /// **ADR-087 Phase 2** — Composer 안에서 직접 agent 전환 가능.
@@ -50,6 +52,7 @@ public struct Composer: View {
     public init(
         text: Binding<String>,
         model: Binding<ClaudeModel>,
+        codexModel: Binding<CodexModel> = .constant(.default),
         permissionMode: Binding<PermissionMode>,
         effortLevel: Binding<EffortLevel>,
         agentKind: Binding<AgentKind> = .constant(.default),
@@ -75,6 +78,7 @@ public struct Composer: View {
     ) {
         self._text = text
         self._model = model
+        self._codexModel = codexModel
         self._permissionMode = permissionMode
         self._effortLevel = effortLevel
         self._agentKind = agentKind
@@ -317,16 +321,18 @@ public struct Composer: View {
         HStack(spacing: Theme.Spacing.sm) {
             // ADR-072 Phase 1 — 반응형 picker 표시
             if !hidesAllPickers {
-                // ADR-087 Phase 2 — 통합 Agent·Model picker (Composer 안에서 직접 agent 전환)
+                // ADR-087 Phase 2 + ADR-088 — 통합 Agent·Model picker (Claude/Codex 분리 모델)
                 UnifiedAgentModelPicker(
                     agent: $agentKind,
-                    model: $model,
+                    claudeModel: $model,
+                    codexModel: $codexModel,
                     codexAvailable: codexAvailable,
                     onAgentChange: { newAgent in
                         // RootView가 setActiveAgentKind 호출 → perAgentSettings swap 트리거
                         onSelectAgent(newAgent)
                     },
-                    onModelChange: { _ in apply() }
+                    onClaudeModelChange: { _ in apply() },
+                    onCodexModelChange: { _ in apply() }
                 )
                 ModePicker(selection: $permissionMode) { _ in apply() }
                 if !hidesSecondaryFooterItems {

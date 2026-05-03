@@ -1171,6 +1171,7 @@ struct ChatPane: View {
                 Composer(
                     text: $bindable.inputText,
                     model: $bindable.activeSettings.model,
+                    codexModel: $bindable.activeSettings.codexModel,  // ADR-088
                     permissionMode: $bindable.activeSettings.permissionMode,
                     effortLevel: $bindable.activeSettings.effortLevel,
                     // ADR-087 Phase 2 — Composer 안에서 직접 agent 전환 (perAgentSettings swap 자동)

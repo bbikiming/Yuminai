@@ -125,8 +125,10 @@ final class LiveCodexStreamSession: ClaudeStreamSession, @unchecked Sendable {
             arguments.append(contentsOf: ["resume", resumeId])
         }
         arguments.append(contentsOf: ["--json", "-C", workspaceURL.path])
-        // 모델 — codex와 claude의 model alias가 다르므로, 사용자가 codex 모델을 직접 설정할
-        // 때까지는 codex의 default 사용 (사용자 ~/.codex/config.toml 우선)
+        // ADR-088 — Codex 모델을 -m 인자로 명시 전달.
+        // SessionSettings.codexModel.rawIdentifier 사용 (예: "gpt-5", "o3", custom raw).
+        // ~/.codex/config.toml의 model 설정보다 CLI -m 가 우선됨.
+        arguments.append(contentsOf: ["-m", settings.codexModel.rawIdentifier])
         arguments.append(contentsOf: extraArguments)
         process.arguments = arguments
 

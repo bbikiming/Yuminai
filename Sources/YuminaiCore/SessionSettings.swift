@@ -100,8 +100,13 @@ public enum ClaudeModel: String, Sendable, Codable, Hashable, CaseIterable {
 }
 
 /// 활성 세션의 Claude 호출 설정. 사용자가 toolbar에서 즉시 변경 가능.
+///
+/// **ADR-088** — `model` (Claude용) + `codexModel` (Codex용) 분리.
+/// AppModel이 active agent에 따라 적절한 model을 어댑터에 전달.
 public struct SessionSettings: Sendable, Codable, Hashable {
     public var model: ClaudeModel
+    /// **ADR-088** — Codex CLI에 전달할 모델 (active agent == .codex일 때만 사용).
+    public var codexModel: CodexModel
     public var permissionMode: PermissionMode
     public var effortLevel: EffortLevel
     public var includeHookEvents: Bool
@@ -109,16 +114,29 @@ public struct SessionSettings: Sendable, Codable, Hashable {
 
     public init(
         model: ClaudeModel = .sonnet,
+        codexModel: CodexModel = .default,
         permissionMode: PermissionMode = .default,
         effortLevel: EffortLevel = .medium,
         includeHookEvents: Bool = true,
         maxBudgetUSD: Double? = nil
     ) {
         self.model = model
+        self.codexModel = codexModel
         self.permissionMode = permissionMode
         self.effortLevel = effortLevel
         self.includeHookEvents = includeHookEvents
         self.maxBudgetUSD = maxBudgetUSD
+    }
+
+    /// **ADR-088** — backward-compat 디코더 (codexModel 누락 시 default).
+    public init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        self.model = try c.decodeIfPresent(ClaudeModel.self, forKey: .model) ?? .sonnet
+        self.codexModel = try c.decodeIfPresent(CodexModel.self, forKey: .codexModel) ?? .default
+        self.permissionMode = try c.decodeIfPresent(PermissionMode.self, forKey: .permissionMode) ?? .default
+        self.effortLevel = try c.decodeIfPresent(EffortLevel.self, forKey: .effortLevel) ?? .medium
+        self.includeHookEvents = try c.decodeIfPresent(Bool.self, forKey: .includeHookEvents) ?? true
+        self.maxBudgetUSD = try c.decodeIfPresent(Double.self, forKey: .maxBudgetUSD)
     }
 
     public static let `default` = SessionSettings()
