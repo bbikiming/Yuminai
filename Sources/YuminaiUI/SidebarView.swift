@@ -1,25 +1,29 @@
 import SwiftUI
+import UniformTypeIdentifiers
 import YuminaiCore
 
-/// 워크스페이스 사이드바 v4 (ADR-076) — Pin + Folder 그룹화 지원.
+/// 워크스페이스 사이드바 v5 (ADR-076 + ADR-077) — Pin + Folder + Smart folder + Drag/Drop.
 ///
 /// ## 사이드바 구조 (위에서 아래로)
 /// 1. **Top header**: collapse / search 버튼
 /// 2. **Primary actions**: 새 워크스페이스 / 설정
-/// 3. **Pin 그룹** (있을 때만): 사용자가 핀한 워크스페이스 (📌 아이콘)
-/// 4. **Folder 그룹들**: 사용자가 만든 폴더 (📁 아이콘, expand/collapse)
-/// 5. **Uncategorized 그룹**: 폴더에 안 든 워크스페이스
-/// 6. **Update card** (필요 시)
-/// 7. **Bottom user card**: 사용자 + 설정 진입
+/// 3. **📌 핀 그룹** (있을 때만, 항상 최상단): drag reorder 가능
+/// 4. **🤖 Smart 그룹들**: 활성화된 자동 폴더 (recentWeek, telegramBound 등)
+/// 5. **📁 Folder 그룹들**: 사용자가 만든 폴더 (drop target, 색상/아이콘 customization)
+/// 6. **Uncategorized 그룹**: 폴더에 안 든 워크스페이스 (drop = 폴더에서 제거)
+/// 7. **Update card** (필요 시)
+/// 8. **Bottom user card**: 사용자 + 설정
 public struct SidebarView: View {
     public let workspaces: [Workspace]
     @Binding public var selectedId: UUID?
     public let telegramBoundId: UUID?
     public let telegramAvailable: Bool
-    /// **ADR-076 Phase 1** — 핀된 워크스페이스 IDs (사이드바 상단 그룹).
     public let pinnedWorkspaceIds: [UUID]
-    /// **ADR-076 Phase 1** — 워크스페이스 폴더들.
     public let folders: [WorkspaceFolder]
+    /// **ADR-077 Phase 3** — 활성화된 smart folders.
+    public let enabledSmartFolders: Set<SmartFolderKind>
+    /// **ADR-077 Phase 3** — Smart folder별 매칭 워크스페이스 IDs (호출자가 계산해서 전달).
+    public let smartFolderContents: [SmartFolderKind: [UUID]]
     public let onCreate: () -> Void
     public let onDelete: (Workspace) -> Void
     public let onCollapse: () -> Void
@@ -28,18 +32,18 @@ public struct SidebarView: View {
     public let onToggleTelegramBind: (Workspace) -> Void
     public let onConfigureDelivery: (Workspace) -> Void
     public let onEditProjectProfile: (Workspace) -> Void
-    /// **ADR-076 Phase 4** — 핀 토글 콜백.
     public let onTogglePin: (Workspace) -> Void
-    /// **ADR-076 Phase 4** — 폴더 expand/collapse 토글.
     public let onToggleFolderExpansion: (UUID) -> Void
-    /// **ADR-076 Phase 4** — 워크스페이스를 폴더로 이동 (folderId == nil이면 폴더에서 제거).
     public let onMoveToFolder: (Workspace, UUID?) -> Void
-    /// **ADR-076 Phase 4** — 새 폴더 생성 (이름 입력은 호출자가 처리).
     public let onCreateFolder: () -> Void
-    /// **ADR-076 Phase 4** — 폴더 이름 변경.
     public let onRenameFolder: (WorkspaceFolder) -> Void
-    /// **ADR-076 Phase 4** — 폴더 삭제.
     public let onDeleteFolder: (WorkspaceFolder) -> Void
+    /// **ADR-077 Phase 4** — Pin 순서 이동 (offset: -1=위, +1=아래).
+    public let onMovePin: (Workspace, Int) -> Void
+    /// **ADR-077 Phase 4** — Pin drag-to-position (target index).
+    public let onMovePinToIndex: (Workspace, Int) -> Void
+    /// **ADR-077 Phase 3** — Smart folder 활성/비활성 토글.
+    public let onToggleSmartFolder: (SmartFolderKind) -> Void
     public let userName: String
     public let updateAvailable: Bool
 
@@ -50,6 +54,8 @@ public struct SidebarView: View {
         telegramAvailable: Bool = false,
         pinnedWorkspaceIds: [UUID] = [],
         folders: [WorkspaceFolder] = [],
+        enabledSmartFolders: Set<SmartFolderKind> = [],
+        smartFolderContents: [SmartFolderKind: [UUID]] = [:],
         onCreate: @escaping () -> Void,
         onDelete: @escaping (Workspace) -> Void,
         onCollapse: @escaping () -> Void = {},
@@ -64,6 +70,9 @@ public struct SidebarView: View {
         onCreateFolder: @escaping () -> Void = {},
         onRenameFolder: @escaping (WorkspaceFolder) -> Void = { _ in },
         onDeleteFolder: @escaping (WorkspaceFolder) -> Void = { _ in },
+        onMovePin: @escaping (Workspace, Int) -> Void = { _, _ in },
+        onMovePinToIndex: @escaping (Workspace, Int) -> Void = { _, _ in },
+        onToggleSmartFolder: @escaping (SmartFolderKind) -> Void = { _ in },
         userName: String = "yuminai",
         updateAvailable: Bool = false
     ) {
@@ -73,6 +82,8 @@ public struct SidebarView: View {
         self.telegramAvailable = telegramAvailable
         self.pinnedWorkspaceIds = pinnedWorkspaceIds
         self.folders = folders
+        self.enabledSmartFolders = enabledSmartFolders
+        self.smartFolderContents = smartFolderContents
         self.onCreate = onCreate
         self.onDelete = onDelete
         self.onCollapse = onCollapse
@@ -87,6 +98,9 @@ public struct SidebarView: View {
         self.onCreateFolder = onCreateFolder
         self.onRenameFolder = onRenameFolder
         self.onDeleteFolder = onDeleteFolder
+        self.onMovePin = onMovePin
+        self.onMovePinToIndex = onMovePinToIndex
+        self.onToggleSmartFolder = onToggleSmartFolder
         self.userName = userName
         self.updateAvailable = updateAvailable
     }
@@ -108,17 +122,54 @@ public struct SidebarView: View {
         .background(Theme.Color.bgSidebar)
     }
 
-    // MARK: - Top header (collapse + search)
+    // MARK: - Top header (collapse + search + smart folders menu)
 
     private var topHeader: some View {
         HStack(spacing: 4) {
             IconButton("sidebar.left", help: "사이드바 접기 (⌘⌥1)", action: onCollapse)
             IconButton("magnifyingglass", help: "워크스페이스 검색 (⌘P)", action: onSearch)
             Spacer()
+            // ADR-077 Phase 3 — Smart folders 토글 메뉴
+            smartFolderMenu
         }
         .padding(.horizontal, Theme.Spacing.sm)
         .padding(.vertical, Theme.Spacing.sm)
         .frame(height: Theme.Layout.toolbarHeight)
+    }
+
+    private var smartFolderMenu: some View {
+        Menu {
+            Text("자동 그룹 표시")
+                .font(Theme.Typography.micro)
+                .foregroundStyle(Theme.Color.textTertiary)
+            Divider()
+            ForEach(SmartFolderKind.allCases) { kind in
+                Button {
+                    onToggleSmartFolder(kind)
+                } label: {
+                    HStack {
+                        if enabledSmartFolders.contains(kind) {
+                            Image(systemName: "checkmark")
+                        }
+                        Image(systemName: kind.iconName)
+                        Text(kind.displayName)
+                    }
+                }
+            }
+        } label: {
+            Image(systemName: "wand.and.stars")
+                .font(.system(size: 12, weight: .medium))
+                .foregroundStyle(enabledSmartFolders.isEmpty ? Theme.Color.textSecondary : Theme.Color.accent)
+                .frame(width: 28, height: 28)
+                .background(Theme.Color.surfaceHi.opacity(0.5))
+                .clipShape(RoundedRectangle(cornerRadius: Theme.Radius.sm))
+        }
+        .menuStyle(.borderlessButton)
+        .menuIndicator(.hidden)
+        .fixedSize()
+        .help("자동 그룹 (Smart folders)")
+        .accessibilityLabel("자동 그룹 메뉴")
+        .accessibilityHint("최근 7일, 텔레그램 연결 등 자동 분류 폴더 표시 토글")
     }
 
     // MARK: - "+ New workspace" + Settings
@@ -140,32 +191,25 @@ public struct SidebarView: View {
         .padding(.bottom, Theme.Spacing.md)
     }
 
-    // MARK: - Workspace list (ADR-076 — Pin + Folders + Uncategorized)
+    // MARK: - Workspace list
 
-    /// 워크스페이스 ID로 빠른 lookup.
     private var workspacesById: [UUID: Workspace] {
         Dictionary(uniqueKeysWithValues: workspaces.map { ($0.id, $0) })
     }
 
-    /// 폴더에 속한 모든 워크스페이스 ID set (uncategorized 계산용).
     private var foldersWorkspaceIds: Set<UUID> {
         Set(folders.flatMap { $0.workspaceIds })
     }
 
-    /// 핀된 워크스페이스들 (pinnedWorkspaceIds 순서 유지).
     private var pinnedWorkspaces: [Workspace] {
         pinnedWorkspaceIds.compactMap { workspacesById[$0] }
     }
 
-    /// 폴더에 속하지 않은 워크스페이스들 (핀 여부와 무관).
     private var uncategorizedWorkspaces: [Workspace] {
         workspaces.filter { !foldersWorkspaceIds.contains($0.id) }
     }
 
-    /// 전체 워크스페이스 enumerate index (⌘1~9 단축키 매핑용).
-    /// pinned + folders (expanded) + uncategorized 순서로.
     private func shortcutIndex(of workspaceId: UUID) -> Int? {
-        // pin 그룹 먼저
         if let pinIdx = pinnedWorkspaces.firstIndex(where: { $0.id == workspaceId }) {
             return pinIdx
         }
@@ -190,26 +234,33 @@ public struct SidebarView: View {
                 if workspaces.isEmpty {
                     EmptyWorkspaceHint(onCreate: onCreate)
                 } else {
-                    // 1. Pin 그룹 (있을 때만)
+                    // 1. Pin 그룹 (drag reorder 활성)
                     if !pinnedWorkspaces.isEmpty {
                         pinSection
                     }
-                    // 2. Folder 그룹들 (각 expand/collapse)
+                    // 2. Smart 그룹들 (활성화된 것만, 매칭 워크스페이스가 있을 때만)
+                    ForEach(SmartFolderKind.allCases) { kind in
+                        if enabledSmartFolders.contains(kind),
+                           let ids = smartFolderContents[kind], !ids.isEmpty {
+                            smartFolderSection(kind, workspaceIds: ids)
+                        }
+                    }
+                    // 3. 사용자 폴더 그룹들 (drop target)
                     ForEach(folders) { folder in
                         folderSection(folder)
                     }
-                    // 3. Uncategorized 그룹 (폴더에 안 든 워크스페이스 — 폴더가 있을 때만 헤더 표시)
+                    // 4. Uncategorized (drop = 폴더에서 제거)
                     if !uncategorizedWorkspaces.isEmpty {
                         uncategorizedSection
                     }
-                    // 4. "새 폴더 만들기" (사이드바 하단)
+                    // 5. "새 폴더 만들기"
                     newFolderButton
                 }
             }
         }
     }
 
-    // MARK: - Pin section (ADR-076 Phase 3)
+    // MARK: - Pin section (ADR-076 + ADR-077 Phase 4 — drag reorder)
 
     private var pinSection: some View {
         VStack(alignment: .leading, spacing: 0) {
@@ -229,30 +280,95 @@ public struct SidebarView: View {
             .padding(.bottom, Theme.Spacing.sm)
 
             VStack(spacing: 1) {
-                ForEach(pinnedWorkspaces) { workspace in
-                    workspaceRow(workspace)
+                ForEach(Array(pinnedWorkspaces.enumerated()), id: \.element.id) { idx, workspace in
+                    workspaceRow(workspace, pinIndex: idx)
+                        // ADR-077 Phase 4 — Pin reorder drag (workspace 자체)
+                        .draggable(WorkspacePinReorderPayload(workspaceId: workspace.id, currentIndex: idx))
+                        // 다른 pin 위로 drop = swap (target index에 삽입)
+                        .dropDestination(for: WorkspacePinReorderPayload.self) { items, _ in
+                            guard let item = items.first else { return false }
+                            onMovePinToIndex(workspace, idx)
+                            _ = item  // suppress warning (workspaceId already in callback context)
+                            return true
+                        }
                 }
             }
             .padding(.horizontal, Theme.Spacing.sm)
         }
     }
 
-    // MARK: - Folder section (ADR-076 Phase 3)
+    // MARK: - Smart folder section (ADR-077 Phase 3)
+
+    @ViewBuilder
+    private func smartFolderSection(_ kind: SmartFolderKind, workspaceIds: [UUID]) -> some View {
+        let smartWorkspaces = workspaceIds.compactMap { workspacesById[$0] }
+        VStack(alignment: .leading, spacing: 0) {
+            HStack(spacing: 6) {
+                Image(systemName: kind.iconName)
+                    .font(.system(size: 11))
+                    .foregroundStyle(Theme.Color.folderColor(for: kind.colorName))
+                    .accessibilityHidden(true)
+                Text(kind.displayName)
+                    .font(Theme.Typography.label)
+                    .foregroundStyle(Theme.Color.text)
+                Text("\(smartWorkspaces.count)")
+                    .font(Theme.Typography.micro)
+                    .foregroundStyle(Theme.Color.textTertiary)
+                    .padding(.horizontal, 5)
+                    .padding(.vertical, 1)
+                    .background(Theme.Color.surfaceHi)
+                    .clipShape(Capsule())
+                Image(systemName: "wand.and.stars")
+                    .font(.system(size: 8))
+                    .foregroundStyle(Theme.Color.textTertiary)
+                    .accessibilityHidden(true)
+                Spacer()
+            }
+            .padding(.horizontal, Theme.Layout.sidebarItemPadH + Theme.Spacing.sm)
+            .padding(.top, Theme.Layout.sidebarGroupHeaderTop)
+            .padding(.bottom, Theme.Spacing.sm)
+            .help(kind.hint)
+
+            VStack(spacing: 1) {
+                ForEach(smartWorkspaces) { workspace in
+                    workspaceRow(workspace, indented: true)
+                }
+            }
+            .padding(.horizontal, Theme.Spacing.sm)
+        }
+    }
+
+    // MARK: - Folder section (drop target — ADR-077 Phase 1)
+
+    @State private var hoveringFolderId: UUID?
 
     @ViewBuilder
     private func folderSection(_ folder: WorkspaceFolder) -> some View {
+        let isDropTarget = hoveringFolderId == folder.id
         VStack(alignment: .leading, spacing: 0) {
             FolderHeaderRow(
                 folder: folder,
                 workspaceCount: folder.workspaceIds.count,
+                isDropTarget: isDropTarget,
                 onToggle: { onToggleFolderExpansion(folder.id) },
                 onRename: { onRenameFolder(folder) },
                 onDelete: { onDeleteFolder(folder) }
             )
+            // ADR-077 Phase 1 — Folder header가 drop target
+            .dropDestination(for: WorkspaceDragPayload.self) { items, _ in
+                guard let item = items.first,
+                      let ws = workspacesById[item.workspaceId] else { return false }
+                onMoveToFolder(ws, folder.id)
+                hoveringFolderId = nil
+                return true
+            } isTargeted: { hovering in
+                hoveringFolderId = hovering ? folder.id : nil
+            }
+
             if folder.isExpanded {
                 let folderWorkspaces = folder.workspaceIds.compactMap { workspacesById[$0] }
                 if folderWorkspaces.isEmpty {
-                    Text("(비어있음 — 워크스페이스를 우클릭해 이동)")
+                    Text("(비어있음 — 워크스페이스를 여기로 끌어다 놓으세요)")
                         .font(Theme.Typography.micro)
                         .foregroundStyle(Theme.Color.textTertiary)
                         .padding(.horizontal, Theme.Layout.sidebarItemPadH + Theme.Spacing.lg)
@@ -269,41 +385,13 @@ public struct SidebarView: View {
         }
     }
 
-    // MARK: - Uncategorized section
+    // MARK: - Uncategorized section (drop = 폴더에서 제거 — ADR-077 Phase 1)
+
+    @State private var hoveringUncategorized: Bool = false
 
     private var uncategorizedSection: some View {
         VStack(alignment: .leading, spacing: 0) {
-            // 헤더는 폴더가 있을 때만 (폴더가 없으면 그냥 워크스페이스 리스트)
-            if !folders.isEmpty {
-                Text("기타 워크스페이스")
-                    .font(Theme.Typography.micro)
-                    .foregroundStyle(Theme.Color.textTertiary)
-                    .textCase(.uppercase)
-                    .tracking(0.6)
-                    .padding(.horizontal, Theme.Layout.sidebarItemPadH + Theme.Spacing.sm)
-                    .padding(.top, Theme.Layout.sidebarGroupHeaderTop)
-                    .padding(.bottom, Theme.Spacing.sm)
-            } else if pinnedWorkspaces.isEmpty {
-                // 폴더도 핀도 없으면 기존 "워크스페이스" 헤더
-                Text("워크스페이스")
-                    .font(Theme.Typography.micro)
-                    .foregroundStyle(Theme.Color.textTertiary)
-                    .textCase(.uppercase)
-                    .tracking(0.6)
-                    .padding(.horizontal, Theme.Layout.sidebarItemPadH + Theme.Spacing.sm)
-                    .padding(.top, Theme.Layout.sidebarGroupHeaderTop)
-                    .padding(.bottom, Theme.Spacing.sm)
-            } else {
-                // 핀만 있고 폴더 없음 → "전체" 헤더
-                Text("전체")
-                    .font(Theme.Typography.micro)
-                    .foregroundStyle(Theme.Color.textTertiary)
-                    .textCase(.uppercase)
-                    .tracking(0.6)
-                    .padding(.horizontal, Theme.Layout.sidebarItemPadH + Theme.Spacing.sm)
-                    .padding(.top, Theme.Layout.sidebarGroupHeaderTop)
-                    .padding(.bottom, Theme.Spacing.sm)
-            }
+            uncategorizedHeader
             VStack(spacing: 1) {
                 ForEach(uncategorizedWorkspaces) { workspace in
                     workspaceRow(workspace)
@@ -311,9 +399,42 @@ public struct SidebarView: View {
             }
             .padding(.horizontal, Theme.Spacing.sm)
         }
+        // ADR-077 Phase 1 — uncategorized 영역에 drop = 폴더에서 제거
+        .dropDestination(for: WorkspaceDragPayload.self) { items, _ in
+            guard let item = items.first,
+                  let ws = workspacesById[item.workspaceId] else { return false }
+            onMoveToFolder(ws, nil)
+            hoveringUncategorized = false
+            return true
+        } isTargeted: { hovering in
+            hoveringUncategorized = hovering
+        }
+        .background(hoveringUncategorized ? Theme.Color.surfaceHi.opacity(0.3) : .clear)
+        .animation(.easeOut(duration: 0.15), value: hoveringUncategorized)
     }
 
-    // MARK: - "새 폴더 만들기" button
+    @ViewBuilder
+    private var uncategorizedHeader: some View {
+        let label: String = {
+            if !folders.isEmpty || !enabledSmartFolders.isEmpty {
+                return "기타 워크스페이스"
+            } else if !pinnedWorkspaces.isEmpty {
+                return "전체"
+            } else {
+                return "워크스페이스"
+            }
+        }()
+        Text(label)
+            .font(Theme.Typography.micro)
+            .foregroundStyle(Theme.Color.textTertiary)
+            .textCase(.uppercase)
+            .tracking(0.6)
+            .padding(.horizontal, Theme.Layout.sidebarItemPadH + Theme.Spacing.sm)
+            .padding(.top, Theme.Layout.sidebarGroupHeaderTop)
+            .padding(.bottom, Theme.Spacing.sm)
+    }
+
+    // MARK: - "새 폴더 만들기"
 
     private var newFolderButton: some View {
         Button(action: onCreateFolder) {
@@ -333,16 +454,17 @@ public struct SidebarView: View {
         .buttonStyle(.plain)
         .padding(.top, Theme.Spacing.lg)
         .accessibilityLabel("새 폴더 만들기")
-        .accessibilityHint("워크스페이스를 그룹화할 새 폴더를 생성합니다")
     }
 
-    // MARK: - 공통 workspace row 생성
+    // MARK: - 공통 workspace row
 
     @ViewBuilder
-    private func workspaceRow(_ workspace: Workspace, indented: Bool = false) -> some View {
+    private func workspaceRow(_ workspace: Workspace, indented: Bool = false, pinIndex: Int? = nil) -> some View {
         WorkspaceItemRow(
             workspace: workspace,
             shortcutIndex: shortcutIndex(of: workspace.id),
+            pinIndex: pinIndex,
+            pinnedTotal: pinnedWorkspaces.count,
             isSelected: workspace.id == selectedId,
             isTelegramBound: workspace.id == telegramBoundId,
             isPinned: pinnedWorkspaceIds.contains(workspace.id),
@@ -357,17 +479,37 @@ public struct SidebarView: View {
             onEditProjectProfile: { onEditProjectProfile(workspace) },
             onTogglePin: { onTogglePin(workspace) },
             onMoveToFolder: { folderId in onMoveToFolder(workspace, folderId) },
-            onCreateNewFolder: onCreateFolder
+            onCreateNewFolder: onCreateFolder,
+            onMovePinUp: pinIndex != nil ? { onMovePin(workspace, -1) } : nil,
+            onMovePinDown: pinIndex != nil ? { onMovePin(workspace, +1) } : nil
         )
+        // ADR-077 Phase 1 — pinned 그룹 외에는 일반 drag (folder로 이동용)
+        .modifier(WorkspaceDragModifier(workspaceId: workspace.id, isPinReorder: pinIndex != nil))
     }
 }
 
-// MARK: - FolderHeaderRow (ADR-076 Phase 3)
+/// **ADR-077 Phase 1** — pin index 유무에 따라 다른 draggable payload 적용.
+struct WorkspaceDragModifier: ViewModifier {
+    let workspaceId: UUID
+    let isPinReorder: Bool
 
-/// 폴더 헤더 — chevron + folder icon + 이름 + 카운트.
+    func body(content: Content) -> some View {
+        if isPinReorder {
+            // pinSection에서 별도로 .draggable(.pinReorder) 적용 → 여기선 no-op
+            content
+        } else {
+            content.draggable(WorkspaceDragPayload(workspaceId: workspaceId))
+        }
+    }
+}
+
+// MARK: - FolderHeaderRow (ADR-077 Phase 2 — 색상/아이콘 + drop target highlight)
+
 struct FolderHeaderRow: View {
     let folder: WorkspaceFolder
     let workspaceCount: Int
+    /// **ADR-077 Phase 1** — drag hover 중 강조.
+    let isDropTarget: Bool
     let onToggle: () -> Void
     let onRename: () -> Void
     let onDelete: () -> Void
@@ -384,7 +526,8 @@ struct FolderHeaderRow: View {
                     .frame(width: 12)
                 Image(systemName: folder.iconName)
                     .font(.system(size: 11))
-                    .foregroundStyle(Theme.Color.accent)
+                    // ADR-077 Phase 2 — folder colorName 적용
+                    .foregroundStyle(Theme.Color.folderColor(for: folder.colorName))
                     .frame(width: 14)
                 Text(folder.name)
                     .font(Theme.Typography.label)
@@ -401,11 +544,24 @@ struct FolderHeaderRow: View {
             }
             .padding(.horizontal, Theme.Layout.sidebarItemPadH + Theme.Spacing.xs)
             .padding(.vertical, Theme.Layout.sidebarItemPadV + 1)
-            .background(hovering ? Theme.Color.surfaceHi.opacity(0.5) : .clear)
+            // ADR-077 Phase 1 — drop target일 때 folder 색상으로 강조
+            .background(
+                isDropTarget
+                    ? Theme.Color.folderColor(for: folder.colorName).opacity(0.18)
+                    : (hovering ? Theme.Color.surfaceHi.opacity(0.5) : .clear)
+            )
+            .overlay(
+                RoundedRectangle(cornerRadius: Theme.Radius.sm)
+                    .stroke(
+                        isDropTarget ? Theme.Color.folderColor(for: folder.colorName) : .clear,
+                        lineWidth: 2
+                    )
+            )
             .clipShape(RoundedRectangle(cornerRadius: Theme.Radius.sm))
             .contentShape(Rectangle())
             .animation(.easeOut(duration: 0.15), value: folder.isExpanded)
             .animation(.easeOut(duration: 0.10), value: hovering)
+            .animation(.easeOut(duration: 0.15), value: isDropTarget)
         }
         .buttonStyle(.plain)
         .onHover { hovering = $0 }
@@ -413,18 +569,17 @@ struct FolderHeaderRow: View {
         .padding(.top, Theme.Layout.sidebarGroupHeaderTop)
         .padding(.bottom, Theme.Spacing.xs)
         .contextMenu {
-            Button("이름 바꾸기", systemImage: "pencil", action: onRename)
+            Button("이름·색상·아이콘 편집…", systemImage: "pencil", action: onRename)
             Divider()
             Button("폴더 삭제 (안의 워크스페이스는 유지)", systemImage: "folder.badge.minus", role: .destructive, action: onDelete)
         }
-        .accessibilityLabel("폴더 \(folder.name), \(workspaceCount)개 워크스페이스, \(folder.isExpanded ? "펼쳐짐" : "접힘")")
-        .accessibilityHint("탭하여 펼치거나 접습니다")
+        .accessibilityLabel("폴더 \(folder.name), \(workspaceCount)개 워크스페이스, \(folder.isExpanded ? "펼쳐짐" : "접힘")\(isDropTarget ? ", 드롭 가능" : "")")
+        .accessibilityHint("탭하여 펼치거나 접습니다. 워크스페이스를 끌어다 놓으면 폴더에 추가됩니다.")
     }
 }
 
-// MARK: - Sidebar item rows
+// MARK: - Sidebar item rows (ADR-076 + ADR-077 — pin reorder menu)
 
-/// "+ 새 워크스페이스" 같은 primary action.
 struct SidebarPrimaryRow: View {
     let label: String
     let icon: String
@@ -457,7 +612,6 @@ struct SidebarPrimaryRow: View {
     }
 }
 
-/// Settings 같은 일반 menu (icon + label).
 struct SidebarMenuRow: View {
     let label: String
     let icon: String
@@ -489,7 +643,6 @@ struct SidebarMenuRow: View {
     }
 }
 
-/// 그룹 헤더 ("Workspaces", "Pinned", "Recents" 등).
 struct SidebarGroupHeader: View {
     let title: String
     init(_ title: String) { self.title = title }
@@ -506,19 +659,18 @@ struct SidebarGroupHeader: View {
     }
 }
 
-/// 워크스페이스 한 row.
 struct WorkspaceItemRow: View {
     let workspace: Workspace
-    /// **ADR-076** — 단축키 index (없으면 nil).
     let shortcutIndex: Int?
+    /// **ADR-077 Phase 4** — pin 그룹 안 위치 (없으면 nil — 일반 row).
+    let pinIndex: Int?
+    /// **ADR-077 Phase 4** — pin 그룹 총 개수 (boundary 체크용).
+    let pinnedTotal: Int
     let isSelected: Bool
     let isTelegramBound: Bool
-    /// **ADR-076** — 핀 상태 표시.
     let isPinned: Bool
     let telegramAvailable: Bool
-    /// **ADR-076** — 폴더 안 워크스페이스는 들여쓰기.
     let indented: Bool
-    /// **ADR-076** — 폴더 이동 메뉴용.
     let availableFolders: [WorkspaceFolder]
     let currentFolderId: UUID?
     let onSelect: () -> Void
@@ -529,13 +681,15 @@ struct WorkspaceItemRow: View {
     let onTogglePin: () -> Void
     let onMoveToFolder: (UUID?) -> Void
     let onCreateNewFolder: () -> Void
+    /// **ADR-077 Phase 4** — pin 그룹 안 위/아래 이동 (nil = 비활성).
+    let onMovePinUp: (() -> Void)?
+    let onMovePinDown: (() -> Void)?
 
     @State private var hovering = false
 
     var body: some View {
         Button(action: onSelect) {
             HStack(spacing: Theme.Spacing.sm + 2) {
-                // Selected dot — ● filled accent / ○ outline subtle
                 ZStack {
                     Circle()
                         .stroke(Theme.Color.borderSubtle, lineWidth: 1)
@@ -557,7 +711,6 @@ struct WorkspaceItemRow: View {
                     .lineLimit(1)
                     .truncationMode(.tail)
 
-                // ADR-076 — 핀 indicator (작은 핀 아이콘)
                 if isPinned {
                     Image(systemName: "pin.fill")
                         .font(.system(size: 8))
@@ -576,7 +729,6 @@ struct WorkspaceItemRow: View {
 
                 Spacer()
 
-                // ⌘1~9 단축키 hint (hover + 9개 이내일 때만)
                 if let idx = shortcutIndex, idx < 9 && hovering && !isSelected {
                     Text("⌘\(idx + 1)")
                         .font(Theme.Typography.micro)
@@ -598,13 +750,23 @@ struct WorkspaceItemRow: View {
         .buttonStyle(PressedScaleStyle(scale: 0.98))
         .onHover { hovering = $0 }
         .contextMenu {
-            // ADR-076 Phase 4 — Pin 토글
+            // Pin 토글
             Button(
                 isPinned ? "상단 고정 해제" : "상단에 고정",
                 systemImage: isPinned ? "pin.slash" : "pin",
                 action: onTogglePin
             )
-            // ADR-076 Phase 4 — 폴더 이동
+            // ADR-077 Phase 4 — Pin 순서 이동 (pin 그룹 안에서만)
+            if let onMovePinUp, let pinIdx = pinIndex {
+                Divider()
+                Button("위로 이동", systemImage: "chevron.up", action: onMovePinUp)
+                    .disabled(pinIdx == 0)
+                if let onMovePinDown {
+                    Button("아래로 이동", systemImage: "chevron.down", action: onMovePinDown)
+                        .disabled(pinIdx >= pinnedTotal - 1)
+                }
+            }
+            // 폴더 이동
             Menu {
                 Button("폴더에서 제거 (전체로)", systemImage: "tray.and.arrow.up") {
                     onMoveToFolder(nil)
@@ -646,7 +808,6 @@ struct WorkspaceItemRow: View {
             Button("Delivery 자동화 설정…",
                    systemImage: "checkmark.shield",
                    action: onConfigureDelivery)
-            // ADR-049 — ProjectProfile 편집
             Button("프로젝트 프로필 편집…",
                    systemImage: "rectangle.stack.fill",
                    action: onEditProjectProfile)
@@ -654,7 +815,7 @@ struct WorkspaceItemRow: View {
             Button("지우기", role: .destructive, action: onDelete)
         }
         .accessibilityLabel("\(workspace.name)\(isSelected ? ", 선택됨" : "")\(isPinned ? ", 고정됨" : "")\(isTelegramBound ? ", 텔레그램 연결됨" : "")")
-        .accessibilityHint("이중 클릭으로 활성화. 우클릭으로 메뉴 열기.")
+        .accessibilityHint("이중 클릭으로 활성화. 우클릭으로 메뉴. 끌어서 폴더로 이동.")
     }
 
     private var rowBg: SwiftUI.Color {
@@ -664,7 +825,6 @@ struct WorkspaceItemRow: View {
     }
 }
 
-/// 워크스페이스 0개일 때 사이드바 본문.
 struct EmptyWorkspaceHint: View {
     let onCreate: () -> Void
 
@@ -683,7 +843,7 @@ struct EmptyWorkspaceHint: View {
     }
 }
 
-// MARK: - Update card
+// MARK: - Update card / Bottom user card (변경 없음)
 
 public struct UpdateCard: View {
     public init() {}
@@ -715,8 +875,6 @@ public struct UpdateCard: View {
         .clipShape(RoundedRectangle(cornerRadius: Theme.Radius.lg))
     }
 }
-
-// MARK: - Bottom user card
 
 public struct BottomUserCard: View {
     public let name: String

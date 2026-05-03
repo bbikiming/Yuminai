@@ -1,6 +1,168 @@
 # Decisions Log (ADR-lite)
 
-> 최신: ADR-076 (워크스페이스 핀 + 폴더 그룹화 — Claude Code + Codex CLI 패턴)
+> 최신: ADR-077 (Drag&Drop + 폴더 색상/아이콘 + Smart folders + Pin reorder)
+
+---
+
+## ADR-077 — Drag&Drop + 폴더 customization + Smart folders + Pin reorder (5 phases)
+
+- **날짜**: 2026-05-03
+- **상태**: Accepted (구현 + 테스트 + /Applications 재설치)
+
+### 배경 (사용자 요청 4건)
+
+ADR-076의 향후 후보 4가지 모두 진행:
+1. Drag and drop: 워크스페이스를 폴더로 드래그
+2. 폴더 색상 + 아이콘 사용자 변경
+3. Smart folders: 자동 그룹화 ("최근 7일", "텔레그램 연결됨")
+4. Pin 순서 manual 정렬 (drag 또는 메뉴)
+
+### 결정
+
+#### Phase 1: Drag and Drop infrastructure
+
+**SwiftUI Transferable** (iOS 16+/macOS 13+) 채택:
+- `WorkspaceDragPayload`: UUID payload (전체 객체 X — callback에서 lookup)
+- `WorkspacePinReorderPayload`: UUID + 현재 index (pin 그룹 안 reorder용)
+
+**Custom UTType**:
+- `com.yuminai.workspace.id` — 일반 워크스페이스 drag
+- `com.yuminai.pin.reorder` — pin 그룹 안 reorder (workspace drag와 분리 → folder drop과 충돌 X)
+
+**왜 두 UTType?**
+- pin 안 row를 folder로 drag = 의도 모호 (pin 해제 후 folder 추가? 그냥 folder 추가?)
+- pin reorder는 pin section 안에서만 동작
+- 일반 workspace drag는 폴더로만 drop
+- 관심사 분리로 사용자 의도 명확
+
+**Drop targets**:
+- `FolderHeaderRow`: workspace → folder 추가 (drop 시 folder colorName으로 강조 — border + opacity 0.18 background)
+- `Uncategorized section`: workspace → 폴더에서 제거
+- `Pin row` (각각): pin reorder swap
+
+#### Phase 2: 폴더 색상 + 아이콘 customization
+
+**`FolderColorPreset`** (10개): accent / blue / purple / pink / red / orange / yellow / green / teal / gray
+- Theme.Color.folderColor(for:) lookup
+- semantic naming → 다크/라이트 모드 자동 대응
+
+**`FolderIconPreset`** (12개):
+- folder.fill (default)
+- folder.badge.gearshape, folder.badge.questionmark, folder.badge.person.crop
+- briefcase.fill (업무), archivebox.fill (보관함)
+- star, bolt, heart, bookmark, flag, tag
+
+**`FolderEditSheet`** (FolderRenameSheet 대체):
+- 540×540, YuminaiSheet (footer 고정)
+- 미리보기 (사용자 선택 즉시 반영)
+- 이름 입력 → 색상 picker (10개 swatch) → 아이콘 picker (6×2 grid)
+- 선택 시 색상 ring + checkmark, 아이콘 색상은 선택된 색으로
+
+#### Phase 3: Smart Folders
+
+**`SmartFolderKind`** enum:
+- `recentWeek` — 최근 7일 안 lastOpenedAt
+- `telegramBound` — telegramBoundWorkspaceId 또는 chatBindings에 포함
+- `archived` — workspace.isArchived
+
+**디자인 결정**:
+- **자동 계산** (사용자가 manual로 추가/제거 X)
+- **Pure logic** (`SmartFolderEvaluator`) → testable
+- **Default 활성**: 신규 사용자만 `[.recentWeek]`, 기존 사용자는 빈 set (UX 변경 최소화)
+
+**사이드바 표시**:
+- Pin → **Smart folders** → 사용자 폴더 → uncategorized
+- 활성 + 매칭 워크스페이스 있을 때만 표시 (빈 smart folder 안 보임)
+- 헤더에 `wand.and.stars` 아이콘 (smart임을 시각 구분)
+
+**토글 메뉴**:
+- 사이드바 top-right `wand.and.stars` 버튼
+- 메뉴: "최근 7일", "텔레그램 연결됨", "보관함" 토글
+- 활성된 게 있으면 버튼 색상 accent (빈 set이면 textSecondary)
+
+#### Phase 4: Pin reorder
+
+**두 가지 방식 제공** (Apple HIG 권고: alternative path):
+1. **Context menu** "위로 이동" / "아래로 이동" (pin index 있을 때만)
+   - 첫 번째 pin은 "위로" disabled, 마지막은 "아래로" disabled
+2. **Drag and drop** (pin row끼리 swap)
+   - `WorkspacePinReorderPayload` 사용 → folder drop과 분리
+   - drop 시 `onMovePinToIndex` 호출 → AppModel.movePin(_:to:)
+
+**왜 두 방식?**
+- Drag = 빠르지만 정밀하지 않음 (인접 swap 어려움)
+- Menu = 정밀하지만 한 번에 1칸만
+- 사용자 선호에 따라 선택 가능 (WCAG 2.5.7 Dragging Movements 준수)
+
+#### Phase 5: Tests
+
+`SmartFolderTests.swift` (20 tests):
+- SmartFolderKind allCases / displayName / defaultEnabled / Codable
+- SmartFolderEvaluator isRecent boundary (nil/안/밖)
+- isTelegramBound legacy + chatBindings
+- FolderColorPreset / FolderIconPreset count + Identifiable + 한국어 라벨
+- WorkspaceFolder colorName default / custom / Codable backward-compat
+
+### 적용 결과
+```
+swift build              → Build complete!
+swift test               → 562/562 passed (116 suites, +20 new tests)
+/Applications 재설치     → ✅ PID 54257 실행 중
+새 파일                  → 4
+수정 파일                → 6
+삭제 파일                → 1 (FolderRenameSheet — FolderEditSheet로 대체)
+```
+
+### 트레이드오프
+
+**왜 SwiftUI Transferable (NSItemProvider 아님)?**
+- Transferable은 SwiftUI 표준 (iOS 16+/macOS 13+)
+- Codable conformance만 있으면 자동 transferRepresentation 가능
+- NSItemProvider보다 type-safe (Generic Type 활용)
+
+**왜 Custom UTType?**
+- 외부 앱 (Finder 등)의 workspace 객체 drop 차단 → 보안 + UX 명확
+- com.yuminai.* prefix → 향후 다른 Yuminai 객체 drag도 일관
+
+**왜 폴더 색상 10개 limited preset (자유 색상 X)?**
+- 사용자에게 무한 색상은 결정 마비 (Hick's Law)
+- 10개는 색상환 7±3 (인지심리학) + accent/gray 추가
+- macOS Finder 폴더 tag (7색)와 비슷한 패턴
+
+**왜 SmartFolder가 일반 folder와 별개?**
+- 일반 folder = 사용자 manual control
+- Smart folder = 시스템 자동 계산
+- 데이터 모델 분리로 충돌 방지 (smart folder의 워크스페이스가 일반 folder에도 속할 수 있음)
+
+**왜 default smart folder OFF (기존 사용자)?**
+- ADR-070 "기존 사용자 보호" 원칙 일관 적용
+- 갑자기 사이드바 구조 변하면 confusing
+- 신규 사용자만 "최근 7일" default 활성 (가장 유용)
+
+**왜 pin reorder 두 방식?**
+- WCAG 2.5.7 Dragging Movements (AA, NEW): drag에 키보드/menu alternative 필수
+- Drag = 시각적, fast / Menu = 키보드 가능, 정밀
+- 사용자 선호에 따라 선택
+
+### Apple HIG 준수
+- ✅ "Drag and Drop": Visual feedback for drop targets (folder color border + background)
+- ✅ "Drag and Drop": Alternative path (context menu)
+- ✅ "Smart Folders" pattern (Finder)
+- ✅ "Faceted Filtering" (NN/g)
+
+### WCAG 2.2 충족
+- ✅ **SC 2.4.6 Headings and Labels** (AA): smart folder hint text
+- ✅ **SC 2.5.7 Dragging Movements** (AA, NEW): context menu alternative
+- ✅ **SC 4.1.2 Name, Role, Value** (AA): drop target accessibility
+- ✅ **SC 1.4.3 Contrast** (AA): folder colors selected from accessible palette
+
+### 향후 (ADR-078+ 후보)
+
+- **Pin section drop position visual**: drag 중 어느 위치에 drop될지 line indicator
+- **Folder drag-to-reorder**: 폴더 자체 순서 변경
+- **Workspace search** (⌘P) — 사이드바 검색 활성
+- **Tag-based filtering** (다중 tag 지원, smart folder의 발전형)
+- **Workspace import/export**: 폴더 + 핀 설정 함께 backup/restore
 
 ---
 

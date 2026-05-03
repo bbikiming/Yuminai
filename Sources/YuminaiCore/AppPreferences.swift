@@ -97,6 +97,9 @@ public struct AppPreferences: Sendable, Codable, Hashable {
     /// **ADR-076 Phase 1** — 워크스페이스 폴더 (Codex CLI 스타일 그룹화).
     /// 한 워크스페이스는 0~1개 폴더에만 속할 수 있음 (folder.workspaceIds로 추적).
     public var workspaceFolders: [WorkspaceFolder]
+    /// **ADR-077 Phase 3** — 활성화된 smart folder kinds.
+    /// 신규 사용자: `[.recentWeek]` (가장 유용). 기존 사용자: 빈 set.
+    public var enabledSmartFolders: Set<SmartFolderKind>
 
     public init(
         claudeBinaryPath: String = AppPreferences.detectClaudeBinaryPath(),
@@ -133,7 +136,8 @@ public struct AppPreferences: Sendable, Codable, Hashable {
         beginnerMode: Bool = true,  // ADR-071 Phase 1 — 새 사용자는 초보자 모드로 시작
         hasCompletedOnboarding: Bool = false,  // ADR-072 Phase 4 — 새 사용자는 wizard 표시
         pinnedWorkspaceIds: [UUID] = [],  // ADR-076 Phase 1
-        workspaceFolders: [WorkspaceFolder] = []  // ADR-076 Phase 1
+        workspaceFolders: [WorkspaceFolder] = [],  // ADR-076 Phase 1
+        enabledSmartFolders: Set<SmartFolderKind> = SmartFolderKind.defaultEnabled  // ADR-077 Phase 3
     ) {
         self.claudeBinaryPath = claudeBinaryPath
         self.codexBinaryPath = codexBinaryPath
@@ -170,6 +174,7 @@ public struct AppPreferences: Sendable, Codable, Hashable {
         self.hasCompletedOnboarding = hasCompletedOnboarding
         self.pinnedWorkspaceIds = pinnedWorkspaceIds
         self.workspaceFolders = workspaceFolders
+        self.enabledSmartFolders = enabledSmartFolders
     }
 
     // ADR-046 — 신규 필드 backward-compat: 기존 JSON에 없으면 default 적용
@@ -213,6 +218,8 @@ public struct AppPreferences: Sendable, Codable, Hashable {
         // ADR-076 Phase 1 — 신규 필드, 기존 사용자는 빈 배열로 시작
         self.pinnedWorkspaceIds = try c.decodeIfPresent([UUID].self, forKey: .pinnedWorkspaceIds) ?? []
         self.workspaceFolders = try c.decodeIfPresent([WorkspaceFolder].self, forKey: .workspaceFolders) ?? []
+        // ADR-077 Phase 3 — 기존 사용자는 OFF (UX 변경 최소화), 신규 사용자만 default
+        self.enabledSmartFolders = try c.decodeIfPresent(Set<SmartFolderKind>.self, forKey: .enabledSmartFolders) ?? []
     }
 
     /// `claude` CLI의 가능성 높은 위치들을 순서대로 시도해 첫 번째 존재하는 경로 반환.

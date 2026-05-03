@@ -96,18 +96,18 @@ struct RootView: View {
                 onCancel: { appModel.showCreateWorkspaceSheet = false }
             )
         }
-        // ADR-076 Phase 4 — 폴더 생성/이름 변경 sheet
+        // ADR-076 Phase 4 + ADR-077 Phase 2 — 폴더 생성/편집 sheet (이름 + 색상 + 아이콘)
         .sheet(isPresented: $bindable.showFolderRenameSheet) {
-            FolderRenameSheet(
+            FolderEditSheet(
                 existingFolder: appModel.preferences.workspaceFolders.first {
                     $0.id == appModel.folderRenameTargetId
                 },
-                onConfirm: { name in
+                onConfirm: { name, iconName, colorName in
                     Task {
                         if let id = appModel.folderRenameTargetId {
-                            await appModel.renameFolder(id: id, to: name)
+                            await appModel.updateFolder(id: id, name: name, iconName: iconName, colorName: colorName)
                         } else {
-                            _ = await appModel.createFolder(name: name)
+                            _ = await appModel.createFolder(name: name, iconName: iconName, colorName: colorName)
                         }
                         appModel.showFolderRenameSheet = false
                         appModel.folderRenameTargetId = nil
@@ -526,6 +526,15 @@ struct RootView: View {
         }
     }
 
+    /// **ADR-077 Phase 3** — 활성화된 smart folder별 매칭 워크스페이스 IDs 계산.
+    private var smartFolderContents: [SmartFolderKind: [UUID]] {
+        var result: [SmartFolderKind: [UUID]] = [:]
+        for kind in appModel.preferences.enabledSmartFolders {
+            result[kind] = appModel.workspaceIds(in: kind)
+        }
+        return result
+    }
+
     private var sidebar: some View {
         SidebarView(
             workspaces: appModel.workspaces,
@@ -540,6 +549,9 @@ struct RootView: View {
             // ADR-076 — Pin + Folder 데이터 전달
             pinnedWorkspaceIds: appModel.preferences.pinnedWorkspaceIds,
             folders: appModel.preferences.workspaceFolders,
+            // ADR-077 Phase 3 — Smart folders
+            enabledSmartFolders: appModel.preferences.enabledSmartFolders,
+            smartFolderContents: smartFolderContents,
             onCreate: {
                 appModel.showCreateWorkspaceSheet = true
                 if layoutMode.sidebarIsOverlay { sidebarOverlayShown = false }
@@ -581,6 +593,17 @@ struct RootView: View {
             },
             onDeleteFolder: { folder in
                 Task { await appModel.deleteFolder(id: folder.id) }
+            },
+            // ADR-077 Phase 4 — Pin reorder
+            onMovePin: { ws, offset in
+                Task { await appModel.reorderPin(ws.id, offset: offset) }
+            },
+            onMovePinToIndex: { ws, idx in
+                Task { await appModel.movePin(ws.id, to: idx) }
+            },
+            // ADR-077 Phase 3 — Smart folder toggle
+            onToggleSmartFolder: { kind in
+                Task { await appModel.toggleSmartFolder(kind) }
             },
             userName: "yuminai",
             updateAvailable: false

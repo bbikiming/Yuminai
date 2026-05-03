@@ -86,6 +86,25 @@ public enum Theme {
                 dark: SwiftUI.Color(rgb: dark)
             )
         }
+
+        /// **ADR-077 Phase 2** — 폴더 색상 lookup.
+        /// `WorkspaceFolder.colorName` (semantic) → SwiftUI.Color.
+        /// 알 수 없는 이름은 accent로 fallback.
+        public static func folderColor(for name: String) -> SwiftUI.Color {
+            switch name {
+            case "accent": return Theme.Color.accent
+            case "blue":   return SwiftUI.Color.blue
+            case "purple": return SwiftUI.Color.purple
+            case "pink":   return SwiftUI.Color.pink
+            case "red":    return SwiftUI.Color.red
+            case "orange": return SwiftUI.Color.orange
+            case "yellow": return SwiftUI.Color.yellow
+            case "green":  return SwiftUI.Color.green
+            case "teal":   return SwiftUI.Color.teal
+            case "gray":   return SwiftUI.Color.gray
+            default:       return Theme.Color.accent
+            }
+        }
     }
 
     // MARK: - Typography

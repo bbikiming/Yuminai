@@ -919,8 +919,8 @@ public final class AppModel {
     }
 
     /// 새 폴더 생성. 이름은 사용자가 입력.
-    public func createFolder(name: String) async -> UUID {
-        let folder = WorkspaceFolder(name: name)
+    public func createFolder(name: String, iconName: String = "folder.fill", colorName: String = "accent") async -> UUID {
+        let folder = WorkspaceFolder(name: name, iconName: iconName, colorName: colorName)
         preferences.workspaceFolders.append(folder)
         await savePreferences()
         return folder.id
@@ -932,6 +932,74 @@ public final class AppModel {
             return
         }
         preferences.workspaceFolders[idx].name = newName
+        await savePreferences()
+    }
+
+    /// **ADR-077 Phase 2** — 폴더 편집 (이름 + 아이콘 + 색상 한 번에).
+    public func updateFolder(id: UUID, name: String, iconName: String, colorName: String) async {
+        guard let idx = preferences.workspaceFolders.firstIndex(where: { $0.id == id }) else {
+            return
+        }
+        preferences.workspaceFolders[idx].name = name
+        preferences.workspaceFolders[idx].iconName = iconName
+        preferences.workspaceFolders[idx].colorName = colorName
+        await savePreferences()
+    }
+
+    // MARK: - ADR-077 Phase 4 — Pin reorder
+
+    /// 핀 그룹에서 워크스페이스 위치 이동 (drag reorder 또는 menu).
+    /// - Parameter offset: +1 = 아래로, -1 = 위로
+    public func reorderPin(_ workspaceId: UUID, offset: Int) async {
+        guard let currentIdx = preferences.pinnedWorkspaceIds.firstIndex(of: workspaceId) else { return }
+        let newIdx = max(0, min(preferences.pinnedWorkspaceIds.count - 1, currentIdx + offset))
+        guard newIdx != currentIdx else { return }
+        let item = preferences.pinnedWorkspaceIds.remove(at: currentIdx)
+        preferences.pinnedWorkspaceIds.insert(item, at: newIdx)
+        await savePreferences()
+    }
+
+    // MARK: - ADR-077 Phase 3 — Smart folders
+
+    /// Smart folder 활성/비활성 토글.
+    public func toggleSmartFolder(_ kind: SmartFolderKind) async {
+        if preferences.enabledSmartFolders.contains(kind) {
+            preferences.enabledSmartFolders.remove(kind)
+        } else {
+            preferences.enabledSmartFolders.insert(kind)
+        }
+        await savePreferences()
+    }
+
+    /// 특정 smart folder에 부합하는 워크스페이스 IDs (현재 시점 계산).
+    public func workspaceIds(in smartFolder: SmartFolderKind) -> [UUID] {
+        switch smartFolder {
+        case .recentWeek:
+            return workspaces
+                .filter { SmartFolderEvaluator.isRecent(lastOpenedAt: $0.lastOpenedAt) }
+                .sorted { ($0.lastOpenedAt ?? .distantPast) > ($1.lastOpenedAt ?? .distantPast) }
+                .map { $0.id }
+        case .telegramBound:
+            return workspaces
+                .filter {
+                    SmartFolderEvaluator.isTelegramBound(
+                        workspaceId: $0.id,
+                        boundId: preferences.telegramBoundWorkspaceId,
+                        chatBindings: preferences.telegramChatBindings
+                    )
+                }
+                .map { $0.id }
+        case .archived:
+            return workspaces.filter { $0.isArchived }.map { $0.id }
+        }
+    }
+
+    /// **ADR-077 Phase 4** — Pin 그룹에서 specific index로 이동 (drag-to-position).
+    public func movePin(_ workspaceId: UUID, to targetIndex: Int) async {
+        guard let currentIdx = preferences.pinnedWorkspaceIds.firstIndex(of: workspaceId) else { return }
+        let item = preferences.pinnedWorkspaceIds.remove(at: currentIdx)
+        let clampedIdx = max(0, min(preferences.pinnedWorkspaceIds.count, targetIndex))
+        preferences.pinnedWorkspaceIds.insert(item, at: clampedIdx)
         await savePreferences()
     }
 

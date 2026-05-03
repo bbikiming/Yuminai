@@ -4,6 +4,93 @@
 
 ## [Unreleased] — 2026-05-03
 
+### Added — ADR-077 Drag&Drop + 폴더 색상/아이콘 + Smart folders + Pin reorder (5 phases)
+
+**사용자 요청** (2026-05-03):
+1. Drag and drop: 워크스페이스를 폴더로 드래그
+2. 폴더 색상 + 아이콘 사용자 변경
+3. Smart folders: 자동 그룹화 ("최근 7일", "텔레그램 연결됨")
+4. Pin 순서 manual 정렬 (drag 또는 메뉴)
+
+**Phase 1 — Drag and drop infrastructure**
+- `Sources/YuminaiUI/WorkspaceDragDrop.swift` 신규
+  - `WorkspaceDragPayload` (Transferable, UUID payload)
+  - `WorkspacePinReorderPayload` (UUID + 현재 index)
+  - Custom UTType 2개: `com.yuminai.workspace.id`, `com.yuminai.pin.reorder`
+- SwiftUI `.draggable` + `.dropDestination` 사용
+- WorkspaceItemRow에 `.draggable(WorkspaceDragPayload)`
+- FolderHeaderRow에 `.dropDestination` — drop 시 폴더 색상으로 강조 (border + background)
+- Uncategorized section에 `.dropDestination` — drop 시 폴더에서 제거
+
+**Phase 2 — 폴더 색상 + 아이콘 customization**
+- `WorkspaceFolder.colorName: String` 신규 (default "accent")
+- `Theme.Color.folderColor(for:)` lookup helper (10개 색상)
+- `FolderColorPreset` enum (10개): accent/blue/purple/pink/red/orange/yellow/green/teal/gray
+- `FolderIconPreset` enum (12개): folder.fill, briefcase, archivebox, star, bolt 등
+- `FolderEditSheet` 신규 (FolderRenameSheet 대체):
+  - 540×540 sheet
+  - 미리보기 (사용자 선택 즉시 반영)
+  - 이름 입력 + 색상 picker (10개 swatch) + 아이콘 picker (6×2 grid)
+- AppModel.updateFolder(id:name:iconName:colorName:) 신규
+
+**Phase 3 — Smart folders (자동 그룹화)**
+- `Sources/YuminaiCore/SmartFolder.swift` 신규
+  - `SmartFolderKind` enum: recentWeek / telegramBound / archived
+  - `SmartFolderEvaluator` (pure logic, testable)
+    - `isRecent(lastOpenedAt:now:)` — 7일 안 lastOpenedAt
+    - `isTelegramBound(workspaceId:boundId:chatBindings:)` — legacy bound + multi-chat 모두
+- AppPreferences.enabledSmartFolders: Set<SmartFolderKind>
+  - 신규 사용자: `[.recentWeek]` (default 활성)
+  - 기존 사용자: 빈 set (UX 변경 최소화)
+- AppModel.toggleSmartFolder + workspaceIds(in:)
+- 사이드바 top-right에 wand.and.stars 메뉴 (smart folders 토글)
+- 사이드바 구조: Pin → **Smart folders** → 사용자 폴더 → uncategorized
+
+**Phase 4 — Pin 순서 정렬**
+- AppModel.reorderPin(_:offset:) — context menu 위/아래 1칸씩
+- AppModel.movePin(_:to:) — drag-to-position
+- WorkspaceItemRow context menu: "위로 이동" / "아래로 이동" (pin index 있을 때만)
+- Pin section drag reorder: `.draggable(WorkspacePinReorderPayload)` + `.dropDestination` 같은 row끼리 swap
+
+**Phase 5 — Tests**
+- `Tests/YuminaiCoreTests/SmartFolderTests.swift` (20 tests)
+  - SmartFolderKind allCases / displayName / defaultEnabled / Codable
+  - SmartFolderEvaluator isRecent boundary (nil/안/밖) + isTelegramBound
+  - FolderColorPreset / FolderIconPreset count + Identifiable + 한국어 라벨
+  - WorkspaceFolder colorName default + custom + Codable backward-compat
+
+근거 (Apple HIG + UX 연구):
+- Apple HIG "Drag and Drop": Move data within app, visual feedback for drop targets
+- macOS Finder "Smart Folders": 검색 조건 저장 패턴
+- Apple Mail VIP Inbox: 자동 필터링 그룹
+- NN/g "Faceted Search": 조건 기반 필터링이 manual 분류보다 효율적
+- WCAG 2.2 SC 2.5.7 Dragging Movements (AA, NEW): drag에 alternative 제공
+  → context menu "폴더로 이동"이 alternative
+
+### 빌드/테스트 결과
+- swift build → Build complete!
+- swift test → **562/562 passed** (116 suites, +20 new tests)
+- /Applications/Yuminai.app 재설치 + 실행 (PID 54257)
+
+### 새 파일
+- Sources/YuminaiUI/WorkspaceDragDrop.swift (Transferable + UTType)
+- Sources/YuminaiCore/SmartFolder.swift (SmartFolderKind + Evaluator)
+- Sources/YuminaiApp/FolderEditSheet.swift (이름+색상+아이콘 편집)
+- Tests/YuminaiCoreTests/SmartFolderTests.swift (+20 tests)
+
+### 수정 파일
+- Sources/YuminaiCore/AppPreferences.swift (enabledSmartFolders)
+- Sources/YuminaiCore/WorkspaceFolder.swift (colorName + presets)
+- Sources/YuminaiUI/Theme.swift (folderColor lookup)
+- Sources/YuminaiUI/SidebarView.swift (전면 재작성: drag/drop + smart folders + pin reorder)
+- Sources/YuminaiApp/AppModel.swift (updateFolder + toggleSmartFolder + reorderPin + movePin + workspaceIds)
+- Sources/YuminaiApp/RootView.swift (smartFolderContents + 새 콜백)
+
+### 삭제 파일
+- Sources/YuminaiApp/FolderRenameSheet.swift (FolderEditSheet로 대체)
+
+---
+
 ### Added — ADR-076 워크스페이스 핀 + 폴더 그룹화 (Claude Code + Codex CLI 패턴) (5 phases)
 
 **사용자 요청** (2026-05-03):
