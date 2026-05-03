@@ -1,12 +1,25 @@
 import SwiftUI
 import YuminaiCore
 
-/// 워크스페이스 사이드바 v3 — 스크린샷 룩 (top header → primary action → group → items → update card → user card).
+/// 워크스페이스 사이드바 v4 (ADR-076) — Pin + Folder 그룹화 지원.
+///
+/// ## 사이드바 구조 (위에서 아래로)
+/// 1. **Top header**: collapse / search 버튼
+/// 2. **Primary actions**: 새 워크스페이스 / 설정
+/// 3. **Pin 그룹** (있을 때만): 사용자가 핀한 워크스페이스 (📌 아이콘)
+/// 4. **Folder 그룹들**: 사용자가 만든 폴더 (📁 아이콘, expand/collapse)
+/// 5. **Uncategorized 그룹**: 폴더에 안 든 워크스페이스
+/// 6. **Update card** (필요 시)
+/// 7. **Bottom user card**: 사용자 + 설정 진입
 public struct SidebarView: View {
     public let workspaces: [Workspace]
     @Binding public var selectedId: UUID?
     public let telegramBoundId: UUID?
     public let telegramAvailable: Bool
+    /// **ADR-076 Phase 1** — 핀된 워크스페이스 IDs (사이드바 상단 그룹).
+    public let pinnedWorkspaceIds: [UUID]
+    /// **ADR-076 Phase 1** — 워크스페이스 폴더들.
+    public let folders: [WorkspaceFolder]
     public let onCreate: () -> Void
     public let onDelete: (Workspace) -> Void
     public let onCollapse: () -> Void
@@ -15,6 +28,18 @@ public struct SidebarView: View {
     public let onToggleTelegramBind: (Workspace) -> Void
     public let onConfigureDelivery: (Workspace) -> Void
     public let onEditProjectProfile: (Workspace) -> Void
+    /// **ADR-076 Phase 4** — 핀 토글 콜백.
+    public let onTogglePin: (Workspace) -> Void
+    /// **ADR-076 Phase 4** — 폴더 expand/collapse 토글.
+    public let onToggleFolderExpansion: (UUID) -> Void
+    /// **ADR-076 Phase 4** — 워크스페이스를 폴더로 이동 (folderId == nil이면 폴더에서 제거).
+    public let onMoveToFolder: (Workspace, UUID?) -> Void
+    /// **ADR-076 Phase 4** — 새 폴더 생성 (이름 입력은 호출자가 처리).
+    public let onCreateFolder: () -> Void
+    /// **ADR-076 Phase 4** — 폴더 이름 변경.
+    public let onRenameFolder: (WorkspaceFolder) -> Void
+    /// **ADR-076 Phase 4** — 폴더 삭제.
+    public let onDeleteFolder: (WorkspaceFolder) -> Void
     public let userName: String
     public let updateAvailable: Bool
 
@@ -23,6 +48,8 @@ public struct SidebarView: View {
         selectedId: Binding<UUID?>,
         telegramBoundId: UUID? = nil,
         telegramAvailable: Bool = false,
+        pinnedWorkspaceIds: [UUID] = [],
+        folders: [WorkspaceFolder] = [],
         onCreate: @escaping () -> Void,
         onDelete: @escaping (Workspace) -> Void,
         onCollapse: @escaping () -> Void = {},
@@ -31,6 +58,12 @@ public struct SidebarView: View {
         onToggleTelegramBind: @escaping (Workspace) -> Void = { _ in },
         onConfigureDelivery: @escaping (Workspace) -> Void = { _ in },
         onEditProjectProfile: @escaping (Workspace) -> Void = { _ in },
+        onTogglePin: @escaping (Workspace) -> Void = { _ in },
+        onToggleFolderExpansion: @escaping (UUID) -> Void = { _ in },
+        onMoveToFolder: @escaping (Workspace, UUID?) -> Void = { _, _ in },
+        onCreateFolder: @escaping () -> Void = {},
+        onRenameFolder: @escaping (WorkspaceFolder) -> Void = { _ in },
+        onDeleteFolder: @escaping (WorkspaceFolder) -> Void = { _ in },
         userName: String = "yuminai",
         updateAvailable: Bool = false
     ) {
@@ -38,6 +71,8 @@ public struct SidebarView: View {
         self._selectedId = selectedId
         self.telegramBoundId = telegramBoundId
         self.telegramAvailable = telegramAvailable
+        self.pinnedWorkspaceIds = pinnedWorkspaceIds
+        self.folders = folders
         self.onCreate = onCreate
         self.onDelete = onDelete
         self.onCollapse = onCollapse
@@ -46,6 +81,12 @@ public struct SidebarView: View {
         self.onToggleTelegramBind = onToggleTelegramBind
         self.onConfigureDelivery = onConfigureDelivery
         self.onEditProjectProfile = onEditProjectProfile
+        self.onTogglePin = onTogglePin
+        self.onToggleFolderExpansion = onToggleFolderExpansion
+        self.onMoveToFolder = onMoveToFolder
+        self.onCreateFolder = onCreateFolder
+        self.onRenameFolder = onRenameFolder
+        self.onDeleteFolder = onDeleteFolder
         self.userName = userName
         self.updateAvailable = updateAvailable
     }
@@ -99,35 +140,285 @@ public struct SidebarView: View {
         .padding(.bottom, Theme.Spacing.md)
     }
 
-    // MARK: - Workspace list
+    // MARK: - Workspace list (ADR-076 — Pin + Folders + Uncategorized)
 
+    /// 워크스페이스 ID로 빠른 lookup.
+    private var workspacesById: [UUID: Workspace] {
+        Dictionary(uniqueKeysWithValues: workspaces.map { ($0.id, $0) })
+    }
+
+    /// 폴더에 속한 모든 워크스페이스 ID set (uncategorized 계산용).
+    private var foldersWorkspaceIds: Set<UUID> {
+        Set(folders.flatMap { $0.workspaceIds })
+    }
+
+    /// 핀된 워크스페이스들 (pinnedWorkspaceIds 순서 유지).
+    private var pinnedWorkspaces: [Workspace] {
+        pinnedWorkspaceIds.compactMap { workspacesById[$0] }
+    }
+
+    /// 폴더에 속하지 않은 워크스페이스들 (핀 여부와 무관).
+    private var uncategorizedWorkspaces: [Workspace] {
+        workspaces.filter { !foldersWorkspaceIds.contains($0.id) }
+    }
+
+    /// 전체 워크스페이스 enumerate index (⌘1~9 단축키 매핑용).
+    /// pinned + folders (expanded) + uncategorized 순서로.
+    private func shortcutIndex(of workspaceId: UUID) -> Int? {
+        // pin 그룹 먼저
+        if let pinIdx = pinnedWorkspaces.firstIndex(where: { $0.id == workspaceId }) {
+            return pinIdx
+        }
+        var idx = pinnedWorkspaces.count
+        for folder in folders where folder.isExpanded {
+            for ws in folder.workspaceIds.compactMap({ workspacesById[$0] }) {
+                if ws.id == workspaceId { return idx }
+                idx += 1
+            }
+        }
+        for ws in uncategorizedWorkspaces {
+            if ws.id == workspaceId { return idx }
+            idx += 1
+        }
+        return nil
+    }
+
+    @ViewBuilder
     private var workspaceList: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 0) {
-                if !workspaces.isEmpty {
-                    SidebarGroupHeader("워크스페이스")
-                    VStack(spacing: 1) {
-                        ForEach(Array(workspaces.enumerated()), id: \.element.id) { index, workspace in
-                            WorkspaceItemRow(
-                                workspace: workspace,
-                                index: index,
-                                isSelected: workspace.id == selectedId,
-                                isTelegramBound: workspace.id == telegramBoundId,
-                                telegramAvailable: telegramAvailable,
-                                onSelect: { selectedId = workspace.id },
-                                onDelete: { onDelete(workspace) },
-                                onToggleTelegramBind: { onToggleTelegramBind(workspace) },
-                                onConfigureDelivery: { onConfigureDelivery(workspace) },
-                                onEditProjectProfile: { onEditProjectProfile(workspace) }
-                            )
-                        }
-                    }
-                    .padding(.horizontal, Theme.Spacing.sm)
-                } else {
+                if workspaces.isEmpty {
                     EmptyWorkspaceHint(onCreate: onCreate)
+                } else {
+                    // 1. Pin 그룹 (있을 때만)
+                    if !pinnedWorkspaces.isEmpty {
+                        pinSection
+                    }
+                    // 2. Folder 그룹들 (각 expand/collapse)
+                    ForEach(folders) { folder in
+                        folderSection(folder)
+                    }
+                    // 3. Uncategorized 그룹 (폴더에 안 든 워크스페이스 — 폴더가 있을 때만 헤더 표시)
+                    if !uncategorizedWorkspaces.isEmpty {
+                        uncategorizedSection
+                    }
+                    // 4. "새 폴더 만들기" (사이드바 하단)
+                    newFolderButton
                 }
             }
         }
+    }
+
+    // MARK: - Pin section (ADR-076 Phase 3)
+
+    private var pinSection: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            HStack(spacing: 6) {
+                Image(systemName: "pin.fill")
+                    .font(.system(size: 9))
+                    .foregroundStyle(Theme.Color.accent)
+                    .accessibilityHidden(true)
+                Text("핀")
+                    .font(Theme.Typography.micro)
+                    .foregroundStyle(Theme.Color.textTertiary)
+                    .textCase(.uppercase)
+                    .tracking(0.6)
+            }
+            .padding(.horizontal, Theme.Layout.sidebarItemPadH + Theme.Spacing.sm)
+            .padding(.top, Theme.Layout.sidebarGroupHeaderTop)
+            .padding(.bottom, Theme.Spacing.sm)
+
+            VStack(spacing: 1) {
+                ForEach(pinnedWorkspaces) { workspace in
+                    workspaceRow(workspace)
+                }
+            }
+            .padding(.horizontal, Theme.Spacing.sm)
+        }
+    }
+
+    // MARK: - Folder section (ADR-076 Phase 3)
+
+    @ViewBuilder
+    private func folderSection(_ folder: WorkspaceFolder) -> some View {
+        VStack(alignment: .leading, spacing: 0) {
+            FolderHeaderRow(
+                folder: folder,
+                workspaceCount: folder.workspaceIds.count,
+                onToggle: { onToggleFolderExpansion(folder.id) },
+                onRename: { onRenameFolder(folder) },
+                onDelete: { onDeleteFolder(folder) }
+            )
+            if folder.isExpanded {
+                let folderWorkspaces = folder.workspaceIds.compactMap { workspacesById[$0] }
+                if folderWorkspaces.isEmpty {
+                    Text("(비어있음 — 워크스페이스를 우클릭해 이동)")
+                        .font(Theme.Typography.micro)
+                        .foregroundStyle(Theme.Color.textTertiary)
+                        .padding(.horizontal, Theme.Layout.sidebarItemPadH + Theme.Spacing.lg)
+                        .padding(.vertical, Theme.Spacing.xs)
+                } else {
+                    VStack(spacing: 1) {
+                        ForEach(folderWorkspaces) { workspace in
+                            workspaceRow(workspace, indented: true)
+                        }
+                    }
+                    .padding(.horizontal, Theme.Spacing.sm)
+                }
+            }
+        }
+    }
+
+    // MARK: - Uncategorized section
+
+    private var uncategorizedSection: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            // 헤더는 폴더가 있을 때만 (폴더가 없으면 그냥 워크스페이스 리스트)
+            if !folders.isEmpty {
+                Text("기타 워크스페이스")
+                    .font(Theme.Typography.micro)
+                    .foregroundStyle(Theme.Color.textTertiary)
+                    .textCase(.uppercase)
+                    .tracking(0.6)
+                    .padding(.horizontal, Theme.Layout.sidebarItemPadH + Theme.Spacing.sm)
+                    .padding(.top, Theme.Layout.sidebarGroupHeaderTop)
+                    .padding(.bottom, Theme.Spacing.sm)
+            } else if pinnedWorkspaces.isEmpty {
+                // 폴더도 핀도 없으면 기존 "워크스페이스" 헤더
+                Text("워크스페이스")
+                    .font(Theme.Typography.micro)
+                    .foregroundStyle(Theme.Color.textTertiary)
+                    .textCase(.uppercase)
+                    .tracking(0.6)
+                    .padding(.horizontal, Theme.Layout.sidebarItemPadH + Theme.Spacing.sm)
+                    .padding(.top, Theme.Layout.sidebarGroupHeaderTop)
+                    .padding(.bottom, Theme.Spacing.sm)
+            } else {
+                // 핀만 있고 폴더 없음 → "전체" 헤더
+                Text("전체")
+                    .font(Theme.Typography.micro)
+                    .foregroundStyle(Theme.Color.textTertiary)
+                    .textCase(.uppercase)
+                    .tracking(0.6)
+                    .padding(.horizontal, Theme.Layout.sidebarItemPadH + Theme.Spacing.sm)
+                    .padding(.top, Theme.Layout.sidebarGroupHeaderTop)
+                    .padding(.bottom, Theme.Spacing.sm)
+            }
+            VStack(spacing: 1) {
+                ForEach(uncategorizedWorkspaces) { workspace in
+                    workspaceRow(workspace)
+                }
+            }
+            .padding(.horizontal, Theme.Spacing.sm)
+        }
+    }
+
+    // MARK: - "새 폴더 만들기" button
+
+    private var newFolderButton: some View {
+        Button(action: onCreateFolder) {
+            HStack(spacing: Theme.Spacing.sm) {
+                Image(systemName: "folder.badge.plus")
+                    .font(.system(size: 11))
+                    .foregroundStyle(Theme.Color.textTertiary)
+                Text("새 폴더 만들기")
+                    .font(Theme.Typography.small)
+                    .foregroundStyle(Theme.Color.textTertiary)
+                Spacer()
+            }
+            .padding(.horizontal, Theme.Layout.sidebarItemPadH + Theme.Spacing.sm)
+            .padding(.vertical, Theme.Spacing.sm)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .padding(.top, Theme.Spacing.lg)
+        .accessibilityLabel("새 폴더 만들기")
+        .accessibilityHint("워크스페이스를 그룹화할 새 폴더를 생성합니다")
+    }
+
+    // MARK: - 공통 workspace row 생성
+
+    @ViewBuilder
+    private func workspaceRow(_ workspace: Workspace, indented: Bool = false) -> some View {
+        WorkspaceItemRow(
+            workspace: workspace,
+            shortcutIndex: shortcutIndex(of: workspace.id),
+            isSelected: workspace.id == selectedId,
+            isTelegramBound: workspace.id == telegramBoundId,
+            isPinned: pinnedWorkspaceIds.contains(workspace.id),
+            telegramAvailable: telegramAvailable,
+            indented: indented,
+            availableFolders: folders,
+            currentFolderId: folders.first(where: { $0.workspaceIds.contains(workspace.id) })?.id,
+            onSelect: { selectedId = workspace.id },
+            onDelete: { onDelete(workspace) },
+            onToggleTelegramBind: { onToggleTelegramBind(workspace) },
+            onConfigureDelivery: { onConfigureDelivery(workspace) },
+            onEditProjectProfile: { onEditProjectProfile(workspace) },
+            onTogglePin: { onTogglePin(workspace) },
+            onMoveToFolder: { folderId in onMoveToFolder(workspace, folderId) },
+            onCreateNewFolder: onCreateFolder
+        )
+    }
+}
+
+// MARK: - FolderHeaderRow (ADR-076 Phase 3)
+
+/// 폴더 헤더 — chevron + folder icon + 이름 + 카운트.
+struct FolderHeaderRow: View {
+    let folder: WorkspaceFolder
+    let workspaceCount: Int
+    let onToggle: () -> Void
+    let onRename: () -> Void
+    let onDelete: () -> Void
+
+    @State private var hovering = false
+
+    var body: some View {
+        Button(action: onToggle) {
+            HStack(spacing: 6) {
+                Image(systemName: "chevron.right")
+                    .font(.system(size: 9, weight: .semibold))
+                    .foregroundStyle(Theme.Color.textSecondary)
+                    .rotationEffect(.degrees(folder.isExpanded ? 90 : 0))
+                    .frame(width: 12)
+                Image(systemName: folder.iconName)
+                    .font(.system(size: 11))
+                    .foregroundStyle(Theme.Color.accent)
+                    .frame(width: 14)
+                Text(folder.name)
+                    .font(Theme.Typography.label)
+                    .foregroundStyle(Theme.Color.text)
+                    .lineLimit(1)
+                Text("\(workspaceCount)")
+                    .font(Theme.Typography.micro)
+                    .foregroundStyle(Theme.Color.textTertiary)
+                    .padding(.horizontal, 5)
+                    .padding(.vertical, 1)
+                    .background(Theme.Color.surfaceHi)
+                    .clipShape(Capsule())
+                Spacer()
+            }
+            .padding(.horizontal, Theme.Layout.sidebarItemPadH + Theme.Spacing.xs)
+            .padding(.vertical, Theme.Layout.sidebarItemPadV + 1)
+            .background(hovering ? Theme.Color.surfaceHi.opacity(0.5) : .clear)
+            .clipShape(RoundedRectangle(cornerRadius: Theme.Radius.sm))
+            .contentShape(Rectangle())
+            .animation(.easeOut(duration: 0.15), value: folder.isExpanded)
+            .animation(.easeOut(duration: 0.10), value: hovering)
+        }
+        .buttonStyle(.plain)
+        .onHover { hovering = $0 }
+        .padding(.horizontal, Theme.Spacing.sm)
+        .padding(.top, Theme.Layout.sidebarGroupHeaderTop)
+        .padding(.bottom, Theme.Spacing.xs)
+        .contextMenu {
+            Button("이름 바꾸기", systemImage: "pencil", action: onRename)
+            Divider()
+            Button("폴더 삭제 (안의 워크스페이스는 유지)", systemImage: "folder.badge.minus", role: .destructive, action: onDelete)
+        }
+        .accessibilityLabel("폴더 \(folder.name), \(workspaceCount)개 워크스페이스, \(folder.isExpanded ? "펼쳐짐" : "접힘")")
+        .accessibilityHint("탭하여 펼치거나 접습니다")
     }
 }
 
@@ -218,15 +509,26 @@ struct SidebarGroupHeader: View {
 /// 워크스페이스 한 row.
 struct WorkspaceItemRow: View {
     let workspace: Workspace
-    let index: Int
+    /// **ADR-076** — 단축키 index (없으면 nil).
+    let shortcutIndex: Int?
     let isSelected: Bool
     let isTelegramBound: Bool
+    /// **ADR-076** — 핀 상태 표시.
+    let isPinned: Bool
     let telegramAvailable: Bool
+    /// **ADR-076** — 폴더 안 워크스페이스는 들여쓰기.
+    let indented: Bool
+    /// **ADR-076** — 폴더 이동 메뉴용.
+    let availableFolders: [WorkspaceFolder]
+    let currentFolderId: UUID?
     let onSelect: () -> Void
     let onDelete: () -> Void
     let onToggleTelegramBind: () -> Void
     let onConfigureDelivery: () -> Void
     let onEditProjectProfile: () -> Void
+    let onTogglePin: () -> Void
+    let onMoveToFolder: (UUID?) -> Void
+    let onCreateNewFolder: () -> Void
 
     @State private var hovering = false
 
@@ -247,6 +549,7 @@ struct WorkspaceItemRow: View {
                 }
                 .frame(width: 16)
                 .animation(.easeOut(duration: 0.15), value: isSelected)
+                .accessibilityHidden(true)
 
                 Text(workspace.name)
                     .font(Theme.Typography.label)
@@ -254,24 +557,35 @@ struct WorkspaceItemRow: View {
                     .lineLimit(1)
                     .truncationMode(.tail)
 
+                // ADR-076 — 핀 indicator (작은 핀 아이콘)
+                if isPinned {
+                    Image(systemName: "pin.fill")
+                        .font(.system(size: 8))
+                        .foregroundStyle(Theme.Color.accent)
+                        .accessibilityHidden(true)
+                }
+
                 if isTelegramBound {
                     Image(systemName: "paperplane.fill")
                         .font(.system(size: 9))
                         .foregroundStyle(Theme.Color.accent)
                         .help("텔레그램에서 제어 중인 세션")
                         .transition(.scale.combined(with: .opacity))
+                        .accessibilityHidden(true)
                 }
 
                 Spacer()
 
-                if index < 9 && hovering && !isSelected {
-                    Text("⌘\(index + 1)")
+                // ⌘1~9 단축키 hint (hover + 9개 이내일 때만)
+                if let idx = shortcutIndex, idx < 9 && hovering && !isSelected {
+                    Text("⌘\(idx + 1)")
                         .font(Theme.Typography.micro)
                         .foregroundStyle(Theme.Color.textTertiary)
                         .transition(.opacity)
                 }
             }
-            .padding(.horizontal, Theme.Layout.sidebarItemPadH)
+            .padding(.leading, indented ? Theme.Layout.sidebarItemPadH + Theme.Spacing.lg : Theme.Layout.sidebarItemPadH)
+            .padding(.trailing, Theme.Layout.sidebarItemPadH)
             .padding(.vertical, Theme.Layout.sidebarItemPadV)
             .frame(height: Theme.Layout.sidebarItemHeight)
             .background(rowBg)
@@ -284,6 +598,40 @@ struct WorkspaceItemRow: View {
         .buttonStyle(PressedScaleStyle(scale: 0.98))
         .onHover { hovering = $0 }
         .contextMenu {
+            // ADR-076 Phase 4 — Pin 토글
+            Button(
+                isPinned ? "상단 고정 해제" : "상단에 고정",
+                systemImage: isPinned ? "pin.slash" : "pin",
+                action: onTogglePin
+            )
+            // ADR-076 Phase 4 — 폴더 이동
+            Menu {
+                Button("폴더에서 제거 (전체로)", systemImage: "tray.and.arrow.up") {
+                    onMoveToFolder(nil)
+                }
+                .disabled(currentFolderId == nil)
+                Divider()
+                ForEach(availableFolders) { folder in
+                    Button {
+                        onMoveToFolder(folder.id)
+                    } label: {
+                        HStack {
+                            if folder.id == currentFolderId {
+                                Image(systemName: "checkmark")
+                            }
+                            Image(systemName: folder.iconName)
+                            Text(folder.name)
+                        }
+                    }
+                }
+                if !availableFolders.isEmpty {
+                    Divider()
+                }
+                Button("새 폴더 만들기…", systemImage: "folder.badge.plus", action: onCreateNewFolder)
+            } label: {
+                Label("폴더로 이동", systemImage: "folder")
+            }
+            Divider()
             Button("이름 복사") {
                 NSPasteboard.general.clearContents()
                 NSPasteboard.general.setString(workspace.name, forType: .string)
@@ -305,8 +653,8 @@ struct WorkspaceItemRow: View {
             Divider()
             Button("지우기", role: .destructive, action: onDelete)
         }
-        .accessibilityLabel("\(workspace.name)\(isSelected ? ", 선택됨" : "")\(isTelegramBound ? ", 텔레그램 연결됨" : "")")
-        .accessibilityHint("이중 클릭으로 활성화")
+        .accessibilityLabel("\(workspace.name)\(isSelected ? ", 선택됨" : "")\(isPinned ? ", 고정됨" : "")\(isTelegramBound ? ", 텔레그램 연결됨" : "")")
+        .accessibilityHint("이중 클릭으로 활성화. 우클릭으로 메뉴 열기.")
     }
 
     private var rowBg: SwiftUI.Color {

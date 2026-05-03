@@ -1,6 +1,183 @@
 # Decisions Log (ADR-lite)
 
-> 최신: ADR-075 (사용량 대시보드 고도화 — Compact + Detailed + Agent/Model picker)
+> 최신: ADR-076 (워크스페이스 핀 + 폴더 그룹화 — Claude Code + Codex CLI 패턴)
+
+---
+
+## ADR-076 — 워크스페이스 핀 + 폴더 그룹화 (5 phases)
+
+- **날짜**: 2026-05-03
+- **상태**: Accepted (구현 + 테스트 + /Applications 재설치)
+
+### 배경 (사용자 요청)
+
+> "클로드 코드처럼 좌측 패널에서 상단 고정 기능을 제공해주고
+> 코덱스처럼 프로젝트 폴더링 기능도 제공해 줘"
+
+**참고 패턴**:
+- **Claude Code (Anthropic CLI)**: 사이드바에 pinned conversations 그룹 (사용 빈도 높은 항목 즉시 접근)
+- **Codex CLI (OpenAI)**: project 폴더로 grouping (관련 워크스페이스 묶기)
+
+### 결정
+
+#### Phase 1: 데이터 모델
+
+**`WorkspaceFolder` struct 신규**:
+```swift
+public struct WorkspaceFolder: Sendable, Codable, Hashable, Identifiable {
+    public let id: UUID
+    public var name: String
+    public var workspaceIds: [UUID]    // Set 대신 Array — 사용자 정렬 가능
+    public var isExpanded: Bool         // 사이드바 expand/collapse 상태
+    public var iconName: String         // SF Symbol — 사용자 변경 가능 (향후)
+}
+```
+
+**디자인 결정**:
+- **Flat hierarchy** (1단계 폴더만): NN/g 연구상 nested 폴더는 사용자 mental model 부담 ↑
+- **Mutually exclusive** (한 워크스페이스 = 0~1 폴더): Apple Finder, Codex CLI 모두 채택. 멀티 폴더는 복잡도 ↑ vs 효용 적음.
+- **Pin + folder coexistence**: 핀된 워크스페이스도 폴더에 속할 수 있음. 두 경로로 접근 가능.
+
+**`AppPreferences` 확장**:
+- `pinnedWorkspaceIds: [UUID]` — Set 대신 Array (핀 순서 유지)
+- `workspaceFolders: [WorkspaceFolder]`
+- decode default: 빈 배열 (기존 사용자 영향 없음)
+
+#### Phase 2: AppModel API
+
+```swift
+// Pin
+isPinned(_ id: UUID) -> Bool
+togglePin(_ id: UUID) async
+
+// Folder CRUD
+folder(containing: UUID) -> WorkspaceFolder?
+createFolder(name: String) async -> UUID
+renameFolder(id: UUID, to: String) async
+deleteFolder(id: UUID) async               // 안의 워크스페이스는 uncategorized로
+toggleFolderExpansion(id: UUID) async
+
+// Workspace movement
+moveWorkspace(_ workspaceId: UUID, toFolder folderId: UUID?) async
+// folderId == nil: uncategorized로 이동
+```
+
+**Orphan 정리**: `deleteWorkspace`에서 핀/폴더에서 자동 제거 → orphan UUID 방지.
+
+#### Phase 3: Sidebar UI 재설계
+
+**구조** (위 → 아래):
+1. Top header (collapse + search) — 변경 없음
+2. Primary actions (새 워크스페이스 + 설정) — 변경 없음
+3. **📌 핀 그룹** (있을 때만) — 항상 최상단 (Claude Code 패턴)
+4. **📁 폴더 그룹들** (각 expand/collapse, 카운트 뱃지)
+5. **기타 워크스페이스** (uncategorized — 폴더에 안 든)
+6. **새 폴더 만들기** 버튼 (하단)
+7. Update card + Bottom user card — 변경 없음
+
+**`FolderHeaderRow`**:
+- chevron (rotation으로 expand/collapse 시각화)
+- folder icon (accent color)
+- 이름 + 카운트 capsule (e.g., "프론트엔드 (3)")
+- hover 시 surface highlight
+- contextMenu: 이름 바꾸기 / 폴더 삭제
+
+**`WorkspaceItemRow` 확장**:
+- `isPinned` indicator (작은 핀 아이콘, accent)
+- `indented` (폴더 안 워크스페이스는 왼쪽 들여쓰기 16pt)
+- `availableFolders` + `currentFolderId` — 폴더 이동 메뉴용
+
+**단축키 ⌘1~9 자동 매핑**:
+- 순서: pinned → folders (expanded) → uncategorized
+- 9개 초과 시 첫 9개만 단축키
+
+#### Phase 4: Context menu 확장
+
+**워크스페이스 우클릭** (위 → 아래):
+1. **상단에 고정 / 상단 고정 해제** (pin 토글)
+2. **폴더로 이동** → submenu:
+   - 폴더에서 제거 (전체로)
+   - 기존 폴더 목록 (현재 폴더에 ✓)
+   - 새 폴더 만들기…
+3. 이름 복사
+4. 텔레그램 연결/해제 (있을 때)
+5. Delivery 자동화 설정
+6. 프로젝트 프로필 편집
+7. 지우기 (destructive)
+
+**폴더 헤더 우클릭**:
+- 이름 바꾸기
+- 폴더 삭제 (안의 워크스페이스는 유지 — destructive)
+
+**`FolderRenameSheet` 신규**:
+- 460×220 sheet (YuminaiSheet 적용 — ADR-074 footer 고정)
+- 생성 vs 이름 변경 모드 (existingFolder 유무로 판단)
+- TextField focus 자동 + Enter 단축키
+- 빈 입력 시 disabled
+
+#### Phase 5: Tests
+
+`WorkspaceFolderTests.swift` (9 tests):
+- WorkspaceFolder init / Codable / backward-compat / Identifiable / Hashable
+- AppPreferences pin + folder default / backward-compat / round-trip
+
+### 적용 결과
+```
+swift build              → Build complete!
+swift test               → 542/542 passed (112 suites, +9 new tests)
+/Applications 재설치     → ✅ PID 37607 실행 중
+새 파일                  → 3 (WorkspaceFolder + FolderRenameSheet + Tests)
+수정 파일                → 4
+```
+
+### 트레이드오프
+
+**왜 nested 폴더 (sub-folder) 안 함?**
+- NN/g 연구: 2단계 이상 hierarchy는 사용자 인지 부담 ↑
+- Codex CLI / Claude Code 모두 single-level
+- 향후 필요 시 별도 ADR (지금은 over-engineering)
+
+**왜 Set 대신 Array?**
+- pinnedWorkspaceIds: 핀 순서 유지 (사용자 정렬 가능)
+- workspaceIds in folder: 폴더 안 순서 유지
+- Set은 contains() O(1) 이점 있으나, sidebar는 표시 시 sort 필요 → Array가 직관적
+
+**왜 폴더 삭제 시 워크스페이스는 유지?**
+- 사용자 mental model: "폴더는 그룹화 도구"
+- 폴더 삭제 = 그룹 해체, not = 워크스페이스 삭제
+- destructive action은 명시적 (워크스페이스 "지우기" 별도)
+
+**왜 Pin + Folder 공존?**
+- Pin = "자주 쓰는 항목 즉시 접근"
+- Folder = "관련 항목 묶기"
+- 두 차원이 직교 — 폴더 안 워크스페이스도 핀 가능
+
+**왜 폴더 expand/collapse 영속?**
+- 사용자가 닫아둔 폴더는 다음 실행 시도 닫힌 상태 유지
+- AppPreferences에 `isExpanded` 저장 → savePreferences로 영속
+
+**왜 ⌘1~9 단축키 자동 매핑 (sidebar 순서 따름)?**
+- 사용자가 핀에 자주 쓰는 항목 → 단축키 1~3 자동 할당 (편의 ↑)
+- 순서 명확 (위 → 아래) → 학습 비용 ↓
+
+### Apple HIG 준수
+- ✅ "Sidebars": Group related items together
+- ✅ "Context Menus": Provide alternate access to commands
+- ✅ "Visual Feedback": chevron rotation (expand/collapse)
+
+### WCAG 2.2 충족
+- ✅ **SC 2.4.6 Headings and Labels** (AA): 폴더 이름 + 카운트
+- ✅ **SC 4.1.2 Name, Role, Value** (AA): 핀/선택/연결 상태 모두 accessibilityLabel
+- ✅ **SC 1.3.1 Info and Relationships** (AA): 그룹 구조 명시
+
+### 향후 (ADR-077+ 후보)
+
+- **Drag and drop**: 워크스페이스를 폴더로 드래그 (현재는 context menu만)
+- **폴더 아이콘 사용자 변경** (folder.fill / folder.badge.gearshape / etc)
+- **폴더 색상**: 폴더별 accent color
+- **Smart folders**: 자동 그룹화 (e.g., "최근 7일", "텔레그램 연결됨")
+- **Sub-folder** 검토 (필요 시)
+- **Pin 순서 manual 정렬** (drag 또는 context menu "위로/아래로")
 
 ---
 

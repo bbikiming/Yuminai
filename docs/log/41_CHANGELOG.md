@@ -4,6 +4,94 @@
 
 ## [Unreleased] — 2026-05-03
 
+### Added — ADR-076 워크스페이스 핀 + 폴더 그룹화 (Claude Code + Codex CLI 패턴) (5 phases)
+
+**사용자 요청** (2026-05-03):
+- 클로드 코드처럼 좌측 패널에서 상단 고정 기능
+- 코덱스처럼 프로젝트 폴더링 기능
+
+**Phase 1 — 데이터 모델**
+- `Sources/YuminaiCore/WorkspaceFolder.swift` 신규
+  - `id` / `name` / `workspaceIds` / `isExpanded` / `iconName`
+  - flat hierarchy (1단계 폴더만, 중첩 X)
+  - mutually exclusive (한 워크스페이스 = 0~1 폴더)
+  - Codable backward-compat (isExpanded/iconName 옵션)
+- `AppPreferences` 확장:
+  - `pinnedWorkspaceIds: [UUID]` 신규 (순서 유지)
+  - `workspaceFolders: [WorkspaceFolder]` 신규
+  - decode default: 빈 배열 (기존 사용자 영향 없음)
+
+**Phase 2 — AppModel methods**
+- `togglePin(_:)`, `isPinned(_:)`
+- `folder(containing:)` — 워크스페이스가 속한 폴더 lookup
+- `createFolder(name:)` → 새 UUID 반환
+- `renameFolder(id:to:)`, `deleteFolder(id:)`, `toggleFolderExpansion(id:)`
+- `moveWorkspace(_:toFolder:)` — 폴더 간 이동 + 자동 정리
+- `deleteWorkspace` 강화: orphan 핀/폴더 항목 자동 정리
+
+**Phase 3 — Sidebar UI 재설계**
+새 사이드바 구조:
+1. Top header (collapse + search)
+2. Primary actions (새 워크스페이스 + 설정)
+3. **📌 핀 그룹** (있을 때만, 항상 최상단)
+4. **📁 폴더 그룹들** (각 expand/collapse, 카운트 뱃지)
+5. **기타 워크스페이스** (uncategorized)
+6. **새 폴더 만들기** 버튼 (하단)
+7. Update card + Bottom user card
+- `FolderHeaderRow`: chevron + folder icon + 이름 + 카운트 capsule
+- `WorkspaceItemRow` 확장: `isPinned` indicator, `indented` (폴더 안)
+- 단축키 ⌘1~9: pinned → folders (expanded) → uncategorized 순서로 자동 매핑
+
+**Phase 4 — Context menu 확장**
+워크스페이스 우클릭 메뉴:
+- "상단에 고정" / "상단 고정 해제"
+- "폴더로 이동" → submenu:
+  - 폴더에서 제거 (전체로)
+  - 기존 폴더 목록 (현재 폴더에 ✓ 표시)
+  - 새 폴더 만들기…
+- 기존 메뉴 (이름 복사, 텔레그램, Delivery, ProjectProfile, 지우기)
+
+폴더 헤더 우클릭:
+- 이름 바꾸기
+- 폴더 삭제 (안의 워크스페이스는 유지)
+
+**FolderRenameSheet 신규** (`Sources/YuminaiApp/FolderRenameSheet.swift`):
+- 460×220 sheet (YuminaiSheet 적용 — footer 고정)
+- 생성 모드 (existingFolder == nil) vs 이름 변경 모드 (existingFolder != nil)
+- TextField focus 자동 + Enter 단축키
+
+**Phase 5 — Tests**
+- `Tests/YuminaiCoreTests/WorkspaceFolderTests.swift` (9 tests)
+  - WorkspaceFolder init / Codable round-trip / backward-compat
+  - Identifiable / Hashable
+  - AppPreferences pin + folder default
+  - decode without ADR-076 fields (기존 사용자)
+  - encode/decode round-trip with pin + folders
+
+근거 (Apple HIG + UX 연구):
+- Apple HIG "Sidebars": "Group related items together for easier navigation"
+- NN/g "Hierarchical IA": 평면 1단계 > 깊은 nested
+- Apple Finder + Codex CLI: single-folder pattern (mutually exclusive)
+- Claude Code 사이드바: pinned conversations 패턴
+
+### 빌드/테스트 결과
+- swift build → Build complete!
+- swift test → **542/542 passed** (112 suites, +9 new tests)
+- /Applications/Yuminai.app 재설치 + 실행 (PID 37607)
+
+### 새 파일
+- Sources/YuminaiCore/WorkspaceFolder.swift
+- Sources/YuminaiApp/FolderRenameSheet.swift
+- Tests/YuminaiCoreTests/WorkspaceFolderTests.swift
+
+### 수정 파일
+- Sources/YuminaiCore/AppPreferences.swift (pinnedWorkspaceIds + workspaceFolders 필드)
+- Sources/YuminaiApp/AppModel.swift (Pin + Folder methods + 상태)
+- Sources/YuminaiUI/SidebarView.swift (전면 재설계 — Pin 그룹 + Folder 그룹)
+- Sources/YuminaiApp/RootView.swift (SidebarView 새 콜백 + FolderRenameSheet)
+
+---
+
 ### Added — ADR-075 사용량 대시보드 고도화 (Compact + Detailed + Agent/Model picker) (5 phases)
 
 **사용자 피드백** (2026-05-03):

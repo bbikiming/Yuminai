@@ -96,6 +96,29 @@ struct RootView: View {
                 onCancel: { appModel.showCreateWorkspaceSheet = false }
             )
         }
+        // ADR-076 Phase 4 — 폴더 생성/이름 변경 sheet
+        .sheet(isPresented: $bindable.showFolderRenameSheet) {
+            FolderRenameSheet(
+                existingFolder: appModel.preferences.workspaceFolders.first {
+                    $0.id == appModel.folderRenameTargetId
+                },
+                onConfirm: { name in
+                    Task {
+                        if let id = appModel.folderRenameTargetId {
+                            await appModel.renameFolder(id: id, to: name)
+                        } else {
+                            _ = await appModel.createFolder(name: name)
+                        }
+                        appModel.showFolderRenameSheet = false
+                        appModel.folderRenameTargetId = nil
+                    }
+                },
+                onCancel: {
+                    appModel.showFolderRenameSheet = false
+                    appModel.folderRenameTargetId = nil
+                }
+            )
+        }
         .sheet(isPresented: $bindable.showUsageDashboard) {
             // ADR-075 — UsageDashboard 입력 helpers (RootView 스코프).
             let activeWorkspace = appModel.workspaces.first { $0.id == appModel.selectedWorkspaceId }
@@ -514,6 +537,9 @@ struct RootView: View {
             telegramAvailable: appModel.preferences.telegramEnabled
                 && appModel.telegramTokenStatus == .set
                 && appModel.preferences.telegramChatId != nil,
+            // ADR-076 — Pin + Folder 데이터 전달
+            pinnedWorkspaceIds: appModel.preferences.pinnedWorkspaceIds,
+            folders: appModel.preferences.workspaceFolders,
             onCreate: {
                 appModel.showCreateWorkspaceSheet = true
                 if layoutMode.sidebarIsOverlay { sidebarOverlayShown = false }
@@ -534,6 +560,27 @@ struct RootView: View {
             },
             onEditProjectProfile: { ws in
                 appModel.presentExclusiveSheet { $0.editingProjectProfileForWorkspaceId = ws.id }
+            },
+            // ADR-076 — Pin + Folder 콜백
+            onTogglePin: { ws in
+                Task { await appModel.togglePin(ws.id) }
+            },
+            onToggleFolderExpansion: { folderId in
+                Task { await appModel.toggleFolderExpansion(id: folderId) }
+            },
+            onMoveToFolder: { ws, folderId in
+                Task { await appModel.moveWorkspace(ws.id, toFolder: folderId) }
+            },
+            onCreateFolder: {
+                appModel.folderRenameTargetId = nil  // nil = 새 폴더 생성 모드
+                appModel.showFolderRenameSheet = true
+            },
+            onRenameFolder: { folder in
+                appModel.folderRenameTargetId = folder.id
+                appModel.showFolderRenameSheet = true
+            },
+            onDeleteFolder: { folder in
+                Task { await appModel.deleteFolder(id: folder.id) }
             },
             userName: "yuminai",
             updateAvailable: false

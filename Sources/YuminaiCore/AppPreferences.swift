@@ -90,6 +90,13 @@ public struct AppPreferences: Sendable, Codable, Hashable {
     /// **ADR-072 Phase 4** — 첫 실행 wizard 완료 여부.
     /// false면 SplashScreen 후 OnboardingWizard 표시.
     public var hasCompletedOnboarding: Bool
+    /// **ADR-076 Phase 1** — 사이드바 상단에 고정된 워크스페이스 IDs.
+    /// 고정된 항목들은 폴더와 무관하게 사이드바 최상단 "핀" 그룹에 표시.
+    /// Set 대신 Array — 사용자가 핀 순서를 정렬 가능 (기본: pin 순서).
+    public var pinnedWorkspaceIds: [UUID]
+    /// **ADR-076 Phase 1** — 워크스페이스 폴더 (Codex CLI 스타일 그룹화).
+    /// 한 워크스페이스는 0~1개 폴더에만 속할 수 있음 (folder.workspaceIds로 추적).
+    public var workspaceFolders: [WorkspaceFolder]
 
     public init(
         claudeBinaryPath: String = AppPreferences.detectClaudeBinaryPath(),
@@ -124,7 +131,9 @@ public struct AppPreferences: Sendable, Codable, Hashable {
         fontSizeOffset: Int = 0,
         showInspectorByDefault: Bool = false,
         beginnerMode: Bool = true,  // ADR-071 Phase 1 — 새 사용자는 초보자 모드로 시작
-        hasCompletedOnboarding: Bool = false  // ADR-072 Phase 4 — 새 사용자는 wizard 표시
+        hasCompletedOnboarding: Bool = false,  // ADR-072 Phase 4 — 새 사용자는 wizard 표시
+        pinnedWorkspaceIds: [UUID] = [],  // ADR-076 Phase 1
+        workspaceFolders: [WorkspaceFolder] = []  // ADR-076 Phase 1
     ) {
         self.claudeBinaryPath = claudeBinaryPath
         self.codexBinaryPath = codexBinaryPath
@@ -159,6 +168,8 @@ public struct AppPreferences: Sendable, Codable, Hashable {
         self.showInspectorByDefault = showInspectorByDefault
         self.beginnerMode = beginnerMode
         self.hasCompletedOnboarding = hasCompletedOnboarding
+        self.pinnedWorkspaceIds = pinnedWorkspaceIds
+        self.workspaceFolders = workspaceFolders
     }
 
     // ADR-046 — 신규 필드 backward-compat: 기존 JSON에 없으면 default 적용
@@ -199,6 +210,9 @@ public struct AppPreferences: Sendable, Codable, Hashable {
         self.beginnerMode = try c.decodeIfPresent(Bool.self, forKey: .beginnerMode) ?? false
         // ADR-072 Phase 4 — 기존 사용자는 true (이미 사용 중이라 wizard 불필요). 신규만 false → wizard.
         self.hasCompletedOnboarding = try c.decodeIfPresent(Bool.self, forKey: .hasCompletedOnboarding) ?? true
+        // ADR-076 Phase 1 — 신규 필드, 기존 사용자는 빈 배열로 시작
+        self.pinnedWorkspaceIds = try c.decodeIfPresent([UUID].self, forKey: .pinnedWorkspaceIds) ?? []
+        self.workspaceFolders = try c.decodeIfPresent([WorkspaceFolder].self, forKey: .workspaceFolders) ?? []
     }
 
     /// `claude` CLI의 가능성 높은 위치들을 순서대로 시도해 첫 번째 존재하는 경로 반환.

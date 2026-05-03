@@ -51,6 +51,10 @@ public final class AppModel {
     public var showCreateWorkspaceSheet: Bool = false
     public var showUsageDashboard: Bool = false
     public var showInspector: Bool = false
+    /// **ADR-076 Phase 4** — 폴더 이름 입력/변경 sheet.
+    /// `folderRenameTargetId`가 nil이면 새 폴더 생성, 있으면 해당 폴더 이름 변경.
+    public var showFolderRenameSheet: Bool = false
+    public var folderRenameTargetId: UUID?
 
     // 활성 세션 설정 (toolbar에서 즉시 변경 가능)
     public var activeSettings: SessionSettings = .default
@@ -880,10 +884,85 @@ public final class AppModel {
                 await teardownCurrentSession()
                 selectedWorkspaceId = nil
             }
+            // ADR-076 — 삭제된 워크스페이스를 핀/폴더에서도 제거 (orphan 방지)
+            preferences.pinnedWorkspaceIds.removeAll { $0 == workspace.id }
+            for idx in preferences.workspaceFolders.indices {
+                preferences.workspaceFolders[idx].workspaceIds.removeAll { $0 == workspace.id }
+            }
+            await savePreferences()
             await refreshWorkspaces()
         } catch {
             self.error = error.localizedDescription
         }
+    }
+
+    // MARK: - ADR-076 Phase 2 — Pin + Folder management
+
+    /// 워크스페이스가 핀되어 있는지.
+    public func isPinned(_ workspaceId: UUID) -> Bool {
+        preferences.pinnedWorkspaceIds.contains(workspaceId)
+    }
+
+    /// 핀 토글 (이미 핀이면 해제, 아니면 추가).
+    public func togglePin(_ workspaceId: UUID) async {
+        if let idx = preferences.pinnedWorkspaceIds.firstIndex(of: workspaceId) {
+            preferences.pinnedWorkspaceIds.remove(at: idx)
+        } else {
+            preferences.pinnedWorkspaceIds.append(workspaceId)
+        }
+        await savePreferences()
+    }
+
+    /// 워크스페이스가 속한 폴더 (없으면 nil).
+    public func folder(containing workspaceId: UUID) -> WorkspaceFolder? {
+        preferences.workspaceFolders.first { $0.workspaceIds.contains(workspaceId) }
+    }
+
+    /// 새 폴더 생성. 이름은 사용자가 입력.
+    public func createFolder(name: String) async -> UUID {
+        let folder = WorkspaceFolder(name: name)
+        preferences.workspaceFolders.append(folder)
+        await savePreferences()
+        return folder.id
+    }
+
+    /// 폴더 이름 변경.
+    public func renameFolder(id: UUID, to newName: String) async {
+        guard let idx = preferences.workspaceFolders.firstIndex(where: { $0.id == id }) else {
+            return
+        }
+        preferences.workspaceFolders[idx].name = newName
+        await savePreferences()
+    }
+
+    /// 폴더 삭제 (안의 워크스페이스는 uncategorized로 이동, 삭제 X).
+    public func deleteFolder(id: UUID) async {
+        preferences.workspaceFolders.removeAll { $0.id == id }
+        await savePreferences()
+    }
+
+    /// 폴더 expand/collapse 토글.
+    public func toggleFolderExpansion(id: UUID) async {
+        guard let idx = preferences.workspaceFolders.firstIndex(where: { $0.id == id }) else {
+            return
+        }
+        preferences.workspaceFolders[idx].isExpanded.toggle()
+        await savePreferences()
+    }
+
+    /// 워크스페이스를 폴더로 이동 (기존 폴더에서 자동 제거 후 새 폴더에 추가).
+    /// folderId가 nil이면 모든 폴더에서 제거 (uncategorized로).
+    public func moveWorkspace(_ workspaceId: UUID, toFolder folderId: UUID?) async {
+        // 기존 모든 폴더에서 제거
+        for idx in preferences.workspaceFolders.indices {
+            preferences.workspaceFolders[idx].workspaceIds.removeAll { $0 == workspaceId }
+        }
+        // 새 폴더에 추가 (folderId가 있으면)
+        if let folderId,
+           let idx = preferences.workspaceFolders.firstIndex(where: { $0.id == folderId }) {
+            preferences.workspaceFolders[idx].workspaceIds.append(workspaceId)
+        }
+        await savePreferences()
     }
 
     public func selectWorkspace(_ id: UUID?) async {
