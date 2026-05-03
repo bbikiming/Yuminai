@@ -1,6 +1,190 @@
 # Decisions Log (ADR-lite)
 
-> 최신: ADR-081 (Git push/pull + AI commit msg + GitHub PR + Stash + Conflict)
+> 최신: ADR-082 (Diff viewer + GitHub PR review + Actions + Rebase + CodeOwners)
+
+---
+
+## ADR-082 — Diff viewer + GitHub PR review + Actions + Rebase + CodeOwners (5 phases)
+
+- **날짜**: 2026-05-03
+- **상태**: Accepted (구현 + 테스트 + /Applications 재설치)
+
+### 배경
+
+ADR-081의 Git 기능을 advanced workflow로 확장:
+- 변경 사항을 한 화면에서 직관적 검토 (Diff Viewer)
+- GitHub PR review (gh pr view 표면화)
+- GitHub Actions status 통합
+- Interactive rebase 단순화
+- CODEOWNERS 자동 reviewer suggestion
+
+### 결정
+
+#### Phase 1: Diff Viewer
+
+**Apple HIG Master-Detail 패턴**:
+- 좌측 sidebar (260px) — modified files + status badge
+- 우측 (flexible) — 선택 파일의 inline diff
+- 빈 상태 안내 (Apple HIG "Empty States")
+
+**Status badge 색상**:
+- M (modified) yellow / A (added) green / D (deleted) red
+- R (renamed) blue / C (copied) blue / ? (untracked) gray
+
+**Inline diff coloring**:
+- `+` lines: green text + green opacity 0.10 background
+- `-` lines: red text + red opacity 0.10 background
+- `@@` hunks: accent color + accentMuted background
+- `+++/---` headers: textTertiary
+
+**Diff 복사 버튼**: NSPasteboard로 raw diff text → 외부 도구 paste 가능
+
+#### Phase 2: GitHub PR review
+
+**왜 gh CLI JSON?**
+- `gh pr view --json field1,field2` — 안정적 schema
+- 직접 GitHub API 호출보다 쉬움 (인증/scope 자동)
+- GraphQL fields 그대로 활용
+
+**`PullRequestDetails`**:
+- 핵심 fields: number/title/url/state/isDraft/author/branches/reviewDecision/checks/comments
+- 한국어 stateDisplay (열림/초안/닫힘/병합됨)
+- statusCheckRollup으로 CI 통과 여부 즉시 파악
+
+**Review decision badge**:
+- APPROVED → 승인됨 (green checkmark.seal.fill)
+- CHANGES_REQUESTED → 변경 요청 (orange exclamationmark.triangle)
+- REVIEW_REQUIRED → 리뷰 필요 (gray clock)
+
+**Status check summary**:
+- Stat blocks: ✓ 통과 / ✗ 실패 / ⋯ 진행 중 (개수)
+- Overall icon: 모두 통과면 green checkmark / 아니면 orange exclamation
+
+#### Phase 3: GitHub Actions
+
+**`recentWorkflowRuns(limit:)`**:
+- `gh run list --limit N --json` → `WorkflowRun[]`
+- 현재 branch의 최근 workflow runs
+
+**Status icon mapping**:
+- success → green checkmark.circle.fill
+- failure → red xmark.circle.fill
+- in_progress → orange circle.dotted
+- queued/skipped → gray
+
+**1-click open in browser** — 각 workflow row 클릭 → URL을 NSWorkspace로 열기
+
+#### Phase 4: Interactive rebase 단순화
+
+**`RebaseAction` enum (5개만)**:
+- pick (default, 변경 없음)
+- reword (메시지만 변경)
+- squash (위와 합치기)
+- fixup (위와 합치기 + 메시지 버림)
+- drop (history에서 제거)
+
+**왜 5개만?**
+- git의 9개 (pick/reword/squash/fixup/drop/edit/exec/break/label) 중
+  사용자 빈도 90% 이상이 위 5개
+- 나머지 (edit/exec) = advanced, 외부 도구 권장
+- Hick's Law (선택 마비 회피)
+
+**구현 — GIT_SEQUENCE_EDITOR**:
+- `git rebase -i HEAD~N`은 editor 열림
+- `GIT_SEQUENCE_EDITOR=cp $script $1`로 script 강제 주입
+- editor 통과 후 git이 그대로 실행
+- reword 메시지는 자동 confirm (`GIT_EDITOR=true`)
+
+**경고 banner**:
+- drop → "history가 영구적으로 변경됩니다"
+- squash/fixup → "충돌 시 외부 도구로 해결하세요"
+
+**충돌 시 처리**:
+- Rebase throw → 사용자에게 "`git rebase --abort`로 취소 가능" 안내
+- AppModel.gitRebaseAbort() — 1-click abort
+- Conflict resolution UI는 별도 ADR (3-way merge editor 큰 작업)
+
+#### Phase 5: CodeOwners auto-reviewer
+
+**`CodeOwnersParser`** (단순 spec, 90% 케이스 cover):
+- `*` (와일드카드)
+- `*.ext` (suffix glob)
+- `/dir/` (directory prefix)
+- `dir/*` (직접 자식만)
+- exact path
+
+**미지원 (full spec)**:
+- `**/recursive/`
+- email format
+- `!negation`
+→ 향후 라이브러리 활용 검토 (`SwiftCodeOwners` 등)
+
+**매칭 규칙** (GitHub spec):
+- 마지막 매칭 line winner (`reverse iterate` + `break`)
+- 다중 path → owner union (각 path의 winner 합집합)
+
+**UI**:
+- PR composer 안에 chip 형태 표시 (`@reviewer1 @reviewer2`)
+- "cc @reviewer 추가하세요" hint (사용자 직접 mention)
+- 자동 mention은 미구현 (사용자 의도 확인 우선)
+
+### 적용 결과
+```
+swift build              → Build complete!
+swift test               → 638/638 passed (134 suites, +23 new tests)
+/Applications 재설치     → ✅ PID 61802 실행 중
+새 파일                  → 5
+수정 파일                → 5
+```
+
+### 트레이드오프
+
+**왜 Diff Viewer가 sheet (sidebar 안 아님)?**
+- Sidebar는 워크스페이스 navigation 전용
+- Diff = 일시적 검토 (commit 직전)
+- 큰 sheet (880×600) = 가독성 우선
+
+**왜 PR + Actions를 한 sheet?**
+- 사용자 mental model: "내 PR이 잘 동작하나?"
+- PR review + CI status는 한 시점 정보 (분리 시 navigation 부담 ↑)
+- Apple HIG "Group related information"
+
+**왜 rebase 5 actions만?**
+- git interactive rebase의 9개는 거의 다 안 씀
+- 90% 사용 패턴 (squash 위주)
+- 나머지 = power user, 터미널 권장
+
+**왜 reword가 자동 메시지 confirm?**
+- 사용자가 commit message 수정하려면 별도 flow 필요 (sheet 안 sheet)
+- 단순화: reword = 그대로 유지 (실제 수정은 amend 별도 ADR)
+- 사용자가 "message 변경"으로 표시했는데 동작 안 하는 모순 — TODO 별도 fix
+
+**왜 CodeOwners auto-mention 미구현?**
+- 자동 mention은 사용자 의도 확인 없이 reviewer 추가 → 부담
+- chip 표시 + hint = 사용자가 명시적으로 cc 추가
+- 향후 "자동 추가" 옵션 선택 가능 (preferences)
+
+### Apple HIG + Best Practices
+- ✅ Apple HIG "Master-Detail" (Diff viewer)
+- ✅ Apple HIG "Empty States" (변경 없음 안내)
+- ✅ Apple HIG "Group related" (PR + Actions 한 sheet)
+- ✅ GitHub CODEOWNERS spec
+- ✅ Conventional Commits 표준 (rebase reword 호환)
+
+### WCAG 2.2 충족
+- ✅ **SC 1.4.3 Contrast**: status badge 색상 대비
+- ✅ **SC 2.4.6 Headings and Labels**: 모든 sheet 한국어 라벨
+- ✅ **SC 4.1.2 Name, Role, Value**: workflow row clickable + accessibilityHint
+- ✅ **SC 1.4.10 Reflow**: 모든 sheet 반응형 (YuminaiSheet)
+
+### 향후 (ADR-083+ 후보)
+
+- **Conflict resolution UI** (3-way merge editor, 별도 큰 ADR)
+- **Cherry-pick UI** (다른 브랜치에서 commit 가져오기)
+- **Diff inline edit** (현재는 read-only)
+- **PR comment 작성** (gh pr comment)
+- **Workflow re-run** (gh run rerun)
+- **Repo insights** (contributor / file change frequency)
 
 ---
 

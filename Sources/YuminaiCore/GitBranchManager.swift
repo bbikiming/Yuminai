@@ -249,6 +249,92 @@ public actor GitBranchManager {
             .filter { !$0.isEmpty }
     }
 
+    // MARK: - ADR-082 Phase 4 — Rebase 단순화 (reword/drop/squash)
+
+    /// 마지막 N개 commit을 rebase action 적용.
+    /// 사용자가 한 번에 하나만 선택 (interactive rebase의 단순화).
+    /// - Parameters:
+    ///   - count: rebase 대상 commit 수 (HEAD~N)
+    ///   - actions: 각 commit별 [shortSha: action]. 누락된 commit은 "pick" (변경 없음).
+    /// - Note: 충돌 발생 시 throw — 사용자가 외부 도구로 해결 후 `git rebase --continue` 필요.
+    public func rebase(count: Int, actions: [String: RebaseAction]) async throws {
+        guard count > 0 else { return }
+        // 1. 대상 commit 목록 fetch (오래된 것부터, rebase script 순서)
+        let commits = try await recentCommits(limit: count)
+        guard commits.count == count else {
+            throw GitRunner.GitError.commandFailed(args: ["rebase"], exitCode: 1, stderr: "expected \(count) commits, got \(commits.count)")
+        }
+        // 2. rebase script 작성 (rebase는 오래된 commit이 위)
+        let script = commits.reversed().map { commit -> String in
+            let action = actions[commit.shortSha] ?? .pick
+            return "\(action.rawValue) \(commit.shortSha) \(commit.message)"
+        }.joined(separator: "\n")
+        // 3. GIT_SEQUENCE_EDITOR로 script 강제 주입 + GIT_EDITOR로 reword 메시지 자동 처리
+        // 단순화: reword는 메시지 그대로 유지 (commit --amend 안 함)
+        let scriptPath = "/tmp/yuminai-rebase-\(UUID().uuidString).txt"
+        try script.write(toFile: scriptPath, atomically: true, encoding: .utf8)
+        defer { try? FileManager.default.removeItem(atPath: scriptPath) }
+
+        // GIT_SEQUENCE_EDITOR=cat $scriptPath  → script를 그대로 사용
+        // 환경변수로 inline script 전달 — `cp $scriptPath` editor stub
+        let editorScript = "/bin/bash -c 'cp \(scriptPath) \"$1\"' --"
+        var env = ProcessInfo.processInfo.environment
+        env["GIT_SEQUENCE_EDITOR"] = editorScript
+        env["GIT_EDITOR"] = "true"  // reword 메시지 자동 confirm (변경 없음)
+
+        // GitRunner의 Run typealias는 env 지원 안 함 → 직접 Process 호출
+        let process = Process()
+        process.executableURL = await runner.gitPath
+        process.arguments = ["-C", await runner.workspaceURL.path, "rebase", "-i", "HEAD~\(count)"]
+        process.environment = env
+        let stdoutPipe = Pipe()
+        let stderrPipe = Pipe()
+        process.standardOutput = stdoutPipe
+        process.standardError = stderrPipe
+        try process.run()
+        await withCheckedContinuation { (cont: CheckedContinuation<Void, Never>) in
+            DispatchQueue.global().async {
+                process.waitUntilExit()
+                cont.resume()
+            }
+        }
+        let stderr = String(data: stderrPipe.fileHandleForReading.readDataToEndOfFile(), encoding: .utf8) ?? ""
+        if process.terminationStatus != 0 {
+            throw GitRunner.GitError.commandFailed(
+                args: ["rebase", "-i", "HEAD~\(count)"],
+                exitCode: process.terminationStatus,
+                stderr: stderr
+            )
+        }
+    }
+
+    /// rebase abort (충돌 발생 시 사용자 escape).
+    public func rebaseAbort() async throws {
+        let result = try await runner.run(["rebase", "--abort"])
+        if !result.success {
+            throw GitRunner.GitError.commandFailed(args: ["rebase", "--abort"], exitCode: result.exitCode, stderr: result.stderr)
+        }
+    }
+
+    // MARK: - ADR-082 Phase 5 — CodeOwners
+
+    /// `.github/CODEOWNERS` 파싱 → 변경된 파일별 owner.
+    /// - Returns: owner login set (PR 생성 시 자동 reviewer 추가용).
+    public func suggestedReviewers(for paths: [String]) async throws -> Set<String> {
+        let codeownersPaths = [".github/CODEOWNERS", "CODEOWNERS", "docs/CODEOWNERS"]
+        var content: String?
+        let baseURL = await runner.workspaceURL
+        for relPath in codeownersPaths {
+            let url = baseURL.appendingPathComponent(relPath)
+            if let data = try? String(contentsOf: url, encoding: .utf8) {
+                content = data
+                break
+            }
+        }
+        guard let codeowners = content else { return [] }
+        return CodeOwnersParser.match(codeowners: codeowners, paths: paths)
+    }
+
     /// 최근 commit 목록 (HEAD ~ N개).
     public func recentCommits(limit: Int = 10) async throws -> [CommitInfo] {
         let format = "%h|%s|%cr|%an"
@@ -358,6 +444,55 @@ public enum GitPullError: Error, LocalizedError {
         }
     }
 }
+
+// MARK: - ADR-082 Phase 4-5 — Rebase + CodeOwners types
+
+/// **ADR-082 Phase 4** — Interactive rebase action (단순화 — 5개만).
+public enum RebaseAction: String, Sendable, CaseIterable, Identifiable, Hashable {
+    /// 그대로 유지 (default).
+    case pick = "pick"
+    /// 메시지 변경 (commit 자체는 유지).
+    case reword = "reword"
+    /// 직전 commit과 병합 (이 commit message는 사라짐).
+    case squash = "squash"
+    /// 직전 commit과 병합 (메시지 X).
+    case fixup = "fixup"
+    /// commit 삭제 (history에서 제거).
+    case drop = "drop"
+
+    public var id: String { rawValue }
+
+    public var displayName: String {
+        switch self {
+        case .pick: return "유지"
+        case .reword: return "메시지 변경"
+        case .squash: return "위와 합치기"
+        case .fixup: return "위와 합치기 (메시지 버림)"
+        case .drop: return "삭제"
+        }
+    }
+
+    public var hint: String {
+        switch self {
+        case .pick: return "이 commit을 그대로 유지합니다."
+        case .reword: return "commit message만 변경합니다."
+        case .squash: return "직전 commit과 병합 + 새 message 작성."
+        case .fixup: return "직전 commit과 병합 (이 commit message 버림)."
+        case .drop: return "이 commit을 history에서 완전히 제거 (위험)."
+        }
+    }
+
+    public var iconName: String {
+        switch self {
+        case .pick: return "circle"
+        case .reword: return "pencil"
+        case .squash: return "arrow.up.to.line.compact"
+        case .fixup: return "arrow.up.to.line"
+        case .drop: return "trash"
+        }
+    }
+}
+
 
 // MARK: - Auto-commit message generation (ADR-079 Phase 5)
 

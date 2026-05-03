@@ -4,6 +4,82 @@
 
 ## [Unreleased] — 2026-05-03
 
+### Added — ADR-082 Diff viewer + GitHub PR review + Actions + Rebase + CodeOwners (5 phases)
+
+**사용자 요청**: "다음 진행해줘" (ADR-081 다음 라운드)
+
+**Phase 1 — Git Diff Viewer**
+- `Sources/YuminaiApp/GitDiffSheet.swift` 신규 (880×600)
+- 좌측: modified files list (status badge M/A/D/R/C/?)
+- 우측: 선택한 파일의 inline diff (+ green / - red / @@ accent background)
+- 새로고침 / Diff 복사 / 빈 상태 안내
+- BranchPicker secondary action에 "Diff 보기" 버튼
+
+**Phase 2 — GitHub PR review (gh pr view)**
+- `GitHubCLIRunner.pullRequestDetails()` — `gh pr view --json` 활용
+- `PullRequestDetails` struct (number/title/state/author/branches/checks/comments)
+- `stateDisplay` 한국어 (열림/초안/닫힘/병합됨)
+- review decision badge (승인됨/변경 요청/리뷰 필요)
+- status checks summary (✓ 통과 / ✗ 실패 / ⋯ 진행 중)
+- "브라우저에서 열기" 버튼
+
+**Phase 3 — GitHub Actions integration**
+- `GitHubCLIRunner.recentWorkflowRuns()` — `gh run list --json` 활용
+- `WorkflowRun` struct (workflowName/status/conclusion + 한국어 displayStatus)
+- workflow row (icon 색상 매핑: success green / failure red / in_progress orange)
+- 1-click open in browser (각 workflow run)
+- GitHubPRSheet 안에 통합 (PR + Actions 한 화면)
+
+**Phase 4 — Git rebase 단순화 (interactive rebase)**
+- `RebaseAction` enum (pick/reword/squash/fixup/drop) + 한국어 displayName/hint
+- `GitBranchManager.rebase(count:actions:)` — GIT_SEQUENCE_EDITOR 환경변수로 script 주입
+- `Sources/YuminaiApp/GitRebaseSheet.swift` 신규 (720×580)
+- 마지막 N개 commit list (Stepper로 1~20)
+- 각 commit별 Picker (action 선택, drop = strikethrough)
+- drop/squash 시 경고 banner
+- AppModel.gitRebase + gitRebaseAbort
+
+**Phase 5 — CodeOwners auto-reviewer + Tests**
+- `Sources/YuminaiCore/CodeOwnersParser.swift` 신규 (단순 spec)
+  - `parse()` — `.github/CODEOWNERS` 텍스트 → Rules
+  - `match()` — 변경된 paths → owner Set (마지막 매칭 winner)
+  - 지원: `*` / `*.ext` / `/dir/` / `dir/*` / exact path
+- `GitBranchManager.suggestedReviewers(for:)` — CODEOWNERS 파싱 → Set<String>
+- AppModel.suggestedReviewers() — 변경된 파일들의 추천 리뷰어
+- PR composer에 추천 리뷰어 chip 표시 + "cc @reviewer" hint
+- Tests: CodeOwnersAndPRTests +23
+  - CodeOwnersParser (9 tests): wildcard / dir prefix / suffix glob / no match / @ stripping / multi paths / parse rules
+  - RebaseAction (5 tests): allCases / rawValue / displayName / hint / Identifiable
+  - PullRequestDetails (5 tests): stateDisplay / allChecksPass / failedChecks / pendingChecks / nil checks
+  - WorkflowRun (4 tests): success / failure / in_progress / Identifiable
+
+근거:
+- GitHub CODEOWNERS spec (https://docs.github.com/en/repositories/managing-your-repositories-settings-and-features/customizing-your-repository/about-code-owners)
+- gh CLI JSON output (안정적 schema)
+- Git rebase -i interactive editor 패턴
+- Apple HIG "Master-Detail" (Diff viewer)
+
+### 빌드/테스트 결과
+- swift build → Build complete!
+- swift test → **638/638 passed** (134 suites, +23 new tests)
+- /Applications/Yuminai.app 재설치 + 실행 (PID 61802)
+
+### 새 파일
+- Sources/YuminaiCore/CodeOwnersParser.swift
+- Sources/YuminaiApp/GitDiffSheet.swift
+- Sources/YuminaiApp/GitHubPRSheet.swift
+- Sources/YuminaiApp/GitRebaseSheet.swift
+- Tests/YuminaiCoreTests/CodeOwnersAndPRTests.swift (+23 tests)
+
+### 수정 파일
+- Sources/YuminaiCore/GitHubCLIRunner.swift (PR + Workflow API + 데이터 타입)
+- Sources/YuminaiCore/GitBranchManager.swift (rebase + suggestedReviewers + RebaseAction enum)
+- Sources/YuminaiApp/AppModel.swift (PR/workflow/rebase/openInBrowser/CodeOwners 메서드)
+- Sources/YuminaiApp/RootView.swift (3개 sheet binding)
+- Sources/YuminaiApp/GitBranchPickerSheetWrapper.swift (Diff/Rebase/PR 보기 버튼 + CodeOwners chip)
+
+---
+
 ### Added — ADR-081 Git push/pull + AI commit msg + GitHub PR + Stash + Conflict (5 phases)
 
 **사용자 요청**: "이어서 진행해줘" (ADR-080 다음 라운드 5가지 후보 모두 진행)

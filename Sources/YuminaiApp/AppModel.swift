@@ -74,6 +74,12 @@ public final class AppModel {
     public var showGitStashSheet: Bool = false
     /// **ADR-081 Phase 1** — push/pull 진행 중 (UI 비활성화용).
     public var gitOperationInProgress: Bool = false
+    /// **ADR-082 Phase 1** — Git diff viewer sheet.
+    public var showGitDiffSheet: Bool = false
+    /// **ADR-082 Phase 2** — GitHub PR review sheet.
+    public var showGitHubPRSheet: Bool = false
+    /// **ADR-082 Phase 4** — Git rebase sheet.
+    public var showGitRebaseSheet: Bool = false
 
     // 활성 세션 설정 (toolbar에서 즉시 변경 가능)
     public var activeSettings: SessionSettings = .default
@@ -1653,6 +1659,70 @@ public final class AppModel {
     public func existingPRForCurrentBranch() async -> String? {
         guard let gh = await makeGitHubRunner() else { return nil }
         return try? await gh.existingPullRequest()
+    }
+
+    // MARK: - ADR-082 Phase 2 — PR review
+
+    public func loadPullRequestDetails() async -> PullRequestDetails? {
+        guard let gh = await makeGitHubRunner() else { return nil }
+        return try? await gh.pullRequestDetails()
+    }
+
+    // MARK: - ADR-082 Phase 3 — GitHub Actions
+
+    public func loadRecentWorkflowRuns(limit: Int = 5) async -> [WorkflowRun] {
+        guard let gh = await makeGitHubRunner() else { return [] }
+        return (try? await gh.recentWorkflowRuns(limit: limit)) ?? []
+    }
+
+    /// 시스템 default browser로 URL 열기 (Apple HIG 표준).
+    public func openInBrowser(_ urlString: String) {
+        guard let url = URL(string: urlString) else { return }
+        NSWorkspace.shared.open(url)
+    }
+
+    // MARK: - ADR-082 Phase 4 — Rebase
+
+    public func gitRecentCommits(limit: Int) async -> [CommitInfo] {
+        guard let manager = await makeGitManager() else { return [] }
+        return (try? await manager.recentCommits(limit: limit)) ?? []
+    }
+
+    public func gitRebase(count: Int, actions: [String: RebaseAction]) async {
+        guard let manager = await makeGitManager() else { return }
+        gitOperationInProgress = true
+        defer { gitOperationInProgress = false }
+        do {
+            try await manager.rebase(count: count, actions: actions)
+            await refreshGitStatus()
+            self.error = "✓ Rebase 완료"
+        } catch {
+            self.error = "Rebase 실패: \(error.localizedDescription) — `git rebase --abort`로 취소 가능"
+        }
+    }
+
+    public func gitRebaseAbort() async {
+        guard let manager = await makeGitManager() else { return }
+        do {
+            try await manager.rebaseAbort()
+            await refreshGitStatus()
+        } catch {
+            self.error = "Rebase abort 실패: \(error.localizedDescription)"
+        }
+    }
+
+    // MARK: - ADR-082 Phase 5 — CodeOwners
+
+    /// 변경된 파일들의 suggested reviewers (`.github/CODEOWNERS` 기반).
+    public func suggestedReviewers() async -> Set<String> {
+        guard let ws = workspaces.first(where: { $0.id == selectedWorkspaceId }) else { return [] }
+        let url = URL(fileURLWithPath: ws.directoryPath)
+        let runner = GitRunner(workspaceURL: url)
+        guard await runner.isRepository() else { return [] }
+        let manager = GitBranchManager(runner: runner)
+        let changedFiles = (try? await runner.changedFiles()) ?? []
+        let paths = changedFiles.map { $0.path }
+        return (try? await manager.suggestedReviewers(for: paths)) ?? []
     }
 
     private static func exportTimestamp() -> String {
@@ -3924,10 +3994,13 @@ public final class AppModel {
         showWorkspaceSearchSheet = false
         showTagEditSheet = false
         tagEditTargetId = nil
-        // ADR-079 Phase 4-5 + ADR-081 Phase 4
+        // ADR-079 Phase 4-5 + ADR-081 Phase 4 + ADR-082 Phase 1-2
         showGitCommitSheet = false
         showGitBranchPicker = false
         showGitStashSheet = false
+        showGitDiffSheet = false
+        showGitHubPRSheet = false
+        showGitRebaseSheet = false
     }
 
     /// 새 sheet/alert을 열기 전에 다른 sheet 모두 닫고 setter 실행.

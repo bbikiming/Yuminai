@@ -135,6 +135,21 @@ struct RootView: View {
             GitStashSheet()
                 .environment(appModel)
         }
+        // ADR-082 Phase 1 — Git diff viewer
+        .sheet(isPresented: $bindable.showGitDiffSheet) {
+            GitDiffSheet()
+                .environment(appModel)
+        }
+        // ADR-082 Phase 2-3 — GitHub PR + Actions sheet
+        .sheet(isPresented: $bindable.showGitHubPRSheet) {
+            GitHubPRSheet()
+                .environment(appModel)
+        }
+        // ADR-082 Phase 4 — Git rebase sheet
+        .sheet(isPresented: $bindable.showGitRebaseSheet) {
+            GitRebaseSheet()
+                .environment(appModel)
+        }
         // ADR-079 Phase 4 — Git branch picker (별도 popover로 가능하나 sheet로 통일)
         .sheet(isPresented: $bindable.showGitBranchPicker) {
             GitBranchPickerSheetWrapper()

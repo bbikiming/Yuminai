@@ -1,17 +1,6 @@
 import Foundation
 
-/// **ADR-081 Phase 3** — GitHub `gh` CLI 통합 (Claude Code 패턴 단순화).
-///
-/// 기능:
-/// - gh CLI 자동 감지
-/// - 현재 브랜치 → PR 생성 (title + body)
-/// - 인증 상태 확인
-///
-/// ## 디자인 결정
-/// - **gh CLI 의존**: GitHub API 직접 호출 대신 `gh` 사용 (인증/scope 자동)
-/// - **단순화**: PR 만들기만 (review/merge는 gh PR 페이지에서)
-/// - **Claude Code 패턴**: PR title은 conventional commits 또는 사용자 입력,
-///   body는 변경사항 요약 + AI 생성 옵션
+/// **ADR-081 Phase 3 + ADR-082 Phase 2-3** — GitHub `gh` CLI 통합.
 public actor GitHubCLIRunner {
     public typealias Run = @Sendable (URL, [String]) async throws -> ProcessResult
 
@@ -87,55 +76,64 @@ public actor GitHubCLIRunner {
     }
 
     /// 현재 브랜치로 PR 생성 (push 자동 포함).
-    /// - Parameters:
-    ///   - title: PR 제목 (필수, conventional commits 권장)
-    ///   - body: PR 본문 (markdown, 선택)
-    ///   - draft: draft PR 여부
-    /// - Returns: 생성된 PR URL
     public func createPullRequest(title: String, body: String?, draft: Bool = false) async throws -> String {
         guard await isInstalled() else { throw GitHubError.ghNotInstalled }
         guard await isAuthenticated() else { throw GitHubError.notAuthenticated }
 
-        // gh pr create는 cwd 기반으로 동작 — Process로 cwd 설정 필요 (defaultRun이 처리)
         var args = ["pr", "create", "--title", title]
         if let body, !body.isEmpty {
             args.append("--body")
             args.append(body)
         } else {
             args.append("--body")
-            args.append("")  // 빈 body 명시
+            args.append("")
         }
         if draft { args.append("--draft") }
 
-        let result = try await runWithCwd(args)
+        let result = try await runner(ghPath, args)
         if !result.success {
             throw GitHubError.commandFailed(args: args, exitCode: result.exitCode, stderr: result.stderr)
         }
-        // gh pr create stdout에 PR URL 출력
         return result.stdout.trimmingCharacters(in: .whitespacesAndNewlines)
     }
 
     /// 현재 브랜치 PR 존재 여부 (있으면 URL 반환).
     public func existingPullRequest() async throws -> String? {
         guard await isInstalled() else { return nil }
-        let result = try await runWithCwd(["pr", "view", "--json", "url", "-q", ".url"])
+        let result = try await runner(ghPath, ["pr", "view", "--json", "url", "-q", ".url"])
         guard result.success else { return nil }
         let url = result.stdout.trimmingCharacters(in: .whitespacesAndNewlines)
         return url.isEmpty ? nil : url
     }
 
-    /// cwd가 workspaceURL인 채로 gh 실행.
-    private func runWithCwd(_ args: [String]) async throws -> ProcessResult {
-        try await runner(ghPath, args)
+    // MARK: - ADR-082 Phase 2 — PR review
+
+    public func pullRequestDetails() async throws -> PullRequestDetails? {
+        guard await isInstalled() else { return nil }
+        let fields = "number,title,url,state,isDraft,body,author,headRefName,baseRefName,reviewDecision,statusCheckRollup,comments"
+        let result = try await runner(ghPath, ["pr", "view", "--json", fields])
+        guard result.success else { return nil }
+        guard let data = result.stdout.data(using: .utf8) else { return nil }
+        return try? JSONDecoder().decode(PullRequestDetails.self, from: data)
     }
 
-    // MARK: - Default Process runner (cwd 적용)
+    // MARK: - ADR-082 Phase 3 — GitHub Actions
+
+    public func recentWorkflowRuns(limit: Int = 5) async throws -> [WorkflowRun] {
+        guard await isInstalled() else { return [] }
+        let fields = "databaseId,displayTitle,workflowName,status,conclusion,headBranch,createdAt,url"
+        let result = try await runner(ghPath, ["run", "list", "--limit", "\(limit)", "--json", fields])
+        guard result.success else { return [] }
+        guard let data = result.stdout.data(using: .utf8) else { return [] }
+        return (try? JSONDecoder().decode([WorkflowRun].self, from: data)) ?? []
+    }
+
+    // MARK: - Default runners
 
     public static let defaultRun: Run = { url, args in
         let process = Process()
         process.executableURL = url
         process.arguments = args
-        // cwd 직접 set 불가 (caller가 별도 wrap 필요) — defaultRun은 단순 invocation만
 
         let stdoutPipe = Pipe()
         let stderrPipe = Pipe()
@@ -143,10 +141,10 @@ public actor GitHubCLIRunner {
         process.standardError = stderrPipe
 
         try process.run()
-        await withCheckedContinuation { (continuation: CheckedContinuation<Void, Never>) in
+        await withCheckedContinuation { (cont: CheckedContinuation<Void, Never>) in
             DispatchQueue.global().async {
                 process.waitUntilExit()
-                continuation.resume()
+                cont.resume()
             }
         }
 
@@ -169,10 +167,10 @@ public actor GitHubCLIRunner {
             process.standardError = stderrPipe
 
             try process.run()
-            await withCheckedContinuation { (continuation: CheckedContinuation<Void, Never>) in
+            await withCheckedContinuation { (cont: CheckedContinuation<Void, Never>) in
                 DispatchQueue.global().async {
                     process.waitUntilExit()
-                    continuation.resume()
+                    cont.resume()
                 }
             }
 
@@ -180,5 +178,103 @@ public actor GitHubCLIRunner {
             let stderr = String(data: stderrPipe.fileHandleForReading.readDataToEndOfFile(), encoding: .utf8) ?? ""
             return ProcessResult(exitCode: process.terminationStatus, stdout: stdout, stderr: stderr)
         }
+    }
+}
+
+// MARK: - PR / Workflow data types (ADR-082 Phase 2-3)
+
+public struct PullRequestDetails: Sendable, Codable, Hashable {
+    public let number: Int
+    public let title: String
+    public let url: String
+    public let state: String
+    public let isDraft: Bool
+    public let body: String?
+    public let author: PRAuthor
+    public let headRefName: String
+    public let baseRefName: String
+    public let reviewDecision: String?
+    public let statusCheckRollup: [PRCheck]?
+    public let comments: [PRComment]?
+
+    public struct PRAuthor: Sendable, Codable, Hashable {
+        public let login: String
+    }
+
+    public struct PRCheck: Sendable, Codable, Hashable {
+        public let name: String
+        public let conclusion: String?
+        public let status: String?
+    }
+
+    public struct PRComment: Sendable, Codable, Hashable {
+        public let author: PRAuthor
+        public let body: String
+    }
+
+    public var stateDisplay: String {
+        switch state {
+        case "OPEN": return isDraft ? "초안" : "열림"
+        case "CLOSED": return "닫힘"
+        case "MERGED": return "병합됨"
+        default: return state
+        }
+    }
+
+    public var allChecksPass: Bool {
+        guard let checks = statusCheckRollup else { return true }
+        return checks.allSatisfy { $0.conclusion == "SUCCESS" || $0.conclusion == "SKIPPED" }
+    }
+
+    public var pendingChecks: Int {
+        guard let checks = statusCheckRollup else { return 0 }
+        return checks.filter { $0.status == "IN_PROGRESS" || $0.status == "QUEUED" }.count
+    }
+
+    public var failedChecks: Int {
+        guard let checks = statusCheckRollup else { return 0 }
+        return checks.filter { $0.conclusion == "FAILURE" }.count
+    }
+}
+
+public struct WorkflowRun: Sendable, Codable, Hashable, Identifiable {
+    public let databaseId: Int
+    public let displayTitle: String
+    public let workflowName: String
+    public let status: String
+    public let conclusion: String?
+    public let headBranch: String
+    public let createdAt: String
+    public let url: String
+
+    public var id: Int { databaseId }
+
+    public var displayStatus: String {
+        if status == "completed" {
+            switch conclusion {
+            case "success": return "성공"
+            case "failure": return "실패"
+            case "cancelled": return "취소됨"
+            case "skipped": return "건너뜀"
+            default: return conclusion ?? "완료"
+            }
+        }
+        switch status {
+        case "queued": return "대기 중"
+        case "in_progress": return "진행 중"
+        default: return status
+        }
+    }
+
+    public var isInProgress: Bool {
+        status == "in_progress" || status == "queued"
+    }
+
+    public var isFailure: Bool {
+        status == "completed" && conclusion == "failure"
+    }
+
+    public var isSuccess: Bool {
+        status == "completed" && conclusion == "success"
     }
 }

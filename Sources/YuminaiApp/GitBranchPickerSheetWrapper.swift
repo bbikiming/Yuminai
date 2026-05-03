@@ -11,6 +11,8 @@ struct GitBranchPickerSheetWrapper: View {
     @State private var prBody: String = ""
     @State private var showPRComposer: Bool = false
     @State private var creatingPR: Bool = false
+    /// **ADR-082 Phase 5** — CodeOwners 추천 reviewers.
+    @State private var suggestedReviewers: Set<String> = []
 
     var body: some View {
         VStack(spacing: 0) {
@@ -96,15 +98,38 @@ struct GitBranchPickerSheetWrapper: View {
     }
 
     private var secondaryActionRow: some View {
-        HStack(spacing: 4) {
-            actionButton("Stash", icon: "tray.full", color: Theme.Color.textSecondary) {
-                appModel.showGitBranchPicker = false
-                appModel.showGitStashSheet = true
+        VStack(spacing: 4) {
+            HStack(spacing: 4) {
+                // ADR-082 Phase 1 — Diff viewer
+                actionButton("Diff 보기", icon: "doc.text.magnifyingglass", color: Theme.Color.textSecondary) {
+                    appModel.showGitBranchPicker = false
+                    appModel.showGitDiffSheet = true
+                }
+                actionButton("Stash", icon: "tray.full", color: Theme.Color.textSecondary) {
+                    appModel.showGitBranchPicker = false
+                    appModel.showGitStashSheet = true
+                }
+                // ADR-082 Phase 4 — Rebase
+                actionButton("Rebase", icon: "arrow.triangle.2.circlepath", color: Theme.Color.textSecondary) {
+                    appModel.showGitBranchPicker = false
+                    appModel.showGitRebaseSheet = true
+                }
             }
-            actionButton("PR 만들기", icon: "arrow.up.right.square", color: Theme.Color.accent) {
-                prTitle = "feat: \(appModel.gitBranch ?? "")"
-                prBody = ""
-                withAnimation { showPRComposer = true }
+            HStack(spacing: 4) {
+                // ADR-082 Phase 2 — PR review
+                actionButton("PR 보기", icon: "list.bullet.rectangle", color: Theme.Color.textSecondary) {
+                    appModel.showGitBranchPicker = false
+                    appModel.showGitHubPRSheet = true
+                }
+                actionButton("PR 만들기", icon: "arrow.up.right.square", color: Theme.Color.accent) {
+                    prTitle = "feat: \(appModel.gitBranch ?? "")"
+                    prBody = ""
+                    Task {
+                        // ADR-082 Phase 5 — CodeOwners 추천 reviewers 미리 fetch
+                        suggestedReviewers = await appModel.suggestedReviewers()
+                    }
+                    withAnimation { showPRComposer = true }
+                }
             }
         }
         .padding(Theme.Spacing.sm)
@@ -163,6 +188,41 @@ struct GitBranchPickerSheetWrapper: View {
                 FlatTextField("예: feat: 사용자 인증 추가", text: $prTitle)
             }
             .padding(.horizontal, Theme.Spacing.md)
+
+            // ADR-082 Phase 5 — CodeOwners 추천 reviewers
+            if !suggestedReviewers.isEmpty {
+                VStack(alignment: .leading, spacing: 4) {
+                    HStack(spacing: 4) {
+                        Image(systemName: "person.2.fill")
+                            .font(.system(size: 9))
+                            .foregroundStyle(Theme.Color.accent)
+                        Text("CODEOWNERS 추천 리뷰어")
+                            .font(Theme.Typography.micro)
+                            .foregroundStyle(Theme.Color.textTertiary)
+                            .textCase(.uppercase)
+                    }
+                    HStack(spacing: 4) {
+                        ForEach(Array(suggestedReviewers).sorted(), id: \.self) { reviewer in
+                            HStack(spacing: 3) {
+                                Image(systemName: "person.circle")
+                                    .font(.system(size: 9))
+                                Text("@\(reviewer)")
+                                    .font(Theme.Typography.monoSmall)
+                            }
+                            .foregroundStyle(Theme.Color.text)
+                            .padding(.horizontal, 6)
+                            .padding(.vertical, 3)
+                            .background(Theme.Color.accentMuted)
+                            .clipShape(Capsule())
+                        }
+                        Spacer()
+                    }
+                    Text("PR 본문에 자동 mention하려면 ‘cc @\(suggestedReviewers.first ?? "")’ 추가하세요.")
+                        .font(Theme.Typography.micro)
+                        .foregroundStyle(Theme.Color.textTertiary)
+                }
+                .padding(.horizontal, Theme.Spacing.md)
+            }
 
             VStack(alignment: .leading, spacing: 4) {
                 Text("본문 (markdown 가능)")
