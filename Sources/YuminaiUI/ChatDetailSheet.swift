@@ -36,10 +36,11 @@ public struct ChatDetailSheet: View {
     }
 
     public var body: some View {
-        VStack(spacing: 0) {
-            header
-            Divider()
-            ScrollView {
+        // ADR-074 — YuminaiSheet: header/footer 외 컨텐츠만 스크롤. 큰 화면에선 스크롤 없음.
+        YuminaiSheet(width: 680, height: 600) {
+            VStack(spacing: 0) {
+                header
+                Divider()
                 VStack(alignment: .leading, spacing: Theme.Spacing.lg) {
                     summaryCard
                     workspaceUsageSection
@@ -48,12 +49,9 @@ public struct ChatDetailSheet: View {
                 }
                 .padding(Theme.Spacing.lg)
             }
-            Divider()
+        } footer: {
             footer
         }
-        // ADR-073 — 반응형. 내부 ScrollView 있어 wrap=false.
-        .yuminaiSheetFrame(width: 680, height: 600, wrapInScrollView: false)
-        .background(Theme.Color.bg)
     }
 
     private var header: some View {

@@ -82,12 +82,16 @@ struct YuminaiAppMain: App {
         WindowGroup("Yuminai") {
             RootView()
                 .environment(appModel)
-                .frame(minWidth: 1000, minHeight: 700)
+                // ADR-074 — RootView 자체가 minWindowWidth/Height(460/360) 적용 중.
+                // 여기선 ideal size만 지정 (defaultSize는 SwiftUI가 첫 실행 시 사용).
                 .task {
                     await appModel.bootstrap()
                 }
         }
-        .windowResizability(.contentMinSize)
+        // ADR-074 — `contentMinSize`는 사용자 zoom 동작을 일부 제한할 수 있음.
+        // `.contentSize`로 변경하여 zoom + manual resize 모두 자유롭게.
+        .windowResizability(.contentSize)
+        .defaultSize(width: 1280, height: 800)
         .commands {
             CommandGroup(replacing: .newItem) {
                 Button("새 워크스페이스") {

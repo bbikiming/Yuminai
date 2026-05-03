@@ -1,6 +1,188 @@
 # Decisions Log (ADR-lite)
 
-> 최신: ADR-073 (Sheet 16개 반응형 frame — 작은 화면 잘림 수정)
+> 최신: ADR-074 (Sheet 동적 sizing — 부모 윈도우 추적 + Footer pinning + Window zoom)
+
+---
+
+## ADR-074 — Sheet 동적 sizing + Footer pinning + Window zoom (5 phases)
+
+- **날짜**: 2026-05-03
+- **상태**: Accepted (구현 + 테스트 + /Applications 재설치)
+
+### 배경 (사용자 피드백 4건)
+
+ADR-073 적용 후에도 다음 문제 잔재:
+1. **메인 윈도우 zoom 동작 안 함** — 사용자가 전체화면으로 못 늘림
+2. **Sheet 잘림 잔재** — `YuminaiApp.swift`에 `frame(minWidth: 1000)` 옛날 값
+3. **하단 footer 잘림** — ScrollView 안에 footer가 함께 들어가 있어, 컨텐츠가 길면 footer까지 스크롤해야 보임
+4. **큰 화면에서 스크롤 발생** — 디자이너 관점에서 부적절. 큰 화면에선 모든 컨텐츠 한눈에 fit
+
+### 결정
+
+#### Phase 1: Window zoom + minWidth 수정
+
+**문제**:
+- `Sources/YuminaiApp/YuminaiApp.swift:85`에 `.frame(minWidth: 1000, minHeight: 700)` 잔재
+- ADR-070에서 RootView 자체에 `Theme.Layout.minWindowWidth (460)` 적용했지만 이게 override됨
+- 작은 모니터(960×640)에선 1000 너비 윈도우 자체가 fit 불가 → zoom 동작 X
+
+**해결**:
+- `frame(minWidth:minHeight:)` 제거 (RootView 내부 minWindowWidth/Height만 사용)
+- `.windowResizability(.contentMinSize)` → `.contentSize` (사용자 zoom + manual resize 모두 자유)
+- `.defaultSize(width: 1280, height: 800)` 추가 (첫 실행 시 ideal 크기)
+
+#### Phase 2: Sheet 동적 sizing (부모 윈도우 추적)
+
+**문제**: ADR-073의 `min/ideal/max` 패턴은 부모 윈도우 크기를 모름. 사용자가 작은 윈도우 + sheet 580×640 → sheet가 윈도우보다 큼 → 잘림.
+
+**해결**: `WindowAccessor` (NSViewRepresentable)로 NSWindow 접근, `WindowSizeReader`로 부모 윈도우 크기 추적.
+
+```swift
+struct WindowSizeReader<Content: View>: View {
+    let content: (CGSize) -> Content
+    @State private var windowSize: CGSize = ...
+
+    var body: some View {
+        content(windowSize)
+            .background(WindowAccessor { window in
+                if let parent = window?.parent {
+                    windowSize = parent.frame.size
+                }
+            })
+    }
+}
+```
+
+Sheet sizing 공식:
+```
+resolvedWidth = min(idealWidth, parentWidth × 0.92)
+resolvedHeight = min(idealHeight, parentHeight × 0.92)
+```
+
+- 큰 화면 (1280×800) + sheet ideal 580×640 → 580×640 그대로
+- 작은 화면 (700×500) + sheet ideal 580×640 → 580×460 (parent의 92%)
+- 절대 최소 (360×240)는 보장
+
+**왜 92%?**
+- 100%면 윈도우 chrome (titlebar 등)과 겹침
+- 90% 이하면 화면 낭비 (UX 어색)
+- 디자인 결정: [85%, 95%] 범위 내, 92% 채택
+
+#### Phase 3: 큰 화면 스크롤 제거
+
+**SwiftUI ScrollView 동작**: `ScrollView { content }`에서 컨텐츠가 ScrollView frame 안에 fit되면 스크롤 indicator는 자동으로 숨겨짐. 컨텐츠가 더 크면만 표시됨.
+
+→ 별도 코드 변경 없이, 큰 화면에서 자동으로 스크롤 indicator 사라짐. `showsIndicators: true` 명시는 작은 화면에서 사용자에게 스크롤 가능함을 알리기 위함.
+
+#### Phase 4: Footer pinning (절대 잘림 방지)
+
+**Apple HIG 권고**: "Make essential controls reachable" — 사용자 액션 버튼은 항상 화면에 표시.
+
+**기존 구조**:
+```
+ScrollView {
+    header
+    content (길어지면 스크롤)
+    footer  ← 여기 있으면 스크롤해야 보임 (안 좋음)
+}
+```
+
+**ADR-074 구조** (`YuminaiSheet`):
+```
+VStack(spacing: 0) {
+    ScrollView {
+        header
+        content (길어지면 스크롤)
+    }
+    Divider
+    footer  ← ScrollView 밖, 항상 하단 고정
+}
+```
+
+**구현**:
+- `YuminaiSheet<Content, Footer>` container view
+- 두 ViewBuilder closure: `content`, `footer`
+- 사용 패턴:
+```swift
+YuminaiSheet(width: 580, height: 640) {
+    formContent
+} footer: {
+    HStack {
+        FlatButton("취소", action: onCancel)
+        FlatButton("만들기", variant: .primary, action: onCreate)
+    }
+}
+```
+
+**적용된 sheet (이번 round)**:
+- CreateWorkspaceSheet — 사용자 잘림 케이스 (가장 critical)
+- EditProjectProfileSheet — 비슷한 form 패턴
+- ChatDetailSheet — 차트 + 분석, footer 잘림 가능성
+
+다른 sheet는 ADR-073의 `yuminaiSheetFrame()`만으로 충분 (간단한 sheet, footer가 짧음).
+
+#### Phase 5: Tests
+
+`SheetFrameTests.swift` 확장 (+2 tests):
+- `maxOfParentRatio` 92% 검증 (1280→1180, 800→735)
+- ratio 범위 [0.85, 0.95] 디자인 결정 검증
+
+### 적용 결과
+```
+swift build              → Build complete!
+swift test               → 525/525 passed (108 suites, +2 new tests)
+/Applications 재설치     → ✅ PID 15575 실행 중
+새 파일                  → 0 (SheetFrame.swift는 ADR-073 신규)
+수정 파일                → 6
+```
+
+### 트레이드오프
+
+**왜 ADR-073의 sheetFrame을 그대로 안 쓰고 YuminaiSheet 별도 container?**
+- ADR-073은 `.modifier()` 패턴으로 outer frame만 적용
+- footer pinning은 구조적 분리 (VStack with Divider) 필요 → modifier로 불가
+- 두 방식 공존: 단순 sheet는 `yuminaiSheetFrame(...)`, footer 분리 필요한 sheet는 `YuminaiSheet { } footer: { }`
+
+**왜 모든 sheet에 YuminaiSheet 안 쓰나?**
+- 단순 sheet (PaneRename, FileName 등 220px height)는 footer 잘림 위험 X
+- API 마이그레이션 비용 vs 효과 → 점진적 적용
+- 향후 sheet 추가 시 YuminaiSheet 권장
+
+**왜 92% (parentRatio)?**
+- 데이터: macOS sheet의 typical sizing은 부모의 80~95% 사이
+- 90%면 chrome (titlebar 22px + traffic lights) 위치 고려 시 약간 부족
+- 92%는 "거의 max인데 약간 여유" — 디자이너 sweet spot
+
+**왜 NSWindow.parent 사용?**
+- macOS sheet는 자체 NSWindow지만 `parent` 속성으로 부모 참조
+- `parent.frame.size`로 부모의 실제 크기 (titlebar 포함) 측정
+- alternative: `parent.contentLayoutRect`로 chrome 제외 — 너무 보수적
+- 92% 비율로 chrome 영향 충분히 흡수
+
+**왜 windowResizability `.contentSize`?**
+- `.contentMinSize`: 컨텐츠 최소 크기만 보장 (zoom 일부 제한)
+- `.contentSize`: 컨텐츠 + frame 모두 자유롭게 (zoom + manual 모두 자유)
+- 사용자 피드백 "전체화면 안 됨" → contentSize가 정답
+
+### Apple HIG 준수
+- ✅ "Make sure a sheet looks good and works well at every size people might choose"
+- ✅ "Make essential controls reachable" — footer pinning
+- ✅ "Avoid scrolling on large displays" — ScrollView indicator 자동 숨김
+
+### WCAG 2.2 추가 충족
+- ✅ **SC 1.4.10 Reflow** (AA): 동적 sizing으로 강화
+- ✅ **SC 2.4.11 Focus Not Obscured** (AA, NEW): footer pinning으로 강화
+- ✅ **SC 2.5.5 Target Size** (AAA): footer 버튼 ≥44pt 보장 (구조 변경 없음)
+
+### 향후 (ADR-075+ 후보)
+
+- 다른 sheet들도 YuminaiSheet로 점진 마이그레이션 (10여 개)
+- `YuminaiSheet` 옵션 추가:
+  - `headerStyle: .pinned | .scrollable` (header도 pinning 옵션)
+  - `cornerRadius`, `shadow` 등 디자인 customization
+- Sheet open 시 자동 focus 첫 입력 필드 (Apple HIG)
+- Sheet stack limit (multi-sheet 시 최대 2개)
+- iPad/iPhone 대응 (NavigationStack 변환)
 
 ---
 

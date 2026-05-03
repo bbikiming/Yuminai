@@ -42,4 +42,27 @@ struct SheetFrameTests {
         #expect(modifier.idealWidth == 440)
         #expect(modifier.idealHeight == 220)
     }
+
+    @Test("maxOfParentRatio — 부모 윈도우의 92%")
+    func parentRatio() {
+        // 큰 화면(1280)에서 sheet는 ~1180px까지 가능 (92%)
+        let parentLarge: CGFloat = 1280
+        let sheetMax = parentLarge * YuminaiSheetFrameModifier.maxOfParentRatio
+        #expect(sheetMax >= 1170)
+        #expect(sheetMax <= 1200)
+
+        // 작은 화면(800)에서 sheet는 ~735px까지
+        let parentSmall: CGFloat = 800
+        let sheetMaxSmall = parentSmall * YuminaiSheetFrameModifier.maxOfParentRatio
+        #expect(sheetMaxSmall >= 720)
+        #expect(sheetMaxSmall <= 760)
+    }
+
+    @Test("ratio는 [0.85, 0.95] 범위 내 (디자인 결정)")
+    func ratioBounds() {
+        // 너무 크면 (>0.95) 윈도우 chrome과 겹침
+        // 너무 작으면 (<0.85) 화면 낭비
+        #expect(YuminaiSheetFrameModifier.maxOfParentRatio >= 0.85)
+        #expect(YuminaiSheetFrameModifier.maxOfParentRatio <= 0.95)
+    }
 }

@@ -29,19 +29,19 @@ public struct CreateWorkspaceSheet: View {
     }
 
     public var body: some View {
-        ScrollView {
+        // ADR-074 — YuminaiSheet container: footer가 ScrollView 밖에 고정, 절대 잘리지 않음.
+        // 큰 화면: 컨텐츠가 sheet에 fit → 스크롤 없음.
+        // 작은 화면: 컨텐츠만 스크롤, footer는 항상 표시.
+        YuminaiSheet(width: Theme.Layout.sheetWidth, height: 640) {
             VStack(alignment: .leading, spacing: Theme.Spacing.xl) {
                 header
                 nameAndPathSection
                 projectProfileSection
-                Spacer(minLength: Theme.Spacing.lg)
-                footer
             }
             .padding(Theme.Spacing.xxl)
+        } footer: {
+            footer
         }
-        // ADR-073 — 작은 화면(960×640)에서도 잘리지 않게 반응형. 내부에 ScrollView가 이미 있어 wrapInScrollView=false.
-        .yuminaiSheetFrame(width: Theme.Layout.sheetWidth, height: 640, wrapInScrollView: false)
-        .background(Theme.Color.bg)
     }
 
     private var header: some View {

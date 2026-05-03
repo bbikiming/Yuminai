@@ -4,6 +4,74 @@
 
 ## [Unreleased] — 2026-05-03
 
+### Added — ADR-074 Sheet 동적 sizing + 윈도우 zoom 수정 + Footer pinning (5 phases)
+
+**사용자 피드백** (2026-05-03):
+1. 전체화면 뷰 안 됨 (zoom 동작 X)
+2. ADR-073 적용 후에도 sheet 잘림 (메인 윈도우 minWidth=1000 잔재)
+3. 하단 footer ("취소"/"만들기") 잘림
+4. **큰 화면에서는 스크롤 없이 컨텐츠 fit** 요청
+
+**Phase 1 — Window zoom + minWidth 수정**
+- `YuminaiApp.swift`의 `.frame(minWidth: 1000, minHeight: 700)` 제거
+- (RootView 내부의 Theme.Layout.minWindowWidth=460 사용)
+- `.windowResizability(.contentMinSize)` → `.contentSize` (zoom 자유)
+- `.defaultSize(width: 1280, height: 800)` 추가
+
+**Phase 2 — Sheet 동적 sizing (부모 윈도우 추적)**
+- `SheetFrame.swift` 전면 재작성
+- `WindowSizeReader` 신규 — NSWindow visibleFrame 추적
+- `WindowAccessor` (NSViewRepresentable) — NSWindow 접근
+- `YuminaiSheetFrameModifier`:
+  - resolvedWidth = min(idealWidth, parentWidth × 0.92)
+  - resolvedHeight = min(idealHeight, parentHeight × 0.92)
+  - 큰 화면: ideal 그대로 / 작은 화면: 부모의 92% 자동 축소
+
+**Phase 3 — 큰 화면 스크롤 제거**
+- ScrollView는 항상 활성이지만 `showsIndicators: true`로 명시
+- 컨텐츠가 sheet height 안에 fit되면 스크롤 indicator 안 보임 (자동)
+- 컨텐츠가 더 크면만 스크롤 활성 (작은 화면 시나리오)
+
+**Phase 4 — Footer pinning (절대 잘림 방지)**
+- 신규 `YuminaiSheet<Content, Footer>` container view
+- VStack(spacing: 0): ScrollView(content) + Divider + footer (분리)
+- footer는 ScrollView 밖 → 컨텐츠 길어져도 항상 하단 고정
+- Apple HIG "Make essential controls reachable" 권고 충족
+
+**적용된 sheet (이번 round)**:
+- CreateWorkspaceSheet (사용자 잘림 케이스) — YuminaiSheet 적용
+- EditProjectProfileSheet — YuminaiSheet 적용
+- ChatDetailSheet — YuminaiSheet 적용
+
+**Phase 5 — Tests**
+- `SheetFrameTests.swift` 확장 (+2 tests)
+  - maxOfParentRatio 92% 검증 (큰/작은 화면 시나리오)
+  - ratio 범위 [0.85, 0.95] 디자인 결정 검증
+
+근거:
+- Apple HIG "Sheets" — 모든 사이즈에서 동작 + footer 도달 가능
+- WCAG 2.2 SC 1.4.10 Reflow (AA)
+- WCAG 2.2 SC 2.4.11 Focus Not Obscured (AA, NEW)
+- AppKit NSWindow.parent + visibleFrame API
+
+### 빌드/테스트 결과
+- swift build → Build complete!
+- swift test → **525/525 passed** (108 suites, +2 new tests)
+- /Applications/Yuminai.app 재설치 + 실행 (PID 15575)
+
+### 새 파일
+- (없음 — SheetFrame.swift는 ADR-073 신규)
+
+### 수정 파일
+- Sources/YuminaiApp/YuminaiApp.swift (window zoom + defaultSize)
+- Sources/YuminaiUI/SheetFrame.swift (전면 재작성, YuminaiSheet 신규)
+- Sources/YuminaiUI/CreateWorkspaceSheet.swift (YuminaiSheet 사용)
+- Sources/YuminaiApp/EditProjectProfileSheet.swift (YuminaiSheet 사용)
+- Sources/YuminaiUI/ChatDetailSheet.swift (YuminaiSheet 사용)
+- Tests/YuminaiUITests/SheetFrameTests.swift (+2 tests)
+
+---
+
 ### Added — ADR-073 Sheet 잘림 수정 (16개 sheet 반응형) (5 phases)
 
 **사용자 피드백** (2026-05-03):

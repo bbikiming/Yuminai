@@ -43,18 +43,16 @@ struct EditProjectProfileSheet: View {
     }
 
     var body: some View {
-        ScrollView {
+        // ADR-074 — YuminaiSheet: footer 고정 + 반응형.
+        YuminaiSheet(width: Theme.Layout.sheetWidth, height: 640) {
             VStack(alignment: .leading, spacing: Theme.Spacing.xl) {
                 header
                 form
-                Spacer(minLength: Theme.Spacing.lg)
-                footer
             }
             .padding(Theme.Spacing.xxl)
+        } footer: {
+            footer
         }
-        // ADR-073 — 반응형. 내부 ScrollView 있어 wrapInScrollView=false.
-        .yuminaiSheetFrame(width: Theme.Layout.sheetWidth, height: 640, wrapInScrollView: false)
-        .background(Theme.Color.bg)
     }
 
     private var header: some View {
