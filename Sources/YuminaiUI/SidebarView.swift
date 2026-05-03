@@ -295,11 +295,14 @@ public struct SidebarView: View {
                 LazyVStack(spacing: 2) {
                     ForEach(chatSessions) { session in
                         // ADR-091 — workspaceId 옵션화 (자유 대화는 nil)
+                        // ADR-091 sync — active workspace와 연결 여부 계산
                         ChatSessionRow(
                             session: session,
                             workspaceName: session.workspaceId.flatMap { workspaceNameById($0) },
                             isActive: activeChatSessionId == session.id,
                             availableWorkspaces: workspaces,
+                            isLinkedToActiveWorkspace: session.workspaceId == selectedId,
+                            willSwitchWorkspace: session.workspaceId != nil && session.workspaceId != selectedId,
                             onSelect: { onSelectChatSession(session.id) },
                             onDelete: { onDeleteChatSession(session.id) },
                             onAttach: { wsId in onAttachChatSessionToWorkspace(session.id, wsId) }
@@ -934,6 +937,20 @@ public struct SidebarView: View {
 
     // MARK: - 공통 workspace row
 
+    /// **ADR-091 sync** — 특정 워크스페이스에 연결된 세션 수.
+    private func linkedSessionCount(for workspaceId: UUID) -> Int {
+        chatSessions.filter { $0.workspaceId == workspaceId }.count
+    }
+
+    /// **ADR-091 sync** — active chat session이 이 워크스페이스와 연결돼 있는지.
+    private func isLinkedToActiveSession(workspaceId: UUID) -> Bool {
+        guard let activeId = activeChatSessionId,
+              let activeSession = chatSessions.first(where: { $0.id == activeId }) else {
+            return false
+        }
+        return activeSession.workspaceId == workspaceId
+    }
+
     @ViewBuilder
     private func workspaceRow(_ workspace: Workspace, indented: Bool = false, pinIndex: Int? = nil) -> some View {
         let assignedTagIds = workspaceTagIds[workspace.id] ?? []
@@ -953,6 +970,9 @@ public struct SidebarView: View {
             // ADR-078 Phase 4 — tag context menu + indicator
             allTags: tags,
             assignedTags: assignedTags,
+            // ADR-091 sync — 연결된 세션 정보
+            linkedSessionCount: linkedSessionCount(for: workspace.id),
+            isLinkedToActiveSession: isLinkedToActiveSession(workspaceId: workspace.id),
             onSelect: { selectedId = workspace.id },
             onDelete: { onDelete(workspace) },
             onToggleTelegramBind: { onToggleTelegramBind(workspace) },
@@ -984,6 +1004,12 @@ private struct ChatSessionRow: View {
     let workspaceName: String?
     let isActive: Bool
     let availableWorkspaces: [Workspace]
+    /// **ADR-091 sync** — 이 세션의 workspaceId가 현재 active workspace와 일치하는지.
+    /// true이면 워크스페이스 row와 동일한 accent 색상 그룹으로 표시.
+    let isLinkedToActiveWorkspace: Bool
+    /// **ADR-091 sync** — 이 세션을 클릭하면 워크스페이스 전환이 발생하는지.
+    /// (session.workspaceId != nil && session.workspaceId != currentSelectedId)
+    let willSwitchWorkspace: Bool
     let onSelect: () -> Void
     let onDelete: () -> Void
     let onAttach: (UUID?) -> Void  // ADR-091 — nil이면 detach
@@ -1034,6 +1060,7 @@ private struct ChatSessionRow: View {
             .background(rowBackground)
             .overlay(alignment: .leading) {
                 if isActive {
+                    // 활성 세션: 완전한 accent bar
                     Rectangle()
                         .fill(
                             LinearGradient(
@@ -1044,6 +1071,23 @@ private struct ChatSessionRow: View {
                         )
                         .frame(width: 3)
                         .transition(.move(edge: .leading).combined(with: .opacity))
+                } else if isLinkedToActiveWorkspace {
+                    // ADR-091 sync — active workspace와 연결된 비활성 세션: 얇은 muted accent strip
+                    Rectangle()
+                        .fill(Theme.Color.accent.opacity(0.40))
+                        .frame(width: 2)
+                        .transition(.move(edge: .leading).combined(with: .opacity))
+                }
+            }
+            // ADR-091 sync — hover 시 워크스페이스 전환 여부 추가 안내
+            .overlay(alignment: .trailing) {
+                if isHovering && willSwitchWorkspace && !isActive {
+                    Image(systemName: "arrow.right.square.fill")
+                        .font(.system(size: 9, weight: .semibold))
+                        .foregroundStyle(Theme.Color.accent.opacity(0.70))
+                        .padding(.trailing, Theme.Layout.sidebarPadding)
+                        .transition(.opacity.combined(with: .scale(scale: 0.8)))
+                        .accessibilityHidden(true)
                 }
             }
             .contentShape(Rectangle())
@@ -1080,7 +1124,7 @@ private struct ChatSessionRow: View {
             Divider()
             Button("삭제", systemImage: "trash", role: .destructive, action: onDelete)
         }
-        .help("\(session.title) — \(session.subtitle(workspaceName: workspaceName))")
+        .help(rowHelp)
         .accessibilityLabel("\(session.title), \(workspaceName ?? "삭제된 워크스페이스"), \(session.agentKind.displayName)")
         .accessibilityAddTraits(isActive ? .isSelected : [])
         .animation(.easeOut(duration: 0.10), value: isHovering)
@@ -1090,11 +1134,25 @@ private struct ChatSessionRow: View {
     private var rowBackground: Color {
         if isActive {
             return Theme.Color.accent.opacity(0.10)
+        } else if isLinkedToActiveWorkspace {
+            // ADR-091 sync — active workspace 연결 세션은 미묘한 tint
+            return Theme.Color.accent.opacity(0.05)
         } else if isHovering {
             return Theme.Color.surfaceHi.opacity(0.7)
         } else {
             return Color.clear
         }
+    }
+
+    /// **ADR-091 sync** — hover tooltip: 워크스페이스 전환 여부 안내.
+    private var rowHelp: String {
+        let base = "\(session.title) — \(session.subtitle(workspaceName: workspaceName))"
+        if session.isFreeChat {
+            return "\(base) (클릭해도 워크스페이스 전환 없음)"
+        } else if willSwitchWorkspace, let name = workspaceName {
+            return "\(base) → [\(name)]으로 전환됩니다"
+        }
+        return base
     }
 
     /// **ADR-091** — 위치 표시 아이콘/색상/라벨 (워크스페이스 / 자유 대화 / 삭제됨).
@@ -1311,6 +1369,10 @@ struct WorkspaceItemRow: View {
     let allTags: [WorkspaceTag]
     /// **ADR-078 Phase 4** — 이 워크스페이스에 적용된 tag.
     let assignedTags: [WorkspaceTag]
+    /// **ADR-091 sync** — 이 워크스페이스에 연결된 채팅 세션 수 (0이면 배지 숨김).
+    let linkedSessionCount: Int
+    /// **ADR-091 sync** — 이 워크스페이스가 현재 활성 세션과 연결돼 있는지 (동일 accent pair).
+    let isLinkedToActiveSession: Bool
     let onSelect: () -> Void
     let onDelete: () -> Void
     let onToggleTelegramBind: () -> Void
@@ -1366,6 +1428,30 @@ struct WorkspaceItemRow: View {
                         .help("텔레그램에서 제어 중인 세션")
                         .transition(.scale.combined(with: .opacity))
                         .accessibilityHidden(true)
+                }
+
+                // ADR-091 sync — 연결된 세션 수 배지
+                if linkedSessionCount > 0 {
+                    HStack(spacing: 2) {
+                        Image(systemName: "bubble.left.fill")
+                            .font(.system(size: 7, weight: .semibold))
+                            .foregroundStyle(isLinkedToActiveSession ? Theme.Color.accent : Theme.Color.textTertiary)
+                        Text("\(linkedSessionCount)")
+                            .font(.system(size: 9, weight: .medium))
+                            .foregroundStyle(isLinkedToActiveSession ? Theme.Color.accent : Theme.Color.textTertiary)
+                    }
+                    .padding(.horizontal, 4)
+                    .padding(.vertical, 1)
+                    .background(
+                        isLinkedToActiveSession
+                            ? Theme.Color.accent.opacity(0.12)
+                            : Theme.Color.surfaceHi.opacity(0.8)
+                    )
+                    .clipShape(Capsule())
+                    .help("연결된 대화 세션 \(linkedSessionCount)개\(isLinkedToActiveSession ? " (현재 활성 세션 포함)" : "")")
+                    .transition(.scale(scale: 0.8).combined(with: .opacity))
+                    .animation(.spring(response: 0.25, dampingFraction: 0.80), value: isLinkedToActiveSession)
+                    .accessibilityLabel("연결된 세션 \(linkedSessionCount)개")
                 }
 
                 // ADR-078 Phase 4 — assigned tag dots (max 3 표시)
@@ -1504,6 +1590,8 @@ struct WorkspaceItemRow: View {
 
     private var rowBg: SwiftUI.Color {
         if isSelected { return Theme.Color.elevated }
+        // ADR-091 sync — active session과 연결된 워크스페이스는 subtle tint 적용
+        if isLinkedToActiveSession { return Theme.Color.accent.opacity(0.06) }
         if hovering { return Theme.Color.surfaceHi }
         return .clear
     }
