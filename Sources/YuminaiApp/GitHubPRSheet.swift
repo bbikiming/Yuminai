@@ -14,8 +14,13 @@ struct GitHubPRSheet: View {
     @Environment(AppModel.self) private var appModel
     @State private var pr: PullRequestDetails?
     @State private var workflowRuns: [WorkflowRun] = []
+    @State private var contributors: [Contributor] = []
+    @State private var repoInfo: RepoInfo?
     @State private var loading: Bool = true
     @State private var errorMessage: String?
+    /// **ADR-083 Phase 3** — PR comment 입력.
+    @State private var commentDraft: String = ""
+    @State private var postingComment: Bool = false
 
     var body: some View {
         YuminaiSheet(width: 720, height: 640) {
@@ -88,6 +93,15 @@ struct GitHubPRSheet: View {
                 if let body = pr.body, !body.isEmpty {
                     bodySection(body)
                 }
+                // ADR-083 Phase 4 — Repo insights
+                if let info = repoInfo {
+                    repoInsightsCard(info)
+                }
+                if !contributors.isEmpty {
+                    contributorsSection
+                }
+                // ADR-083 Phase 3 — Comment composer
+                commentComposer
             }
         }
     }
@@ -230,40 +244,184 @@ struct GitHubPRSheet: View {
             if run.isInProgress { return "circle.dotted" }
             return "questionmark.circle"
         }()
-        return Button {
-            appModel.openInBrowser(run.url)
-        } label: {
-            HStack(spacing: 8) {
-                Image(systemName: icon)
-                    .font(.system(size: 11))
-                    .foregroundStyle(color)
-                    .accessibilityHidden(true)
-                VStack(alignment: .leading, spacing: 1) {
-                    Text(run.workflowName)
-                        .font(Theme.Typography.small.weight(.medium))
-                        .foregroundStyle(Theme.Color.text)
-                    Text(run.displayTitle)
-                        .font(Theme.Typography.micro)
+        return HStack(spacing: 8) {
+            Button {
+                appModel.openInBrowser(run.url)
+            } label: {
+                HStack(spacing: 8) {
+                    Image(systemName: icon)
+                        .font(.system(size: 11))
+                        .foregroundStyle(color)
+                        .accessibilityHidden(true)
+                    VStack(alignment: .leading, spacing: 1) {
+                        Text(run.workflowName)
+                            .font(Theme.Typography.small.weight(.medium))
+                            .foregroundStyle(Theme.Color.text)
+                        Text(run.displayTitle)
+                            .font(Theme.Typography.micro)
+                            .foregroundStyle(Theme.Color.textTertiary)
+                            .lineLimit(1)
+                    }
+                    Spacer()
+                    Text(run.displayStatus)
+                        .font(Theme.Typography.micro.weight(.medium))
+                        .foregroundStyle(color)
+                    Image(systemName: "arrow.up.right")
+                        .font(.system(size: 9))
                         .foregroundStyle(Theme.Color.textTertiary)
-                        .lineLimit(1)
+                        .accessibilityHidden(true)
                 }
-                Spacer()
-                Text(run.displayStatus)
-                    .font(Theme.Typography.micro.weight(.medium))
-                    .foregroundStyle(color)
-                Image(systemName: "arrow.up.right")
-                    .font(.system(size: 9))
-                    .foregroundStyle(Theme.Color.textTertiary)
-                    .accessibilityHidden(true)
             }
-            .padding(.horizontal, Theme.Spacing.md)
-            .padding(.vertical, 6)
-            .background(Theme.Color.surface)
-            .clipShape(RoundedRectangle(cornerRadius: Theme.Radius.sm))
+            .buttonStyle(.plain)
+            .accessibilityLabel("\(run.workflowName), \(run.displayStatus)")
+            .accessibilityHint("브라우저에서 workflow 결과 열기")
+            // ADR-083 Phase 4 — Workflow re-run (failed만 표시)
+            if run.isFailure {
+                Button {
+                    Task {
+                        await appModel.rerunWorkflow(runId: run.databaseId, failedOnly: true)
+                        await reload()
+                    }
+                } label: {
+                    Image(systemName: "arrow.clockwise.circle.fill")
+                        .font(.system(size: 14))
+                        .foregroundStyle(Theme.Color.accent)
+                }
+                .buttonStyle(.plain)
+                .help("실패한 job 재실행")
+                .accessibilityLabel("Workflow 재실행")
+            }
         }
-        .buttonStyle(.plain)
-        .accessibilityLabel("\(run.workflowName), \(run.displayStatus)")
-        .accessibilityHint("브라우저에서 workflow 결과 열기")
+        .padding(.horizontal, Theme.Spacing.md)
+        .padding(.vertical, 6)
+        .background(Theme.Color.surface)
+        .clipShape(RoundedRectangle(cornerRadius: Theme.Radius.sm))
+    }
+
+    // MARK: - ADR-083 Phase 4 — Repo insights card
+
+    private func repoInsightsCard(_ info: RepoInfo) -> some View {
+        VStack(alignment: .leading, spacing: 6) {
+            sectionLabel("저장소 정보")
+            HStack(spacing: 16) {
+                statBadge(icon: "star.fill", value: "\(info.stargazerCount)", label: "Stars", color: .yellow)
+                statBadge(icon: "tuningfork", value: "\(info.forkCount)", label: "Forks", color: .blue)
+                statBadge(icon: "exclamationmark.circle", value: "\(info.openIssuesCount)", label: "Issues", color: .orange)
+                Spacer()
+                Button {
+                    appModel.openInBrowser(info.url)
+                } label: {
+                    HStack(spacing: 3) {
+                        Image(systemName: "arrow.up.right.square")
+                            .font(.system(size: 9))
+                        Text(info.nameWithOwner)
+                            .font(Theme.Typography.micro)
+                    }
+                    .foregroundStyle(Theme.Color.accent)
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel("저장소 \(info.nameWithOwner) 브라우저에서 열기")
+            }
+            .padding(Theme.Spacing.md)
+            .background(Theme.Color.surface)
+            .clipShape(RoundedRectangle(cornerRadius: Theme.Radius.md))
+        }
+    }
+
+    private func statBadge(icon: String, value: String, label: String, color: Color) -> some View {
+        HStack(spacing: 4) {
+            Image(systemName: icon)
+                .font(.system(size: 11))
+                .foregroundStyle(color)
+            Text(value)
+                .font(Theme.Typography.small.weight(.semibold))
+                .foregroundStyle(Theme.Color.text)
+            Text(label)
+                .font(Theme.Typography.micro)
+                .foregroundStyle(Theme.Color.textTertiary)
+        }
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel("\(label) \(value)")
+    }
+
+    private var contributorsSection: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            sectionLabel("Top contributors")
+            VStack(spacing: 2) {
+                ForEach(contributors) { contributor in
+                    HStack(spacing: 8) {
+                        Image(systemName: "person.circle.fill")
+                            .font(.system(size: 14))
+                            .foregroundStyle(Theme.Color.textSecondary)
+                            .accessibilityHidden(true)
+                        Text(contributor.login)
+                            .font(Theme.Typography.small)
+                            .foregroundStyle(Theme.Color.text)
+                        Spacer()
+                        Text("\(contributor.contributions) commits")
+                            .font(Theme.Typography.micro)
+                            .foregroundStyle(Theme.Color.textTertiary)
+                    }
+                    .padding(.horizontal, Theme.Spacing.md)
+                    .padding(.vertical, 4)
+                    .background(Theme.Color.surface)
+                    .clipShape(RoundedRectangle(cornerRadius: Theme.Radius.sm))
+                }
+            }
+        }
+    }
+
+    // MARK: - ADR-083 Phase 3 — Comment composer
+
+    private var commentComposer: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            sectionLabel("코멘트 추가")
+            TextEditor(text: $commentDraft)
+                .font(Theme.Typography.small)
+                .padding(8)
+                .background(Theme.Color.surface)
+                .clipShape(RoundedRectangle(cornerRadius: Theme.Radius.sm))
+                .overlay(
+                    RoundedRectangle(cornerRadius: Theme.Radius.sm)
+                        .stroke(Theme.Color.borderSubtle, lineWidth: 1)
+                )
+                .frame(height: 80)
+                .accessibilityLabel("PR 코멘트")
+            HStack {
+                Text("markdown 가능")
+                    .font(Theme.Typography.micro)
+                    .foregroundStyle(Theme.Color.textTertiary)
+                Spacer()
+                Button {
+                    Task {
+                        postingComment = true
+                        defer { postingComment = false }
+                        await appModel.commentOnCurrentPR(body: commentDraft)
+                        commentDraft = ""
+                        await reload()
+                    }
+                } label: {
+                    HStack(spacing: 4) {
+                        if postingComment {
+                            ProgressView().controlSize(.mini)
+                        } else {
+                            Image(systemName: "paperplane.fill")
+                                .font(.system(size: 10))
+                        }
+                        Text(postingComment ? "전송 중…" : "코멘트 게시")
+                            .font(Theme.Typography.small.weight(.medium))
+                    }
+                    .foregroundStyle(.white)
+                    .padding(.horizontal, 10)
+                    .padding(.vertical, 4)
+                    .background(Theme.Color.accent)
+                    .clipShape(RoundedRectangle(cornerRadius: Theme.Radius.sm))
+                }
+                .buttonStyle(.plain)
+                .disabled(commentDraft.trimmingCharacters(in: .whitespaces).isEmpty || postingComment)
+                .accessibilityLabel("PR 코멘트 게시")
+            }
+        }
     }
 
     private func commentsSection(_ comments: [PullRequestDetails.PRComment]) -> some View {
@@ -324,8 +482,14 @@ struct GitHubPRSheet: View {
     private func reload() async {
         loading = true
         defer { loading = false }
-        pr = await appModel.loadPullRequestDetails()
-        workflowRuns = await appModel.loadRecentWorkflowRuns(limit: 5)
+        async let prTask = appModel.loadPullRequestDetails()
+        async let workflowsTask = appModel.loadRecentWorkflowRuns(limit: 5)
+        async let repoTask = appModel.loadRepoInfo()
+        async let contributorsTask = appModel.loadTopContributors(limit: 5)
+        pr = await prTask
+        workflowRuns = await workflowsTask
+        repoInfo = await repoTask
+        contributors = await contributorsTask
         if pr == nil {
             errorMessage = "gh CLI가 설치돼 있지 않거나 인증이 필요해요."
         }

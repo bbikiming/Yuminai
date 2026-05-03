@@ -249,6 +249,68 @@ public actor GitBranchManager {
             .filter { !$0.isEmpty }
     }
 
+    // MARK: - ADR-083 Phase 1 — Conflict resolution
+
+    /// 특정 conflicted 파일을 한 쪽 버전으로 resolve.
+    /// - `ours`: HEAD (현재 브랜치) 채택
+    /// - `theirs`: incoming branch 채택
+    public func resolveConflict(path: String, strategy: ConflictResolution) async throws {
+        let arg: String
+        switch strategy {
+        case .ours: arg = "--ours"
+        case .theirs: arg = "--theirs"
+        }
+        let checkout = try await runner.run(["checkout", arg, "--", path])
+        if !checkout.success {
+            throw GitRunner.GitError.commandFailed(args: ["checkout", arg, "--", path], exitCode: checkout.exitCode, stderr: checkout.stderr)
+        }
+        let add = try await runner.run(["add", "--", path])
+        if !add.success {
+            throw GitRunner.GitError.commandFailed(args: ["add", "--", path], exitCode: add.exitCode, stderr: add.stderr)
+        }
+    }
+
+    /// Conflict 파일 안의 conflict block들 파싱 (시각화용).
+    public func conflictBlocks(in path: String) async throws -> [ConflictBlock] {
+        let url = await runner.workspaceURL.appendingPathComponent(path)
+        guard let data = try? String(contentsOf: url, encoding: .utf8) else { return [] }
+        return ConflictBlockParser.parse(data)
+    }
+
+    /// merge --abort (conflict 시 사용자 escape).
+    public func mergeAbort() async throws {
+        let result = try await runner.run(["merge", "--abort"])
+        if !result.success {
+            throw GitRunner.GitError.commandFailed(args: ["merge", "--abort"], exitCode: result.exitCode, stderr: result.stderr)
+        }
+    }
+
+    // MARK: - ADR-083 Phase 2 — Cherry-pick
+
+    /// 특정 commit을 현재 브랜치로 cherry-pick.
+    public func cherryPick(_ sha: String) async throws {
+        let result = try await runner.run(["cherry-pick", sha])
+        if !result.success {
+            throw GitRunner.GitError.commandFailed(args: ["cherry-pick", sha], exitCode: result.exitCode, stderr: result.stderr)
+        }
+    }
+
+    /// 다른 브랜치의 최근 commit 목록 (cherry-pick source 선택용).
+    public func commitsOnBranch(_ branch: String, limit: Int = 30) async throws -> [CommitInfo] {
+        let format = "%h|%s|%cr|%an"
+        let raw = try await runner.runOrThrow(["log", branch, "--format=\(format)", "-n", "\(limit)", "--no-merges"])
+        return raw.split(separator: "\n").compactMap { line in
+            let parts = line.split(separator: "|", maxSplits: 3, omittingEmptySubsequences: false)
+            guard parts.count == 4 else { return nil }
+            return CommitInfo(
+                shortSha: String(parts[0]),
+                message: String(parts[1]),
+                relativeDate: String(parts[2]),
+                authorName: String(parts[3])
+            )
+        }
+    }
+
     // MARK: - ADR-082 Phase 4 — Rebase 단순화 (reword/drop/squash)
 
     /// 마지막 N개 commit을 rebase action 적용.
@@ -446,6 +508,78 @@ public enum GitPullError: Error, LocalizedError {
 }
 
 // MARK: - ADR-082 Phase 4-5 — Rebase + CodeOwners types
+
+// MARK: - ADR-083 Phase 1 — Conflict resolution types
+
+/// Conflict 한쪽 채택 strategy.
+public enum ConflictResolution: String, Sendable, CaseIterable, Identifiable {
+    /// HEAD (현재 브랜치) 채택.
+    case ours
+    /// Incoming branch 채택.
+    case theirs
+
+    public var id: String { rawValue }
+
+    public var displayName: String {
+        switch self {
+        case .ours: return "내 변경 (HEAD)"
+        case .theirs: return "받은 변경 (incoming)"
+        }
+    }
+}
+
+/// 단일 conflict block (파일 안 `<<<<<<< / ======= / >>>>>>>` 한 묶음).
+public struct ConflictBlock: Sendable, Hashable, Identifiable {
+    public let id: Int  // index 순서
+    public let oursLines: [String]
+    public let theirsLines: [String]
+    /// 1-based start line (file 안 `<<<<<<<` 위치).
+    public let startLine: Int
+
+    public init(id: Int, oursLines: [String], theirsLines: [String], startLine: Int) {
+        self.id = id
+        self.oursLines = oursLines
+        self.theirsLines = theirsLines
+        self.startLine = startLine
+    }
+}
+
+/// Conflict marker 파서 (`<<<<<<<` ~ `=======` ~ `>>>>>>>`).
+public enum ConflictBlockParser {
+    public static func parse(_ content: String) -> [ConflictBlock] {
+        var blocks: [ConflictBlock] = []
+        let lines = content.components(separatedBy: "\n")
+        var i = 0
+        var blockId = 0
+        while i < lines.count {
+            let line = lines[i]
+            if line.hasPrefix("<<<<<<<") {
+                let startLine = i + 1  // 1-based
+                var ours: [String] = []
+                var theirs: [String] = []
+                var j = i + 1
+                // ======= 까지
+                while j < lines.count, !lines[j].hasPrefix("=======") {
+                    ours.append(lines[j])
+                    j += 1
+                }
+                if j >= lines.count { break }  // malformed
+                j += 1  // skip =======
+                while j < lines.count, !lines[j].hasPrefix(">>>>>>>") {
+                    theirs.append(lines[j])
+                    j += 1
+                }
+                if j >= lines.count { break }  // malformed
+                blocks.append(ConflictBlock(id: blockId, oursLines: ours, theirsLines: theirs, startLine: startLine))
+                blockId += 1
+                i = j + 1  // skip >>>>>>>
+            } else {
+                i += 1
+            }
+        }
+        return blocks
+    }
+}
 
 /// **ADR-082 Phase 4** — Interactive rebase action (단순화 — 5개만).
 public enum RebaseAction: String, Sendable, CaseIterable, Identifiable, Hashable {

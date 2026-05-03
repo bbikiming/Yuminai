@@ -80,6 +80,10 @@ public final class AppModel {
     public var showGitHubPRSheet: Bool = false
     /// **ADR-082 Phase 4** — Git rebase sheet.
     public var showGitRebaseSheet: Bool = false
+    /// **ADR-083 Phase 1** — Conflict resolution sheet.
+    public var showGitConflictSheet: Bool = false
+    /// **ADR-083 Phase 2** — Cherry-pick sheet.
+    public var showGitCherryPickSheet: Bool = false
 
     // 활성 세션 설정 (toolbar에서 즉시 변경 가능)
     public var activeSettings: SessionSettings = .default
@@ -1712,6 +1716,92 @@ public final class AppModel {
     }
 
     // MARK: - ADR-082 Phase 5 — CodeOwners
+
+    // MARK: - ADR-083 Phase 1 — Conflict resolution
+
+    public func gitConflictedFiles() async -> [String] {
+        guard let manager = await makeGitManager() else { return [] }
+        return (try? await manager.conflictedFiles()) ?? []
+    }
+
+    public func gitConflictBlocks(in path: String) async -> [ConflictBlock] {
+        guard let manager = await makeGitManager() else { return [] }
+        return (try? await manager.conflictBlocks(in: path)) ?? []
+    }
+
+    public func gitResolveConflict(path: String, strategy: ConflictResolution) async {
+        guard let manager = await makeGitManager() else { return }
+        do {
+            try await manager.resolveConflict(path: path, strategy: strategy)
+            await refreshGitStatus()
+            self.error = "✓ 충돌 해결: \(path) (\(strategy.displayName))"
+        } catch {
+            self.error = "충돌 해결 실패: \(error.localizedDescription)"
+        }
+    }
+
+    public func gitMergeAbort() async {
+        guard let manager = await makeGitManager() else { return }
+        do {
+            try await manager.mergeAbort()
+            await refreshGitStatus()
+            self.error = "✓ Merge 취소됨"
+        } catch {
+            self.error = "Merge abort 실패: \(error.localizedDescription)"
+        }
+    }
+
+    // MARK: - ADR-083 Phase 2 — Cherry-pick
+
+    public func gitCommitsOnBranch(_ branch: String, limit: Int = 30) async -> [CommitInfo] {
+        guard let manager = await makeGitManager() else { return [] }
+        return (try? await manager.commitsOnBranch(branch, limit: limit)) ?? []
+    }
+
+    public func gitCherryPick(_ sha: String) async {
+        guard let manager = await makeGitManager() else { return }
+        do {
+            try await manager.cherryPick(sha)
+            await refreshGitStatus()
+            self.error = "✓ Cherry-pick 완료: \(sha)"
+        } catch {
+            self.error = "Cherry-pick 실패: \(error.localizedDescription) — 충돌 발생 시 충돌 해결 sheet 사용"
+        }
+    }
+
+    // MARK: - ADR-083 Phase 3 — PR comment
+
+    public func commentOnCurrentPR(body: String) async {
+        guard let gh = await makeGitHubRunner() else { return }
+        do {
+            try await gh.commentOnPullRequest(body: body)
+            self.error = "✓ PR 코멘트 추가됨"
+        } catch {
+            self.error = "PR 코멘트 실패: \(error.localizedDescription)"
+        }
+    }
+
+    // MARK: - ADR-083 Phase 4 — Workflow re-run + Repo insights
+
+    public func rerunWorkflow(runId: Int, failedOnly: Bool = false) async {
+        guard let gh = await makeGitHubRunner() else { return }
+        do {
+            try await gh.rerunWorkflow(runId: runId, failedOnly: failedOnly)
+            self.error = "✓ Workflow 재실행 시작"
+        } catch {
+            self.error = "Workflow 재실행 실패: \(error.localizedDescription)"
+        }
+    }
+
+    public func loadTopContributors(limit: Int = 5) async -> [Contributor] {
+        guard let gh = await makeGitHubRunner() else { return [] }
+        return (try? await gh.topContributors(limit: limit)) ?? []
+    }
+
+    public func loadRepoInfo() async -> RepoInfo? {
+        guard let gh = await makeGitHubRunner() else { return nil }
+        return try? await gh.repoInfo()
+    }
 
     /// 변경된 파일들의 suggested reviewers (`.github/CODEOWNERS` 기반).
     public func suggestedReviewers() async -> Set<String> {
@@ -4001,6 +4091,9 @@ public final class AppModel {
         showGitDiffSheet = false
         showGitHubPRSheet = false
         showGitRebaseSheet = false
+        // ADR-083
+        showGitConflictSheet = false
+        showGitCherryPickSheet = false
     }
 
     /// 새 sheet/alert을 열기 전에 다른 sheet 모두 닫고 setter 실행.

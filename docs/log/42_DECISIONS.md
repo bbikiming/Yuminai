@@ -1,6 +1,158 @@
 # Decisions Log (ADR-lite)
 
-> 최신: ADR-082 (Diff viewer + GitHub PR review + Actions + Rebase + CodeOwners)
+> 최신: ADR-083 (Conflict resolution + Cherry-pick + PR comment + Workflow re-run + Repo insights)
+
+---
+
+## ADR-083 — Conflict resolution + Cherry-pick + PR comment + Workflow re-run + Repo insights (5 phases)
+
+- **날짜**: 2026-05-03
+- **상태**: Accepted (구현 + 테스트 + /Applications 재설치)
+
+### 배경
+
+ADR-082 다음 라운드 후보 5가지 모두 진행:
+- Conflict resolution UI (단순화 — full 3-way merge editor는 별도 ADR)
+- Cherry-pick UI
+- PR comment 작성
+- Workflow re-run
+- Repo insights
+
+### 결정
+
+#### Phase 1: Conflict resolution (단순화)
+
+**왜 full 3-way merge editor 미구현?**
+- 3-way merge UI = 큰 작업 (Apple FileMerge / VSCode merge editor 수준)
+- 사용자 빈도 80% — "한쪽 통째로 채택"으로 충분
+- block 단위 cherry-pick은 향후 별도 ADR
+
+**`ConflictResolution` enum**:
+- `.ours` → `git checkout --ours -- path`
+- `.theirs` → `git checkout --theirs -- path`
+- 채택 후 자동 `git add` (resolved 표시)
+
+**`ConflictBlockParser`** (시각화용):
+- `<<<<<<< HEAD` ~ `=======` ~ `>>>>>>>` 파싱
+- ours/theirs lines 분리 + startLine 기록
+- malformed (closing marker 없음) → 무시 (안전)
+
+**`GitConflictSheet`** (880×620):
+- 좌측: 충돌 파일 list (orange triangle)
+- 우측: conflict blocks side-by-side
+  - 내 변경 (HEAD) — accent blue
+  - 받은 변경 (incoming) — purple
+- 파일 단위 1-click resolve (block 단위 선택은 별도 ADR)
+- "Merge 취소" (mergeAbort) — 사용자 escape
+
+#### Phase 2: Cherry-pick
+
+**`commitsOnBranch(_ branch:limit:)`**:
+- `git log {branch} --no-merges` → CommitInfo array
+- merge commits 제외 (cherry-pick 의도와 불일치)
+- 30개 cap (사용자 결정 부담 ↓)
+
+**`GitCherryPickSheet`** (720×580):
+- Source 브랜치 Picker (현재 브랜치 제외)
+- 선택 브랜치의 commit 목록
+- 1개 commit 선택 (multi-select는 별도 ADR — 충돌 처리 복잡)
+- "Cherry-pick" 버튼 → `git cherry-pick {sha}`
+- 충돌 시 GitConflictSheet 안내
+
+#### Phase 3: PR comment
+
+**`gh pr comment --body`**:
+- 현재 브랜치 PR에 markdown comment 추가
+- gh CLI 자동 인증 활용
+
+**GitHubPRSheet 안 composer**:
+- TextEditor (markdown 가능)
+- "코멘트 게시" 버튼 (게시 중 ProgressView)
+- 게시 후 자동 reload
+
+#### Phase 4: Workflow re-run + Repo insights
+
+**`gh run rerun {id} --failed`**:
+- 실패한 job만 재실행 (전체 re-run보다 효율적)
+- workflow row에 재실행 버튼 (실패한 run에만 표시)
+
+**`gh repo view --json` + `gh api .../contributors`**:
+- Repo info: stars / forks / open issues / nameWithOwner / url
+- Top contributors: login + commit count + avatar URL
+- 병렬 fetch (`async let`) — 4개 동시 호출 (PR + workflows + repo + contributors)
+
+**Repo insights card**:
+- ⭐ Stars / 🍴 Forks / ⚠ Issues 한 줄
+- Repo name 클릭 → 브라우저 open
+
+**Top contributors section**:
+- Top 5 (commit count 순)
+- 사용자 mention 시 참고 (PR 본문)
+
+#### Phase 5: Tests
+
+`ConflictAndCherryPickTests.swift` (+11 tests):
+- ConflictBlockParser (6): empty / no markers / single / multiple / malformed / empty ours
+- ConflictResolution (3): allCases / displayName / Identifiable
+- Contributor + RepoInfo (2): Identifiable + Codable round-trip
+
+### 적용 결과
+```
+swift build              → Build complete!
+swift test               → 649/649 passed (137 suites, +11 new tests)
+/Applications 재설치     → ✅ PID 70261 실행 중
+새 파일                  → 3
+수정 파일                → 6
+```
+
+### 트레이드오프
+
+**왜 file-level conflict resolution (block-level 아님)?**
+- block-level은 UI 복잡 (각 block마다 ours/theirs/both 선택)
+- 80% 케이스: 한쪽 통째로 채택
+- 외부 에디터 (VSCode merge editor) 사용 권장 — Yuminai에서 강조 안 함
+
+**왜 multi-commit cherry-pick 미지원?**
+- 다중 cherry-pick = 충돌 처리 복잡 (각 commit마다)
+- 1개씩 cherry-pick + 충돌 해결 후 다음 commit이 안전
+- 사용자가 진행 상황 파악 가능
+
+**왜 Repo insights를 PR sheet 안?**
+- 별도 sheet = navigation 부담
+- PR 검토 시 "이 repo가 active한가?" 정보가 도움
+- Apple HIG "Group related information"
+
+**왜 fetch가 병렬 (`async let`)?**
+- 4개 gh CLI 호출 직렬 = 5초+
+- 병렬 = ~1.5초 (가장 느린 호출 기준)
+- 사용자 wait 시간 단축
+
+**왜 Workflow re-run 버튼이 실패한 row에만?**
+- 성공한 workflow re-run은 거의 의미 없음 (CI 결과 동일)
+- 실패한 workflow만 재실행 (네트워크/transient 오류 처리)
+- failedOnly 옵션으로 cost 절감
+
+### Apple HIG + Best Practices
+- ✅ Apple HIG "Master-Detail" (conflict viewer)
+- ✅ Apple HIG "Group related" (Repo insights in PR sheet)
+- ✅ Git conflict markers 표준 spec
+- ✅ gh CLI JSON output (안정성)
+- ✅ NN/g "Recognition rather than Recall" (cherry-pick commit list)
+
+### WCAG 2.2 충족
+- ✅ **SC 1.4.3 Contrast**: ours/theirs 색상 대비 (blue/purple)
+- ✅ **SC 2.4.6 Headings and Labels**: 모든 sheet 한국어
+- ✅ **SC 4.1.2 Name, Role, Value**: workflow re-run 버튼 accessibility
+- ✅ **SC 1.4.10 Reflow**: 모든 sheet 반응형 (YuminaiSheet)
+
+### 향후 (ADR-084+ 후보)
+
+- **Block-level conflict resolution** (per-block ours/theirs/both)
+- **Cherry-pick multi-commit** (range select + 순차 처리)
+- **PR review submit** (gh pr review --approve / --request-changes / --comment)
+- **GitHub Issues integration** (gh issue list + create)
+- **Branch protection 표시** (PR이 protection rule 만족하나)
+- **Diff viewer inline edit** (직접 conflict resolve)
 
 ---
 

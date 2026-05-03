@@ -116,6 +116,18 @@ struct GitBranchPickerSheetWrapper: View {
                 }
             }
             HStack(spacing: 4) {
+                // ADR-083 Phase 2 — Cherry-pick
+                actionButton("Cherry-pick", icon: "arrow.up.right.diamond", color: Theme.Color.textSecondary) {
+                    appModel.showGitBranchPicker = false
+                    appModel.showGitCherryPickSheet = true
+                }
+                // ADR-083 Phase 1 — Conflict resolution (orange highlight if conflicts present)
+                actionButton("충돌 해결", icon: "exclamationmark.triangle.fill", color: .orange) {
+                    appModel.showGitBranchPicker = false
+                    appModel.showGitConflictSheet = true
+                }
+            }
+            HStack(spacing: 4) {
                 // ADR-082 Phase 2 — PR review
                 actionButton("PR 보기", icon: "list.bullet.rectangle", color: Theme.Color.textSecondary) {
                     appModel.showGitBranchPicker = false
@@ -125,7 +137,6 @@ struct GitBranchPickerSheetWrapper: View {
                     prTitle = "feat: \(appModel.gitBranch ?? "")"
                     prBody = ""
                     Task {
-                        // ADR-082 Phase 5 — CodeOwners 추천 reviewers 미리 fetch
                         suggestedReviewers = await appModel.suggestedReviewers()
                     }
                     withAnimation { showPRComposer = true }

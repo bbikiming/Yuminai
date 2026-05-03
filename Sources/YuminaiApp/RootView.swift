@@ -150,6 +150,16 @@ struct RootView: View {
             GitRebaseSheet()
                 .environment(appModel)
         }
+        // ADR-083 Phase 1 — Conflict resolution sheet
+        .sheet(isPresented: $bindable.showGitConflictSheet) {
+            GitConflictSheet()
+                .environment(appModel)
+        }
+        // ADR-083 Phase 2 — Cherry-pick sheet
+        .sheet(isPresented: $bindable.showGitCherryPickSheet) {
+            GitCherryPickSheet()
+                .environment(appModel)
+        }
         // ADR-079 Phase 4 — Git branch picker (별도 popover로 가능하나 sheet로 통일)
         .sheet(isPresented: $bindable.showGitBranchPicker) {
             GitBranchPickerSheetWrapper()

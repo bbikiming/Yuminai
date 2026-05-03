@@ -128,9 +128,98 @@ public actor GitHubCLIRunner {
         return (try? JSONDecoder().decode([WorkflowRun].self, from: data)) ?? []
     }
 
-    // MARK: - Default runners
+    // MARK: - ADR-083 Phase 3 — PR comment
 
-    public static let defaultRun: Run = { url, args in
+    /// 현재 브랜치 PR에 comment 추가.
+    public func commentOnPullRequest(body: String) async throws {
+        guard await isInstalled() else { throw GitHubError.ghNotInstalled }
+        guard await isAuthenticated() else { throw GitHubError.notAuthenticated }
+        guard !body.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return }
+        let result = try await runner(ghPath, ["pr", "comment", "--body", body])
+        if !result.success {
+            throw GitHubError.commandFailed(args: ["pr", "comment"], exitCode: result.exitCode, stderr: result.stderr)
+        }
+    }
+
+    // MARK: - ADR-083 Phase 4 — Workflow re-run
+
+    /// 특정 workflow run 재실행 (failed runs 우선).
+    public func rerunWorkflow(runId: Int, failedOnly: Bool = false) async throws {
+        guard await isInstalled() else { throw GitHubError.ghNotInstalled }
+        var args = ["run", "rerun", "\(runId)"]
+        if failedOnly { args.append("--failed") }
+        let result = try await runner(ghPath, args)
+        if !result.success {
+            throw GitHubError.commandFailed(args: args, exitCode: result.exitCode, stderr: result.stderr)
+        }
+    }
+
+    // MARK: - ADR-083 Phase 4 — Repo insights
+
+    /// Top contributors (last 30 days).
+    public func topContributors(limit: Int = 5) async throws -> [Contributor] {
+        guard await isInstalled() else { return [] }
+        // gh api repos/OWNER/REPO/contributors는 분석 시간이 걸림 — 단순화 위해 commits 기반
+        // git shortlog -sne로 top contributors 가능하지만 git 호출 필요
+        // 여기선 GitHub stats API 활용: repos/{owner}/{repo}/stats/contributors
+        let result = try await runner(ghPath, ["api", "repos/{owner}/{repo}/contributors", "--paginate=false"])
+        guard result.success else { return [] }
+        guard let data = result.stdout.data(using: .utf8) else { return [] }
+        let raw = (try? JSONDecoder().decode([RawContributor].self, from: data)) ?? []
+        return raw.prefix(limit).map {
+            Contributor(login: $0.login, contributions: $0.contributions, avatarURL: $0.avatar_url)
+        }
+    }
+
+    /// Repo basic info (stars / forks / open issues).
+    public func repoInfo() async throws -> RepoInfo? {
+        guard await isInstalled() else { return nil }
+        let fields = "name,nameWithOwner,description,stargazerCount,forkCount,openIssuesCount,updatedAt,url"
+        let result = try await runner(ghPath, ["repo", "view", "--json", fields])
+        guard result.success else { return nil }
+        guard let data = result.stdout.data(using: .utf8) else { return nil }
+        return try? JSONDecoder().decode(RepoInfo.self, from: data)
+    }
+
+    private struct RawContributor: Decodable {
+        let login: String
+        let contributions: Int
+        let avatar_url: String
+    }
+}
+
+// MARK: - ADR-083 Phase 4 — Repo insights types
+
+public struct Contributor: Sendable, Hashable, Identifiable {
+    public let login: String
+    public let contributions: Int
+    public let avatarURL: String
+
+    public var id: String { login }
+
+    public init(login: String, contributions: Int, avatarURL: String) {
+        self.login = login
+        self.contributions = contributions
+        self.avatarURL = avatarURL
+    }
+}
+
+public struct RepoInfo: Sendable, Codable, Hashable {
+    public let name: String
+    public let nameWithOwner: String
+    public let description: String?
+    public let stargazerCount: Int
+    public let forkCount: Int
+    public let openIssuesCount: Int
+    public let updatedAt: String
+    public let url: String
+}
+
+// MARK: - Default runners (extension to keep actor body clean)
+
+public extension GitHubCLIRunner {
+
+    static let defaultRun: Run = { url, args in
         let process = Process()
         process.executableURL = url
         process.arguments = args

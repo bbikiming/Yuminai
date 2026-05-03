@@ -4,6 +4,83 @@
 
 ## [Unreleased] — 2026-05-03
 
+### Added — ADR-083 Conflict resolution + Cherry-pick + PR comment + Workflow re-run + Repo insights (5 phases)
+
+**사용자 요청**: "이어서 진행" (ADR-082 다음 라운드)
+
+**Phase 1 — Conflict resolution UI (단순화 3-way merge)**
+- `ConflictResolution` enum (.ours / .theirs) + 한국어 displayName
+- `ConflictBlock` struct + `ConflictBlockParser` (`<<<<<<< / ======= / >>>>>>>` 파싱)
+- `GitBranchManager.resolveConflict(path:strategy:)` — `git checkout --ours/--theirs` + auto stage
+- `GitBranchManager.conflictBlocks(in:)` / `mergeAbort()`
+- `Sources/YuminaiApp/GitConflictSheet.swift` 신규 (880×620, master-detail)
+  - 좌측: 충돌 파일 list (orange triangle indicator)
+  - 우측: conflict blocks side-by-side (ours blue / theirs purple)
+  - "내 변경 채택" / "받은 변경 채택" / "Merge 취소" 버튼
+
+**Phase 2 — Cherry-pick UI**
+- `GitBranchManager.cherryPick(_ sha:)` / `commitsOnBranch(_:limit:)`
+- `Sources/YuminaiApp/GitCherryPickSheet.swift` 신규 (720×580)
+  - Source 브랜치 Picker (현재 브랜치 제외)
+  - 선택 브랜치의 commit 목록 (최대 30개)
+  - 1개 commit 선택 → cherry-pick (자동 conflict 안내)
+
+**Phase 3 — PR comment 작성**
+- `GitHubCLIRunner.commentOnPullRequest(body:)` — `gh pr comment --body`
+- AppModel.commentOnCurrentPR(body:)
+- GitHubPRSheet에 comment composer (TextEditor + 게시 버튼)
+- markdown 가능 + 게시 중 ProgressView
+
+**Phase 4 — Workflow re-run + Repo insights**
+- `GitHubCLIRunner.rerunWorkflow(runId:failedOnly:)` — `gh run rerun --failed`
+- `GitHubCLIRunner.topContributors(limit:)` — `gh api .../contributors`
+- `GitHubCLIRunner.repoInfo()` — `gh repo view --json`
+- `Contributor` + `RepoInfo` Codable structs
+- GitHubPRSheet에:
+  - 실패한 workflow row 옆 재실행 버튼 (arrow.clockwise.circle.fill)
+  - Repo insights card (stars / forks / issues)
+  - Top contributors section (top 5)
+- 모든 fetch 병렬 (`async let`)
+
+**Phase 5 — Tests (+11)**
+- ConflictBlockParser (6 tests):
+  - empty / no markers / single block / multiple blocks / malformed / empty ours
+- ConflictResolution (3 tests): allCases / displayName / Identifiable
+- Contributor + RepoInfo (2 tests): Identifiable + Codable round-trip
+
+### BranchPicker 최종 (3 rows)
+```
+[Diff] [Stash] [Rebase]
+[Cherry-pick] [충돌 해결]
+[PR 보기] [PR 만들기]
+```
+
+근거:
+- Apple HIG "Master-Detail" (conflict viewer)
+- gh CLI JSON output (안정 schema)
+- Git conflict markers spec (https://git-scm.com/docs/git-merge#_how_conflicts_are_presented)
+- NN/g "Recognition rather than Recall" (cherry-pick commit list)
+
+### 빌드/테스트 결과
+- swift build → Build complete!
+- swift test → **649/649 passed** (137 suites, +11 new tests)
+- /Applications/Yuminai.app 재설치 + 실행 (PID 70261)
+
+### 새 파일
+- Sources/YuminaiApp/GitConflictSheet.swift
+- Sources/YuminaiApp/GitCherryPickSheet.swift
+- Tests/YuminaiCoreTests/ConflictAndCherryPickTests.swift (+11 tests)
+
+### 수정 파일
+- Sources/YuminaiCore/GitBranchManager.swift (ConflictResolution + ConflictBlock + cherryPick + commitsOnBranch)
+- Sources/YuminaiCore/GitHubCLIRunner.swift (commentOnPR + rerunWorkflow + topContributors + repoInfo + Contributor/RepoInfo types)
+- Sources/YuminaiApp/AppModel.swift (Conflict + Cherry-pick + PR comment + Workflow re-run + Repo insights methods)
+- Sources/YuminaiApp/GitHubPRSheet.swift (comment composer + workflow rerun + repo card + contributors)
+- Sources/YuminaiApp/GitBranchPickerSheetWrapper.swift (Cherry-pick + 충돌 해결 buttons)
+- Sources/YuminaiApp/RootView.swift (2개 sheet binding)
+
+---
+
 ### Added — ADR-082 Diff viewer + GitHub PR review + Actions + Rebase + CodeOwners (5 phases)
 
 **사용자 요청**: "다음 진행해줘" (ADR-081 다음 라운드)
