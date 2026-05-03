@@ -120,6 +120,135 @@ public actor GitBranchManager {
         return sha.stdout.trimmingCharacters(in: .whitespacesAndNewlines)
     }
 
+    // MARK: - Remote operations (ADR-081 Phase 1)
+
+    /// 원격 저장소 정보 (origin URL).
+    public func originURL() async throws -> String? {
+        let result = try await runner.run(["remote", "get-url", "origin"])
+        guard result.success else { return nil }
+        return result.stdout.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    /// 현재 브랜치의 upstream tracking 정보 (ahead/behind count).
+    public func upstreamStatus() async throws -> UpstreamStatus? {
+        let upstreamResult = try await runner.run(["rev-parse", "--abbrev-ref", "@{upstream}"])
+        guard upstreamResult.success else { return nil }
+        let upstream = upstreamResult.stdout.trimmingCharacters(in: .whitespacesAndNewlines)
+
+        // ahead/behind count
+        let countResult = try await runner.run(["rev-list", "--left-right", "--count", "HEAD...@{upstream}"])
+        guard countResult.success else { return UpstreamStatus(upstreamName: upstream, ahead: 0, behind: 0) }
+        let parts = countResult.stdout.split(separator: "\t").compactMap { Int($0.trimmingCharacters(in: .whitespacesAndNewlines)) }
+        let ahead = parts.first ?? 0
+        let behind = parts.count > 1 ? parts[1] : 0
+        return UpstreamStatus(upstreamName: upstream, ahead: ahead, behind: behind)
+    }
+
+    /// 원격에서 fetch (실제 변경 안 함, ahead/behind 갱신용).
+    public func fetch() async throws {
+        let result = try await runner.run(["fetch", "--all", "--prune"])
+        if !result.success {
+            throw GitRunner.GitError.commandFailed(args: ["fetch"], exitCode: result.exitCode, stderr: result.stderr)
+        }
+    }
+
+    /// pull (rebase 모드 — clean history). uncommitted changes 있으면 throw.
+    public func pull(rebase: Bool = true) async throws {
+        if try await isDirty() {
+            throw GitPullError.dirtyTree
+        }
+        var args = ["pull"]
+        if rebase { args.append("--rebase") }
+        let result = try await runner.run(args)
+        if !result.success {
+            throw GitRunner.GitError.commandFailed(args: args, exitCode: result.exitCode, stderr: result.stderr)
+        }
+    }
+
+    /// push (현재 브랜치 → upstream). 처음이면 -u 자동 추가.
+    public func push(force: Bool = false) async throws {
+        // upstream 있는지 확인
+        let hasUpstream = (try? await runner.run(["rev-parse", "--abbrev-ref", "@{upstream}"]).success) ?? false
+        var args = ["push"]
+        if force { args.append("--force-with-lease") }  // safer than --force
+        if !hasUpstream {
+            // 처음 push — upstream 자동 set
+            let branch = try await currentBranch()
+            args.append("-u")
+            args.append("origin")
+            args.append(branch)
+        }
+        let result = try await runner.run(args)
+        if !result.success {
+            throw GitRunner.GitError.commandFailed(args: args, exitCode: result.exitCode, stderr: result.stderr)
+        }
+    }
+
+    // MARK: - Stash (ADR-081 Phase 4)
+
+    /// Stash list (사용자가 명시적으로 만든 것 + auto-stash 모두).
+    public func stashes() async throws -> [StashInfo] {
+        let format = "%h|%gd|%s|%cr"
+        let raw = try await runner.runOrThrow(["stash", "list", "--format=\(format)"])
+        return raw.split(separator: "\n").compactMap { line in
+            let parts = line.split(separator: "|", maxSplits: 3, omittingEmptySubsequences: false)
+            guard parts.count == 4 else { return nil }
+            return StashInfo(
+                shortSha: String(parts[0]),
+                ref: String(parts[1]),
+                message: String(parts[2]),
+                relativeDate: String(parts[3])
+            )
+        }
+    }
+
+    /// Stash 적용 (변경사항 working tree로 복원, stash entry는 유지).
+    public func applyStash(_ ref: String) async throws {
+        let result = try await runner.run(["stash", "apply", ref])
+        if !result.success {
+            throw GitRunner.GitError.commandFailed(args: ["stash", "apply", ref], exitCode: result.exitCode, stderr: result.stderr)
+        }
+    }
+
+    /// Stash 적용 + 삭제 (pop).
+    public func popStash(_ ref: String) async throws {
+        let result = try await runner.run(["stash", "pop", ref])
+        if !result.success {
+            throw GitRunner.GitError.commandFailed(args: ["stash", "pop", ref], exitCode: result.exitCode, stderr: result.stderr)
+        }
+    }
+
+    /// Stash 삭제.
+    public func dropStash(_ ref: String) async throws {
+        let result = try await runner.run(["stash", "drop", ref])
+        if !result.success {
+            throw GitRunner.GitError.commandFailed(args: ["stash", "drop", ref], exitCode: result.exitCode, stderr: result.stderr)
+        }
+    }
+
+    /// 현재 변경사항을 명시적으로 stash (사용자 입력 메시지 포함).
+    public func createStash(message: String) async throws {
+        let trimmed = message.trimmingCharacters(in: .whitespacesAndNewlines)
+        var args = ["stash", "push", "-u"]
+        if !trimmed.isEmpty {
+            args.append(contentsOf: ["-m", trimmed])
+        }
+        let result = try await runner.run(args)
+        if !result.success {
+            throw GitRunner.GitError.commandFailed(args: args, exitCode: result.exitCode, stderr: result.stderr)
+        }
+    }
+
+    // MARK: - Conflict detection (ADR-081 Phase 4)
+
+    /// 현재 working tree에 conflict 있는 파일 목록.
+    public func conflictedFiles() async throws -> [String] {
+        let result = try await runner.run(["diff", "--name-only", "--diff-filter=U"])
+        guard result.success else { return [] }
+        return result.stdout.split(separator: "\n").map { String($0).trimmingCharacters(in: .whitespacesAndNewlines) }
+            .filter { !$0.isEmpty }
+    }
+
     /// 최근 commit 목록 (HEAD ~ N개).
     public func recentCommits(limit: Int = 10) async throws -> [CommitInfo] {
         let format = "%h|%s|%cr|%an"
@@ -181,6 +310,53 @@ public struct CommitInfo: Sendable, Hashable, Identifiable {
     public let authorName: String
 
     public var id: String { shortSha }
+}
+
+/// **ADR-081 Phase 1** — 원격 브랜치 vs 로컬 브랜치 동기화 상태.
+public struct UpstreamStatus: Sendable, Hashable {
+    public let upstreamName: String
+    /// 로컬이 원격보다 ahead (push 가능).
+    public let ahead: Int
+    /// 로컬이 원격보다 behind (pull 필요).
+    public let behind: Int
+
+    public init(upstreamName: String, ahead: Int, behind: Int) {
+        self.upstreamName = upstreamName
+        self.ahead = ahead
+        self.behind = behind
+    }
+
+    public var isInSync: Bool { ahead == 0 && behind == 0 }
+    public var summary: String {
+        if isInSync { return "동기화됨" }
+        var parts: [String] = []
+        if ahead > 0 { parts.append("↑\(ahead) push 대기") }
+        if behind > 0 { parts.append("↓\(behind) pull 필요") }
+        return parts.joined(separator: ", ")
+    }
+}
+
+/// **ADR-081 Phase 4** — Stash 항목.
+public struct StashInfo: Sendable, Hashable, Identifiable {
+    public let shortSha: String
+    /// stash@{0}, stash@{1} 등.
+    public let ref: String
+    public let message: String
+    public let relativeDate: String
+
+    public var id: String { ref }
+}
+
+/// **ADR-081 Phase 1** — Pull 시 발생할 수 있는 사용자 친화적 에러.
+public enum GitPullError: Error, LocalizedError {
+    case dirtyTree
+
+    public var errorDescription: String? {
+        switch self {
+        case .dirtyTree:
+            return "변경된 파일이 있어요. 먼저 커밋하거나 stash로 보관한 뒤 pull하세요."
+        }
+    }
 }
 
 // MARK: - Auto-commit message generation (ADR-079 Phase 5)

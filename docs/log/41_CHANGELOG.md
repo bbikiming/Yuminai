@@ -4,6 +4,81 @@
 
 ## [Unreleased] — 2026-05-03
 
+### Added — ADR-081 Git push/pull + AI commit msg + GitHub PR + Stash + Conflict (5 phases)
+
+**사용자 요청**: "이어서 진행해줘" (ADR-080 다음 라운드 5가지 후보 모두 진행)
+
+**Phase 1 — Git push/pull/fetch + upstream tracking**
+- `GitBranchManager` 확장:
+  - `originURL()` / `upstreamStatus()` (ahead/behind count)
+  - `fetch()` / `pull(rebase:)` / `push(force:)`
+  - `pull` 시 dirty면 GitPullError.dirtyTree throw
+  - `push` 자동 -u (처음 push 시 upstream set)
+- `UpstreamStatus` struct (upstreamName + ahead + behind + summary)
+- `GitPullError` 한국어 메시지 (dirty tree 안내)
+- AppModel: `gitFetch()` / `gitPull()` / `gitPush()` + `gitOperationInProgress` 진행 표시
+- AppModel.gitUpstream state (사이드바 + branch picker 표시용)
+
+**Phase 2 — AI-generated commit messages (Claude API)**
+- AppModel.generateCommitMessageWithAI() — `ChildClaudeProcess.runOnce` 활용
+- git diff (8KB cap) → Claude → Conventional Commits 한국어 title
+- GitCommitSheet에 "AI로 생성" 버튼 (sparkles 아이콘)
+- 격리 호출 (메인 conversation 안 건드림, costTracker는 rehearsal bucket)
+- 30초 timeout
+
+**Phase 3 — GitHub PR creation (gh CLI)**
+- `Sources/YuminaiCore/GitHubCLIRunner.swift` 신규
+  - `isInstalled()` / `isAuthenticated()` / `createPullRequest()` / `existingPullRequest()`
+  - GitHubError 한국어 (gh 미설치 / 인증 필요 안내)
+  - `makeRunWithCwd()` helper — workspace 디렉토리 cwd 기반 호출
+- AppModel.createPullRequest(title:body:draft:) — push + PR 한 번에
+- BranchPicker에 "PR 만들기" 버튼 → PR composer (title + markdown body + draft)
+
+**Phase 4 — Git stash 관리**
+- `GitBranchManager` 확장:
+  - `stashes()` / `applyStash()` / `popStash()` / `dropStash()` / `createStash(message:)`
+  - `conflictedFiles()` (충돌 파일 목록)
+- `StashInfo` struct (shortSha + ref + message + relativeDate)
+- AppModel: gitStashes / gitCreateStash / gitApplyStash / gitPopStash / gitDropStash
+- `GitStashSheet` 신규 (540×480) — 새 stash + list + apply/pop/drop 버튼
+
+**Phase 5 — Branch picker 통합 + Tests**
+- `GitBranchPickerSheetWrapper` 전면 확장:
+  - Upstream sync badge (동기화됨 / ↑N push 대기 / ↓N pull 필요)
+  - Pull / Push / Fetch action row (gitOperationInProgress 시 disabled)
+  - Stash 버튼 → GitStashSheet
+  - PR 만들기 버튼 → inline PR composer (title + body + 만들기/취소)
+- Tests: GitRemoteAndStashTests +11
+  - UpstreamStatus boundary (ahead/behind/sync/diverged)
+  - StashInfo Identifiable + Hashable
+  - GitPullError 한국어 검증
+  - GitHubCLIRunner default path + error messages + makeRunWithCwd
+
+근거:
+- Claude Code git workflow (push/pull + PR 통합 패턴 단순화)
+- gh CLI 표준 (인증/scope 자동) — direct API 호출보다 안정적
+- macOS gh 설치 위치 (Homebrew arm64/intel + system)
+- Conventional Commits + AI prompt 패턴 (Anthropic best practices)
+
+### 빌드/테스트 결과
+- swift build → Build complete!
+- swift test → **615/615 passed** (130 suites, +11 new tests)
+- /Applications/Yuminai.app 재설치 + 실행 (PID 42260)
+
+### 새 파일
+- Sources/YuminaiCore/GitHubCLIRunner.swift
+- Sources/YuminaiApp/GitStashSheet.swift
+- Tests/YuminaiCoreTests/GitRemoteAndStashTests.swift (+11 tests)
+
+### 수정 파일
+- Sources/YuminaiCore/GitBranchManager.swift (push/pull/fetch/stash/conflict)
+- Sources/YuminaiApp/AppModel.swift (Git remote + AI commit msg + PR creation + stash methods)
+- Sources/YuminaiApp/GitCommitSheet.swift (AI 생성 버튼)
+- Sources/YuminaiApp/GitBranchPickerSheetWrapper.swift (Push/Pull/Fetch/Stash/PR 통합)
+- Sources/YuminaiApp/RootView.swift (GitStashSheet binding + AI callback)
+
+---
+
 ### Added — ADR-080 반응형 audit + 단위 테스트 보강 (사용자 follow-up)
 
 **사용자 요청**: "마친 후에도 추가적으로 화면 반응형과 단위기능 테스트 진행해 줘"

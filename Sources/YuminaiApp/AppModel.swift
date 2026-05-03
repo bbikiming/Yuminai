@@ -64,10 +64,16 @@ public final class AppModel {
     /// **ADR-079 Phase 4** — Git status 캐시 (현재 워크스페이스).
     public var gitBranch: String?
     public var gitDirtyStats: DirtyStats?
+    /// **ADR-081 Phase 1** — upstream sync status (ahead/behind).
+    public var gitUpstream: UpstreamStatus?
     /// **ADR-079 Phase 5** — Git commit sheet (메시지 입력).
     public var showGitCommitSheet: Bool = false
     /// **ADR-079 Phase 4** — Git branch picker popover.
     public var showGitBranchPicker: Bool = false
+    /// **ADR-081 Phase 4** — Git stash sheet.
+    public var showGitStashSheet: Bool = false
+    /// **ADR-081 Phase 1** — push/pull 진행 중 (UI 비활성화용).
+    public var gitOperationInProgress: Bool = false
 
     // 활성 세션 설정 (toolbar에서 즉시 변경 가능)
     public var activeSettings: SessionSettings = .default
@@ -1400,9 +1406,11 @@ public final class AppModel {
         do {
             self.gitBranch = try await manager.currentBranch()
             self.gitDirtyStats = try await manager.dirtyStats()
+            self.gitUpstream = try? await manager.upstreamStatus()
         } catch {
             self.gitBranch = nil
             self.gitDirtyStats = nil
+            self.gitUpstream = nil
         }
     }
 
@@ -1457,6 +1465,194 @@ public final class AppModel {
     public func gitBranches() async -> [BranchInfo] {
         guard let manager = await makeGitManager() else { return [] }
         return (try? await manager.localBranches()) ?? []
+    }
+
+    // MARK: - ADR-081 Phase 1 — Push/Pull/Fetch
+
+    /// fetch + status 갱신 (사용자 manual trigger 또는 commit 후 자동).
+    public func gitFetch() async {
+        guard let manager = await makeGitManager() else { return }
+        gitOperationInProgress = true
+        defer { gitOperationInProgress = false }
+        do {
+            try await manager.fetch()
+            await refreshGitStatus()
+        } catch {
+            self.error = "Git fetch 실패: \(error.localizedDescription)"
+        }
+    }
+
+    /// pull (rebase 모드, dirty면 throw).
+    public func gitPull() async {
+        guard let manager = await makeGitManager() else { return }
+        gitOperationInProgress = true
+        defer { gitOperationInProgress = false }
+        do {
+            try await manager.pull(rebase: true)
+            await refreshGitStatus()
+            self.error = "✓ Pull 완료"
+        } catch {
+            self.error = "Pull 실패: \(error.localizedDescription)"
+        }
+    }
+
+    /// push (upstream 없으면 자동 -u).
+    public func gitPush(force: Bool = false) async {
+        guard let manager = await makeGitManager() else { return }
+        gitOperationInProgress = true
+        defer { gitOperationInProgress = false }
+        do {
+            try await manager.push(force: force)
+            await refreshGitStatus()
+            self.error = "✓ Push 완료"
+        } catch {
+            self.error = "Push 실패: \(error.localizedDescription)"
+        }
+    }
+
+    // MARK: - ADR-081 Phase 4 — Stash
+
+    public func gitStashes() async -> [StashInfo] {
+        guard let manager = await makeGitManager() else { return [] }
+        return (try? await manager.stashes()) ?? []
+    }
+
+    public func gitCreateStash(message: String) async {
+        guard let manager = await makeGitManager() else { return }
+        do {
+            try await manager.createStash(message: message)
+            await refreshGitStatus()
+            self.error = "✓ Stash 저장됨"
+        } catch {
+            self.error = "Stash 실패: \(error.localizedDescription)"
+        }
+    }
+
+    public func gitApplyStash(_ ref: String) async {
+        guard let manager = await makeGitManager() else { return }
+        do {
+            try await manager.applyStash(ref)
+            await refreshGitStatus()
+        } catch {
+            self.error = "Stash 적용 실패: \(error.localizedDescription)"
+        }
+    }
+
+    public func gitPopStash(_ ref: String) async {
+        guard let manager = await makeGitManager() else { return }
+        do {
+            try await manager.popStash(ref)
+            await refreshGitStatus()
+        } catch {
+            self.error = "Stash pop 실패: \(error.localizedDescription)"
+        }
+    }
+
+    public func gitDropStash(_ ref: String) async {
+        guard let manager = await makeGitManager() else { return }
+        do {
+            try await manager.dropStash(ref)
+        } catch {
+            self.error = "Stash 삭제 실패: \(error.localizedDescription)"
+        }
+    }
+
+    // MARK: - ADR-081 Phase 2 — AI-generated commit message
+
+    /// 현재 git diff를 Claude에 보내 commit message 생성.
+    /// `ChildClaudeProcess` 활용 — 격리 호출, costTracker 자동 추적.
+    public func generateCommitMessageWithAI() async -> String? {
+        guard let ws = workspaces.first(where: { $0.id == selectedWorkspaceId }) else { return nil }
+        let url = URL(fileURLWithPath: ws.directoryPath)
+        let runner = GitRunner(workspaceURL: url)
+        guard await runner.isRepository() else { return nil }
+        let diff = (try? await runner.diff()) ?? ""
+        // diff가 너무 크면 truncate (token cost 방지)
+        let truncated = String(diff.prefix(8000))
+        guard !truncated.isEmpty else { return nil }
+        guard let child = childProcess else { return nil }
+
+        let prompt = """
+        You are a Git commit message generator following Conventional Commits style.
+        Read this diff and produce ONE concise Korean commit message (≤ 72 chars title).
+
+        Format:
+        - Use prefix: feat: / fix: / chore: / refactor: / docs: / test:
+        - Title in Korean, ≤ 72 chars
+        - NO body, NO multi-line, NO Co-Authored-By footer (system adds it)
+        - Output ONLY the title line, nothing else
+
+        Diff:
+        ```
+        \(truncated)
+        ```
+        """
+        do {
+            let output = try await child.runOnce(
+                prompt: prompt,
+                in: ws,
+                agent: ws.agentKind,
+                purpose: .rehearsal,  // 격리 호출 (메인 conversation 안 건드림)
+                timeoutSeconds: 30,
+                overrideSettings: nil
+            )
+            let message = output.resultText
+                .trimmingCharacters(in: .whitespacesAndNewlines)
+                .components(separatedBy: "\n")
+                .first?
+                .trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+            return message.isEmpty ? nil : message
+        } catch {
+            self.error = "AI 메시지 생성 실패: \(error.localizedDescription)"
+            return nil
+        }
+    }
+
+    // MARK: - ADR-081 Phase 3 — GitHub PR creation
+
+    /// 현재 워크스페이스의 GitHub gh runner.
+    public func makeGitHubRunner() async -> GitHubCLIRunner? {
+        guard let ws = workspaces.first(where: { $0.id == selectedWorkspaceId }) else { return nil }
+        let url = URL(fileURLWithPath: ws.directoryPath)
+        return GitHubCLIRunner(
+            workspaceURL: url,
+            runner: GitHubCLIRunner.makeRunWithCwd(url)
+        )
+    }
+
+    /// Push + PR 생성 (Claude Code 패턴 — 한 번에).
+    public func createPullRequest(title: String, body: String?, draft: Bool = false) async {
+        gitOperationInProgress = true
+        defer { gitOperationInProgress = false }
+        // 1. Push 먼저
+        guard let manager = await makeGitManager() else {
+            self.error = "Git 저장소가 아니에요"
+            return
+        }
+        do {
+            try await manager.push(force: false)
+        } catch {
+            self.error = "Push 실패: \(error.localizedDescription)"
+            return
+        }
+        // 2. PR 생성
+        guard let gh = await makeGitHubRunner() else {
+            self.error = "gh CLI를 찾을 수 없어요"
+            return
+        }
+        do {
+            let url = try await gh.createPullRequest(title: title, body: body, draft: draft)
+            self.error = "✓ PR 생성됨: \(url)"
+            // 사용자가 URL을 클릭하기 쉽게 — 자동으로 brower 안 열기 (privacy)
+        } catch {
+            self.error = "PR 생성 실패: \(error.localizedDescription)"
+        }
+    }
+
+    /// 현재 브랜치에 이미 PR이 있는지 확인.
+    public func existingPRForCurrentBranch() async -> String? {
+        guard let gh = await makeGitHubRunner() else { return nil }
+        return try? await gh.existingPullRequest()
     }
 
     private static func exportTimestamp() -> String {
@@ -3728,9 +3924,10 @@ public final class AppModel {
         showWorkspaceSearchSheet = false
         showTagEditSheet = false
         tagEditTargetId = nil
-        // ADR-079 Phase 4-5
+        // ADR-079 Phase 4-5 + ADR-081 Phase 4
         showGitCommitSheet = false
         showGitBranchPicker = false
+        showGitStashSheet = false
     }
 
     /// 새 sheet/alert을 열기 전에 다른 sheet 모두 닫고 setter 실행.

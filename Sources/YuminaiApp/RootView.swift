@@ -111,7 +111,7 @@ struct RootView: View {
                 onCancel: { appModel.showWorkspaceSearchSheet = false }
             )
         }
-        // ADR-079 Phase 5 — Git commit sheet
+        // ADR-079 Phase 5 + ADR-081 Phase 2 — Git commit sheet (AI 메시지 생성 포함)
         .sheet(isPresented: $bindable.showGitCommitSheet) {
             if let branch = appModel.gitBranch, let stats = appModel.gitDirtyStats {
                 GitCommitSheet(
@@ -123,9 +123,17 @@ struct RootView: View {
                             appModel.showGitCommitSheet = false
                         }
                     },
-                    onCancel: { appModel.showGitCommitSheet = false }
+                    onCancel: { appModel.showGitCommitSheet = false },
+                    onGenerateWithAI: {
+                        await appModel.generateCommitMessageWithAI()
+                    }
                 )
             }
+        }
+        // ADR-081 Phase 4 — Git stash sheet
+        .sheet(isPresented: $bindable.showGitStashSheet) {
+            GitStashSheet()
+                .environment(appModel)
         }
         // ADR-079 Phase 4 — Git branch picker (별도 popover로 가능하나 sheet로 통일)
         .sheet(isPresented: $bindable.showGitBranchPicker) {

@@ -1,6 +1,172 @@
 # Decisions Log (ADR-lite)
 
-> 최신: ADR-079 (Smart filter + Workspace duplicate + Tag drag + iCloud sync + Git integration)
+> 최신: ADR-081 (Git push/pull + AI commit msg + GitHub PR + Stash + Conflict)
+
+---
+
+## ADR-081 — Git remote + AI commit + GitHub PR + Stash (5 phases)
+
+- **날짜**: 2026-05-03
+- **상태**: Accepted (구현 + 테스트 + /Applications 재설치)
+
+### 배경
+
+ADR-079의 Git 기능을 production-ready로 확장:
+- Push/Pull/Fetch (원격 동기화)
+- AI commit message (Claude API 자동 생성)
+- GitHub PR (gh CLI 통합, 사용성 단순화)
+- Stash 관리 (브랜치 전환 안전)
+- Conflict 감지 (기본)
+
+### 결정
+
+#### Phase 1: Push/Pull/Fetch + Upstream tracking
+
+**왜 rebase pull (default)?**
+- Linear history 유지 (merge commit 폭발 방지)
+- Claude Code 표준 패턴
+- Conflict 발생 시 사용자가 명시적 처리 가능
+
+**왜 `--force-with-lease` (`--force` 아님)?**
+- safer than `--force` — 원격이 누구의 push로 변경됐다면 reject
+- Apple HIG "Prevent destructive actions when possible"
+
+**Upstream tracking**:
+- `git rev-list --left-right --count HEAD...@{upstream}` → ahead/behind
+- 한국어 summary: "↑3 push 대기, ↓2 pull 필요"
+- Branch picker 상단 badge
+
+**Dirty pull 거부**:
+- `pull` 시 working tree dirty면 throw
+- 사용자에게 "먼저 커밋 또는 stash" 안내
+- accidental conflict 방지
+
+#### Phase 2: AI-generated commit messages
+
+**왜 ChildClaudeProcess (메인 conversation 아님)?**
+- 격리 호출 — 메인 채팅 컨텍스트 영향 X
+- costTracker.rehearsal bucket으로 추적 (별도 카테고리)
+- 30초 timeout (사용자 기다림 한계)
+
+**Prompt 디자인**:
+- Conventional Commits 강제 (feat/fix/chore/refactor/docs/test prefix)
+- 한국어 title (사용자 친화)
+- ≤ 72 chars (Git 표준)
+- NO body, NO multi-line, NO Co-Authored-By (system이 추가)
+- diff 8KB cap (token cost 방지)
+
+**UI**: GitCommitSheet 우상단 "AI로 생성" 버튼 (sparkles 아이콘)
+- 생성 중 ProgressView + "생성 중…" 라벨
+- 생성된 message가 TextField에 채워짐 (사용자 수정 가능)
+
+#### Phase 3: GitHub PR creation
+
+**왜 gh CLI (직접 API 아님)?**
+- 인증 자동 (사용자가 `gh auth login` 한 번)
+- scope 관리 자동
+- token 노출 위험 X
+- Claude Code 표준 (Anthropic 권장 패턴)
+
+**`GitHubCLIRunner` actor**:
+- 표준 path 자동 감지: `/opt/homebrew/bin/gh` (arm64), `/usr/local/bin/gh` (intel), `/usr/bin/gh`
+- isInstalled / isAuthenticated 사전 체크
+- createPullRequest(title, body, draft)
+- existingPullRequest() — 중복 PR 방지
+
+**왜 cwd-aware run?**
+- gh CLI는 현재 디렉토리의 git repo 기반 동작
+- `Process.currentDirectoryURL` 명시 필수
+- `GitHubCLIRunner.makeRunWithCwd(workspaceURL)` helper
+
+**PR composer UI** (BranchPicker 안):
+- title (필수, "feat: 브랜치명" prefilled)
+- body (markdown, optional)
+- draft 옵션
+- Push 자동 안내 ("⚠ Push가 자동 실행됩니다")
+- 1-click "PR 만들기"
+
+#### Phase 4: Stash 관리
+
+**Stash use cases**:
+1. 브랜치 전환 전 임시 보관
+2. 작업 중 conflict 방지
+3. WIP 보관 (다른 작업 우선)
+
+**`GitStashSheet`** (540×480):
+- 새 stash 만들기 (메시지 입력 + 즉시 저장)
+- Stash list (ref / message / shortSha / 상대 시간)
+- Apply (변경 적용, stash 유지)
+- Pop (변경 적용, stash 삭제)
+- Drop (삭제만)
+- destructive 액션은 빨강
+
+**`conflictedFiles()`** — `git diff --name-only --diff-filter=U`:
+- 충돌 파일 목록 반환
+- 향후 conflict resolution UI 기반 (별도 ADR)
+
+#### Phase 5: BranchPicker 통합
+
+ADR-079의 단순 picker → 통합 git operations hub:
+1. Upstream sync badge (상단)
+2. Pull / Push / Fetch (action row)
+3. Branch list (기존)
+4. Stash / PR 만들기 (secondary action row)
+5. PR composer (inline, slide animation)
+
+**Disabled state**:
+- gitOperationInProgress 동안 모든 버튼 disabled
+- 동시 race condition 방지
+
+### 적용 결과
+```
+swift build              → Build complete!
+swift test               → 615/615 passed (130 suites, +11 new tests)
+/Applications 재설치     → ✅ PID 42260 실행 중
+새 파일                  → 3
+수정 파일                → 5
+```
+
+### 트레이드오프
+
+**왜 push/pull/PR이 BranchPicker 안?**
+- Git operations이 한 곳에 모이면 navigation 단순
+- ChatToolbar에 더 추가하면 작은 화면 overflow
+- Claude Code git workflow와 일관 (한 popover)
+
+**왜 PR composer가 inline (별도 sheet 아님)?**
+- BranchPicker context 유지 (브랜치 → PR이 자연스러운 흐름)
+- 작은 화면에서 sheet 중첩 회피
+- slide animation으로 모드 전환 명확
+
+**왜 conflict resolution UI 미구현?**
+- 충돌 해결은 복잡한 3-way merge UI 필요 (별도 ADR)
+- 현재 단계: 감지만 (`conflictedFiles()`)
+- 사용자는 외부 도구 (VSCode merge editor 등) 활용
+
+**왜 AI commit msg가 GitCommitSheet 안?**
+- AI는 옵션 (사용자가 직접 입력 우선)
+- 생성 후 수정 가능 (사용자 final review)
+- `nil callback` 으로 AI 비활성 모드도 지원 (testability)
+
+### Apple HIG + Best Practices
+- ✅ Apple HIG "Prevent destructive actions" — `--force-with-lease`
+- ✅ Apple HIG "Sync" — 사용자 명시 trigger (auto-pull X)
+- ✅ Conventional Commits 표준 (Angular team standard)
+- ✅ Anthropic Claude Code best practices (gh CLI + Co-Authored-By)
+
+### WCAG 2.2 충족
+- ✅ **SC 2.4.6 Headings and Labels**: 모든 git 버튼 한국어 라벨
+- ✅ **SC 4.1.2 Name, Role, Value**: accessibilityLabel + Hint
+- ✅ **SC 1.4.3 Contrast**: action button 색상 (accent / secondary / destructive)
+
+### 향후 (ADR-082+ 후보)
+
+- **Conflict resolution UI** (3-way merge editor) — 큰 ADR
+- **Git rebase / cherry-pick advanced** (interactive rebase 등)
+- **GitHub PR review** (gh pr view + comments)
+- **GitHub Actions integration** (workflow run status in toolbar)
+- **Diff viewer** (sidebar에 modified files + inline diff)
+- **CodeOwners 자동 reviewer 추가** (PR 생성 시)
 
 ---
 

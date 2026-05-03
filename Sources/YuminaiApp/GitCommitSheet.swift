@@ -14,9 +14,26 @@ struct GitCommitSheet: View {
     let stats: DirtyStats
     let onCommit: (_ message: String) -> Void
     let onCancel: () -> Void
+    /// **ADR-081 Phase 2** — AI 메시지 생성 콜백 (nil = AI 생성 비활성).
+    let onGenerateWithAI: (() async -> String?)?
 
     @State private var message: String = ""
+    @State private var generatingAI: Bool = false
     @FocusState private var inputFocused: Bool
+
+    init(
+        branch: String,
+        stats: DirtyStats,
+        onCommit: @escaping (String) -> Void,
+        onCancel: @escaping () -> Void,
+        onGenerateWithAI: (() async -> String?)? = nil
+    ) {
+        self.branch = branch
+        self.stats = stats
+        self.onCommit = onCommit
+        self.onCancel = onCancel
+        self.onGenerateWithAI = onGenerateWithAI
+    }
 
     var body: some View {
         YuminaiSheet(width: 540, height: 420) {
@@ -113,11 +130,46 @@ struct GitCommitSheet: View {
 
     private var messageField: some View {
         VStack(alignment: .leading, spacing: 6) {
-            sectionLabel("커밋 메시지")
+            HStack {
+                sectionLabel("커밋 메시지")
+                Spacer()
+                // ADR-081 Phase 2 — AI 메시지 생성 버튼
+                if let generate = onGenerateWithAI {
+                    Button {
+                        Task {
+                            generatingAI = true
+                            defer { generatingAI = false }
+                            if let aiMessage = await generate() {
+                                message = aiMessage
+                            }
+                        }
+                    } label: {
+                        HStack(spacing: 4) {
+                            if generatingAI {
+                                ProgressView().controlSize(.mini)
+                            } else {
+                                Image(systemName: "sparkles")
+                                    .font(.system(size: 9))
+                            }
+                            Text(generatingAI ? "생성 중…" : "AI로 생성")
+                                .font(Theme.Typography.micro.weight(.medium))
+                        }
+                        .foregroundStyle(Theme.Color.accent)
+                        .padding(.horizontal, 8)
+                        .padding(.vertical, 3)
+                        .background(Theme.Color.accentMuted)
+                        .clipShape(Capsule())
+                    }
+                    .buttonStyle(.plain)
+                    .disabled(generatingAI || stats.isEmpty)
+                    .help("Claude가 git diff를 분석해 commit message 생성")
+                    .accessibilityLabel("AI로 커밋 메시지 생성")
+                }
+            }
             FlatTextField("예: feat: 사용자 인증 추가", text: $message)
                 .focused($inputFocused)
                 .accessibilityLabel("커밋 메시지")
-                .accessibilityHint("Claude가 자동 생성한 메시지입니다. 수정 가능.")
+                .accessibilityHint("자동 생성된 메시지를 수정할 수 있어요. 우상단 'AI로 생성' 버튼으로 Claude가 diff 분석.")
         }
     }
 
