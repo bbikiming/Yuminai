@@ -37,6 +37,9 @@ public struct Composer: View {
     /// `@` 입력 시 자동완성 후보 (ADR-032). 빈 배열이면 picker 비활성.
     public let mentionSuggestions: [MentionSuggestion]
 
+    /// **ADR-072 Phase 1** — 반응형 padding 결정용.
+    public let layoutMode: LayoutMode
+
     public init(
         text: Binding<String>,
         model: Binding<ClaudeModel>,
@@ -57,7 +60,8 @@ public struct Composer: View {
         onAttachNote: (() -> Void)? = nil,
         onCreatePR: (() -> Void)? = nil,
         mentionSuggestions: [MentionSuggestion] = [],
-        agentChainEnabled: Bool = false
+        agentChainEnabled: Bool = false,
+        layoutMode: LayoutMode = .regular
     ) {
         self._text = text
         self._model = model
@@ -79,6 +83,7 @@ public struct Composer: View {
         self.onCreatePR = onCreatePR
         self.mentionSuggestions = mentionSuggestions
         self.agentChainEnabled = agentChainEnabled
+        self.layoutMode = layoutMode
     }
 
     @FocusState private var inputFocused: Bool
@@ -136,8 +141,9 @@ public struct Composer: View {
                         lineWidth: Theme.Stroke.hairline)
         )
         .clipShape(RoundedRectangle(cornerRadius: Theme.Radius.xl))
-        .padding(.horizontal, Theme.Layout.composerOuterPadding)
-        .padding(.bottom, Theme.Layout.composerOuterPadding)
+        // ADR-072 Phase 1 — 반응형 outer padding (작은 화면에서 잘림 방지)
+        .padding(.horizontal, Theme.Layout.composerOuterPadding(for: layoutMode))
+        .padding(.bottom, Theme.Layout.composerOuterPadding(for: layoutMode))
         .padding(.top, Theme.Spacing.sm)
     }
 
@@ -270,13 +276,31 @@ public struct Composer: View {
 
     // MARK: - Footer
 
-    private var footer: some View {
-        HStack(spacing: Theme.Spacing.md) {
-            ModelPicker(selection: $model) { _ in apply() }
-            ModePicker(selection: $permissionMode) { _ in apply() }
-            EffortPicker(selection: $effortLevel) { _ in apply() }
+    /// **ADR-072 Phase 1** — 작은 화면에서는 effort/note picker 등 비필수 요소 숨김.
+    private var hidesSecondaryFooterItems: Bool {
+        switch layoutMode {
+        case .tiny, .compact: return true
+        case .medium, .regular, .wide: return false
+        }
+    }
 
-            Spacer()
+    /// **ADR-072 Phase 1** — tiny 모드에서는 model/mode picker도 가장 단순화.
+    private var hidesAllPickers: Bool {
+        layoutMode == .tiny
+    }
+
+    private var footer: some View {
+        HStack(spacing: Theme.Spacing.sm) {
+            // ADR-072 Phase 1 — 반응형 picker 표시
+            if !hidesAllPickers {
+                ModelPicker(selection: $model) { _ in apply() }
+                ModePicker(selection: $permissionMode) { _ in apply() }
+                if !hidesSecondaryFooterItems {
+                    EffortPicker(selection: $effortLevel) { _ in apply() }
+                }
+            }
+
+            Spacer(minLength: Theme.Spacing.xs)
 
             IconButton(
                 "paperclip",
@@ -285,7 +309,7 @@ public struct Composer: View {
                 action: onAttach
             )
 
-            if let onAttachNote {
+            if let onAttachNote, !hidesSecondaryFooterItems {
                 IconButton(
                     "doc.text",
                     size: 13,
@@ -294,27 +318,30 @@ public struct Composer: View {
                 )
             }
 
-            if !mentionSuggestions.isEmpty {
+            if !mentionSuggestions.isEmpty && !hidesSecondaryFooterItems {
                 delegateMenu
             }
 
-            if isStreaming {
+            if isStreaming && !hidesSecondaryFooterItems {
                 HStack(spacing: 4) {
                     PulseDot(color: Theme.Color.liveDot, size: 6)
+                        .accessibilityHidden(true)
                     Text("응답 중")
                         .font(Theme.Typography.micro)
                         .foregroundStyle(Theme.Color.liveDot)
                 }
             }
 
+            // SendButton은 항상 보장 (가장 중요)
             SendButton(
                 isStreaming: isStreaming,
                 isEnabled: !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
                 onSend: onSend,
                 onStop: onStop
             )
+            .layoutPriority(2)
         }
-        .padding(.horizontal, Theme.Layout.composerPadding)
+        .padding(.horizontal, Theme.Layout.composerPadding(for: layoutMode))
         .padding(.vertical, Theme.Spacing.md - 2)
         .background(Theme.Color.surface.opacity(0.6))
         .overlay(alignment: .top) {

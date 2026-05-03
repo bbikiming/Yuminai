@@ -4,6 +4,123 @@
 
 ## [Unreleased] — 2026-05-03
 
+### Added — ADR-072 반응형 마무리 + WCAG 2.2 색 대비 + Focus + Onboarding + Voice Control (5 phases)
+
+**사용자 피드백** (2026-05-03):
+- 작은 화면뷰에서 채팅창 영역이 잘림
+- Color contrast 감사 (WCAG 4.5:1) — UI/UX 디자인 경력자, 매우 중요
+- Focus indicator 강화 (keyboard navigation visual)
+- 첫 실행 wizard ("초보자/고급/사용자 정의" 선택)
+- macOS Voice Control 명령 매핑
+
+**Phase 1 — 반응형 완성도 (채팅창 잘림 수정)**
+- `Theme.Layout.contentPaddingH(for:)` / `composerOuterPadding(for:)` / `composerPadding(for:)` 신규 — LayoutMode별 padding
+  - tiny: 8 / 8 / 8
+  - compact: 12 / 12 / 12
+  - medium: 20 / 16 / 16
+  - regular: 32 / 20 / 16 (기존)
+  - wide: 32 / 20 / 16 (기존)
+- `ChatStatusBar`: `layoutMode` 파라미터 추가, `costLabel`에 `layoutPriority(2)` + `fixedSize()` (잘림 방지)
+- `ChatStatusBar`: tiny/compact 모드에서 msg/in/out stat 숨김 (ContextGauge + cost만)
+- `Composer.footer`: tiny에서 모든 picker 숨김, compact에서 EffortPicker/Note/Delegate 숨김
+- `Composer.SendButton`: 항상 `layoutPriority(2)` (가장 중요)
+- RootView가 ChatStatusBar/Composer에 layoutMode 전달
+
+**Phase 2 — WCAG 2.2 색 대비 감사**
+근거 (W3C 공식 + 학술):
+- W3C WCAG 2.2 SC 1.4.3 Contrast (Minimum) AA: normal 4.5:1, large 3:1
+- W3C WCAG 2.2 SC 1.4.6 Contrast (Enhanced) AAA: normal 7:1, large 4.5:1
+- W3C WCAG 2.2 SC 1.4.11 Non-text Contrast AA: UI components 3:1
+- WCAG relative luminance 공식: L = 0.2126*Rlin + 0.7152*Glin + 0.0722*Blin
+- contrast ratio: (L_brighter + 0.05) / (L_darker + 0.05)
+- Apple HIG Color: WCAG 2.x 권고 채택
+
+신규 파일:
+- `Sources/YuminaiCore/ColorContrast.swift` — 순수 로직 (testable)
+  - `WCAGContrast.linearize()`, `relativeLuminance()`, `contrastRatio()`, `audit()`
+  - `ContrastResult` (ratio + AA/AAA/non-text pass + worstLevel 한국어 라벨)
+  - `WCAGLevel`, `WCAGTextSize`
+  - `ThemeColorPair` (다크/라이트 양 모드 audit)
+- `Sources/YuminaiUI/AccessibilityAuditView.swift` — 시각 감사 패널
+  - 13개 핵심 색 조합 자동 검사
+  - 다크/라이트 모드 토글
+  - 필터: 전체 / AA 미충족 / AAA 미충족 / 모두 통과
+  - color preview swatch + 대비 ratio + AA/AAA 뱃지
+  - 자동 발견된 fail은 빨간 border로 강조
+- 신규 Settings 탭: `접근성` (figure.stand 아이콘) — 고급 모드에서만
+
+**Theme.Color 수정 (audit 결과 반영)**:
+- `textTertiary` dark: `0x807a76` → `0x8e8884` (4.07:1 → 4.85:1, AA pass)
+- `textTertiary` light: `0x7a7470` → `0x6b6663` (4.10:1 → 5.00:1, AA pass)
+
+**Phase 3 — Focus Indicator (WCAG 2.4.7 + 2.4.13)**
+근거:
+- W3C WCAG 2.2 SC 2.4.7 Focus Visible (AA): 키보드 focus는 시각적으로 표시
+- W3C WCAG 2.2 SC 2.4.11 Focus Not Obscured (AA, NEW in 2.2): focus는 가려지면 안 됨
+- W3C WCAG 2.2 SC 2.4.13 Focus Appearance (AAA): ≥ 3:1 contrast + ≥ 2px outline
+
+- 신규 `Sources/YuminaiUI/FocusIndicator.swift`
+- `YuminaiFocusModifier` + `View.yuminaiFocusRing(isFocused:)`
+- IconButton에 자동 적용 (@FocusState + .focused + .yuminaiFocusRing)
+- Brand cyan ring (3:1+ contrast) + 2px width + outline padding -2 (가려짐 방지)
+
+**Phase 4 — 첫 실행 Wizard (Onboarding)**
+근거:
+- Apple HIG Onboarding: 핵심 가치 + 1-2개 핵심 결정만
+- NN/g Onboarding for SaaS: 결정 마비 회피 (Hick's Law)
+- 본 wizard: 단 1개 핵심 결정 — 사용 모드
+
+- `AppPreferences.hasCompletedOnboarding: Bool` 신규 (init false / decode true — 신규만 wizard)
+- 신규 `Sources/YuminaiUI/OnboardingWizard.swift`
+- 4 steps: 환영 → 모드 선택 (3 카드: 초보자/고급/사용자 정의) → [사용자 정의 시 추가] → 완료
+- 각 모드 카드: 아이콘 + 제목 + 부제 + 설명 + 선택 indicator
+- Step indicator (dots), 이전/다음 버튼
+- 사용자 정의 모드: Harness/AgentChain/Telegram 개별 토글
+- Splash screen 후, hasCompletedOnboarding=false면 wizard overlay (zIndex 900)
+
+**Phase 5 — macOS Voice Control 동의어**
+근거:
+- Apple HIG Voice Control: "align labels with words people say"
+- macOS Sonoma 14.4+ 한국어 Voice Control 정식 지원
+- `accessibilityInputLabels` modifier로 동의어 등록
+
+- `IconButton.voiceLabels` 파라미터 추가 (default: [accessibilityLabel])
+- `accessibilityInputLabels` modifier 자동 적용
+- ChatToolbar 6개 버튼 모두 동의어 적용:
+  - 사이드바: ["사이드바", "측면바", "사이드바 토글"]
+  - 터미널: ["터미널", "콘솔", "쉘", "터미널 토글"]
+  - 미리보기: ["미리보기", "프리뷰", "preview"]
+  - 명령어: ["명령어", "커맨드", "테스트 실행", "빌드"]
+  - 대시보드: ["대시보드", "사용량", "통계", "비용"]
+  - 도움말: ["도움말", "단축키", "헬프", "가이드"]
+  - 정보 패널: ["정보 패널", "인스펙터", "Inspector", "오른쪽 패널"]
+- SendButton: ["보내기", "전송", "송신", "메시지 전송", "send"]
+- 응답 중단: ["중단", "정지", "스톱", "응답 중단", "취소"]
+
+### 빌드/테스트 결과
+- swift build → Build complete!
+- swift test → **519/519 passed** (107 suites, +13 new tests)
+- /Applications/Yuminai.app 재설치 + 실행 (PID 95993)
+
+### 새 파일
+- Sources/YuminaiCore/ColorContrast.swift (WCAG 2.2 핵심 로직)
+- Sources/YuminaiUI/AccessibilityAuditView.swift (시각 감사 패널)
+- Sources/YuminaiUI/FocusIndicator.swift (focus modifier)
+- Sources/YuminaiUI/OnboardingWizard.swift (4 step wizard)
+- Tests/YuminaiCoreTests/ColorContrastTests.swift (WCAG math + W3C 검증 13 tests)
+
+### 수정 파일
+- Sources/YuminaiCore/AppPreferences.swift (`hasCompletedOnboarding`)
+- Sources/YuminaiUI/Theme.swift (반응형 padding 헬퍼 + textTertiary 보정)
+- Sources/YuminaiUI/ChatStatusBar.swift (layoutMode + 잘림 방지)
+- Sources/YuminaiUI/Composer.swift (반응형 footer)
+- Sources/YuminaiUI/FlatComponents.swift (IconButton voiceLabels + focus + SendButton voice)
+- Sources/YuminaiUI/ChatToolbar.swift (모든 버튼 voiceLabels)
+- Sources/YuminaiUI/SettingsView.swift (접근성 탭)
+- Sources/YuminaiApp/RootView.swift (Composer/StatusBar에 layoutMode 전달 + Wizard overlay)
+
+---
+
 ### Added — ADR-071 접근성 + 초보자 모드 (5 phases — 사용자 피드백)
 
 **사용자 피드백** (2026-05-03):

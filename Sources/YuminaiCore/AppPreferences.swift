@@ -87,6 +87,9 @@ public struct AppPreferences: Sendable, Codable, Hashable {
     /// - 모델·모드 탭의 최대 비용 입력
     /// - 텔레그램 탭의 cokacdir 통합 + 외부 사용 안전 일부
     public var beginnerMode: Bool
+    /// **ADR-072 Phase 4** — 첫 실행 wizard 완료 여부.
+    /// false면 SplashScreen 후 OnboardingWizard 표시.
+    public var hasCompletedOnboarding: Bool
 
     public init(
         claudeBinaryPath: String = AppPreferences.detectClaudeBinaryPath(),
@@ -120,7 +123,8 @@ public struct AppPreferences: Sendable, Codable, Hashable {
         agentChainMaxHops: Int = 1,
         fontSizeOffset: Int = 0,
         showInspectorByDefault: Bool = false,
-        beginnerMode: Bool = true  // ADR-071 Phase 1 — 새 사용자는 초보자 모드로 시작
+        beginnerMode: Bool = true,  // ADR-071 Phase 1 — 새 사용자는 초보자 모드로 시작
+        hasCompletedOnboarding: Bool = false  // ADR-072 Phase 4 — 새 사용자는 wizard 표시
     ) {
         self.claudeBinaryPath = claudeBinaryPath
         self.codexBinaryPath = codexBinaryPath
@@ -154,6 +158,7 @@ public struct AppPreferences: Sendable, Codable, Hashable {
         self.fontSizeOffset = fontSizeOffset
         self.showInspectorByDefault = showInspectorByDefault
         self.beginnerMode = beginnerMode
+        self.hasCompletedOnboarding = hasCompletedOnboarding
     }
 
     // ADR-046 — 신규 필드 backward-compat: 기존 JSON에 없으면 default 적용
@@ -192,6 +197,8 @@ public struct AppPreferences: Sendable, Codable, Hashable {
         self.showInspectorByDefault = try c.decodeIfPresent(Bool.self, forKey: .showInspectorByDefault) ?? false
         // ADR-071 Phase 1 — 기존 사용자는 false (이미 고급 옵션 사용 중일 가능성). 신규는 init() default true.
         self.beginnerMode = try c.decodeIfPresent(Bool.self, forKey: .beginnerMode) ?? false
+        // ADR-072 Phase 4 — 기존 사용자는 true (이미 사용 중이라 wizard 불필요). 신규만 false → wizard.
+        self.hasCompletedOnboarding = try c.decodeIfPresent(Bool.self, forKey: .hasCompletedOnboarding) ?? true
     }
 
     /// `claude` CLI의 가능성 높은 위치들을 순서대로 시도해 첫 번째 존재하는 경로 반환.

@@ -97,6 +97,12 @@ public struct SettingsView: View {
                     .tabItem { Label("자동 선택 학습", systemImage: "brain.head.profile") }
                     .accessibilityLabel("자동 선택 학습 설정 탭")
             }
+            // ADR-072 Phase 2 — 접근성(색 대비 감사) 탭은 고급 모드에서만
+            if !preferences.beginnerMode {
+                accessibilityTab
+                    .tabItem { Label("접근성", systemImage: "figure.stand") }
+                    .accessibilityLabel("접근성 감사 탭")
+            }
         }
         // ADR-070 Phase 1 — 보조 모니터(960×640)에서도 잘림 없이 표시. maxHeight 제거.
         .frame(
@@ -105,6 +111,11 @@ public struct SettingsView: View {
             minHeight: Theme.Layout.settingsMinHeight,
             idealHeight: Theme.Layout.settingsIdealHeight
         )
+    }
+
+    /// **ADR-072 Phase 2** — 접근성 감사 탭 (색 대비 WCAG 2.2 검증).
+    private var accessibilityTab: some View {
+        AccessibilityAuditView()
     }
 
     /// **ADR-056 Phase 5 + ADR-070 Phase 2** — 자동 선택 학습 탭.

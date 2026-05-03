@@ -1,6 +1,205 @@
 # Decisions Log (ADR-lite)
 
-> 최신: ADR-071 (접근성 강화 + 초보자 모드)
+> 최신: ADR-072 (반응형 마무리 + WCAG 2.2 색 대비 + Focus + Onboarding + Voice Control)
+
+---
+
+## ADR-072 — 반응형 마무리 + WCAG 2.2 색 대비 + Focus + Onboarding + Voice Control (5 phases)
+
+- **날짜**: 2026-05-03
+- **상태**: Accepted (5 phases 모두 구현 + 테스트 + /Applications 재설치)
+
+### 배경 (사용자 피드백 5건)
+
+1. **반응형 채팅창 잘림** — 작은 화면(medium 모드)에서 cost label, composer footer 일부가 잘림
+2. **Color contrast 감사** — 사용자가 UI/UX 디자인 경력자, "신빙성 있는 자료와 논문을 근거로 논리적으로 기획" 요청
+3. **Focus indicator 강화** — 키보드 navigation visual feedback 부족
+4. **첫 실행 wizard** — 초보자/고급/사용자 정의 선택
+5. **Voice Control** — macOS 음성 명령 매핑
+
+### 결정
+
+#### Phase 1: 반응형 완성도
+
+**문제 분석**:
+- `Theme.Layout.contentPaddingH = 32` (고정) — 작은 화면에서 64px 양쪽 padding이 cost label을 밀어냄
+- `Composer.footer`의 ModelPicker/ModePicker/EffortPicker + IconButton들이 작은 너비에서 overflow
+- `ChatStatusBar`의 `Spacer()`가 cost label을 우측으로 밀고, 우측 padding과 충돌
+
+**해결**:
+1. `Theme.Layout` 헬퍼 함수 3개 신규:
+   - `contentPaddingH(for: LayoutMode)` — tiny 8 / compact 12 / medium 20 / regular 32
+   - `composerOuterPadding(for:)` — 비슷한 패턴
+   - `composerPadding(for:)` — 비슷한 패턴
+2. `ChatStatusBar`:
+   - `layoutMode` 파라미터 추가
+   - `costLabel`에 `.layoutPriority(2)` + `.fixedSize()` — 절대 잘리지 않게
+   - tiny/compact 모드: msg/in/out stat 숨김 (ContextGauge + cost만)
+3. `Composer.footer`:
+   - tiny: 모든 picker 숨김 (paperclip + send만)
+   - compact: EffortPicker, Note, Delegate, "응답 중" 숨김
+   - SendButton: `layoutPriority(2)` 항상 보장
+
+#### Phase 2: WCAG 2.2 색 대비 감사
+
+**근거 자료** (사용자 요청대로 신빙성 있는 자료):
+
+1. **W3C WCAG 2.2** (https://www.w3.org/TR/WCAG22/) — 공식 권고 (2023-10-05)
+2. **SC 1.4.3 Contrast (Minimum)** AA: 본문 4.5:1, 큰 텍스트 3:1
+3. **SC 1.4.6 Contrast (Enhanced)** AAA: 본문 7:1, 큰 텍스트 4.5:1
+4. **SC 1.4.11 Non-text Contrast** AA: UI components 3:1
+5. **Apple HIG Color** (https://developer.apple.com/design/human-interface-guidelines/color): WCAG 2.x 명시 채택
+6. **APCA (WCAG 3.0 draft)** — Andrew Somers 알고리즘. 다크 모드에 더 정확하나 W3C Working Draft 단계 (2024). 본 ADR은 WCAG 2.2 공식 채택.
+
+**WCAG 공식 (정확히 구현)**:
+```
+sRGB linearization:
+  if c <= 0.03928: c / 12.92
+  else: ((c + 0.055) / 1.055) ^ 2.4
+
+Relative luminance:
+  L = 0.2126 * Rlin + 0.7152 * Glin + 0.0722 * Blin
+
+Contrast ratio:
+  (L_brighter + 0.05) / (L_darker + 0.05)
+  Range: 1:1 (no contrast) ~ 21:1 (black/white)
+```
+
+**구현**:
+- `Sources/YuminaiCore/ColorContrast.swift` — pure logic (testable)
+  - `WCAGContrast.linearize()`, `relativeLuminance()`, `contrastRatio()`, `audit()`
+  - `ContrastResult` (ratio + 5개 pass 플래그 + worstLevel 한국어 라벨)
+  - `WCAGLevel`, `WCAGTextSize`, `ThemeColorPair`
+- `Sources/YuminaiUI/AccessibilityAuditView.swift` — 시각 감사 패널
+  - 13개 핵심 색 조합 (text/textSecondary/textTertiary/textDisabled × bg/surface/surfaceHi + accent + 상태색 + border)
+  - 다크/라이트 모드 토글
+  - 4개 필터 (전체 / AA 미충족 / AAA 미충족 / 모두 통과)
+  - color preview swatch + ratio + AA/AAA 뱃지
+  - 자동 발견된 fail은 빨간 border 강조
+- 새 Settings 탭 "접근성" (figure.stand 아이콘) — 고급 모드에서만
+
+**Audit 결과 → Theme.Color 수정**:
+- `textTertiary` dark `0x807a76` on bg `0x1a1817` = **4.07:1** → **AA fail**
+- 변경: `0x8e8884` → **4.85:1** → **AA pass** ✓
+- light: `0x7a7470` on `0xf6f3ee` = 4.10:1 → 변경 `0x6b6663` = 5.00:1 ✓
+
+**테스트 검증** (W3C 공식 예제):
+- 검정/흰색 = 21:1 (max) ✓
+- 동일 색 = 1:1 (min) ✓
+- 회색 #767676 on 흰색 = 4.54:1 (W3C 표준 borderline) ✓
+- 대칭성 (순서 무관) ✓
+
+#### Phase 3: Focus Indicator (WCAG 2.4.7 + 2.4.13)
+
+**근거**:
+- W3C WCAG 2.2 SC 2.4.7 Focus Visible (AA)
+- W3C WCAG 2.2 SC 2.4.11 Focus Not Obscured (AA, NEW in 2.2)
+- W3C WCAG 2.2 SC 2.4.13 Focus Appearance (AAA): ≥ 3:1 contrast + ≥ 2px outline
+
+**구현**:
+- `Sources/YuminaiUI/FocusIndicator.swift`
+  - `YuminaiFocusModifier` — overlay RoundedRectangle stroke
+  - `View.yuminaiFocusRing(_:)` extension
+- IconButton 자동 적용 (@FocusState + .focused + .yuminaiFocusRing)
+- Brand cyan ring (≥ 3:1 contrast 충족) + 2px width + outline padding -2 (focus-not-obscured)
+
+#### Phase 4: 첫 실행 Wizard (Onboarding)
+
+**근거**:
+- Apple HIG "Onboarding": 첫 사용자에게 핵심 가치 + 1-2개 핵심 결정만
+- NN/g (Nielsen Norman Group) "Onboarding for SaaS": 너무 많은 옵션은 결정 마비 (Hick's Law)
+- 본 wizard: 단 1개 핵심 결정 — 사용 모드
+
+**구현**:
+- `AppPreferences.hasCompletedOnboarding` 신규 (init false / decode true)
+- `Sources/YuminaiUI/OnboardingWizard.swift`
+- 4 steps:
+  1. **환영**: BrandLogo + 한 줄 가치 제안
+  2. **모드 선택**: 3 카드 (초보자 leaf / 고급 wand.and.stars / 사용자 정의 slider)
+  3. **사용자 정의 (옵션)**: Harness/AgentChain/Telegram 개별 토글
+  4. **완료**: 체크마크 + 선택한 모드별 요약 메시지
+- Step indicator (dots), 이전/다음 버튼
+- 각 카드: 선택 시 accent border (2px) + accentMuted background
+
+#### Phase 5: macOS Voice Control
+
+**근거**:
+- Apple HIG Voice Control: "align labels with words people say"
+- macOS Sonoma 14.4+ 한국어 Voice Control 정식 지원
+- `accessibilityInputLabels` modifier (https://developer.apple.com/documentation/swiftui/view/accessibilityinputlabels(_:))
+
+**구현**:
+- `IconButton.voiceLabels` 파라미터 추가
+- `accessibilityInputLabels` modifier 자동 적용 (default: [accessibilityLabel])
+- ChatToolbar 6개 버튼 + SendButton 모두 다중 한국어 동의어 등록
+- 예: 보내기 = ["보내기", "전송", "송신", "메시지 전송", "send"]
+- 사용자가 "보내기 클릭" / "전송 클릭" / "send click" 모두 가능
+
+### 적용 결과
+```
+swift build              → Build complete!
+swift test               → 519/519 passed (107 suites, +13 new tests)
+/Applications 재설치     → ✅ PID 95993 실행 중
+새 파일                  → 5
+수정 파일                → 8
+```
+
+### 트레이드오프 + 디자인 결정 근거
+
+**왜 WCAG 2.2 채택? (APCA 미채택)**
+- WCAG 2.2는 W3C 공식 권고 (Recommendation, 2023-10-05)
+- APCA는 W3C Working Draft 단계 (2024 기준) — 정식 권고화 전
+- 다크 모드 정확도는 APCA가 더 우수하나, 호환성/툴 지원은 WCAG 2.2가 압도적
+- Apple HIG가 WCAG 2.x 권고를 명시 채택 → macOS 앱은 WCAG 2.2가 표준
+
+**왜 audit 패널을 in-app으로?**
+- 디자이너가 Theme.Color 변경 시 즉시 피드백 (re-build 후 패널 열기 = 2초)
+- 외부 도구 (Stark, Contrast 등) 의존 X — 자체 sufficient
+- 향후 라이트/다크 색상 추가 시 자동 감사 (수동 점검 불필요)
+
+**왜 textTertiary만 brightening?**
+- audit 결과 textTertiary만 AA fail (4.07:1)
+- text/textSecondary는 AAA 충족 (~13:1, ~7:1)
+- accent (brand cyan)는 link/CTA용 — 본 표는 따로 검토 (large text or non-text 적용 가능)
+
+**왜 wizard 4 steps? (3 step 아님)**
+- 환영 (welcome) 없이 바로 모드 선택은 사용자에게 컨텍스트 부족
+- 환영 step에서 Yuminai 핵심 가치 (다중 LLM 통합) 한 줄 전달 → 모드 선택 결정에 도움
+- 완료 step은 confirmation + 다음 단계 안내 (e.g., "익숙해지면 고급으로 바꿔보세요")
+
+**왜 Voice Control 동의어 다중?**
+- 한국어는 동일 개념을 여러 단어로 표현 가능 (보내기/전송/송신)
+- 한국어 + 영어 혼용 사용자 (예: "send 클릭")
+- Apple HIG: "align with words people say" → 가능한 한 다양하게
+
+**왜 Onboarding이 Splash 다음?**
+- Splash = 브랜드 인지 (한 번 보고 사라짐)
+- Onboarding = 결정 (한 번만 표시)
+- 순서: Splash (2-3초) → Onboarding (사용자 페이스로 진행) → Main UI
+
+### WCAG 2.2 충족도 (현재)
+
+본 ADR 적용 후 WCAG 2.2 AA 항목 충족:
+- ✅ **1.1.1** Non-text Content (ADR-071)
+- ✅ **1.3.1** Info and Relationships (ADR-071)
+- ✅ **1.4.3** Contrast (Minimum) — textTertiary 보정 + audit 패널
+- ✅ **1.4.11** Non-text Contrast — border + UI 요소 검사
+- ✅ **2.1.1** Keyboard (기존)
+- ✅ **2.4.6** Headings and Labels (ADR-071)
+- ✅ **2.4.7** Focus Visible — yuminaiFocusRing
+- ✅ **2.4.11** Focus Not Obscured — outline padding -2
+- ✅ **4.1.2** Name, Role, Value (ADR-071)
+- ⚠ **2.4.13** Focus Appearance (AAA) — 부분 충족 (3:1 + 2px 보장, 일부 컨트롤만)
+- ⚠ **1.4.6** Contrast (Enhanced AAA) — accent/상태색 일부 미충족 (디자인 결정)
+
+### 향후 (ADR-073+ 후보)
+
+- **다국어 지원** — `String Catalog` (.xcstrings) 도입 (영어/일본어)
+- **APCA 추가 감사** (WCAG 3.0 정식 권고 후)
+- **Theme dark/light 동적 전환** — 시스템 설정 따라가기 옵션
+- **Focus management** — sheet 닫을 때 이전 focus 복원
+- **Voice Control 명령 카탈로그** — 사용자가 모든 voice 명령을 한 화면에서 확인
+- **Accessibility 자동 회귀 테스트** — XCUITest로 매 빌드 검증
 
 ---
 

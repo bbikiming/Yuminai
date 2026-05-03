@@ -63,6 +63,20 @@ struct RootView: View {
                     .transition(.opacity)
                     .zIndex(1000)
                 }
+                // ADR-072 Phase 4 — 첫 실행 wizard (splash 후, 미완료 시)
+                if !appModel.showSplash && !appModel.preferences.hasCompletedOnboarding {
+                    OnboardingWizard(
+                        preferences: $bindable.preferences,
+                        onComplete: {
+                            Task { await appModel.savePreferences() }
+                            withAnimation(.easeOut(duration: 0.3)) {
+                                // hasCompletedOnboarding가 wizard 안에서 true로 설정됨
+                            }
+                        }
+                    )
+                    .transition(.opacity)
+                    .zIndex(900)
+                }
             }
             .onAppear {
                 windowSize = geo.size
@@ -920,7 +934,8 @@ struct ChatPane: View {
                 ChatStatusBar(
                     usage: appModel.currentSessionUsage,
                     contextWindow: appModel.currentContextWindow,
-                    isStreaming: appModel.isStreaming
+                    isStreaming: appModel.isStreaming,
+                    layoutMode: layoutMode  // ADR-072 Phase 1
                 )
 
                 Composer(
@@ -950,7 +965,8 @@ struct ChatPane: View {
                         ? { appModel.showNotePicker.toggle() }
                         : nil,
                     mentionSuggestions: mentionSuggestions,
-                    agentChainEnabled: appModel.preferences.agentChainEnabled
+                    agentChainEnabled: appModel.preferences.agentChainEnabled,
+                    layoutMode: layoutMode  // ADR-072 Phase 1
                 )
                 .popover(isPresented: $bindable.showNotePicker, arrowEdge: .top) {
                     NotePickerPopover(

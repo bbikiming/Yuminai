@@ -47,9 +47,13 @@ public enum Theme {
         public static let focusRing = Brand.accent
 
         // Text — 대비 ↑
+        // **ADR-072 Phase 2** — WCAG 2.2 AA 준수 (4.5:1 normal text)
+        // 변경 전 textTertiary dark (0x807a76) on bg (0x1a1817) ≈ 4.07:1 → AA fail
+        // 변경 후 textTertiary dark (0x8e8884) on bg (0x1a1817) ≈ 4.85:1 → AA pass
+        // light textTertiary (0x6b6663) on light bg (0xf6f3ee) ≈ 5.00:1 → AA pass
         public static let text = hex(dark: 0xf0eeec, light: 0x1a1817)
         public static let textSecondary = hex(dark: 0xa8a3a0, light: 0x5a5552)
-        public static let textTertiary = hex(dark: 0x807a76, light: 0x7a7470)
+        public static let textTertiary = hex(dark: 0x8e8884, light: 0x6b6663)
         public static let textDisabled = hex(dark: 0x5a5552, light: 0x9a948f)
 
         // Accent — Brand로 위임
@@ -163,6 +167,36 @@ public enum Theme {
         public static let composerMaxHeight: CGFloat = 320
         public static let composerPadding: CGFloat = 16
         public static let composerOuterPadding: CGFloat = 20
+
+        // ADR-072 Phase 1 — 반응형 padding (모드별)
+        /// chat content 가로 padding (좌/우). 작은 화면에서 점진 축소.
+        public static func contentPaddingH(for mode: LayoutMode) -> CGFloat {
+            switch mode {
+            case .tiny: return 8
+            case .compact: return 12
+            case .medium: return 20
+            case .regular, .wide: return 32
+            }
+        }
+
+        /// composer 외곽 padding. 작은 화면에서 점진 축소.
+        public static func composerOuterPadding(for mode: LayoutMode) -> CGFloat {
+            switch mode {
+            case .tiny: return 8
+            case .compact: return 12
+            case .medium: return 16
+            case .regular, .wide: return 20
+            }
+        }
+
+        /// composer 내부 padding. 작은 화면에서 점진 축소.
+        public static func composerPadding(for mode: LayoutMode) -> CGFloat {
+            switch mode {
+            case .tiny: return 8
+            case .compact: return 12
+            case .medium, .regular, .wide: return 16
+            }
+        }
 
         public static let sheetWidth: CGFloat = 580
 

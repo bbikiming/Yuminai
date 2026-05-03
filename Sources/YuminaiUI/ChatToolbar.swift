@@ -93,6 +93,7 @@ public struct ChatToolbar: View {
                     body: "워크스페이스 목록과 파일 트리를 좌측에 표시/숨김합니다.",
                     shortcut: "⌘⌥1"
                 ),
+                voiceLabels: ["사이드바", "측면바", "사이드바 토글"],
                 action: onToggleSidebar
             )
 
@@ -131,6 +132,7 @@ public struct ChatToolbar: View {
                         body: "워크스페이스 폴더에서 직접 명령어를 실행할 수 있는 zsh/bash 터미널을 엽니다.",
                         shortcut: "⌘⌥T"
                     ),
+                    voiceLabels: ["터미널", "콘솔", "쉘", "터미널 토글"],
                     action: onToggleTerminal
                 )
                 .keyboardShortcut("t", modifiers: [.command, .option])
@@ -143,6 +145,7 @@ public struct ChatToolbar: View {
                         body: "워크스페이스의 HTML/Markdown 파일을 브라우저처럼 즉시 렌더링합니다.",
                         shortcut: "⌘⌥P"
                     ),
+                    voiceLabels: ["미리보기", "프리뷰", "preview"],
                     action: onTogglePreview
                 )
                 .keyboardShortcut("p", modifiers: [.command, .option])
@@ -155,6 +158,7 @@ public struct ChatToolbar: View {
                         body: "테스트 실행, 빌드, 린트 등 워크스페이스에 등록된 명령어를 한 번에 실행합니다.",
                         shortcut: "⌘⌥R"
                     ),
+                    voiceLabels: ["명령어", "커맨드", "테스트 실행", "빌드"],
                     action: onToggleCommands
                 )
                 .keyboardShortcut("r", modifiers: [.command, .option])
@@ -168,6 +172,7 @@ public struct ChatToolbar: View {
                     body: "토큰 사용량, 비용, 캐시 적중률 등 LLM 사용 통계를 한 눈에 확인합니다.",
                     shortcut: "⌘D"
                 ),
+                voiceLabels: ["대시보드", "사용량", "통계", "비용"],
                 action: onShowDashboard
             )
             .keyboardShortcut("d", modifiers: .command)
@@ -180,6 +185,7 @@ public struct ChatToolbar: View {
                     body: "전체 단축키 목록과 사용 가이드를 봅니다.",
                     shortcut: "⌘/"
                 ),
+                voiceLabels: ["도움말", "단축키", "헬프", "가이드"],
                 action: onShowShortcutHelp
             )
 
@@ -204,6 +210,7 @@ public struct ChatToolbar: View {
                     body: "현재 세션의 컨텍스트, 비용 분석, 도구 호출 내역 등 상세 정보를 우측에 표시합니다.",
                     shortcut: "⌘⌥I"
                 ),
+                voiceLabels: ["정보 패널", "인스펙터", "Inspector", "오른쪽 패널"],
                 action: onToggleInspector
             )
             .keyboardShortcut("i", modifiers: [.command, .option])

@@ -199,18 +199,23 @@ public struct IconButton: View {
     /// **ADR-070 Phase 5** — 풍부한 hover popover (제목 + 본문 + 단축키).
     /// 지정 시 macOS 기본 .help() (1.5초 delay) 대신 즉각적인 popover로 안내.
     var detailedHelp: ToolbarHoverInfo?
+    /// **ADR-072 Phase 5** — macOS Voice Control 동의어 (accessibilityInputLabels).
+    /// 사용자가 다양한 한국어 표현으로 음성 호출 가능. 예: ["보내기", "전송", "송신"]
+    var voiceLabels: [String]
 
     public init(
         _ icon: String,
         size: CGFloat = 14,
         help: String? = nil,
         detailedHelp: ToolbarHoverInfo? = nil,
+        voiceLabels: [String] = [],
         action: @escaping () -> Void
     ) {
         self.icon = icon
         self.size = size
         self.help = help
         self.detailedHelp = detailedHelp
+        self.voiceLabels = voiceLabels
         self.action = action
     }
 
@@ -218,6 +223,8 @@ public struct IconButton: View {
     @State private var showPopover = false
     /// hover 시작 시간 — 짧은 delay 후 popover 표시.
     @State private var hoverTask: Task<Void, Never>?
+    /// **ADR-072 Phase 3** — 키보드 focus 추적 (focus ring 표시용).
+    @FocusState private var focused: Bool
 
     public var body: some View {
         Button(action: action) {
@@ -232,6 +239,9 @@ public struct IconButton: View {
                 .animation(.easeOut(duration: 0.10), value: hovering)
         }
         .buttonStyle(PressedScaleStyle(scale: 0.92))
+        .focused($focused)
+        // ADR-072 Phase 3 — WCAG 2.4.7 / 2.4.13 — visible focus ring
+        .yuminaiFocusRing(focused)
         .onHover { isHovering in
             hovering = isHovering
             handleHoverChange(isHovering)
@@ -245,6 +255,9 @@ public struct IconButton: View {
         // ADR-071 Phase 2 — VoiceOver: detailedHelp.title 우선, fallback help
         .accessibilityLabel(accessibilityText)
         .accessibilityHint(detailedHelp?.body ?? "")
+        // ADR-072 Phase 5 — macOS Voice Control 동의어
+        // 사용자가 다양한 한국어 표현으로 호출 가능 (Apple HIG: "align with words people say")
+        .accessibilityInputLabels(voiceLabels.isEmpty ? [accessibilityText] : voiceLabels)
     }
 
     /// ADR-071 Phase 2 — VoiceOver용 raw label.
@@ -362,6 +375,8 @@ public struct SendButton: View {
             // ADR-071 Phase 4 — VoiceOver
             .accessibilityLabel("응답 중단")
             .accessibilityHint("에이전트가 작성 중인 응답을 중단합니다. 단축키 Escape.")
+            // ADR-072 Phase 5 — Voice Control 동의어
+            .accessibilityInputLabels(["중단", "정지", "스톱", "응답 중단", "취소"])
         } else {
             Button(action: onSend) {
                 HStack(spacing: 6) {
@@ -391,6 +406,8 @@ public struct SendButton: View {
             // ADR-071 Phase 4 — VoiceOver
             .accessibilityLabel("메시지 보내기")
             .accessibilityHint(isEnabled ? "메시지를 에이전트에게 전송합니다. 단축키 Command Return." : "메시지를 입력하면 활성화됩니다.")
+            // ADR-072 Phase 5 — Voice Control 동의어
+            .accessibilityInputLabels(["보내기", "전송", "송신", "메시지 전송", "send"])
         }
     }
 }
