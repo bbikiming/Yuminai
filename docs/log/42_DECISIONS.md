@@ -1,6 +1,101 @@
 # Decisions Log (ADR-lite)
 
-> 최신: ADR-068 (브랜딩 마무리 — 앱 아이콘 + About + Splash + Info.plist + DMG)
+> 최신: ADR-069 (배포 인프라 확장 — Universal binary + Sparkle + Custom DMG + Notarization 가이드 + App Store 검토)
+
+---
+
+## ADR-069 — 배포 인프라 확장 (5 phases)
+
+- **날짜**: 2026-05-03
+- **상태**: Accepted (Phase 1-3 구현 완료, Phase 4-5 가이드 문서)
+
+### 배경
+
+ADR-068에서 .app + DMG 기본 패키징은 완성. 그러나 실제 사용자 배포에는 다음이 추가로 필요:
+- Apple Silicon + Intel Mac 동시 지원 (lipo)
+- 자동 업데이트 (사용자가 수동으로 새 DMG 다운로드 X)
+- DMG 배경 + Finder 정렬 (전문가 느낌)
+- Notarization (Gatekeeper 우클릭→열기 우회)
+- App Store 배포 가능성
+
+### 결정
+
+#### Phase 1: Universal binary
+- `swift build -c release --product YuminaiApp --arch arm64 --arch x86_64`
+- SwiftPM이 자동으로 `lipo`로 fat binary 생성
+- `.build/apple/Products/Release/YuminaiApp` (또는 fallback `.build/release/YuminaiApp`)
+- `build_app_bundle.sh --universal` flag 추가
+- 검증: `file <binary>` → "Mach-O universal binary with 2 architectures"
+
+#### Phase 2: Sparkle 호환 infrastructure
+**Sparkle 본체 SPM 도입은 현재 사용자 환경 결정 (편의 vs 의존성 추가).** 본 ADR에서는 **Sparkle 호환 추상화**만 작성:
+- `AutoUpdater` actor: appcast URL → `URLSession` fetch → version 비교 → 결과 반환
+- 1시간 rate-limit (네트워크 절약)
+- semantic version 비교 (split + Int parse + 자릿수별 비교)
+- `AppcastParser`: 단순 string parse (Sparkle 도입 시 `XMLParser` delegate로 교체)
+
+향후 Sparkle 도입 시:
+- `SUFeedURL`, `SUEnableAutomaticChecks`, `SUPublicEDKey` Info.plist 추가
+- `SPUStandardUpdaterController` 사용
+- EdDSA `sign_update` (brew install sparkle)
+
+#### Phase 3: Custom DMG (배경 + 정렬)
+- `dmg-background.svg` → `rsvg-convert` → PNG (600×400)
+- `build_app_bundle.sh --custom-dmg`:
+  1. UDRW (read-write) DMG 생성
+  2. `hdiutil attach`로 mount
+  3. AppleScript로 Finder 창 bounds + icon position + .background 적용
+  4. `hdiutil detach`
+  5. UDZO 압축으로 변환
+
+#### Phase 4: Notarization 가이드
+**현재 사용자 Apple Developer ID 미보유** → 실제 notarize는 skip, **가이드만 작성**:
+- `xcrun notarytool store-credentials yuminai-notary` (한 번만)
+- `codesign --options runtime --entitlements ...` (hardened runtime)
+- `xcrun notarytool submit --wait` + `xcrun stapler staple`
+- `spctl --assess` → "accepted, source=Notarized Developer ID"
+
+#### Phase 5: App Store 배포 검토
+**기술적 가능, 제약 큼**:
+- App Sandbox 강제 → Claude CLI subprocess spawn 차단
+- Helper executable → XPC service 분리 필요 (큰 refactoring)
+- 결론: **DMG 직접 배포가 현재 권장**, App Store는 ADR-070+ 후보
+
+### 적용 결과
+```
+swift build              → Build complete! (13.07s)
+swift test               → 495/495 passed (102 suites)
+새 파일                  → 3 (AutoUpdater.swift, dmg-background.svg/png, RELEASE_GUIDE.md)
+수정 파일                → 2 (build_app_bundle.sh, Info.plist)
+```
+
+### Info.plist CFBundleExecutable 버그 수정
+ADR-068에서 `CFBundleExecutable: YuminaiApp`으로 작성했으나, build script는 binary를 `Contents/MacOS/Yuminai`로 복사 → 첫 launch 시 macOS launcher가 `YuminaiApp` 찾지 못해 실패.
+→ `CFBundleExecutable: Yuminai`로 수정 (binary file name과 일치).
+
+### 트레이드오프
+
+**왜 Sparkle SPM 즉시 추가 안 했나?**
+- Sparkle은 별도 .framework + macOS-only 의존성 추가
+- 사용자 결정 사항: 자동 업데이트 정책 (자동 vs 수동 알림) + 서버 호스팅 (자체 vs GitHub Releases)
+- **호환 infrastructure만 작성** → Sparkle 도입 시 1시간 안에 마이그레이션 가능
+
+**왜 Notarization 자동 안 했나?**
+- Apple Developer Program $99/년 + 사용자 본인 인증 필요
+- store-credentials는 Keychain 접근 → CI/CD 환경 외엔 자동화 비효율
+- **가이드 + 명령어만 RELEASE_GUIDE.md에 정리** → 사용자가 가입 후 즉시 따라 실행 가능
+
+**왜 App Store 진입 안 했나?**
+- App Sandbox + Claude CLI subprocess가 본질적으로 충돌
+- XPC service 분리는 ADR 1개 분량의 refactoring
+- 개발자 도구 시장 = DMG 직접 배포가 표준 (e.g., Cursor, Tower, Sublime Text)
+
+### 향후 (ADR-070+ 후보)
+- Sparkle 본 SPM 도입 + EdDSA 서명 자동화
+- GitHub Releases 자동 publish + appcast.xml 자동 업데이트 (GitHub Actions)
+- Setapp 등록 검토
+- App Store 진입 시 XPC service 분리 (별도 ADR)
+- Universal binary 자동 빌드 CI
 
 ---
 

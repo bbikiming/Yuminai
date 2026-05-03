@@ -4,6 +4,59 @@
 
 ## [Unreleased] — 2026-05-03
 
+### Added — ADR-069 배포 인프라 확장 (Universal + Sparkle + Custom DMG + Notarization + App Store) (5 phases)
+
+**Phase 1 — Universal binary (arm64 + x86_64)**
+- `App/build_app_bundle.sh` `--universal` flag
+- `swift build --arch arm64 --arch x86_64` lipo fat binary
+- Apple Silicon + Intel Mac 모두 지원
+- 검증: `file dist/Yuminai.app/Contents/MacOS/Yuminai` → "Mach-O universal binary with 2 architectures"
+
+**Phase 2 — Sparkle auto-update infrastructure**
+- `Sources/YuminaiCore/AutoUpdater.swift` — Sparkle 호환 추상화
+  - `AutoUpdater` actor (appcast fetch + version compare + 1h rate-limit)
+  - `AppcastItem` / `Appcast` struct (Sparkle XML schema subset)
+  - `AppcastParser` enum (단순 string-based parse, XMLParser 교체 가능)
+  - `UpdateCheckResult` enum (upToDate / updateAvailable / recentlyChecked / error)
+- 정식 Sparkle SPM dependency 도입 가이드 (RELEASE_GUIDE.md Section 5)
+
+**Phase 3 — Custom DMG 배경 + Finder 정렬**
+- `App/build_app_bundle.sh` `--custom-dmg` flag
+- `App/Assets/dmg-background.svg` (600×400 vector) + .png (rsvg-convert)
+- AppleScript Finder layout (window bounds + icon size + .background image)
+- UDRW → mount → AppleScript → UDZO 변환 흐름
+
+**Phase 4 — Notarization 가이드**
+- `App/RELEASE_GUIDE.md` Section 4
+- xcrun notarytool 흐름 (store-credentials → submit --wait → stapler staple → spctl 검증)
+- Developer ID Application certificate + app-specific password 발급 안내
+
+**Phase 5 — App Store 배포 검토**
+- `App/RELEASE_GUIDE.md` Section 6
+- 결론: 현재 형태는 부적합 (CLI subprocess sandbox 충돌)
+- 대안: DMG 직접 배포 (현재) / Setapp / GitHub Releases + Sparkle
+- App Store 도입 시 필요한 변경 5가지 (XPC service / Sandbox / Network exception / Privacy manifest / App Review)
+- ADR-070 후보로 분리 권장
+
+### Fixed
+- **App/Info.plist** `CFBundleExecutable`: `YuminaiApp` → `Yuminai` (bundle 내 binary 이름과 불일치로 첫 실행 시 launcher 실패)
+
+### 빌드/테스트 결과
+- swift build → Build complete! (13.07s)
+- swift test → **495/495 passed** (102 suites)
+- /Applications/Yuminai.app 실행 성공 (PID 40322)
+
+### 새 파일
+- Sources/YuminaiCore/AutoUpdater.swift (Sparkle 호환 infra)
+- App/Assets/dmg-background.svg + .png (600×400)
+- App/RELEASE_GUIDE.md (5 sections, 배포 전 과정 문서)
+
+### 수정 파일
+- App/build_app_bundle.sh (--universal + --custom-dmg flag + AppleScript layout)
+- App/Info.plist (CFBundleExecutable 수정)
+
+---
+
 ### Added — ADR-068 브랜딩 마무리 + 배포 패키지 (5 phases)
 
 **Phase 1 — Yuminai App Icon (Convergence design)**

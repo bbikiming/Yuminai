@@ -1,13 +1,12 @@
 #!/bin/bash
-# **ADR-068 Phase 4 + 5** — SPM executable을 .app 번들로 패키징 + DMG 생성.
+# **ADR-068 + ADR-069** — SPM executable을 .app 번들로 패키징 + DMG 생성.
 #
 # 사용:
-#   ./App/build_app_bundle.sh         # release build + .app 번들
-#   ./App/build_app_bundle.sh --dmg   # + DMG 패키지
-#
-# 결과:
-#   - dist/Yuminai.app
-#   - dist/Yuminai-1.0.0.dmg  (--dmg 옵션 시)
+#   ./App/build_app_bundle.sh                     # native arch only
+#   ./App/build_app_bundle.sh --universal         # arm64 + x86_64 (ADR-069 Phase 1)
+#   ./App/build_app_bundle.sh --dmg               # + DMG (basic)
+#   ./App/build_app_bundle.sh --dmg --custom-dmg  # + custom DMG with bg image (ADR-069 Phase 3)
+#   ./App/build_app_bundle.sh --universal --dmg --custom-dmg  # 모두
 
 set -e
 
@@ -17,22 +16,50 @@ APP_VERSION="1.0.0"
 DIST_DIR="$PROJECT_ROOT/dist"
 APP_BUNDLE="$DIST_DIR/$APP_NAME.app"
 
-echo "🔨 1. Release build..."
-cd "$PROJECT_ROOT"
-swift build -c release --product YuminaiApp
+# Parse args
+UNIVERSAL=false
+DMG=false
+CUSTOM_DMG=false
+for arg in "$@"; do
+    case $arg in
+        --universal) UNIVERSAL=true ;;
+        --dmg) DMG=true ;;
+        --custom-dmg) CUSTOM_DMG=true ;;
+    esac
+done
 
-BIN_PATH="$PROJECT_ROOT/.build/release/YuminaiApp"
+# ADR-069 Phase 1 — Universal binary (arm64 + x86_64)
+if [ "$UNIVERSAL" = true ]; then
+    echo "🔨 1. Universal release build (arm64 + x86_64)..."
+    cd "$PROJECT_ROOT"
+    swift build -c release --product YuminaiApp --arch arm64 --arch x86_64
+    BIN_PATH="$PROJECT_ROOT/.build/apple/Products/Release/YuminaiApp"
+    if [ ! -f "$BIN_PATH" ]; then
+        # fallback: try standard release path
+        BIN_PATH="$PROJECT_ROOT/.build/release/YuminaiApp"
+    fi
+else
+    echo "🔨 1. Native release build..."
+    cd "$PROJECT_ROOT"
+    swift build -c release --product YuminaiApp
+    BIN_PATH="$PROJECT_ROOT/.build/release/YuminaiApp"
+fi
+
 if [ ! -f "$BIN_PATH" ]; then
     echo "❌ Build failed — binary not found at $BIN_PATH"
     exit 1
 fi
+
+# Verify architecture
+echo "📐 Binary architecture:"
+file "$BIN_PATH"
 
 echo "📦 2. Creating .app bundle structure..."
 rm -rf "$APP_BUNDLE"
 mkdir -p "$APP_BUNDLE/Contents/MacOS"
 mkdir -p "$APP_BUNDLE/Contents/Resources"
 
-# Copy binary
+# Copy binary (Info.plist의 CFBundleExecutable과 일치하는 이름으로)
 cp "$BIN_PATH" "$APP_BUNDLE/Contents/MacOS/$APP_NAME"
 chmod +x "$APP_BUNDLE/Contents/MacOS/$APP_NAME"
 
@@ -43,10 +70,10 @@ cp "$PROJECT_ROOT/App/Info.plist" "$APP_BUNDLE/Contents/Info.plist"
 if [ -f "$PROJECT_ROOT/App/Assets/AppIcon.icns" ]; then
     cp "$PROJECT_ROOT/App/Assets/AppIcon.icns" "$APP_BUNDLE/Contents/Resources/AppIcon.icns"
 else
-    echo "⚠ AppIcon.icns not found — bundling without icon"
+    echo "⚠ AppIcon.icns not found"
 fi
 
-# Copy bundled SwiftPM resources (SwiftData model 등)
+# Copy SwiftPM bundles (resources)
 for bundle in "$PROJECT_ROOT"/.build/release/*.bundle; do
     if [ -d "$bundle" ]; then
         cp -r "$bundle" "$APP_BUNDLE/Contents/Resources/"
@@ -55,12 +82,11 @@ done
 
 echo "✅ App bundle created: $APP_BUNDLE"
 
-# Optional: ad-hoc code sign
-echo "🔏 3. Ad-hoc code signing (local run only)..."
-codesign --force --deep --sign - "$APP_BUNDLE" 2>&1 | tail -3 || echo "⚠ codesign failed (continuing)"
+echo "🔏 3. Ad-hoc code signing..."
+codesign --force --deep --sign - "$APP_BUNDLE" 2>&1 | tail -3 || echo "⚠ codesign failed"
 
-# DMG creation if requested
-if [ "$1" == "--dmg" ]; then
+# DMG creation
+if [ "$DMG" = true ]; then
     echo "💿 4. Creating DMG..."
     DMG_PATH="$DIST_DIR/$APP_NAME-$APP_VERSION.dmg"
     DMG_TEMP="$DIST_DIR/dmg_temp"
@@ -72,18 +98,73 @@ if [ "$1" == "--dmg" ]; then
     cp -R "$APP_BUNDLE" "$DMG_TEMP/"
     ln -s /Applications "$DMG_TEMP/Applications"
 
-    hdiutil create -volname "$APP_NAME $APP_VERSION" \
-        -srcfolder "$DMG_TEMP" \
-        -ov -format UDZO \
-        "$DMG_PATH"
+    if [ "$CUSTOM_DMG" = true ]; then
+        # ADR-069 Phase 3 — Custom DMG with bg image + layout
+        echo "🎨 4a. Building custom DMG layout..."
+        BG_IMG="$PROJECT_ROOT/App/Assets/dmg-background.png"
+        if [ -f "$BG_IMG" ]; then
+            mkdir -p "$DMG_TEMP/.background"
+            cp "$BG_IMG" "$DMG_TEMP/.background/background.png"
+        fi
+
+        # Create RW DMG first (so we can apply layout)
+        DMG_RW="$DIST_DIR/${APP_NAME}_rw.dmg"
+        rm -f "$DMG_RW"
+        hdiutil create -volname "$APP_NAME $APP_VERSION" \
+            -srcfolder "$DMG_TEMP" \
+            -ov -format UDRW -fs HFS+ \
+            "$DMG_RW"
+
+        # Mount + apply AppleScript layout
+        MOUNT_DIR=$(hdiutil attach "$DMG_RW" | grep "Volumes" | awk '{print $3}')
+        if [ -n "$MOUNT_DIR" ] && [ -d "$MOUNT_DIR" ]; then
+            sleep 1
+            osascript <<EOF || echo "⚠ AppleScript layout 적용 실패 (DMG는 그대로 진행)"
+tell application "Finder"
+    tell disk "$APP_NAME $APP_VERSION"
+        open
+        set current view of container window to icon view
+        set toolbar visible of container window to false
+        set statusbar visible of container window to false
+        set the bounds of container window to {200, 100, 800, 500}
+        set theViewOptions to the icon view options of container window
+        set arrangement of theViewOptions to not arranged
+        set icon size of theViewOptions to 96
+        try
+            set background picture of theViewOptions to file ".background:background.png"
+        end try
+        set position of item "$APP_NAME.app" of container window to {150, 200}
+        set position of item "Applications" of container window to {450, 200}
+        update without registering applications
+        delay 1
+        close
+    end tell
+end tell
+EOF
+            sync
+            sleep 1
+            hdiutil detach "$MOUNT_DIR" -force 2>/dev/null || true
+        fi
+
+        # Convert RW → UDZO compressed
+        hdiutil convert "$DMG_RW" -format UDZO -o "$DMG_PATH"
+        rm -f "$DMG_RW"
+    else
+        # Standard UDZO compressed DMG
+        hdiutil create -volname "$APP_NAME $APP_VERSION" \
+            -srcfolder "$DMG_TEMP" \
+            -ov -format UDZO \
+            "$DMG_PATH"
+    fi
 
     rm -rf "$DMG_TEMP"
 
     echo "✅ DMG created: $DMG_PATH"
-    echo "   사용자 설치: DMG 마운트 → Yuminai.app을 Applications 폴더로 드래그"
+    echo "   Size: $(du -h "$DMG_PATH" | cut -f1)"
 fi
 
 echo ""
 echo "🎉 Done!"
-echo "   Run: open $APP_BUNDLE"
+echo "   Run:     open $APP_BUNDLE"
+echo "   Install: cp -R $APP_BUNDLE /Applications/"
 echo ""
