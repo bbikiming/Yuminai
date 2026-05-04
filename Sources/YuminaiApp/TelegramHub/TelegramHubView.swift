@@ -105,8 +105,17 @@ struct TelegramHubView: View {
                     .foregroundStyle(Theme.Color.textSecondary)
             }
             Spacer()
+            cokacdirImportButton
             addBotButton
         }
+    }
+
+    /// **ADR-100** — cokacdir bot_settings.json에서 봇을 multi-bot 모델로 직접 import.
+    private var cokacdirImportButton: some View {
+        FlatButton("cokacdir에서", icon: "square.and.arrow.down", variant: .secondary) {
+            Task { await appModel.loadCokacdirBots(mode: .hub) }
+        }
+        .help("~/.cokacdir/bot_settings.json에서 봇을 가져와 Hub에 추가합니다.")
     }
 
     private var addBotButton: some View {

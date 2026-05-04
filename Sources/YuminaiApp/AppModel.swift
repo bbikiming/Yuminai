@@ -47,6 +47,10 @@ public final class AppModel {
     public var cokacdirChatLabels: [Int64: CokacdirChatLabel] = [:]
     public var cokacdirImportError: String?
     public var showCokacdirImportSheet: Bool = false
+    /// **ADR-100** — cokacdir import 라우팅 모드.
+    /// `.legacy`: Settings에서 호출 (기존 단일 봇 슬롯 채움). `.hub`: Telegram Hub에서 호출 (multi-bot 모델에 추가).
+    public enum CokacdirImportMode: Sendable { case legacy, hub }
+    public var cokacdirImportMode: CokacdirImportMode = .legacy
 
     public var showCreateWorkspaceSheet: Bool = false
     /// **ADR-089** — 새 ad-hoc 대화 세션 생성 sheet.
@@ -4890,9 +4894,11 @@ public final class AppModel {
 
     /// cokacdir bot_settings.json + group_chat 로그를 읽어 봇 목록 + chat label을 로드.
     /// SettingsView "cokacdir에서 가져오기" 버튼이 호출.
-    public func loadCokacdirBots() async {
+    /// **ADR-100** — `mode`로 import 후 라우팅 분기. `.legacy`(default)는 단일 봇 슬롯, `.hub`는 multi-bot.
+    public func loadCokacdirBots(mode: CokacdirImportMode = .legacy) async {
         cokacdirImportError = nil
         cokacdirChatLabels = [:]
+        cokacdirImportMode = mode
         let path = AppPreferences.defaultCokacdirBotSettingsPath()
         let importer = CokacdirImporter(botSettingsPath: path)
         do {
@@ -4911,6 +4917,50 @@ public final class AppModel {
         } catch {
             cokacdirImportError = error.localizedDescription
             showCokacdirImportSheet = true
+        }
+    }
+
+    /// **ADR-100** — cokacdir 봇을 Telegram Hub의 multi-bot 모델 (`preferences.telegramBots`)에 추가.
+    /// 토큰은 봇별 keychain key (`telegram.bot.<botHash>`)에 저장.
+    /// `chatId`가 nil이 아니면 binding도 함께 생성 (활성 워크스페이스 미지정).
+    public func addBotFromCokacdirToHub(_ bot: CokacdirBot, chatId: Int64?) async {
+        // 중복 체크 (같은 username의 봇이 이미 multi-bot 목록에 있으면 스킵)
+        if !bot.username.isEmpty, preferences.telegramBots.contains(where: { $0.username == bot.username }) {
+            cokacdirImportError = "봇 @\(bot.username)이 이미 Telegram Hub에 등록되어 있어요."
+            return
+        }
+        let keychainKey = "telegram.bot.\(bot.botHash)"
+        do {
+            try await keychainStore.set(bot.token, for: keychainKey)
+            let config = TelegramBotConfig(
+                id: UUID(),
+                displayName: bot.displayName,
+                username: bot.username,
+                keychainKey: keychainKey,
+                groupId: nil,
+                allowedUserIds: bot.ownerUserId != 0 ? [bot.ownerUserId] : [],
+                enabled: true,
+                iconName: "paperplane.circle.fill",
+                colorName: "accent",
+                notes: "cokacdir에서 가져옴 (botHash: \(bot.botHash.prefix(8))…)"
+            )
+            await addTelegramBot(config)
+            // chatId 있으면 binding도 추가
+            if let chatId {
+                let binding = BotChatBinding(
+                    id: UUID(),
+                    botId: config.id,
+                    chatId: chatId,
+                    activeWorkspaceId: nil,
+                    allowedWorkspaceIds: [],
+                    nickname: ""
+                )
+                await upsertBotChatBinding(binding)
+            }
+            showCokacdirImportSheet = false
+            cokacdirImportError = nil
+        } catch {
+            cokacdirImportError = "Hub에 봇 추가 실패: \(error.localizedDescription)"
         }
     }
 

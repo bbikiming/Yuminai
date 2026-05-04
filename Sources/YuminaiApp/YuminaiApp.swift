@@ -248,8 +248,16 @@ struct SettingsContainer: View {
                 bots: appModel.cokacdirBots,
                 chatLabels: appModel.cokacdirChatLabels,
                 error: appModel.cokacdirImportError,
+                mode: appModel.cokacdirImportMode,
                 onSelect: { bot, chatId in
-                    Task { await appModel.applyCokacdirBot(bot, chatId: chatId) }
+                    Task {
+                        switch appModel.cokacdirImportMode {
+                        case .legacy:
+                            await appModel.applyCokacdirBot(bot, chatId: chatId)
+                        case .hub:
+                            await appModel.addBotFromCokacdirToHub(bot, chatId: chatId)
+                        }
+                    }
                 },
                 onCancel: {
                     appModel.showCokacdirImportSheet = false

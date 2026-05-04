@@ -7,6 +7,8 @@ struct CokacdirImportSheet: View {
     let bots: [CokacdirBot]
     let chatLabels: [Int64: CokacdirChatLabel]
     let error: String?
+    /// **ADR-100** — `.legacy`(Settings 진입)는 단일 봇 슬롯, `.hub`는 multi-bot 모델로 추가.
+    let mode: AppModel.CokacdirImportMode
     let onSelect: (CokacdirBot, Int64) -> Void
     let onCancel: () -> Void
 
@@ -56,12 +58,26 @@ struct CokacdirImportSheet: View {
 
     private var header: some View {
         VStack(alignment: .leading, spacing: 4) {
-            Text("cokacdir에서 봇 가져오기")
-                .font(Theme.Typography.title)
-                .foregroundStyle(Theme.Color.text)
-            Text("bot_settings.json에서 발견한 봇 중 하나를 골라주세요.")
+            HStack(spacing: 6) {
+                Text("cokacdir에서 봇 가져오기")
+                    .font(Theme.Typography.title)
+                    .foregroundStyle(Theme.Color.text)
+                if mode == .hub {
+                    Text("Telegram Hub")
+                        .font(Theme.Typography.micro)
+                        .foregroundStyle(Theme.Color.accent)
+                        .padding(.horizontal, 6)
+                        .padding(.vertical, 2)
+                        .background(Theme.Color.accentMuted)
+                        .clipShape(Capsule())
+                }
+            }
+            Text(mode == .hub
+                ? "선택한 봇이 Telegram Hub의 multi-bot 목록에 추가돼요. chat id가 있으면 binding도 함께 생성."
+                : "bot_settings.json에서 발견한 봇 중 하나를 골라주세요. (단일 봇 슬롯 — Settings 호환 모드)")
                 .font(Theme.Typography.small)
                 .foregroundStyle(Theme.Color.textSecondary)
+                .fixedSize(horizontal: false, vertical: true)
         }
     }
 
