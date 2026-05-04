@@ -516,6 +516,12 @@ public struct SidebarView: View {
                 action: onOpenTelegramHub
             )
             SidebarMenuRow(
+                label: "사용자 가이드",
+                icon: "questionmark.circle.fill",
+                isExternalLink: true,
+                action: { NSWorkspace.shared.open(AppLinks.userGuide) }
+            )
+            SidebarMenuRow(
                 label: "설정",
                 icon: "gear",
                 action: onOpenSettings
@@ -1344,8 +1350,22 @@ struct SidebarMenuRow: View {
     let label: String
     let icon: String
     let action: () -> Void
+    /// trailing 외부 링크 인디케이터 (`arrow.up.forward.square`). 클릭 시 외부 URL/브라우저로 이동함을 암시.
+    let isExternalLink: Bool
 
     @State private var hovering = false
+
+    init(
+        label: String,
+        icon: String,
+        isExternalLink: Bool = false,
+        action: @escaping () -> Void
+    ) {
+        self.label = label
+        self.icon = icon
+        self.isExternalLink = isExternalLink
+        self.action = action
+    }
 
     var body: some View {
         Button(action: action) {
@@ -1358,6 +1378,12 @@ struct SidebarMenuRow: View {
                     .font(Theme.Typography.label)
                     .foregroundStyle(Theme.Color.textSecondary)
                 Spacer()
+                if isExternalLink {
+                    Image(systemName: "arrow.up.forward.square")
+                        .font(.system(size: 11, weight: .regular))
+                        .foregroundStyle(hovering ? Theme.Color.accent : Theme.Color.textTertiary)
+                        .accessibilityLabel("외부 링크")
+                }
             }
             .padding(.horizontal, Theme.Layout.sidebarItemPadH)
             .padding(.vertical, Theme.Layout.sidebarItemPadV)

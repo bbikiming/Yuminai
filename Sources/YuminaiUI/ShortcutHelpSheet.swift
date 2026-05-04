@@ -1,4 +1,6 @@
 import SwiftUI
+import AppKit
+import YuminaiCore
 
 /// 단축키 도움말 — 모든 단축키 카테고리별 정리 (C1).
 public struct ShortcutHelpSheet: View {
@@ -33,6 +35,27 @@ public struct ShortcutHelpSheet: View {
                 .font(Theme.Typography.title)
                 .foregroundStyle(Theme.Color.text)
             Spacer()
+            // 온라인 사용자 가이드 외부 링크 — 메인 헤더에 노출
+            Button {
+                NSWorkspace.shared.open(AppLinks.userGuide)
+            } label: {
+                HStack(spacing: 4) {
+                    Image(systemName: "book.fill")
+                        .font(.system(size: 11, weight: .medium))
+                    Text("온라인 가이드")
+                        .font(Theme.Typography.small)
+                    Image(systemName: "arrow.up.forward.square")
+                        .font(.system(size: 10))
+                }
+                .foregroundStyle(Theme.Color.accent)
+                .padding(.horizontal, Theme.Spacing.sm)
+                .padding(.vertical, 4)
+                .background(Theme.Color.accentMuted)
+                .clipShape(Capsule())
+            }
+            .buttonStyle(.plain)
+            .help("브라우저에서 사용자 가이드 열기 (yuminai-guide.vercel.app)")
+            .accessibilityLabel("브라우저에서 사용자 가이드 열기")
             FlatButton("닫기", variant: .secondary, size: .small, action: onClose)
                 .keyboardShortcut(.escape, modifiers: [])
         }

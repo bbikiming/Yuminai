@@ -162,6 +162,16 @@ struct YuminaiAppMain: App {
                     }
                 }
             }
+            // macOS 표준 Help 메뉴 — 사용자 가이드 (웹) + 단축키 도움말
+            CommandGroup(replacing: .help) {
+                Button("Yuminai 사용자 가이드 (웹)") {
+                    NSWorkspace.shared.open(AppLinks.userGuide)
+                }
+                .keyboardShortcut("?", modifiers: [.command, .shift])
+                Button("단축키 도움말…") {
+                    appModel.presentExclusiveSheet { $0.showShortcutHelp = true }
+                }
+            }
         }
 
         Settings {
