@@ -3943,6 +3943,53 @@ public final class AppModel {
         if let err = commands.lastError { self.error = err; commands.lastError = nil }
     }
 
+    /// **ADR-098 P1-1** — Telegram `/run` 진입점. 명령 실행 후 결과를 build log artifact로
+    /// 자동 forwarding한다 (store + formatter + `yuminai://log/<uuid>` 딥링크).
+    ///
+    /// 결과는 `commands.blocks` 마지막 entry에서 추출 — 동일 command를 동시에 실행하면
+    /// 두 번째가 첫 번째 결과를 가로채지 않도록 실행 전 카운트를 기준점으로 둔다.
+    public func runCommandFromTelegram(_ command: String) async {
+        guard let workspace = currentWorkspace else { return }
+        let workingDir = URL(fileURLWithPath: workspace.directoryPath)
+        let baselineCount = commands.blocks.count
+        await commands.run(command, in: workingDir)
+        if let err = commands.lastError { self.error = err; commands.lastError = nil }
+
+        // 새로 추가된 block 중 같은 command를 가진 가장 최근 entry를 찾는다.
+        let blocks = commands.blocks
+        guard blocks.count > baselineCount else { return }
+        let candidate = blocks[baselineCount...].last { $0.command == command } ?? blocks.last
+        guard let block = candidate else { return }
+
+        let title = String(command.prefix(80))
+        let elapsed = TimeInterval(block.durationMs) / 1000.0
+        let combined: String
+        if block.stderr.isEmpty {
+            combined = block.stdout
+        } else if block.stdout.isEmpty {
+            combined = block.stderr
+        } else {
+            combined = block.stdout + "\n\n--- stderr ---\n" + block.stderr
+        }
+        let logBody = combined.isEmpty ? "(no output)\nexit code: \(block.exitCode)" : combined
+
+        if let bridge = sessionBridge {
+            await bridge.notifyLogArtifact(
+                log: logBody,
+                title: title,
+                elapsed: elapsed,
+                success: block.success
+            )
+        } else {
+            await sendBuildLogToTelegram(
+                log: logBody,
+                title: title,
+                elapsed: elapsed,
+                success: block.success
+            )
+        }
+    }
+
     public func clearCommandBlocks() {
         commands.clear()
     }
@@ -4457,6 +4504,72 @@ public final class AppModel {
         }
     }
 
+    // MARK: - ADR-099 P1-1/P1-2/P1-3 — Artifact + Formatter + LargePayload wire-up
+
+    /// diff를 formatter로 포맷 → artifact store 저장 → LargePayloadSender로 발송.
+    ///
+    /// `TelegramSendHelper.sendDiffPreview`의 AppModel 진입점.
+    /// - Returns: 저장된 artifact UUID (nil이면 Telegram 미설정)
+    @discardableResult
+    public func sendDiffPreviewToTelegram(
+        diff: String,
+        files: Int,
+        added: Int,
+        removed: Int,
+        workspace: String?,
+        chatId: Int64? = nil
+    ) async -> UUID? {
+        guard let bot = telegramBot else { return nil }
+        let targetChatId = chatId ?? preferences.telegramChatId
+        guard let targetChatId else { return nil }
+        do {
+            return try await TelegramSendHelper.sendDiffPreview(
+                diff: diff,
+                files: files,
+                added: added,
+                removed: removed,
+                workspace: workspace,
+                to: targetChatId,
+                store: telegramArtifactStore,
+                client: bot
+            )
+        } catch {
+            logger.error("sendDiffPreviewToTelegram 실패: \(error.localizedDescription)")
+            return nil
+        }
+    }
+
+    /// build/test log를 formatter로 포맷 → artifact store 저장 → LargePayloadSender로 발송.
+    ///
+    /// `TelegramSendHelper.sendBuildLog`의 AppModel 진입점.
+    /// - Returns: 저장된 artifact UUID (nil이면 Telegram 미설정)
+    @discardableResult
+    public func sendBuildLogToTelegram(
+        log: String,
+        title: String,
+        elapsed: TimeInterval,
+        success: Bool,
+        chatId: Int64? = nil
+    ) async -> UUID? {
+        guard let bot = telegramBot else { return nil }
+        let targetChatId = chatId ?? preferences.telegramChatId
+        guard let targetChatId else { return nil }
+        do {
+            return try await TelegramSendHelper.sendBuildLog(
+                log: log,
+                title: title,
+                elapsed: elapsed,
+                success: success,
+                to: targetChatId,
+                store: telegramArtifactStore,
+                client: bot
+            )
+        } catch {
+            logger.error("sendBuildLogToTelegram 실패: \(error.localizedDescription)")
+            return nil
+        }
+    }
+
     private func activateTelegramIfReady() async {
         await deactivateTelegram()
         guard preferences.telegramEnabled, let chatId = preferences.telegramChatId else {
@@ -4482,6 +4595,8 @@ public final class AppModel {
             chatId: chatId
         )
         sessionBridge = makeSessionBridge(client: bot, chatId: chatId)
+        // ADR-098 P1-1 — bridge에 artifact store 주입 → diff/log 발송이 store + deep link 경로로 라우팅.
+        await sessionBridge?.setArtifactStore(telegramArtifactStore)
         let router = YuminaiCommandRouter(appModel: self)
         let pump = TelegramCommandPump(client: bot, router: router)
         commandPump = pump
@@ -4890,6 +5005,8 @@ public final class AppModel {
                 await bridge.reset()
             }
             sessionBridge = makeSessionBridge(client: bot, chatId: chatId)
+            // ADR-098 P1-1 — 재구성된 bridge에도 artifact store 주입 유지.
+            await sessionBridge?.setArtifactStore(telegramArtifactStore)
             if let bridge = sessionBridge, let name = boundWorkspaceName {
                 await bridge.sendNotice("✓ 텔레그램 연결됨 — 워크스페이스 ‘\(name)’")
             } else if id == nil {
@@ -5337,7 +5454,7 @@ public final class AppModel {
                         self?.showHITLSheet = true
                     }
                 }
-                // Telegram inline button 메시지 전송
+                // Telegram inline button 메시지 전송 + ADR-099 P1-4: messageId 저장
                 if let self, let chatId = self.preferences.telegramChatId {
                     let approveData = TelegramHITLCallbackHandler.HITLAction.approve.callbackData(for: request.id)
                     let rejectData = TelegramHITLCallbackHandler.HITLAction.reject.callbackData(for: request.id)
@@ -5346,7 +5463,10 @@ public final class AppModel {
                         InlineButton(text: "❌ Reject", callbackData: rejectData)
                     ]]
                     let text = "⚠️ HITL 승인 필요\n\n**Action:** `\(request.action)`\n**Timeout:** \(request.timeoutSeconds)s"
-                    _ = try? await self.telegramBot?.sendWithKeyboard(text, to: chatId, buttons: buttons)
+                    if let sent = try? await self.telegramBot?.sendWithKeyboard(text, to: chatId, buttons: buttons) {
+                        // ADR-099 P1-4 — messageId를 coordinator에 등록 (응답 후 edit용)
+                        await coordinator.setTelegramMessageId(sent.messageId, chatId: chatId, for: request.id)
+                    }
                 }
                 // **ADR-098 P0-4** — macOS UserNotification 동시 발송 (HITL actionable)
                 try? await MacOSNotificationSender.sendHITL(
@@ -5358,13 +5478,32 @@ public final class AppModel {
         }
     }
 
-    /// **ADR-094 Phase 3** — 외부에서 HITL 응답 주입 (데스크탑 UI 또는 Telegram callback).
+    /// **ADR-094 Phase 3 / ADR-099 P1-4** — 외부에서 HITL 응답 주입 (데스크탑 UI 또는 Telegram callback).
+    /// 응답 후 텔레그램 메시지를 editMessageText로 자동 갱신 (승인/거절/timeout/cancelled 상태 표시).
     public func respondToHITL(id: UUID, response: TelegramHITLCoordinator.HITLResponse) async {
+        // ADR-099 P1-4 — respond 전에 pending request에서 messageId/chatId 조회
+        let pendingBefore = await hitlCoordinator?.pendingRequests() ?? []
+        let matchedRequest = pendingBefore.first { $0.id == id }
+
         await hitlCoordinator?.respond(id: id, response: response)
         let requests = await hitlCoordinator?.pendingRequests() ?? []
         hitlPendingRequests = requests
         if requests.isEmpty {
             showHITLSheet = false
+        }
+
+        // ADR-099 P1-4 — HITL 응답 후 텔레그램 메시지 자동 edit
+        if let req = matchedRequest,
+           let msgId = req.telegramMessageId,
+           let chatId = req.telegramChatId,
+           let bot = telegramBot {
+            await TelegramSendHelper.editHITLMessage(
+                response: response,
+                originalAction: req.action,
+                messageId: msgId,
+                chatId: chatId,
+                client: bot
+            )
         }
     }
 

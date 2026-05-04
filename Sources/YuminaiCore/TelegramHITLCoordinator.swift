@@ -36,6 +36,31 @@ public actor TelegramHITLCoordinator {
         public let createdAt: Date
         /// timeout 초 수.
         public let timeoutSeconds: Int
+        /// **ADR-099 P1-4** — 승인 요청을 보낸 텔레그램 메시지 ID.
+        /// 응답 후 editMessageText로 상태 갱신에 사용. nil이면 edit 생략.
+        public var telegramMessageId: Int64?
+        /// **ADR-099 P1-4** — 승인 요청을 보낸 텔레그램 chat ID.
+        public var telegramChatId: Int64?
+
+        public init(
+            id: UUID,
+            action: String,
+            workspace: String?,
+            diffPreview: String?,
+            createdAt: Date,
+            timeoutSeconds: Int,
+            telegramMessageId: Int64? = nil,
+            telegramChatId: Int64? = nil
+        ) {
+            self.id = id
+            self.action = action
+            self.workspace = workspace
+            self.diffPreview = diffPreview
+            self.createdAt = createdAt
+            self.timeoutSeconds = timeoutSeconds
+            self.telegramMessageId = telegramMessageId
+            self.telegramChatId = telegramChatId
+        }
     }
 
     // MARK: - Private state
@@ -67,7 +92,9 @@ public actor TelegramHITLCoordinator {
             workspace: workspace,
             diffPreview: diffPreview,
             createdAt: Date(),
-            timeoutSeconds: timeoutSeconds
+            timeoutSeconds: timeoutSeconds,
+            telegramMessageId: nil,
+            telegramChatId: nil
         )
 
         // AsyncStream에 새 request 알림
@@ -82,6 +109,23 @@ public actor TelegramHITLCoordinator {
                 await self?.timeoutIfPending(id: reqId)
             }
         }
+    }
+
+    /// **ADR-099 P1-4** — HITL 메시지 발송 후 messageId를 등록.
+    /// `setupTelegramHITLCoordinator`에서 sendWithKeyboard 완료 후 호출한다.
+    public func setTelegramMessageId(_ messageId: Int64, chatId: Int64, for requestId: UUID) {
+        guard let entry = pending[requestId] else { return }
+        let updatedRequest = Request(
+            id: entry.request.id,
+            action: entry.request.action,
+            workspace: entry.request.workspace,
+            diffPreview: entry.request.diffPreview,
+            createdAt: entry.request.createdAt,
+            timeoutSeconds: entry.request.timeoutSeconds,
+            telegramMessageId: messageId,
+            telegramChatId: chatId
+        )
+        pending[requestId] = PendingEntry(request: updatedRequest, continuation: entry.continuation)
     }
 
     /// 외부에서 응답 주입 (데스크탑 UI 또는 Telegram callback에서 호출).

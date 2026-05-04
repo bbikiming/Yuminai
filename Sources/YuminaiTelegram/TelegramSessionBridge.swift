@@ -61,6 +61,10 @@ public actor TelegramSessionBridge {
     /// coordinator.request()가 suspend하는 동안 나머지 이벤트 처리를 막지 않도록
     /// bridge 자체가 blocked 상태임을 기록한다.
     private var pendingHITLTask: Task<TelegramHITLCoordinator.HITLResponse, Never>?
+    /// **ADR-098 P1-1** — diff/log artifact store. 주입 시 notifyDiffArtifact/notifyLogArtifact가
+    /// store에 저장 → UUID로 deep link 생성 → "📂 View Full in Yuminai" 링크 첨부.
+    /// nil이면 artifact 발송 메서드는 즉시 반환 (legacy fallback).
+    private var artifactStore: TelegramArtifactStore?
 
     public init(client: any TelegramClient, configuration: Configuration) {
         self.client = client
@@ -71,6 +75,11 @@ public actor TelegramSessionBridge {
     public func setHITLCoordinator(_ coordinator: TelegramHITLCoordinator?, timeoutSeconds: Int = 60) {
         self.hitlCoordinator = coordinator
         self.hitlTimeoutSeconds = timeoutSeconds
+    }
+
+    /// **ADR-098 P1-1** — artifact store 주입. nil이면 artifact 발송이 비활성화된다.
+    public func setArtifactStore(_ store: TelegramArtifactStore?) {
+        self.artifactStore = store
     }
 
     public func updateConfiguration(_ config: Configuration) {
@@ -270,6 +279,89 @@ public actor TelegramSessionBridge {
         let combined = header + trimmed + footer
         for chunk in Self.chunked(combined, maxSize: config.maxChunkSize) {
             await send(chunk)
+        }
+    }
+
+    /// **ADR-098 P1-1** — diff artifact를 store + formatter + deep link 경로로 발송.
+    ///
+    /// `TelegramSendHelper.sendDiffPreview`를 사용 → store에 저장하고 UUID로
+    /// `yuminai://diff/<uuid>` 딥링크가 본문 마크다운에 포함된다.
+    /// store가 주입되지 않았으면 발송하지 않고 종료한다.
+    ///
+    /// - Parameters:
+    ///   - diff: raw git diff 문자열
+    ///   - files: 변경 파일 수
+    ///   - added: 추가 라인 수
+    ///   - removed: 삭제 라인 수
+    ///   - workspace: 워크스페이스 이름 (옵션)
+    /// - Returns: 저장된 artifact UUID. store 미주입 시 nil.
+    @discardableResult
+    public func notifyDiffArtifact(
+        diff: String,
+        files: Int,
+        added: Int,
+        removed: Int,
+        workspace: String?
+    ) async -> UUID? {
+        guard let store = artifactStore else { return nil }
+        await flushAssistantBuffer()
+        let target = requestChatId ?? config.chatId
+        do {
+            let id = try await TelegramSendHelper.sendDiffPreview(
+                diff: diff,
+                files: files,
+                added: added,
+                removed: removed,
+                workspace: workspace,
+                to: target,
+                store: store,
+                client: client
+            )
+            // streaming session reset — 다음 assistant text는 새 메시지부터.
+            streamingMessageId = nil
+            streamingAccumulated = ""
+            return id
+        } catch {
+            return nil
+        }
+    }
+
+    /// **ADR-098 P1-1** — build/test log artifact를 store + formatter + deep link 경로로 발송.
+    ///
+    /// `TelegramSendHelper.sendBuildLog`를 사용 → store에 저장하고 UUID로
+    /// `yuminai://log/<uuid>` 딥링크가 본문 마크다운에 포함된다.
+    ///
+    /// - Parameters:
+    ///   - log: 전체 로그 문자열
+    ///   - title: 로그 제목 (예: "swift test")
+    ///   - elapsed: 소요 시간 (초)
+    ///   - success: 성공 여부
+    /// - Returns: 저장된 artifact UUID. store 미주입 시 nil.
+    @discardableResult
+    public func notifyLogArtifact(
+        log: String,
+        title: String,
+        elapsed: TimeInterval,
+        success: Bool
+    ) async -> UUID? {
+        guard let store = artifactStore else { return nil }
+        await flushAssistantBuffer()
+        let target = requestChatId ?? config.chatId
+        do {
+            let id = try await TelegramSendHelper.sendBuildLog(
+                log: log,
+                title: title,
+                elapsed: elapsed,
+                success: success,
+                to: target,
+                store: store,
+                client: client
+            )
+            streamingMessageId = nil
+            streamingAccumulated = ""
+            return id
+        } catch {
+            return nil
         }
     }
 

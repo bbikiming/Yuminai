@@ -306,7 +306,9 @@ public final class YuminaiCommandRouter: TelegramCommandRouter, @unchecked Senda
                 """
             }
         }
-        await MainActor.run { Task { await model.runCommand(cmd) } }
+        // ADR-098 P1-1 — Telegram 진입은 runCommandFromTelegram을 사용 →
+        // 완료 후 build log artifact가 store + deep link 경로로 forwarding됨.
+        await MainActor.run { Task { await model.runCommandFromTelegram(cmd) } }
         return "▶ 실행 중: `\(cmd)`\n결과는 완료 시 자동 전송됩니다."
     }
 
@@ -417,7 +419,10 @@ public final class YuminaiCommandRouter: TelegramCommandRouter, @unchecked Senda
         return "★ 활성 변경: ‘\(workspace.name)’ (bind는 그대로 유지)"
     }
 
-    /// ADR-045 M8 — pending diff를 chunked로 전송 (code block 보존).
+    /// **ADR-099 P1-1/P1-2/P1-3** — pending diff를 formatter로 포맷 + artifact store 저장 + deep link 첨부.
+    ///
+    /// `TelegramSendHelper.sendDiffPreview`를 통해 formatter → store → LargePayloadSender 경로를 탄다.
+    /// 발송 완료 후 nil 반환 (router가 중복 send하지 않도록).
     private func diffCommand() async -> String? {
         guard let model = appModel else { return "Yuminai 연결 안 됨" }
         let diff = await MainActor.run { model.pendingDiff }
@@ -425,13 +430,25 @@ public final class YuminaiCommandRouter: TelegramCommandRouter, @unchecked Senda
         guard !trimmed.isEmpty else {
             return "현재 보류 중인 diff가 없어요. agent가 파일을 수정하면 여기서 볼 수 있어요."
         }
-        // 4KB cap (텔레그램 4096자 + code block 마진)
-        let cap = 3500
-        if trimmed.count > cap {
-            let head = String(trimmed.prefix(cap))
-            return "```diff\n\(head)\n```\n\n... (앞부분 \(cap)자 — 전체는 PC에서 확인하세요)"
-        }
-        return "```diff\n\(trimmed)\n```"
+        // ADR-099 P1 — store + formatter + LargePayloadSender 경로로 발송
+        // pendingDiff에서 파일 수/라인 수 통계 추정 (간단 휴리스틱)
+        let lines = trimmed.components(separatedBy: "\n")
+        let filesChanged = lines.filter { $0.hasPrefix("diff --git") }.count
+        let added = lines.filter { $0.hasPrefix("+") && !$0.hasPrefix("+++") }.count
+        let removed = lines.filter { $0.hasPrefix("-") && !$0.hasPrefix("---") }.count
+        let workspaceName = await MainActor.run { model.boundWorkspaceName }
+
+        let targetChatId = await MainActor.run { model.preferences.telegramChatId }
+        await model.sendDiffPreviewToTelegram(
+            diff: trimmed,
+            files: max(filesChanged, 1),
+            added: added,
+            removed: removed,
+            workspace: workspaceName,
+            chatId: lastChatId != 0 ? lastChatId : targetChatId
+        )
+        // 발송은 sendDiffPreviewToTelegram에서 처리됨 — nil로 중복 방지
+        return nil
     }
 
     /// ADR-048 Phase 3.C — manual model override.
