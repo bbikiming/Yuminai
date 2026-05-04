@@ -23,6 +23,9 @@ struct TelegramHubView: View {
     @State private var selectedTab: Tab = .bots
     @State private var showWizard: Bool = false
     @State private var showAddBotSheet: Bool = false
+    /// **ADR-100** — Hub 안에서 띄우는 cokacdir import sheet (RootView의 sheet는 Hub modal에 가려져 안 뜸).
+    @State private var showCokacdirImport: Bool = false
+    @State private var cokacdirLoading: Bool = false
 
     enum Tab: String, CaseIterable, Identifiable {
         case bots = "봇"
@@ -85,6 +88,25 @@ struct TelegramHubView: View {
                 showAddBotSheet = false
             }
         }
+        // ADR-100 — Hub 자체 sheet로 cokacdir import (RootView sheet는 modal 위 modal로 안 뜸)
+        .sheet(isPresented: $showCokacdirImport) {
+            CokacdirImportSheet(
+                bots: appModel.cokacdirBots,
+                chatLabels: appModel.cokacdirChatLabels,
+                error: appModel.cokacdirImportError,
+                mode: .hub,
+                onSelect: { bot, chatId in
+                    Task {
+                        await appModel.addBotFromCokacdirToHub(bot, chatId: chatId)
+                        // 에러 없으면 닫기, 있으면 sheet 유지 (사용자가 에러 확인 후 수동 닫기)
+                        if appModel.cokacdirImportError == nil {
+                            showCokacdirImport = false
+                        }
+                    }
+                },
+                onCancel: { showCokacdirImport = false }
+            )
+        }
     }
 
     // MARK: - Header
@@ -111,10 +133,21 @@ struct TelegramHubView: View {
     }
 
     /// **ADR-100** — cokacdir bot_settings.json에서 봇을 multi-bot 모델로 직접 import.
+    /// RootView 대신 Hub 자체 sheet로 띄움 (modal 위 modal SwiftUI 한계 우회).
     private var cokacdirImportButton: some View {
-        FlatButton("cokacdir에서", icon: "square.and.arrow.down", variant: .secondary) {
-            Task { await appModel.loadCokacdirBots(mode: .hub) }
+        FlatButton(
+            cokacdirLoading ? "로딩 중…" : "cokacdir에서",
+            icon: "square.and.arrow.down",
+            variant: .secondary
+        ) {
+            Task {
+                cokacdirLoading = true
+                await appModel.loadCokacdirBots(mode: .hub, presentSheet: false)
+                cokacdirLoading = false
+                showCokacdirImport = true
+            }
         }
+        .disabled(cokacdirLoading)
         .help("~/.cokacdir/bot_settings.json에서 봇을 가져와 Hub에 추가합니다.")
     }
 

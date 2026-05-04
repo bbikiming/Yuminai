@@ -4895,7 +4895,8 @@ public final class AppModel {
     /// cokacdir bot_settings.json + group_chat 로그를 읽어 봇 목록 + chat label을 로드.
     /// SettingsView "cokacdir에서 가져오기" 버튼이 호출.
     /// **ADR-100** — `mode`로 import 후 라우팅 분기. `.legacy`(default)는 단일 봇 슬롯, `.hub`는 multi-bot.
-    public func loadCokacdirBots(mode: CokacdirImportMode = .legacy) async {
+    /// `presentSheet`: true이면 RootView의 sheet를 띄움 (Settings 진입). false이면 데이터만 로드 (Hub처럼 자체 sheet를 띄우는 호출자용).
+    public func loadCokacdirBots(mode: CokacdirImportMode = .legacy, presentSheet: Bool = true) async {
         cokacdirImportError = nil
         cokacdirChatLabels = [:]
         cokacdirImportMode = mode
@@ -4913,10 +4914,10 @@ public final class AppModel {
                 }
             }
             cokacdirChatLabels = labels
-            showCokacdirImportSheet = true
+            if presentSheet { showCokacdirImportSheet = true }
         } catch {
             cokacdirImportError = error.localizedDescription
-            showCokacdirImportSheet = true
+            if presentSheet { showCokacdirImportSheet = true }
         }
     }
 
