@@ -459,6 +459,13 @@ struct RootView: View {
             HITLApprovalSheet()
                 .environment(appModel)
         }
+        // ADR-097 — Telegram Artifact Viewer (diff / log deep link)
+        .sheet(isPresented: $bindable.showTelegramArtifactSheet) {
+            if let id = appModel.artifactSheetId {
+                TelegramArtifactViewerSheet(artifactId: id)
+                    .environment(appModel)
+            }
+        }
         .alert(
             "잠깐, 문제가 생겼어요",
             isPresented: Binding(

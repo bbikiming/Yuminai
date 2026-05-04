@@ -100,6 +100,20 @@ public final class AppModel {
     /// **ADR-093 Phase 2** — Offline queue depth (5초 주기 폴링, BotStatusDock 표시용).
     public var telegramQueueDepth: Int = 0
 
+    // MARK: - ADR-097 — Telegram Artifact Viewer
+
+    /// **ADR-097** — diff/log artifact 컨텐츠를 UUID로 저장하는 store.
+    public let telegramArtifactStore: TelegramArtifactStore = TelegramArtifactStore()
+    /// **ADR-097** — artifact viewer sheet 표시 여부.
+    public var showTelegramArtifactSheet: Bool = false
+    /// **ADR-097** — 현재 viewer에 표시할 artifact UUID.
+    public var artifactSheetId: UUID? = nil
+
+    // MARK: - ADR-097 — macOS Notification Permission
+
+    /// **ADR-097** — macOS 알림 권한 상태 (앱 시작 시 확인, 사용자 요청 후 갱신).
+    public var macOSNotificationStatus: MacOSNotificationPermission.Status = .notDetermined
+
     // 활성 세션 설정 (toolbar에서 즉시 변경 가능)
     public var activeSettings: SessionSettings = .default
 
@@ -5432,15 +5446,18 @@ public final class AppModel {
     public func handleDeepLink(_ link: TelegramDeepLink) async {
         switch link {
         case .diff(let id):
-            // TODO: ADR-096 후속 — diff viewer sheet 구현 후 제거
-            // 현재는 메인 윈도우 활성화만
+            // ADR-097 — artifact viewer sheet로 라우팅
             NSApp.activate(ignoringOtherApps: true)
-            logger.info("[DeepLink] diff \(id) — diff viewer는 후속 구현 예정")
+            artifactSheetId = id
+            showTelegramArtifactSheet = true
+            logger.info("[DeepLink] diff \(id) — artifact viewer sheet 표시")
 
         case .log(let id):
-            // TODO: ADR-096 후속 — log viewer sheet 구현 후 제거
+            // ADR-097 — artifact viewer sheet로 라우팅
             NSApp.activate(ignoringOtherApps: true)
-            logger.info("[DeepLink] log \(id) — log viewer는 후속 구현 예정")
+            artifactSheetId = id
+            showTelegramArtifactSheet = true
+            logger.info("[DeepLink] log \(id) — artifact viewer sheet 표시")
 
         case .workspace(let id):
             NSApp.activate(ignoringOtherApps: true)
@@ -5488,5 +5505,17 @@ public final class AppModel {
     public func resetNotificationPolicyToDefault() async {
         preferences = { var p = preferences; p.notificationPolicy = .default; return p }()
         await savePreferences()
+    }
+
+    // MARK: - ADR-097 — macOS Notification Permission
+
+    /// **ADR-097** — 앱 시작 시 macOS 알림 권한 상태 확인.
+    public func setupNotificationStatusCheck() async {
+        macOSNotificationStatus = await MacOSNotificationPermission.currentStatus()
+    }
+
+    /// **ADR-097** — 사용자 요청에 의한 macOS 알림 권한 요청.
+    public func requestMacOSNotificationPermission() async {
+        macOSNotificationStatus = await MacOSNotificationPermission.requestPermission()
     }
 }

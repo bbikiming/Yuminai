@@ -1,4 +1,5 @@
 import SwiftUI
+import AppKit
 import YuminaiCore
 import YuminaiUI
 
@@ -20,17 +21,114 @@ struct TelegramHubSettingsTab: View {
     @State private var diffLimit: Int = 30
     @State private var policyMatrix: NotificationPolicyMatrix = .default
     @State private var isApplyingReset: Bool = false
+    @State private var isRequestingPermission: Bool = false
 
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: Theme.Spacing.lg) {
+                notificationPermissionSection
                 quietHoursSection
                 hitlSection
                 policyMatrixSection
             }
             .padding(.vertical, Theme.Spacing.xs)
         }
-        .onAppear { syncFromModel() }
+        .onAppear {
+            syncFromModel()
+            Task { await appModel.setupNotificationStatusCheck() }
+        }
+    }
+
+    // MARK: - macOS Notification Permission (ADR-097)
+
+    private var notificationPermissionSection: some View {
+        CardSection(style: .subtle) {
+            VStack(alignment: .leading, spacing: Theme.Spacing.md) {
+                SectionHeaderRow(
+                    icon: "bell.badge.fill",
+                    iconColor: .orange,
+                    title: "macOS 알림 권한",
+                    caption: permissionStatusLabel
+                )
+
+                HStack(spacing: Theme.Spacing.sm) {
+                    permissionStatusIcon
+                        .font(.system(size: 14))
+
+                    Text(permissionStatusDescription)
+                        .font(Theme.Typography.small)
+                        .foregroundStyle(Theme.Color.textSecondary)
+
+                    Spacer()
+
+                    if appModel.macOSNotificationStatus == .notDetermined
+                        || appModel.macOSNotificationStatus == .denied {
+                        if isRequestingPermission {
+                            ProgressView()
+                                .controlSize(.small)
+                        } else {
+                            Button(appModel.macOSNotificationStatus == .denied ? "Settings 열기" : "권한 요청") {
+                                if appModel.macOSNotificationStatus == .denied {
+                                    openNotificationSettings()
+                                } else {
+                                    Task {
+                                        isRequestingPermission = true
+                                        await appModel.requestMacOSNotificationPermission()
+                                        isRequestingPermission = false
+                                    }
+                                }
+                            }
+                            .buttonStyle(.bordered)
+                            .controlSize(.small)
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    private var permissionStatusLabel: String {
+        switch appModel.macOSNotificationStatus {
+        case .notDetermined: return "아직 결정하지 않음"
+        case .denied: return "거부됨"
+        case .authorized: return "허용됨"
+        case .provisional: return "임시 허용"
+        case .ephemeral: return "임시"
+        case .unavailable: return "사용 불가"
+        }
+    }
+
+    private var permissionStatusDescription: String {
+        switch appModel.macOSNotificationStatus {
+        case .notDetermined: return "알림 권한을 요청하면 작업 완료 시 macOS 알림을 받을 수 있습니다."
+        case .denied: return "알림이 거부되었습니다. 시스템 설정에서 직접 허용해 주세요."
+        case .authorized: return "macOS 알림이 활성화되어 있습니다."
+        case .provisional: return "임시 알림 권한이 부여되어 있습니다."
+        case .ephemeral: return "앱 사용 중에만 알림이 표시됩니다."
+        case .unavailable: return "이 환경에서는 알림 권한을 사용할 수 없습니다."
+        }
+    }
+
+    @ViewBuilder
+    private var permissionStatusIcon: some View {
+        switch appModel.macOSNotificationStatus {
+        case .authorized:
+            Image(systemName: "checkmark.circle.fill").foregroundStyle(Color.green)
+        case .denied:
+            Image(systemName: "xmark.circle.fill").foregroundStyle(Color.red)
+        case .notDetermined:
+            Image(systemName: "questionmark.circle").foregroundStyle(Theme.Color.textTertiary)
+        case .provisional, .ephemeral:
+            Image(systemName: "bell.badge").foregroundStyle(Color.orange)
+        case .unavailable:
+            Image(systemName: "minus.circle").foregroundStyle(Theme.Color.textTertiary)
+        }
+    }
+
+    private func openNotificationSettings() {
+        if let url = URL(string: "x-apple.systempreferences:com.apple.preference.notifications") {
+            NSWorkspace.shared.open(url)
+        }
     }
 
     // MARK: - Quiet Hours
