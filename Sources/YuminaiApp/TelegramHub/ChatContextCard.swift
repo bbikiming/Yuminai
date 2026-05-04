@@ -60,7 +60,7 @@ struct ChatContextCard: View {
             }
             .accessibilityHidden(true)
             VStack(alignment: .leading, spacing: 1) {
-                Text("Chat: \(binding.chatId)")
+                Text("대화방 번호: \(binding.chatId)")
                     .font(Theme.Typography.label.weight(.semibold))
                     .foregroundStyle(Theme.Color.text)
                 if !binding.nickname.isEmpty {
@@ -87,11 +87,11 @@ struct ChatContextCard: View {
 
     private var infoRows: some View {
         VStack(alignment: .leading, spacing: Theme.Spacing.xs) {
-            infoRow(label: "Bot", value: botName)
-            infoRow(label: "Workspace", value: workspaceName)
-            infoRow(label: "Whitelist", value: nil, custom: whitelistBadge)
+            infoRow(label: "봇", value: botName)
+            infoRow(label: "작업 폴더", value: workspaceName)
+            infoRow(label: "허가", value: nil, custom: whitelistBadge)
             if let lastActivity {
-                infoRow(label: "Last msg", value: relativeTime(lastActivity))
+                infoRow(label: "마지막 메시지", value: relativeTime(lastActivity))
             }
         }
     }
@@ -143,7 +143,7 @@ struct ChatContextCard: View {
                 Image(systemName: "exclamationmark.triangle.fill")
                     .font(.system(size: 9))
                     .foregroundStyle(.orange)
-                Text("모든 사용자 허용")
+                Text("전체 허용 (주의)")
                     .font(Theme.Typography.small)
                     .foregroundStyle(.orange)
             }
@@ -152,7 +152,7 @@ struct ChatContextCard: View {
                 Image(systemName: "checkmark.circle.fill")
                     .font(.system(size: 9))
                     .foregroundStyle(Theme.Color.success)
-                Text("허용됨")
+                Text("접근 허가됨")
                     .font(Theme.Typography.small)
                     .foregroundStyle(Theme.Color.success)
             }

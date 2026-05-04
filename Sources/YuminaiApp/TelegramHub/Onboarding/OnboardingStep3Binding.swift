@@ -25,8 +25,8 @@ struct OnboardingStep3Binding: View {
             HeaderHero(
                 icon: "link.circle.fill",
                 iconTint: Theme.Color.accent,
-                title: "워크스페이스 연결 (선택)",
-                subtitle: "Chat ID를 지정하면 해당 텔레그램 채팅을 특정 워크스페이스에 바로 연결할 수 있어요. 지금 건너뛰고 나중에 추가해도 됩니다."
+                title: "작업 폴더 연결 (선택)",
+                subtitle: "대화방 번호를 지정하면 해당 대화방을 특정 작업 폴더에 바로 연결할 수 있어요. 지금 건너뛰고 나중에 추가해도 됩니다."
             )
 
             // Chat ID 입력
@@ -35,7 +35,7 @@ struct OnboardingStep3Binding: View {
                     SectionHeaderRow(
                         icon: "number.circle.fill",
                         iconColor: Theme.Color.accent,
-                        title: "Chat ID",
+                        title: "대화방 번호",
                         caption: "선택 사항"
                     )
                     HStack(spacing: Theme.Spacing.sm) {
@@ -47,7 +47,18 @@ struct OnboardingStep3Binding: View {
                             chatIdStatusIcon
                         }
                     }
-                    Text("텔레그램 그룹/채널이면 음수 (예: -100123456789), 개인 채팅이면 양수 (예: 123456789).")
+                    if let chatId = parsedChatId {
+                        HStack(spacing: 4) {
+                            Image(systemName: chatId < 0 ? "person.3.fill" : "person.crop.circle.fill")
+                                .font(.system(size: 10))
+                                .foregroundStyle(chatId < 0 ? Color.orange : Theme.Color.accent)
+                            Text(chatId < 0 ? "그룹 채팅" : "1:1 대화")
+                                .font(Theme.Typography.micro)
+                                .foregroundStyle(chatId < 0 ? Color.orange : Theme.Color.accent)
+                        }
+                        .transition(.opacity)
+                    }
+                    Text("그룹 채팅이면 음수 (예: -100123456789), 1:1 대화면 양수 (예: 123456789).")
                         .font(Theme.Typography.micro)
                         .foregroundStyle(Theme.Color.textTertiary)
                         .fixedSize(horizontal: false, vertical: true)
@@ -86,11 +97,11 @@ struct OnboardingStep3Binding: View {
                 SectionHeaderRow(
                     icon: "folder.fill",
                     iconColor: Theme.Color.accent,
-                    title: "연결할 워크스페이스"
+                    title: "연결할 작업 폴더"
                 )
                 if workspaces.isEmpty {
                     InfoCallout(tone: .warning) {
-                        Text("워크스페이스가 없어요. 메인 화면에서 먼저 워크스페이스를 만들어 주세요.")
+                        Text("작업 폴더가 없어요. 메인 화면에서 먼저 작업 폴더를 만들어 주세요.")
                             .font(Theme.Typography.small)
                             .foregroundStyle(Theme.Color.textSecondary)
                             .fixedSize(horizontal: false, vertical: true)
@@ -139,7 +150,7 @@ struct OnboardingStep3Binding: View {
                 Text("지금 건너뛰어도 됩니다")
                     .font(Theme.Typography.small.weight(.semibold))
                     .foregroundStyle(Theme.Color.text)
-                Text("봇이 추가된 후 Hub의 Bindings 탭에서 언제든지 Chat ↔ Workspace 매핑을 추가할 수 있어요.")
+                Text("봇이 추가된 후 Hub의 연결 탭에서 언제든지 대화방 → 작업 폴더 연결을 추가할 수 있어요.")
                     .font(Theme.Typography.small)
                     .foregroundStyle(Theme.Color.textSecondary)
                     .fixedSize(horizontal: false, vertical: true)

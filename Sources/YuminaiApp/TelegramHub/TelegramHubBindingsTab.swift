@@ -54,8 +54,8 @@ struct TelegramHubBindingsTab: View {
         AnimatedEmptyState(
             icon: "link.badge.plus",
             iconTint: Theme.Color.accent,
-            title: "바인딩 없음",
-            message: "아직 chat ↔ workspace 매핑이 없어요.\n\n봇 온보딩 Step 3에서 바인딩을 추가하거나,\nBots 탭에서 봇을 선택해 직접 추가할 수 있어요."
+            title: "연결 없음",
+            message: "아직 대화방 → 작업 폴더 연결이 없어요.\n\n봇 온보딩 3단계에서 연결을 추가하거나,\n봇 목록 탭에서 봇을 선택해 직접 추가할 수 있어요."
         ) {
             FlatButton("봇 추가하기", icon: "plus.circle.fill", variant: .secondary) {
                 appModel.showTelegramHubSheet = true

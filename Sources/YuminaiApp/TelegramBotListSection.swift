@@ -2,7 +2,13 @@ import SwiftUI
 import YuminaiCore
 import YuminaiUI
 
-/// **ADR-086 Phase 4** — 봇 목록 섹션 (등록된 봇 추가/편집/삭제).
+/// **ADR-086 Phase 4 / ADR-101** — 봇 목록 섹션 (등록된 봇 추가/편집/삭제).
+///
+/// ADR-101 변경:
+/// - `List` 기반으로 전환 (iOS 스타일 `.insetGrouped` 느낌)
+/// - `swipeActions` — trailing: 삭제/편집
+/// - `contextMenu` — 편집 / 활성화 토글 / 삭제
+/// - `ExpandableInfoSection` — 부가 정보 점진 노출
 struct TelegramBotListSection: View {
     @Environment(AppModel.self) private var appModel
     @State private var showAddBot: Bool = false
@@ -27,13 +33,62 @@ struct TelegramBotListSection: View {
                 )
                 .frame(maxHeight: .infinity)
             } else {
-                ScrollView {
-                    VStack(spacing: 8) {
-                        ForEach(appModel.preferences.telegramBots) { bot in
-                            botRow(bot)
-                        }
+                List {
+                    ForEach(appModel.preferences.telegramBots) { bot in
+                        botRow(bot)
+                            .listRowBackground(Theme.Color.surface)
+                            .listRowSeparatorTint(Theme.Color.borderSubtle)
+                            .swipeActions(edge: .trailing, allowsFullSwipe: false) {
+                                Button(role: .destructive) {
+                                    Task { await appModel.removeTelegramBot(bot.id) }
+                                } label: {
+                                    Label("삭제", systemImage: "trash")
+                                }
+                                Button {
+                                    editingBotId = bot.id
+                                } label: {
+                                    Label("편집", systemImage: "pencil")
+                                }
+                                .tint(.blue)
+                            }
+                            .contextMenu {
+                                Button {
+                                    editingBotId = bot.id
+                                } label: {
+                                    Label("편집", systemImage: "pencil")
+                                }
+                                Button {
+                                    let toggled = TelegramBotConfig(
+                                        id: bot.id,
+                                        displayName: bot.displayName,
+                                        username: bot.username,
+                                        keychainKey: bot.keychainKey,
+                                        groupId: bot.groupId,
+                                        allowedUserIds: bot.allowedUserIds,
+                                        enabled: !bot.enabled,
+                                        iconName: bot.iconName,
+                                        colorName: bot.colorName,
+                                        notes: bot.notes
+                                    )
+                                    Task { await appModel.updateTelegramBot(toggled) }
+                                } label: {
+                                    Label(
+                                        bot.enabled ? "비활성화" : "활성화",
+                                        systemImage: bot.enabled ? "pause.circle" : "play.circle"
+                                    )
+                                }
+                                Divider()
+                                Button(role: .destructive) {
+                                    Task { await appModel.removeTelegramBot(bot.id) }
+                                } label: {
+                                    Label("삭제", systemImage: "trash")
+                                }
+                            }
                     }
                 }
+                .listStyle(.inset)
+                .scrollContentBackground(.hidden)
+                .frame(maxHeight: 300)
             }
         }
         .sheet(isPresented: $showAddBot) {
@@ -45,6 +100,7 @@ struct TelegramBotListSection: View {
             } onCancel: {
                 showAddBot = false
             }
+            .environment(appModel)
         }
         .sheet(item: Binding(
             get: { editingBotId.flatMap { id in appModel.preferences.telegramBots.first { $0.id == id } } },
@@ -58,74 +114,100 @@ struct TelegramBotListSection: View {
             } onCancel: {
                 editingBotId = nil
             }
+            .environment(appModel)
         }
     }
+
+    // MARK: - Bot Row
 
     private func botRow(_ bot: TelegramBotConfig) -> some View {
         let groupName = bot.groupId.flatMap { gid in
             appModel.preferences.telegramBotGroups.first { $0.id == gid }?.displayName
         }
-        return HStack(alignment: .top, spacing: 10) {
-            Image(systemName: bot.iconName)
-                .font(.system(size: 16))
-                .foregroundStyle(Theme.Color.folderColor(for: bot.colorName))
-                .frame(width: 28)
-                .accessibilityHidden(true)
-            VStack(alignment: .leading, spacing: 3) {
-                HStack(spacing: 6) {
-                    Text(bot.displayName)
-                        .font(Theme.Typography.label)
-                        .foregroundStyle(Theme.Color.text)
-                    if !bot.enabled {
-                        Text("비활성")
-                            .font(Theme.Typography.micro)
-                            .foregroundStyle(Theme.Color.textTertiary)
-                            .padding(.horizontal, 5)
-                            .padding(.vertical, 1)
-                            .background(Theme.Color.surface)
-                            .clipShape(Capsule())
+        return VStack(alignment: .leading, spacing: 4) {
+            HStack(alignment: .center, spacing: 10) {
+                // 아이콘
+                Image(systemName: bot.iconName)
+                    .font(.system(size: 16))
+                    .foregroundStyle(Theme.Color.folderColor(for: bot.colorName))
+                    .frame(width: 28)
+                    .accessibilityHidden(true)
+
+                // 이름 + 배지 (항상 표시)
+                VStack(alignment: .leading, spacing: 3) {
+                    HStack(spacing: 6) {
+                        Text(bot.displayName)
+                            .font(Theme.Typography.label)
+                            .foregroundStyle(Theme.Color.text)
+                        if !bot.enabled {
+                            statusBadge("비활성", color: Theme.Color.textTertiary)
+                        }
+                        if let groupName {
+                            statusBadge(groupName, color: Theme.Color.accent)
+                        }
                     }
-                    if let groupName {
-                        Text(groupName)
-                            .font(Theme.Typography.micro)
-                            .foregroundStyle(Theme.Color.accent)
-                            .padding(.horizontal, 5)
-                            .padding(.vertical, 1)
-                            .background(Theme.Color.accent.opacity(0.10))
-                            .clipShape(Capsule())
+                    if !bot.username.isEmpty {
+                        Text("@\(bot.username)")
+                            .font(Theme.Typography.small)
+                            .foregroundStyle(Theme.Color.textSecondary)
+                            .textSelection(.enabled)
                     }
                 }
-                if !bot.username.isEmpty {
-                    Text("@\(bot.username)")
-                        .font(Theme.Typography.small)
-                        .foregroundStyle(Theme.Color.textSecondary)
-                        .textSelection(.enabled)
-                }
-                if !bot.notes.isEmpty {
-                    Text(bot.notes)
-                        .font(Theme.Typography.small)
-                        .foregroundStyle(Theme.Color.textTertiary)
-                        .lineLimit(2)
-                }
-                Text("Keychain: \(bot.keychainKey)")
-                    .font(Theme.Typography.micro)
-                    .foregroundStyle(Theme.Color.textTertiary)
+
+                Spacer()
+
+                // 빠른 편집 버튼 (hover 없이 항상 표시 — macOS List에서는 swipe 안 되므로)
+                Button("편집") { editingBotId = bot.id }
+                    .buttonStyle(.plain)
+                    .foregroundStyle(Theme.Color.accent)
+                    .font(Theme.Typography.small)
+                    .accessibilityLabel("\(bot.displayName) 봇 편집")
             }
-            Spacer()
-            Button("편집") { editingBotId = bot.id }
-                .buttonStyle(.plain)
-                .foregroundStyle(Theme.Color.accent)
-                .accessibilityLabel("\(bot.displayName) 봇 편집")
-            Button("삭제", role: .destructive) {
-                Task { await appModel.removeTelegramBot(bot.id) }
+
+            // 점진 정보 노출 — chevron 클릭 시만 표시
+            ExpandableInfoSection(label: "자세히 보기", labelIcon: "info.circle") {
+                VStack(alignment: .leading, spacing: Theme.Spacing.xs) {
+                    if !bot.notes.isEmpty {
+                        infoLine(label: "메모", value: bot.notes)
+                    }
+                    infoLine(label: "macOS 비밀번호 저장소 키", value: bot.keychainKey)
+                    infoLine(
+                        label: "사용 가능한 사람",
+                        value: bot.allowedUserIds.isEmpty
+                            ? "전체 허용 (주의)"
+                            : "\(bot.allowedUserIds.count)명 지정"
+                    )
+                    infoLine(label: "아이콘", value: bot.iconName)
+                    infoLine(label: "색상", value: bot.colorName)
+                }
             }
-            .buttonStyle(.plain)
-            .foregroundStyle(Theme.Color.danger)
-            .accessibilityLabel("\(bot.displayName) 봇 삭제")
         }
-        .padding(Theme.Spacing.md)
-        .background(Theme.Color.surface)
-        .clipShape(RoundedRectangle(cornerRadius: Theme.Radius.sm))
+        .padding(.vertical, Theme.Spacing.xs)
         .accessibilityElement(children: .contain)
+    }
+
+    // MARK: - Helpers
+
+    private func statusBadge(_ text: String, color: Color) -> some View {
+        Text(text)
+            .font(Theme.Typography.micro)
+            .foregroundStyle(color)
+            .padding(.horizontal, 5)
+            .padding(.vertical, 1)
+            .background(color.opacity(0.10))
+            .clipShape(Capsule())
+    }
+
+    private func infoLine(label: String, value: String) -> some View {
+        HStack(alignment: .top, spacing: 4) {
+            Text("\(label):")
+                .font(Theme.Typography.micro)
+                .foregroundStyle(Theme.Color.textTertiary)
+            Text(value)
+                .font(Theme.Typography.micro)
+                .foregroundStyle(Theme.Color.textSecondary)
+                .textSelection(.enabled)
+                .fixedSize(horizontal: false, vertical: true)
+        }
     }
 }

@@ -2,11 +2,13 @@ import SwiftUI
 import YuminaiCore
 import YuminaiUI
 
-/// **ADR-086 Phase 4** — 봇 편집/추가 sheet.
+/// **ADR-086 Phase 4 / ADR-101** — 봇 편집/추가 sheet.
 struct TelegramBotEditSheet: View {
     let existing: TelegramBotConfig?
     let onSave: (TelegramBotConfig) -> Void
     let onCancel: () -> Void
+
+    @Environment(AppModel.self) private var appModel
 
     @State private var displayName: String
     @State private var username: String
@@ -46,19 +48,22 @@ struct TelegramBotEditSheet: View {
                         TextField("표시 이름", text: $displayName)
                         TextField("Username (예: my_bot)", text: $username)
                             .autocorrectionDisabled()
-                        TextField("Keychain key", text: $keychainKey)
-                            .help("이 봇 token을 keychain에 어떤 key로 저장할지")
+                        TextField("macOS 비밀번호 저장소 키", text: $keychainKey)
+                            .help("이 봇 토큰(BotFather에서 받은 비밀번호)을 macOS 비밀번호 저장소에 어떤 키로 저장할지 지정해요.")
                             .autocorrectionDisabled()
                     } header: {
                         Text("기본")
                     }
                     Section {
-                        Toggle("활성", isOn: $enabled)
-                        TextField("허용 user IDs (콤마 구분)", text: $allowedUserIdsText)
-                            .help("비어있으면 모든 사용자 허용 (위험)")
+                        Toggle("활성화", isOn: $enabled)
+                        TextField("사용 가능한 사람 (텔레그램 사용자 번호, 콤마 구분)", text: $allowedUserIdsText)
+                            .help("비어있으면 모든 사용자 허용 (위험). 예: 123456789, 987654321")
                             .autocorrectionDisabled()
                     } header: {
-                        Text("권한")
+                        Text("접근 허가")
+                    } footer: {
+                        Text("사용 가능한 사람을 비워두면 누구나 이 봇을 사용할 수 있어요. 보안을 위해 직접 추가를 권장해요.")
+                            .font(Theme.Typography.micro)
                     }
                     Section {
                         TextField("아이콘 (SF Symbol)", text: $iconName)
@@ -76,15 +81,26 @@ struct TelegramBotEditSheet: View {
             .padding(Theme.Spacing.lg)
         } footer: {
             HStack {
+                // 실시간 유효성 안내
+                if let errorMessage = validationResult.errorMessage {
+                    HStack(spacing: 4) {
+                        Image(systemName: "exclamationmark.circle.fill")
+                            .font(.system(size: 11))
+                            .foregroundStyle(Theme.Color.danger)
+                        Text(errorMessage)
+                            .font(Theme.Typography.micro)
+                            .foregroundStyle(Theme.Color.danger)
+                    }
+                }
                 Spacer()
                 FlatButton("취소", variant: .secondary, action: onCancel)
                 FlatButton("저장", variant: .primary) {
                     let allowedIds = parseAllowedIds()
                     let config = TelegramBotConfig(
                         id: existing?.id ?? UUID(),
-                        displayName: displayName.isEmpty ? "이름 없음" : displayName,
+                        displayName: displayName.trimmingCharacters(in: .whitespaces),
                         username: username,
-                        keychainKey: keychainKey.isEmpty ? "telegram.bot.token" : keychainKey,
+                        keychainKey: keychainKey.trimmingCharacters(in: .whitespaces),
                         groupId: existing?.groupId,
                         allowedUserIds: allowedIds,
                         enabled: enabled,
@@ -94,9 +110,25 @@ struct TelegramBotEditSheet: View {
                     )
                     onSave(config)
                 }
+                .disabled(!isFormValid)
             }
         }
     }
+
+    // MARK: - Validation
+
+    /// 실시간 폼 유효성 검사 — TelegramBotValidator 위임.
+    private var validationResult: TelegramBotValidator.ValidationResult {
+        TelegramBotValidator.validateBot(
+            displayName: displayName,
+            username: username,
+            keychainKey: keychainKey,
+            existingId: existing?.id,
+            existingBots: appModel.preferences.telegramBots
+        )
+    }
+
+    private var isFormValid: Bool { validationResult.isValid }
 
     private func parseAllowedIds() -> [Int64] {
         allowedUserIdsText

@@ -11,23 +11,23 @@ struct TelegramBotBindingSection: View {
     var body: some View {
         VStack(alignment: .leading, spacing: Theme.Spacing.md) {
             HStack {
-                Text("Chat ↔ Workspace 매핑")
+                Text("대화방 → 작업 폴더 연결")
                     .font(Theme.Typography.label)
                     .foregroundStyle(Theme.Color.textSecondary)
                 Spacer()
-                FlatButton("매핑 추가", variant: .secondary) {
+                FlatButton("연결 추가", variant: .secondary) {
                     showAddBinding = true
                 }
             }
-            Text("같은 봇 안에서 chat별 다른 워크스페이스를 연결할 수 있어요. 사용자는 채팅창에서 `/switch` 명령으로 워크스페이스를 바꿀 수 있어요.")
+            Text("같은 봇 안에서 대화방별 다른 작업 폴더를 연결할 수 있어요. `/switch` 명령으로 작업 폴더를 바꿀 수 있어요.")
                 .font(Theme.Typography.small)
                 .foregroundStyle(Theme.Color.textSecondary)
                 .fixedSize(horizontal: false, vertical: true)
             if appModel.preferences.telegramBotChatBindings.isEmpty {
                 EmptyStateHint(
                     icon: "link.circle.fill",
-                    title: "매핑이 없어요",
-                    message: "Chat과 워크스페이스를 연결하면 봇 응답이 해당 워크스페이스로 자동 라우팅돼요."
+                    title: "연결이 없어요",
+                    message: "대화방과 작업 폴더를 연결하면 봇 응답이 해당 작업 폴더로 자동으로 전달돼요."
                 )
                 .frame(maxHeight: .infinity)
             } else {
@@ -89,7 +89,7 @@ struct TelegramBotBindingSection: View {
                     Text(bot?.displayName ?? "(삭제된 봇)")
                         .font(Theme.Typography.label)
                         .foregroundStyle(Theme.Color.text)
-                    Text("Chat: \(binding.chatId)")
+                    Text("대화방 번호: \(binding.chatId)")
                         .font(Theme.Typography.small)
                         .foregroundStyle(Theme.Color.textSecondary)
                 }
@@ -108,12 +108,12 @@ struct TelegramBotBindingSection: View {
                             .foregroundStyle(Theme.Color.text)
                     }
                 } else {
-                    Text("워크스페이스 미연결")
+                    Text("작업 폴더 미연결")
                         .font(Theme.Typography.small)
                         .foregroundStyle(Theme.Color.warning)
                 }
                 if !binding.allowedWorkspaceIds.isEmpty {
-                    Text("허용: \(binding.allowedWorkspaceIds.count)개 워크스페이스")
+                    Text("허용: \(binding.allowedWorkspaceIds.count)개 작업 폴더")
                         .font(Theme.Typography.micro)
                         .foregroundStyle(Theme.Color.textTertiary)
                 }

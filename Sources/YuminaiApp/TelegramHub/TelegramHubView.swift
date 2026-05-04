@@ -28,10 +28,10 @@ struct TelegramHubView: View {
     @State private var cokacdirLoading: Bool = false
 
     enum Tab: String, CaseIterable, Identifiable {
-        case bots = "봇"
-        case bindings = "Bindings"
-        case commands = "Commands"
-        case activity = "Activity"
+        case bots     = "봇 목록"
+        case bindings = "연결"
+        case commands = "명령어"
+        case activity = "활동 로그"
         case settings = "설정"
 
         var id: String { rawValue }
@@ -95,6 +95,7 @@ struct TelegramHubView: View {
                 chatLabels: appModel.cokacdirChatLabels,
                 error: appModel.cokacdirImportError,
                 mode: .hub,
+                existingBots: appModel.preferences.telegramBots,
                 onSelect: { bot, chatId in
                     Task {
                         await appModel.addBotFromCokacdirToHub(bot, chatId: chatId)
@@ -122,7 +123,7 @@ struct TelegramHubView: View {
                 Text("Telegram Hub")
                     .font(Theme.Typography.title)
                     .foregroundStyle(Theme.Color.text)
-                Text("봇 관리, Chat 바인딩, 커맨드, 활동 통계를 한곳에서.")
+                Text("봇 관리, 대화방 연결, 명령어, 활동 통계를 한곳에서.")
                     .font(Theme.Typography.small)
                     .foregroundStyle(Theme.Color.textSecondary)
             }
@@ -240,7 +241,7 @@ struct TelegramHubView: View {
         let bindings = appModel.preferences.telegramBotChatBindings.count
         let errors = appModel.telegramHealth.consecutiveFailures
 
-        var parts = ["봇 \(bots)개", "그룹 \(groups)개", "매핑 \(bindings)개"]
+        var parts = ["봇 \(bots)개", "그룹 \(groups)개", "연결 \(bindings)개"]
         if errors > 0 {
             parts.append("에러 \(errors)회")
         }

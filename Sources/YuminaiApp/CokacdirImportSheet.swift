@@ -1,19 +1,39 @@
 import SwiftUI
+import YuminaiCore
 import YuminaiTelegram
 import YuminaiUI
 
-/// cokacdir bot_settings.json에서 봇을 골라 토큰/chat id를 import.
+/// **ADR-100 / ADR-101** — cokacdir bot_settings.json에서 봇을 골라 토큰/chat id를 import.
 struct CokacdirImportSheet: View {
     let bots: [CokacdirBot]
     let chatLabels: [Int64: CokacdirChatLabel]
     let error: String?
     /// **ADR-100** — `.legacy`(Settings 진입)는 단일 봇 슬롯, `.hub`는 multi-bot 모델로 추가.
     let mode: AppModel.CokacdirImportMode
+    /// 현재 등록된 봇 목록 — 중복 체크용 (ADR-101).
+    let existingBots: [TelegramBotConfig]
     let onSelect: (CokacdirBot, Int64) -> Void
     let onCancel: () -> Void
 
     @State private var selectedBotId: String?
     @State private var manualChatIdText: String = ""
+
+    // MARK: - Validation
+
+    private var isDuplicate: Bool {
+        guard let bot = selectedBot else { return false }
+        return !TelegramBotValidator.isUsernameAvailable(bot.username, in: existingBots)
+    }
+
+    private var isFormValid: Bool {
+        guard let bot = selectedBot, selectedChatId != nil else { return false }
+        return !isDuplicate && !bot.username.isEmpty || selectedChatId != nil && !isDuplicate
+    }
+
+    // More precise: valid = bot selected + chatId valid + not duplicate
+    private var canImport: Bool {
+        selectedBot != nil && selectedChatId != nil && !isDuplicate
+    }
 
     var body: some View {
         VStack(alignment: .leading, spacing: Theme.Spacing.lg) {
@@ -25,7 +45,18 @@ struct CokacdirImportSheet: View {
                 emptyBox
             } else {
                 botList
-                if let bot = selectedBot {
+
+                // 중복 봇 선택 시 경고
+                if isDuplicate {
+                    InfoCallout(tone: .warning) {
+                        Text(TelegramHubFriendlyText.duplicateBotCallout)
+                            .font(Theme.Typography.small)
+                            .foregroundStyle(Theme.Color.textSecondary)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+                }
+
+                if let bot = selectedBot, !isDuplicate {
                     chatPicker(for: bot)
                 }
             }
@@ -34,7 +65,7 @@ struct CokacdirImportSheet: View {
 
             HStack {
                 if let bot = selectedBot {
-                    Text("‘\(bot.displayName)’의 토큰을 Yuminai keychain에 저장해요.")
+                    Text("’\(bot.displayName)’의 봇 토큰을 macOS 비밀번호 저장소에 저장해요.")
                         .font(.caption)
                         .foregroundStyle(.secondary)
                 } else {
@@ -45,7 +76,7 @@ struct CokacdirImportSheet: View {
                     .keyboardShortcut(.escape, modifiers: [])
                 FlatButton("가져오기", variant: .primary, action: applySelection)
                     .keyboardShortcut(.return, modifiers: [])
-                    .disabled(selectedChatId == nil || selectedBot == nil)
+                    .disabled(!canImport)
             }
         }
         .padding(Theme.Spacing.xl)
@@ -63,7 +94,7 @@ struct CokacdirImportSheet: View {
                     .font(Theme.Typography.title)
                     .foregroundStyle(Theme.Color.text)
                 if mode == .hub {
-                    Text("Telegram Hub")
+                    Text("여러 봇 목록")
                         .font(Theme.Typography.micro)
                         .foregroundStyle(Theme.Color.accent)
                         .padding(.horizontal, 6)
@@ -73,8 +104,8 @@ struct CokacdirImportSheet: View {
                 }
             }
             Text(mode == .hub
-                ? "선택한 봇이 Telegram Hub의 multi-bot 목록에 추가돼요. chat id가 있으면 binding도 함께 생성."
-                : "bot_settings.json에서 발견한 봇 중 하나를 골라주세요. (단일 봇 슬롯 — Settings 호환 모드)")
+                ? "선택한 봇이 Telegram Hub의 봇 목록에 추가돼요. 대화방 번호가 있으면 연결 설정도 함께 생성돼요."
+                : "bot_settings.json에서 발견한 봇 중 하나를 골라주세요. (단일 봇 슬롯 — 설정 호환 모드)")
                 .font(Theme.Typography.small)
                 .foregroundStyle(Theme.Color.textSecondary)
                 .fixedSize(horizontal: false, vertical: true)
@@ -123,9 +154,13 @@ struct CokacdirImportSheet: View {
         ScrollView {
             VStack(spacing: 4) {
                 ForEach(bots) { bot in
+                    let alreadyRegistered = !TelegramBotValidator.isUsernameAvailable(
+                        bot.username, in: existingBots
+                    )
                     BotRow(
                         bot: bot,
                         selected: bot.id == selectedBotId,
+                        alreadyRegistered: alreadyRegistered,
                         onTap: {
                             selectedBotId = bot.id
                             manualChatIdText = ""
@@ -139,10 +174,18 @@ struct CokacdirImportSheet: View {
 
     @ViewBuilder
     private func chatPicker(for bot: CokacdirBot) -> some View {
-        VStack(alignment: .leading, spacing: 6) {
-            Text("Chat 선택")
+        VStack(alignment: .leading, spacing: Theme.Spacing.sm) {
+            Text("대화방 선택")
                 .font(Theme.Typography.small.weight(.semibold))
                 .foregroundStyle(Theme.Color.textSecondary)
+
+            // ADR-101 — 대화방 종류 안내 callout
+            InfoCallout(tone: .info) {
+                Text(TelegramHubFriendlyText.chatTypeCalloutBody)
+                    .font(Theme.Typography.small)
+                    .foregroundStyle(Theme.Color.textSecondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
 
             if !bot.suggestedChatIds.isEmpty {
                 VStack(spacing: 4) {
@@ -162,7 +205,7 @@ struct CokacdirImportSheet: View {
                 Text("직접 입력")
                     .font(Theme.Typography.small)
                     .foregroundStyle(Theme.Color.textSecondary)
-                TextField("Telegram chat id (숫자)", text: $manualChatIdText)
+                TextField("대화방 번호 (숫자)", text: $manualChatIdText)
                     .textFieldStyle(.roundedBorder)
                     .frame(maxWidth: 220)
             }
@@ -190,6 +233,8 @@ struct CokacdirImportSheet: View {
 private struct BotRow: View {
     let bot: CokacdirBot
     let selected: Bool
+    /// ADR-101 — 이미 Hub에 등록된 봇이면 true.
+    let alreadyRegistered: Bool
     let onTap: () -> Void
     @State private var hovering = false
 
@@ -197,11 +242,21 @@ private struct BotRow: View {
         Button(action: onTap) {
             HStack(spacing: 10) {
                 Image(systemName: selected ? "checkmark.circle.fill" : "circle")
-                    .foregroundStyle(selected ? Theme.Color.accent : Theme.Color.textTertiary)
+                    .foregroundStyle(
+                        alreadyRegistered
+                        ? Theme.Color.textTertiary
+                        : (selected ? Theme.Color.accent : Theme.Color.textTertiary)
+                    )
                 VStack(alignment: .leading, spacing: 2) {
-                    Text(bot.displayName)
-                        .font(Theme.Typography.body)
-                        .foregroundStyle(Theme.Color.text)
+                    HStack(spacing: 6) {
+                        Text(bot.displayName)
+                            .font(Theme.Typography.body)
+                            .foregroundStyle(alreadyRegistered ? Theme.Color.textSecondary : Theme.Color.text)
+                        // ADR-101 — 이미 등록됨 배지
+                        if alreadyRegistered {
+                            DuplicateBadge()
+                        }
+                    }
                     HStack(spacing: 6) {
                         if !bot.username.isEmpty {
                             Text(bot.handle)
@@ -211,7 +266,7 @@ private struct BotRow: View {
                         if !bot.suggestedChatIds.isEmpty {
                             Text("·")
                                 .foregroundStyle(Theme.Color.textTertiary)
-                            Text("\(bot.suggestedChatIds.count)개 chat 후보")
+                            Text("\(bot.suggestedChatIds.count)개 대화방 후보")
                                 .font(Theme.Typography.small)
                                 .foregroundStyle(Theme.Color.textTertiary)
                         }

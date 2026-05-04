@@ -249,6 +249,7 @@ struct SettingsContainer: View {
                 chatLabels: appModel.cokacdirChatLabels,
                 error: appModel.cokacdirImportError,
                 mode: appModel.cokacdirImportMode,
+                existingBots: appModel.preferences.telegramBots,
                 onSelect: { bot, chatId in
                     Task {
                         switch appModel.cokacdirImportMode {

@@ -38,7 +38,7 @@ struct TelegramBotBindingEditSheet: View {
     var body: some View {
         YuminaiSheet(width: 540, height: 520) {
             VStack(alignment: .leading, spacing: Theme.Spacing.md) {
-                Text(existing == nil ? "새 매핑" : "매핑 편집")
+                Text(existing == nil ? "새 연결 설정" : "연결 설정 편집")
                     .font(Theme.Typography.title)
                     .foregroundStyle(Theme.Color.text)
                 Form {
@@ -49,23 +49,24 @@ struct TelegramBotBindingEditSheet: View {
                                 Text(bot.displayName).tag(UUID?.some(bot.id))
                             }
                         }
-                        TextField("Chat ID", text: $chatIdText)
+                        TextField("대화방 번호", text: $chatIdText)
                             .autocorrectionDisabled()
-                        TextField("Nickname (선택)", text: $nickname)
+                            .help("텔레그램 그룹이면 음수 (예: -100123456789), 1:1 대화면 양수 (예: 123456789)")
+                        TextField("별명 (선택)", text: $nickname)
                     } header: {
-                        Text("Source")
+                        Text("대화방 정보")
                     }
                     Section {
-                        Picker("활성 워크스페이스", selection: $activeWorkspaceId) {
+                        Picker("어느 폴더에서 작업할지", selection: $activeWorkspaceId) {
                             Text("미연결").tag(UUID?.none)
                             ForEach(workspaces) { ws in
                                 Text(ws.name).tag(UUID?.some(ws.id))
                             }
                         }
                     } header: {
-                        Text("Workspace")
+                        Text("작업 폴더")
                     } footer: {
-                        Text("이 chat에서 들어온 메시지는 활성 워크스페이스로 라우팅됩니다.")
+                        Text("이 대화방에서 들어온 메시지는 선택한 작업 폴더로 자동 전달됩니다.")
                             .font(Theme.Typography.micro)
                     }
                     Section {
@@ -79,9 +80,9 @@ struct TelegramBotBindingEditSheet: View {
                             ))
                         }
                     } header: {
-                        Text("/switch 허용 목록 (선택)")
+                        Text("/switch 허용 작업 폴더 (선택)")
                     } footer: {
-                        Text("비어있으면 모든 워크스페이스로 /switch 가능. 제한하면 목록만 허용.")
+                        Text("비워두면 모든 작업 폴더로 /switch 가능. 선택 시 해당 폴더만 허용.")
                             .font(Theme.Typography.micro)
                     }
                 }
@@ -106,8 +107,17 @@ struct TelegramBotBindingEditSheet: View {
                     )
                     onSave(binding)
                 }
-                .disabled(selectedBotId == nil || Int64(chatIdText.trimmingCharacters(in: .whitespaces)) == nil)
+                .disabled(!isFormValid)
             }
         }
+    }
+
+    // MARK: - Validation
+
+    private var isFormValid: Bool {
+        TelegramBotValidator.isBindingFormValid(
+            selectedBotId: selectedBotId,
+            chatIdText: chatIdText
+        )
     }
 }

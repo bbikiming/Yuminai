@@ -93,16 +93,16 @@ struct TelegramHubSettingsTab: View {
         case .denied: return "거부됨"
         case .authorized: return "허용됨"
         case .provisional: return "임시 허용"
-        case .ephemeral: return "임시"
+        case .ephemeral: return "임시 (앱 사용 중만)"
         case .unavailable: return "사용 불가"
         }
     }
 
     private var permissionStatusDescription: String {
         switch appModel.macOSNotificationStatus {
-        case .notDetermined: return "알림 권한을 요청하면 작업 완료 시 macOS 알림을 받을 수 있습니다."
+        case .notDetermined: return "알림 권한을 허용하면 작업 완료 시 데스크탑 알림을 받을 수 있습니다."
         case .denied: return "알림이 거부되었습니다. 시스템 설정에서 직접 허용해 주세요."
-        case .authorized: return "macOS 알림이 활성화되어 있습니다."
+        case .authorized: return "데스크탑 알림이 활성화되어 있습니다."
         case .provisional: return "임시 알림 권한이 부여되어 있습니다."
         case .ephemeral: return "앱 사용 중에만 알림이 표시됩니다."
         case .unavailable: return "이 환경에서는 알림 권한을 사용할 수 없습니다."
@@ -139,11 +139,11 @@ struct TelegramHubSettingsTab: View {
                 SectionHeaderRow(
                     icon: "moon.fill",
                     iconColor: .indigo,
-                    title: "Quiet Hours",
+                    title: "방해 금지 시간",
                     caption: quietActiveLabel
                 )
 
-                Toggle("조용한 시간 활성화", isOn: $quietEnabled)
+                Toggle("방해 금지 시간 활성화", isOn: $quietEnabled)
                     .font(Theme.Typography.small)
                     .onChange(of: quietEnabled) { _, newValue in
                         Task { await applyQuietHours(enabled: newValue) }
@@ -209,11 +209,11 @@ struct TelegramHubSettingsTab: View {
                 SectionHeaderRow(
                     icon: "hand.raised.fill",
                     iconColor: Theme.Color.accent,
-                    title: "HITL 설정"
+                    title: "위험 명령 확인 설정"
                 )
 
                 VStack(alignment: .leading, spacing: Theme.Spacing.sm) {
-                    Text("HITL 타임아웃: \(hitlTimeout)초")
+                    Text("확인 대기 시간: \(hitlTimeout)초")
                         .font(Theme.Typography.small)
                     Slider(value: Binding(
                         get: { Double(hitlTimeout) },
@@ -222,7 +222,7 @@ struct TelegramHubSettingsTab: View {
                     .onChange(of: hitlTimeout) { _, newValue in
                         Task { await appModel.updateHITLTimeout(newValue) }
                     }
-                    Text("Telegram에서 approve/reject 응답을 기다리는 최대 시간.")
+                    Text("텔레그램에서 승인/거절 응답을 기다리는 최대 시간.")
                         .font(Theme.Typography.micro)
                         .foregroundStyle(Theme.Color.textTertiary)
                 }
@@ -230,7 +230,7 @@ struct TelegramHubSettingsTab: View {
                 Divider()
 
                 VStack(alignment: .leading, spacing: Theme.Spacing.sm) {
-                    Text("Diff 미리보기 라인 한도")
+                    Text("변경사항 미리보기 줄 수")
                         .font(Theme.Typography.small)
                     Stepper(
                         "\(diffLimit)줄",
@@ -242,7 +242,7 @@ struct TelegramHubSettingsTab: View {
                         }
                     )
                     .font(Theme.Typography.small)
-                    Text("이 줄 수를 초과하는 diff는 sendDocument로 전송됩니다.")
+                    Text("이 줄 수를 초과하는 변경사항은 파일로 전송됩니다.")
                         .font(Theme.Typography.micro)
                         .foregroundStyle(Theme.Color.textTertiary)
                 }
@@ -259,8 +259,8 @@ struct TelegramHubSettingsTab: View {
                     SectionHeaderRow(
                         icon: "bell.badge.fill",
                         iconColor: Theme.Color.accent,
-                        title: "알림 정책 매트릭스",
-                        caption: "알림 종류 × 디바이스 상태 → 전달 채널"
+                        title: "알림 정책 표",
+                        caption: "알림 종류 × 데스크탑 상태 → 전달 채널"
                     )
                     Spacer()
                     FlatButton(
@@ -409,9 +409,9 @@ struct TelegramHubSettingsTab: View {
 extension DeviceState {
     fileprivate var displayLabel: String {
         switch self {
-        case .desktopActive: return "활성"
-        case .desktopIdle:   return "유휴"
-        case .desktopOff:    return "오프"
+        case .desktopActive: return "데스크탑 사용 중"
+        case .desktopIdle:   return "잠시 자리 비움"
+        case .desktopOff:    return "꺼짐"
         }
     }
 }
@@ -419,10 +419,10 @@ extension DeviceState {
 extension NotificationKind {
     fileprivate var displayLabel: String {
         switch self {
-        case .hitlApprovalRequest: return "HITL 승인 요청"
+        case .hitlApprovalRequest: return "위험 명령 확인 요청"
         case .taskCompleteSuccess: return "작업 완료 (성공)"
         case .taskCompleteFailure: return "작업 실패"
-        case .rateLimitAlert:      return "Rate Limit 경고"
+        case .rateLimitAlert:      return "사용량 한도 경고"
         case .generalAlert:        return "일반 알림"
         }
     }
@@ -431,28 +431,28 @@ extension NotificationKind {
 extension DeliveryChannel {
     fileprivate var displayLabel: String {
         switch self {
-        case .macOSOnly:   return "macOS만"
-        case .telegramOnly: return "Telegram만"
-        case .both:        return "둘 다"
-        case .suppressed:  return "억제"
+        case .macOSOnly:    return "데스크탑만"
+        case .telegramOnly: return "텔레그램만"
+        case .both:         return "둘 다"
+        case .suppressed:   return "알림 끔"
         }
     }
 
     fileprivate var shortLabel: String {
         switch self {
-        case .macOSOnly:   return "macOS"
-        case .telegramOnly: return "TG"
-        case .both:        return "둘 다"
-        case .suppressed:  return "억제"
+        case .macOSOnly:    return "데스크탑"
+        case .telegramOnly: return "텔레그램"
+        case .both:         return "둘 다"
+        case .suppressed:   return "끔"
         }
     }
 
     fileprivate var icon: String {
         switch self {
-        case .macOSOnly:   return "desktopcomputer"
+        case .macOSOnly:    return "desktopcomputer"
         case .telegramOnly: return "paperplane.fill"
-        case .both:        return "arrow.triangle.2.circlepath"
-        case .suppressed:  return "bell.slash.fill"
+        case .both:         return "arrow.triangle.2.circlepath"
+        case .suppressed:   return "bell.slash.fill"
         }
     }
 }

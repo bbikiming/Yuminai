@@ -74,7 +74,7 @@ struct TelegramBotGroupEditSheet: View {
                 FlatButton("저장", variant: .primary) {
                     let group = TelegramBotGroup(
                         id: existing?.id ?? UUID(),
-                        displayName: displayName.isEmpty ? "이름 없음" : displayName,
+                        displayName: displayName.trimmingCharacters(in: .whitespaces),
                         iconName: iconName.isEmpty ? "folder.badge.person.crop" : iconName,
                         colorName: colorName.isEmpty ? "accent" : colorName,
                         responseModeOverride: hasResponseModeOverride ? responseModeOverride : nil,
@@ -83,7 +83,14 @@ struct TelegramBotGroupEditSheet: View {
                     )
                     onSave(group)
                 }
+                .disabled(!isFormValid)
             }
         }
+    }
+
+    // MARK: - Validation
+
+    private var isFormValid: Bool {
+        !displayName.trimmingCharacters(in: .whitespaces).isEmpty
     }
 }

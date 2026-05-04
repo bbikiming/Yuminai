@@ -62,16 +62,16 @@ struct CommandEditSheet: View {
                     Section {
                         TextField("/trigger", text: $trigger)
                             .autocorrectionDisabled()
-                            .help("예: /run, /deploy — 반드시 '/'로 시작, 최대 33자")
+                            .help("예: /run, /deploy — 반드시 '/'로 시작, 최대 32자")
                         TextField("설명", text: $description, axis: .vertical)
                             .lineLimit(2...3)
-                            .help("BotFather 메뉴에 표시됩니다 (최대 256자)")
+                            .help("텔레그램 봇 명령 메뉴에 표시됩니다 (최대 256자)")
                     } header: {
                         Text("기본")
                     }
 
                     Section {
-                        Picker("권한", selection: $permissionMode) {
+                        Picker("접근 허가", selection: $permissionMode) {
                             ForEach(PermissionMode.allCases) { mode in
                                 Text(mode.rawValue).tag(mode)
                             }
@@ -79,19 +79,19 @@ struct CommandEditSheet: View {
                         .pickerStyle(.segmented)
 
                         if permissionMode == .userIds {
-                            TextField("User IDs (콤마 구분)", text: $allowedUserIdsText)
+                            TextField("사용 가능한 사람 (텔레그램 사용자 번호, 콤마 구분)", text: $allowedUserIdsText)
                                 .autocorrectionDisabled()
                                 .help("예: 123456789, 987654321")
                         }
                     } header: {
-                        Text("권한")
+                        Text("접근 허가")
                     }
 
                     Section {
-                        Toggle("HITL 승인 필요", isOn: $requiresHITL)
-                            .help("켜면 이 커맨드 실행 전 데스크탑 승인 요청")
-                        Toggle("활성", isOn: $enabled)
-                            .help("꺼면 BotFather sync 및 라우팅에서 제외")
+                        Toggle("위험 명령 확인 필요", isOn: $requiresHITL)
+                            .help("켜면 이 명령어 실행 전 데스크탑에서 확인 요청")
+                        Toggle("활성화", isOn: $enabled)
+                            .help("꺼면 텔레그램 봇 명령 메뉴 등록 및 라우팅에서 제외")
                     } header: {
                         Text("동작")
                     }
