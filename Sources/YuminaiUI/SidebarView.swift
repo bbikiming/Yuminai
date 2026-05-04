@@ -73,6 +73,8 @@ public struct SidebarView: View {
     public let telegramHealth: TelegramHealthSnapshot
     /// **ADR-086 Phase 1** — Health pill click → 에러 로그 sheet 열기.
     public let onOpenTelegramErrorLog: () -> Void
+    /// **ADR-092 Phase 1** — Telegram Hub sheet 열기.
+    public let onOpenTelegramHub: () -> Void
     /// **ADR-089** — 활성 chat sessions (lastActiveAt desc로 정렬됨).
     public let chatSessions: [ChatSession]
     /// **ADR-089** — 현재 활성 chat session id (강조 표시용).
@@ -131,6 +133,7 @@ public struct SidebarView: View {
         updateAvailable: Bool = false,
         telegramHealth: TelegramHealthSnapshot = TelegramHealthSnapshot(),
         onOpenTelegramErrorLog: @escaping () -> Void = {},
+        onOpenTelegramHub: @escaping () -> Void = {},
         chatSessions: [ChatSession] = [],
         activeChatSessionId: UUID? = nil,
         workspaceNameById: @escaping (UUID) -> String? = { _ in nil },
@@ -180,6 +183,7 @@ public struct SidebarView: View {
         self.updateAvailable = updateAvailable
         self.telegramHealth = telegramHealth
         self.onOpenTelegramErrorLog = onOpenTelegramErrorLog
+        self.onOpenTelegramHub = onOpenTelegramHub
         self.chatSessions = chatSessions
         self.activeChatSessionId = activeChatSessionId
         self.workspaceNameById = workspaceNameById
@@ -480,6 +484,11 @@ public struct SidebarView: View {
                 label: "새 워크스페이스",
                 icon: "plus",
                 action: onCreate
+            )
+            SidebarMenuRow(
+                label: "Telegram Hub",
+                icon: "paperplane.circle.fill",
+                action: onOpenTelegramHub
             )
             SidebarMenuRow(
                 label: "설정",

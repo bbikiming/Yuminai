@@ -93,7 +93,10 @@ public final class AppModel {
     /// **ADR-086 Phase 1** — Error log viewer sheet.
     public var showTelegramErrorLogSheet: Bool = false
     /// **ADR-086 Phase 4** — Multi-bot manager sheet.
+    /// - Note: Deprecated 진행 중. 새 진입점은 `showTelegramHubSheet` (ADR-092).
     public var showTelegramBotManagerSheet: Bool = false
+    /// **ADR-092 Phase 1** — Telegram Hub sheet (4-tab: Bots / Bindings / Commands / Activity).
+    public var showTelegramHubSheet: Bool = false
 
     // 활성 세션 설정 (toolbar에서 즉시 변경 가능)
     public var activeSettings: SessionSettings = .default
@@ -4146,6 +4149,8 @@ public final class AppModel {
         showTelegramAdvancedSheet = false
         showTelegramErrorLogSheet = false
         showTelegramBotManagerSheet = false
+        // ADR-092
+        showTelegramHubSheet = false
         // ADR-089
         showNewChatSessionSheet = false
     }

@@ -175,9 +175,14 @@ struct RootView: View {
             NewChatSessionSheet()
                 .environment(appModel)
         }
-        // ADR-086 Phase 4 — Multi-bot manager
+        // ADR-086 Phase 4 — Multi-bot manager (deprecated 진행 중 — ADR-092로 마이그레이션)
         .sheet(isPresented: $bindable.showTelegramBotManagerSheet) {
             TelegramBotManagerSheet()
+                .environment(appModel)
+        }
+        // ADR-092 Phase 1 — Telegram Hub (4-tab: Bots / Bindings / Commands / Activity)
+        .sheet(isPresented: $bindable.showTelegramHubSheet) {
+            TelegramHubView()
                 .environment(appModel)
         }
         // ADR-079 Phase 4 — Git branch picker (별도 popover로 가능하나 sheet로 통일)
@@ -755,6 +760,10 @@ struct RootView: View {
             telegramHealth: appModel.telegramHealth,
             onOpenTelegramErrorLog: {
                 appModel.showTelegramErrorLogSheet = true
+            },
+            // ADR-092 Phase 1 — Telegram Hub entry point
+            onOpenTelegramHub: {
+                appModel.presentExclusiveSheet { $0.showTelegramHubSheet = true }
             },
             // ADR-089 — Chat sessions
             chatSessions: appModel.recentChatSessions(),
