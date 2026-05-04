@@ -24,7 +24,9 @@ public enum NotificationKind: String, Sendable, Codable, CaseIterable {
 /// - `desktopActive`: 기본값
 /// - `desktopIdle`: 5분 무입력 OR `NSWorkspace.didSleepNotification`
 /// - `desktopOff`: 명시적 설정 (실제 전원 OFF 감지는 후속 ADR)
-public enum DeviceState: String, Sendable, Codable {
+///
+/// **ADR-096** — `CaseIterable` 추가: UI 매트릭스 테이블 렌더링 + 테스트에서 사용.
+public enum DeviceState: String, Sendable, Codable, CaseIterable {
     case desktopActive
     case desktopIdle
     case desktopOff

@@ -62,6 +62,19 @@
         </dict>
     </dict>
 
+    <!-- ADR-096 — yuminai:// URL scheme 등록 (deep link 진입점) -->
+    <key>CFBundleURLTypes</key>
+    <array>
+        <dict>
+            <key>CFBundleURLName</key>
+            <string>com.yuminai.deeplink</string>
+            <key>CFBundleURLSchemes</key>
+            <array>
+                <string>yuminai</string>
+            </array>
+        </dict>
+    </array>
+
     <!-- Document types (Yuminai workspace .pen files 등) — 향후 -->
 
     <!-- App category -->

@@ -446,6 +446,80 @@ public final actor LiveTelegramBot: TelegramClient {
         }
     }
 
+    // MARK: - ADR-096 Phase C — sendDocument (5MB+ 파일 전송)
+
+    /// **ADR-096 Phase C** — multipart/form-data POST `sendDocument`.
+    ///
+    /// - caption: 1024자 초과 시 자동 truncate.
+    /// - data: 50MB 초과 시 즉시 throw (Telegram 한도).
+    public func sendDocument(
+        fileName: String,
+        data: Data,
+        caption: String?,
+        to chatId: Int64
+    ) async throws -> SentTelegramMessage {
+        // [H] 50MB Telegram 한도 사전 검사
+        let maxBytes = 50 * 1024 * 1024
+        guard data.count <= maxBytes else {
+            throw NSError(
+                domain: "TelegramBot",
+                code: -2,
+                userInfo: [NSLocalizedDescriptionKey: "sendDocument: 파일 크기(\(data.count) bytes)가 Telegram 한도(50MB)를 초과합니다."]
+            )
+        }
+
+        await rateLimiter.acquire(chatId: chatId)
+        return try await withRetry(operation: "sendDocument", chatId: chatId) {
+            try await self.sendDocumentInternal(
+                fileName: fileName,
+                data: data,
+                caption: caption,
+                to: chatId
+            )
+        }
+    }
+
+    private func sendDocumentInternal(
+        fileName: String,
+        data: Data,
+        caption: String?,
+        to chatId: Int64
+    ) async throws -> SentTelegramMessage {
+        let url = baseURL.appendingPathComponent("sendDocument")
+
+        // multipart/form-data 경계
+        let boundary = "YuminaiBoundary-\(UUID().uuidString)"
+        var request = URLRequest(url: url)
+        request.httpMethod = "POST"
+        request.setValue("multipart/form-data; boundary=\(boundary)", forHTTPHeaderField: "Content-Type")
+
+        var body = Data()
+
+        // chat_id 파트
+        body.appendMultipartField(name: "chat_id", value: "\(chatId)", boundary: boundary)
+
+        // caption 파트 — [H] 1024자 truncate
+        if let cap = caption {
+            let truncated = String(cap.prefix(1024))
+            body.appendMultipartField(name: "caption", value: truncated, boundary: boundary)
+        }
+
+        // document 파트
+        body.appendMultipartFilePart(name: "document", fileName: fileName, data: data, boundary: boundary)
+
+        // 종료 경계
+        body.append("--\(boundary)--\r\n".data(using: .utf8)!)
+        request.httpBody = body
+
+        let (responseData, response) = try await session.data(for: request)
+        try validate(response: response, data: responseData)
+
+        let json = try JSONSerialization.jsonObject(with: responseData) as? [String: Any]
+        let result = json?["result"] as? [String: Any]
+        let messageId = LiveTelegramBot.coerceInt64(result?["message_id"]) ?? 0
+        return SentTelegramMessage(messageId: messageId, chatId: chatId)
+    }
+
     // MARK: - ADR-094 Phase 3 — BotFather setMyCommands
 
     /// Telegram setMyCommands API 호출.
@@ -521,5 +595,23 @@ public final actor LiveTelegramBot: TelegramClient {
         if let v = any as? Int { return Int64(v) }
         if let v = any as? NSNumber { return v.int64Value }
         return nil
+    }
+}
+
+// MARK: - multipart/form-data helpers
+
+private extension Data {
+    /// 텍스트 필드 파트 추가.
+    mutating func appendMultipartField(name: String, value: String, boundary: String) {
+        let part = "--\(boundary)\r\nContent-Disposition: form-data; name=\"\(name)\"\r\n\r\n\(value)\r\n"
+        append(part.data(using: .utf8)!)
+    }
+
+    /// 파일 파트 추가.
+    mutating func appendMultipartFilePart(name: String, fileName: String, data: Data, boundary: String) {
+        let header = "--\(boundary)\r\nContent-Disposition: form-data; name=\"\(name)\"; filename=\"\(fileName)\"\r\nContent-Type: application/octet-stream\r\n\r\n"
+        append(header.data(using: .utf8)!)
+        append(data)
+        append("\r\n".data(using: .utf8)!)
     }
 }

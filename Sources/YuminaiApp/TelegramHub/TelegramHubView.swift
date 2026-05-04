@@ -29,15 +29,17 @@ struct TelegramHubView: View {
         case bindings = "Bindings"
         case commands = "Commands"
         case activity = "Activity"
+        case settings = "설정"
 
         var id: String { rawValue }
 
         var icon: String {
             switch self {
-            case .bots: return "person.crop.square.filled.and.at.rectangle"
+            case .bots:     return "person.crop.square.filled.and.at.rectangle"
             case .bindings: return "link.circle.fill"
             case .commands: return "terminal.fill"
             case .activity: return "chart.bar.fill"
+            case .settings: return "bell.badge.fill"
             }
         }
     }
@@ -177,6 +179,9 @@ struct TelegramHubView: View {
                 .transition(tabTransition)
         case .activity:
             TelegramHubActivityTab()
+                .transition(tabTransition)
+        case .settings:
+            TelegramHubSettingsTab()
                 .transition(tabTransition)
         }
     }

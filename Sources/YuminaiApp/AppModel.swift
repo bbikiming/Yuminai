@@ -5423,4 +5423,70 @@ public final class AppModel {
             return hour >= start || hour < end
         }
     }
+
+    // MARK: - ADR-096 — Deep link 핸들러
+
+    /// **ADR-096** — `yuminai://` deep link 수신 시 라우팅.
+    ///
+    /// `.onOpenURL` 핸들러에서 호출 — `TelegramDeepLink.parse(url)` 결과를 액션에 매핑.
+    public func handleDeepLink(_ link: TelegramDeepLink) async {
+        switch link {
+        case .diff(let id):
+            // TODO: ADR-096 후속 — diff viewer sheet 구현 후 제거
+            // 현재는 메인 윈도우 활성화만
+            NSApp.activate(ignoringOtherApps: true)
+            logger.info("[DeepLink] diff \(id) — diff viewer는 후속 구현 예정")
+
+        case .log(let id):
+            // TODO: ADR-096 후속 — log viewer sheet 구현 후 제거
+            NSApp.activate(ignoringOtherApps: true)
+            logger.info("[DeepLink] log \(id) — log viewer는 후속 구현 예정")
+
+        case .workspace(let id):
+            NSApp.activate(ignoringOtherApps: true)
+            await transitionToWorkspace(id)
+
+        case .chat:
+            NSApp.activate(ignoringOtherApps: true)
+            showTelegramHubSheet = true
+
+        case .approve(let requestId):
+            await respondToHITL(id: requestId, response: .approved(by: "deeplink"))
+
+        case .reject(let requestId):
+            await respondToHITL(id: requestId, response: .rejected(by: "deeplink"))
+        }
+    }
+
+    // MARK: - ADR-096 — Notification Policy 편집 메서드
+
+    /// **ADR-096** — 알림 정책 매트릭스 업데이트 + persist.
+    public func updateNotificationPolicy(_ matrix: NotificationPolicyMatrix) async {
+        preferences = { var p = preferences; p.notificationPolicy = matrix; return p }()
+        await savePreferences()
+    }
+
+    /// **ADR-096** — Quiet hours 업데이트 + persist.
+    public func updateQuietHours(start: Int?, end: Int?) async {
+        preferences = { var p = preferences; p.quietHoursStart = start; p.quietHoursEnd = end; return p }()
+        await savePreferences()
+    }
+
+    /// **ADR-096** — HITL 타임아웃 업데이트 + persist.
+    public func updateHITLTimeout(_ seconds: Int) async {
+        preferences = { var p = preferences; p.hitlTimeoutSeconds = seconds; return p }()
+        await savePreferences()
+    }
+
+    /// **ADR-096** — diff 미리보기 라인 한도 업데이트 + persist.
+    public func updateDiffPreviewLineLimit(_ limit: Int) async {
+        preferences = { var p = preferences; p.diffPreviewLineLimit = limit; return p }()
+        await savePreferences()
+    }
+
+    /// **ADR-096** — 알림 정책 매트릭스를 default로 재설정 + persist.
+    public func resetNotificationPolicyToDefault() async {
+        preferences = { var p = preferences; p.notificationPolicy = .default; return p }()
+        await savePreferences()
+    }
 }

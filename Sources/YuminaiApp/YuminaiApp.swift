@@ -87,6 +87,11 @@ struct YuminaiAppMain: App {
                 .task {
                     await appModel.bootstrap()
                 }
+                // ADR-096 — yuminai:// URL scheme 핸들러
+                .onOpenURL { url in
+                    guard let link = TelegramDeepLink.parse(url) else { return }
+                    Task { await appModel.handleDeepLink(link) }
+                }
         }
         // ADR-074 — `contentMinSize`는 사용자 zoom 동작을 일부 제한할 수 있음.
         // `.contentSize`로 변경하여 zoom + manual resize 모두 자유롭게.

@@ -34,6 +34,21 @@ public protocol TelegramClient: Sendable {
     /// `commands` 배열의 command는 "/" prefix 없이 전달해야 한다 (Telegram API 규격).
     /// command 최대 32자, description 최대 256자.
     func setMyCommands(_ commands: [(command: String, description: String)]) async throws
+
+    /// **ADR-096 Phase C** — 5MB+ 파일을 sendDocument API로 전송.
+    ///
+    /// - Parameters:
+    ///   - fileName: 파일 이름 (확장자 포함).
+    ///   - data: 파일 바이너리 데이터. Telegram 한도 50MB.
+    ///   - caption: 파일과 함께 표시할 텍스트. Telegram 한도 1024자, 초과 시 자동 truncate.
+    ///   - chatId: 대상 chat ID.
+    /// - Returns: 전송된 메시지 정보.
+    func sendDocument(
+        fileName: String,
+        data: Data,
+        caption: String?,
+        to chatId: Int64
+    ) async throws -> SentTelegramMessage
 }
 
 /// **ADR-056 Phase 2** — Telegram inline keyboard button.

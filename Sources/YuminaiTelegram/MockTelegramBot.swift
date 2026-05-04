@@ -59,6 +59,22 @@ public final actor MockTelegramBot: TelegramClient {
         setCommandsLog.append(commands)
     }
 
+    /// **ADR-096 Phase C** — sendDocument log (mock).
+    public private(set) var sentDocumentLog: [(fileName: String, data: Data, caption: String?, chatId: Int64)] = []
+    public func sendDocument(
+        fileName: String,
+        data: Data,
+        caption: String?,
+        to chatId: Int64
+    ) async throws -> SentTelegramMessage {
+        sentDocumentLog.append((fileName, data, caption, chatId))
+        sentLog.append((caption ?? fileName, chatId))
+        return SentTelegramMessage(
+            messageId: Int64.random(in: 1...1_000_000),
+            chatId: chatId
+        )
+    }
+
     /// 테스트에서 사용자 incoming 메시지를 시뮬레이션.
     public nonisolated func injectIncoming(_ message: IncomingTelegramMessage) {
         incomingContinuation.yield(message)
