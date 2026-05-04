@@ -166,3 +166,169 @@ struct BridgeForwardingTests {
         #expect(log.contains { $0.text.contains("❌ 실패") })
     }
 }
+
+@Suite("TelegramSessionBridge — artifact wire-up (ADR-098 P1-1)")
+struct BridgeArtifactWireUpTests {
+    @Test("notifyDiffArtifact — store에 저장하고 deep link 포함 메시지 발송")
+    func diffArtifactStoresAndSendsDeepLink() async {
+        let bot = MockTelegramBot()
+        let store = TelegramArtifactStore()
+        let bridge = TelegramSessionBridge(client: bot, configuration: makeConfig())
+        await bridge.setArtifactStore(store)
+
+        let id = await bridge.notifyDiffArtifact(
+            diff: "diff --git a/A.swift b/A.swift\n+added",
+            files: 1,
+            added: 1,
+            removed: 0,
+            workspace: "ws-1"
+        )
+
+        // store에 저장됨
+        guard let id else {
+            Issue.record("Expected non-nil UUID")
+            return
+        }
+        let fetched = await store.fetch(id)
+        #expect(fetched != nil)
+        if case .diff(_, let files, let added, let removed, let ws) = fetched {
+            #expect(files == 1)
+            #expect(added == 1)
+            #expect(removed == 0)
+            #expect(ws == "ws-1")
+        } else {
+            Issue.record("Expected .diff artifact")
+        }
+
+        // 메시지 본문에 deep link UUID + yuminai://diff/ 포함
+        let log = await bot.sentLog
+        #expect(!log.isEmpty)
+        let text = log.last?.text ?? ""
+        #expect(text.contains("📝 Diff Preview"))
+        #expect(text.contains("yuminai://diff/\(id.uuidString.lowercased())"))
+    }
+
+    @Test("notifyDiffArtifact — store 미주입이면 nil 반환 + 메시지 미발송")
+    func diffArtifactNoStoreReturnsNil() async {
+        let bot = MockTelegramBot()
+        let bridge = TelegramSessionBridge(client: bot, configuration: makeConfig())
+
+        let id = await bridge.notifyDiffArtifact(
+            diff: "diff --git a/x b/x\n+x",
+            files: 1,
+            added: 1,
+            removed: 0,
+            workspace: nil
+        )
+
+        #expect(id == nil)
+        let log = await bot.sentLog
+        #expect(log.isEmpty)
+    }
+
+    @Test("notifyLogArtifact — store에 저장하고 deep link 포함 메시지 발송")
+    func logArtifactStoresAndSendsDeepLink() async {
+        let bot = MockTelegramBot()
+        let store = TelegramArtifactStore()
+        let bridge = TelegramSessionBridge(client: bot, configuration: makeConfig())
+        await bridge.setArtifactStore(store)
+
+        let id = await bridge.notifyLogArtifact(
+            log: "Build complete!\nAll tests passed.",
+            title: "swift test",
+            elapsed: 4.2,
+            success: true
+        )
+
+        guard let id else {
+            Issue.record("Expected non-nil UUID")
+            return
+        }
+        let fetched = await store.fetch(id)
+        #expect(fetched != nil)
+        if case .log(_, let title, let elapsed, let success) = fetched {
+            #expect(title == "swift test")
+            #expect(elapsed == 4.2)
+            #expect(success == true)
+        } else {
+            Issue.record("Expected .log artifact")
+        }
+
+        let log = await bot.sentLog
+        #expect(!log.isEmpty)
+        let text = log.last?.text ?? ""
+        #expect(text.contains("✅ PASSED"))
+        #expect(text.contains("yuminai://log/\(id.uuidString.lowercased())"))
+    }
+
+    @Test("notifyLogArtifact — store 미주입이면 nil 반환 + 메시지 미발송")
+    func logArtifactNoStoreReturnsNil() async {
+        let bot = MockTelegramBot()
+        let bridge = TelegramSessionBridge(client: bot, configuration: makeConfig())
+
+        let id = await bridge.notifyLogArtifact(
+            log: "doesnt matter",
+            title: "noop",
+            elapsed: 0.1,
+            success: false
+        )
+
+        #expect(id == nil)
+        let log = await bot.sentLog
+        #expect(log.isEmpty)
+    }
+
+    @Test("artifact 발송은 requestChatId가 설정되면 그쪽으로 보낸다")
+    func artifactRespectsRequestChatId() async {
+        let bot = MockTelegramBot()
+        let store = TelegramArtifactStore()
+        let bridge = TelegramSessionBridge(client: bot, configuration: makeConfig())
+        await bridge.setArtifactStore(store)
+        await bridge.setRequestChatId(7777)
+
+        _ = await bridge.notifyLogArtifact(
+            log: "x",
+            title: "t",
+            elapsed: 0,
+            success: true
+        )
+
+        let log = await bot.sentLog
+        #expect(!log.isEmpty)
+        // 모든 발송이 requestChatId로 갔는지 확인
+        for entry in log {
+            #expect(entry.chatId == 7777)
+        }
+    }
+
+    @Test("artifact 발송 후 streaming session이 reset된다")
+    func artifactResetsStreamingSession() async {
+        let bot = MockTelegramBot()
+        let store = TelegramArtifactStore()
+        let bridge = TelegramSessionBridge(client: bot, configuration: makeConfig())
+        await bridge.setArtifactStore(store)
+
+        // 먼저 streaming으로 텍스트를 보내 streaming session을 활성화한다.
+        await bridge.consume(event: .text("hello stream"))
+        await bridge.consume(event: .completed(exitCode: 0))
+
+        let beforeCount = await bot.sentLog.count
+        #expect(beforeCount > 0)
+
+        // diff artifact 발송
+        _ = await bridge.notifyDiffArtifact(
+            diff: "diff --git a/x b/x\n+y",
+            files: 1,
+            added: 1,
+            removed: 0,
+            workspace: nil
+        )
+
+        // 후속 text는 새 메시지로 시작 (edit이 아니라).
+        await bridge.consume(event: .text("after artifact"))
+        await bridge.consume(event: .completed(exitCode: 0))
+
+        let afterTexts = await bot.sentLog.map(\.text)
+        #expect(afterTexts.contains("after artifact"))
+    }
+}
