@@ -48,7 +48,34 @@ public final class YuminaiCommandRouter: TelegramCommandRouter, @unchecked Senda
 
     /// **ADR-056 Phase 2** — inline keyboard callback handler.
     /// callbackData 형식: "cmd:arg" (예: "cancel" / "diff" / "task:run:<uuid>" / "rehearse:<taskId>:claude")
+    /// **ADR-094 Phase 3** — "hitl:approve/<reject>:<uuid>" 형식도 처리.
+    private let hitlCallbackHandler = TelegramHITLCallbackHandler()
+
     private func handleCallback(_ data: String, requestChatId: Int64) async -> String? {
+        // ADR-094 Phase 3 — HITL inline button callback 처리 (우선)
+        if hitlCallbackHandler.isHITLCallback(data) {
+            guard let model = appModel else { return "HITL coordinator 미초기화" }
+            let parts = data.split(separator: ":", maxSplits: 2)
+            guard parts.count == 3,
+                  let uuid = UUID(uuidString: String(parts[2])) else {
+                return "잘못된 HITL callback 형식"
+            }
+            let action = String(parts[1])
+            let by = "user:\(lastUserId)"
+            switch action {
+            case "approve":
+                let response = TelegramHITLCoordinator.HITLResponse.approved(by: by)
+                await model.respondToHITL(id: uuid, response: response)
+                return "✅ Approved"
+            case "reject":
+                let response = TelegramHITLCoordinator.HITLResponse.rejected(by: by)
+                await model.respondToHITL(id: uuid, response: response)
+                return "❌ Rejected"
+            default:
+                return "알 수 없는 HITL action: \(action)"
+            }
+        }
+
         let parts = data.split(separator: ":", maxSplits: 2).map(String.init)
         guard let command = parts.first else { return nil }
         switch command {

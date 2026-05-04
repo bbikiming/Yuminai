@@ -136,6 +136,9 @@ public struct AppPreferences: Sendable, Codable, Hashable {
     public var chatSessions: [ChatSession]
     /// **ADR-089** — 현재 활성 ChatSession ID (nil이면 워크스페이스 main 대화).
     public var activeChatSessionId: UUID?
+    /// **ADR-094 Phase 3** — BotFather에 등록할 커맨드 목록.
+    /// 기존 사용자는 7개 기본 커맨드로 시작 (decodeIfPresent ?? defaultTelegramCommands).
+    public var telegramCommands: [TelegramCommand]
 
     public init(
         claudeBinaryPath: String = AppPreferences.detectClaudeBinaryPath(),
@@ -190,7 +193,8 @@ public struct AppPreferences: Sendable, Codable, Hashable {
         telegramUpdateMode: TelegramUpdateMode = .longPoll,  // ADR-086 Phase 5
         telegramWebhookURL: String? = nil,
         chatSessions: [ChatSession] = [],  // ADR-089
-        activeChatSessionId: UUID? = nil
+        activeChatSessionId: UUID? = nil,
+        telegramCommands: [TelegramCommand] = TelegramCommand.defaultCommands  // ADR-094 Phase 3
     ) {
         self.claudeBinaryPath = claudeBinaryPath
         self.codexBinaryPath = codexBinaryPath
@@ -245,6 +249,7 @@ public struct AppPreferences: Sendable, Codable, Hashable {
         self.telegramWebhookURL = telegramWebhookURL
         self.chatSessions = chatSessions
         self.activeChatSessionId = activeChatSessionId
+        self.telegramCommands = telegramCommands
     }
 
     // ADR-046 — 신규 필드 backward-compat: 기존 JSON에 없으면 default 적용
@@ -314,6 +319,8 @@ public struct AppPreferences: Sendable, Codable, Hashable {
         // ADR-089 — ChatSession (기존 사용자는 빈 배열로 시작)
         self.chatSessions = try c.decodeIfPresent([ChatSession].self, forKey: .chatSessions) ?? []
         self.activeChatSessionId = try c.decodeIfPresent(UUID.self, forKey: .activeChatSessionId)
+        // ADR-094 Phase 3 — 기존 사용자도 7개 기본 커맨드 받음 (즉시 유용)
+        self.telegramCommands = try c.decodeIfPresent([TelegramCommand].self, forKey: .telegramCommands) ?? TelegramCommand.defaultCommands
     }
 
     /// `claude` CLI의 가능성 높은 위치들을 순서대로 시도해 첫 번째 존재하는 경로 반환.

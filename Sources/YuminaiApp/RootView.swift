@@ -454,6 +454,11 @@ struct RootView: View {
                     .padding()
             }
         }
+        // ADR-094 Phase 3 — HITL 승인 sheet
+        .sheet(isPresented: $bindable.showHITLSheet) {
+            HITLApprovalSheet()
+                .environment(appModel)
+        }
         .alert(
             "잠깐, 문제가 생겼어요",
             isPresented: Binding(

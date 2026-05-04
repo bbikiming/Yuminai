@@ -53,6 +53,12 @@ public final actor MockTelegramBot: TelegramClient {
     public func startPolling() async throws {}
     public func stopPolling() async {}
 
+    /// **ADR-094 Phase 3** — setMyCommands log (mock).
+    public private(set) var setCommandsLog: [[(command: String, description: String)]] = []
+    public func setMyCommands(_ commands: [(command: String, description: String)]) async throws {
+        setCommandsLog.append(commands)
+    }
+
     /// 테스트에서 사용자 incoming 메시지를 시뮬레이션.
     public nonisolated func injectIncoming(_ message: IncomingTelegramMessage) {
         incomingContinuation.yield(message)

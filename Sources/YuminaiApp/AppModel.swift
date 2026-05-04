@@ -4485,6 +4485,8 @@ public final class AppModel {
         }
         // ADR-093 Phase 2 — offline queue depth 5초 주기 폴링 (BotStatusDock 표시용)
         setupTelegramQueueDepthPolling()
+        // ADR-094 Phase 3 — HITL coordinator 초기화 + AsyncStream 구독
+        setupTelegramHITLCoordinator()
     }
 
     /// **ADR-093 Phase 2** — Queue depth 5초 주기 폴링 Task.
@@ -5227,5 +5229,102 @@ public final class AppModel {
             await bridge.notifyCancelled()
         }
         return true
+    }
+
+    // MARK: - ADR-094 Phase 3 — TelegramCommand management
+
+    /// 커맨드 목록 전체 교체.
+    public func updateTelegramCommands(_ commands: [TelegramCommand]) async {
+        preferences.telegramCommands = commands
+        await savePreferences()
+    }
+
+    /// 커맨드 추가 (중복 ID 방지).
+    public func addTelegramCommand(_ command: TelegramCommand) async {
+        guard !preferences.telegramCommands.contains(where: { $0.id == command.id }) else { return }
+        preferences.telegramCommands.append(command)
+        await savePreferences()
+    }
+
+    /// 커맨드 업데이트.
+    public func updateTelegramCommand(_ command: TelegramCommand) async {
+        guard let idx = preferences.telegramCommands.firstIndex(where: { $0.id == command.id }) else { return }
+        preferences.telegramCommands[idx] = command
+        await savePreferences()
+    }
+
+    /// 커맨드 제거.
+    public func removeTelegramCommand(id: UUID) async {
+        preferences.telegramCommands.removeAll { $0.id == id }
+        await savePreferences()
+    }
+
+    /// **ADR-094 Phase 3** — enabled 커맨드를 BotFather에 동기화.
+    /// - Returns: `.success(등록수)` 또는 `.failure(error)`
+    public func syncTelegramCommandsToBotFather() async -> Result<Int, any Error> {
+        guard let bot = telegramBot else {
+            return .failure(NSError(domain: "AppModel", code: -1, userInfo: [NSLocalizedDescriptionKey: "봇이 활성화되어 있지 않습니다"]))
+        }
+
+        let enabled = preferences.telegramCommands.filter { $0.enabled && $0.isValidTrigger && $0.isValidDescription }
+        let pairs = enabled.map { (command: $0.apiCommand, description: $0.description) }
+
+        do {
+            try await bot.setMyCommands(pairs)
+            return .success(pairs.count)
+        } catch {
+            return .failure(error)
+        }
+    }
+
+    // MARK: - ADR-094 Phase 3 — HITL Coordinator
+
+    /// **ADR-094 Phase 3** — HITL pending requests (UI 표시용).
+    public var hitlPendingRequests: [TelegramHITLCoordinator.Request] = []
+    /// **ADR-094 Phase 3** — HITLApprovalSheet 표시 여부.
+    public var showHITLSheet: Bool = false
+
+    /// **ADR-094 Phase 3** — HITL coordinator (봇 시작 시 생성).
+    var hitlCoordinator: TelegramHITLCoordinator? = nil
+
+    /// **ADR-094 Phase 3** — HITL coordinator 초기화 + AsyncStream 구독.
+    /// `setupTelegram()` 완료 후 호출.
+    func setupTelegramHITLCoordinator() {
+        let coordinator = TelegramHITLCoordinator()
+        hitlCoordinator = coordinator
+
+        Task { [weak self] in
+            let stream = await coordinator.requestStream()
+            for await request in stream {
+                let requests = await coordinator.pendingRequests()
+                await MainActor.run {
+                    self?.hitlPendingRequests = requests
+                    if !requests.isEmpty {
+                        self?.showHITLSheet = true
+                    }
+                }
+                // Telegram inline button 메시지 전송
+                if let self, let chatId = self.preferences.telegramChatId {
+                    let approveData = TelegramHITLCallbackHandler.HITLAction.approve.callbackData(for: request.id)
+                    let rejectData = TelegramHITLCallbackHandler.HITLAction.reject.callbackData(for: request.id)
+                    let buttons = [[
+                        InlineButton(text: "✅ Approve", callbackData: approveData),
+                        InlineButton(text: "❌ Reject", callbackData: rejectData)
+                    ]]
+                    let text = "⚠️ HITL 승인 필요\n\n**Action:** `\(request.action)`\n**Timeout:** \(request.timeoutSeconds)s"
+                    _ = try? await self.telegramBot?.sendWithKeyboard(text, to: chatId, buttons: buttons)
+                }
+            }
+        }
+    }
+
+    /// **ADR-094 Phase 3** — 외부에서 HITL 응답 주입 (데스크탑 UI 또는 Telegram callback).
+    public func respondToHITL(id: UUID, response: TelegramHITLCoordinator.HITLResponse) async {
+        await hitlCoordinator?.respond(id: id, response: response)
+        let requests = await hitlCoordinator?.pendingRequests() ?? []
+        hitlPendingRequests = requests
+        if requests.isEmpty {
+            showHITLSheet = false
+        }
     }
 }

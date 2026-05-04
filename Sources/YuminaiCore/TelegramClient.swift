@@ -29,6 +29,11 @@ public protocol TelegramClient: Sendable {
 
     func startPolling() async throws
     func stopPolling() async
+
+    /// **ADR-094 Phase 3** — BotFather setMyCommands API.
+    /// `commands` 배열의 command는 "/" prefix 없이 전달해야 한다 (Telegram API 규격).
+    /// command 최대 32자, description 최대 256자.
+    func setMyCommands(_ commands: [(command: String, description: String)]) async throws
 }
 
 /// **ADR-056 Phase 2** — Telegram inline keyboard button.

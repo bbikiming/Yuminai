@@ -446,6 +446,34 @@ public final actor LiveTelegramBot: TelegramClient {
         }
     }
 
+    // MARK: - ADR-094 Phase 3 — BotFather setMyCommands
+
+    /// Telegram setMyCommands API 호출.
+    /// `commands` 배열의 command는 "/" prefix 없이 전달 (Telegram 규격).
+    /// command 최대 32자, description 최대 256자로 자동 truncate.
+    public func setMyCommands(_ commands: [(command: String, description: String)]) async throws {
+        let url = baseURL.appendingPathComponent("setMyCommands")
+        var request = URLRequest(url: url)
+        request.httpMethod = "POST"
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+
+        let mapped = commands.map { pair -> [String: String] in
+            let cmd = String(pair.command.prefix(32))
+            let desc = String(pair.description.prefix(256))
+            return ["command": cmd, "description": desc]
+        }
+        let body: [String: Any] = ["commands": mapped]
+        request.httpBody = try JSONSerialization.data(withJSONObject: body)
+
+        let (data, response) = try await session.data(for: request)
+        try validate(response: response, data: data)
+
+        let json = try JSONSerialization.jsonObject(with: data) as? [String: Any]
+        guard json?["ok"] as? Bool == true else {
+            throw NSError(domain: "TelegramBot", code: -1, userInfo: [NSLocalizedDescriptionKey: "setMyCommands: ok=false"])
+        }
+    }
+
     private static func parseUpdate(_ raw: [String: Any]) -> IncomingTelegramMessage? {
         guard let updateId = coerceInt64(raw["update_id"]) else { return nil }
         // ADR-056 Phase 2 + ADR-057 Phase 1 — callback_query parse (callbackQueryId 포함)
