@@ -756,7 +756,7 @@ struct RootView: View {
             },
             userName: "yuminai",
             updateAvailable: false,
-            // ADR-086 Phase 1 — Telegram health pill
+            // ADR-086 Phase 1 — Telegram health
             telegramHealth: appModel.telegramHealth,
             onOpenTelegramErrorLog: {
                 appModel.showTelegramErrorLogSheet = true
@@ -765,6 +765,10 @@ struct RootView: View {
             onOpenTelegramHub: {
                 appModel.presentExclusiveSheet { $0.showTelegramHubSheet = true }
             },
+            // ADR-093 Phase 2 — BotStatusDock 데이터
+            telegramQueueDepth: appModel.telegramQueueDepth,
+            telegramBotCount: appModel.preferences.telegramBots.count,
+            telegramFirstBotUsername: appModel.preferences.telegramBots.first(where: { $0.enabled })?.username,
             // ADR-089 — Chat sessions
             chatSessions: appModel.recentChatSessions(),
             activeChatSessionId: appModel.preferences.activeChatSessionId,

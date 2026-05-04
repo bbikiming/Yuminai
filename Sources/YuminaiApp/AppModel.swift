@@ -97,6 +97,8 @@ public final class AppModel {
     public var showTelegramBotManagerSheet: Bool = false
     /// **ADR-092 Phase 1** — Telegram Hub sheet (4-tab: Bots / Bindings / Commands / Activity).
     public var showTelegramHubSheet: Bool = false
+    /// **ADR-093 Phase 2** — Offline queue depth (5초 주기 폴링, BotStatusDock 표시용).
+    public var telegramQueueDepth: Int = 0
 
     // 활성 세션 설정 (toolbar에서 즉시 변경 가능)
     public var activeSettings: SessionSettings = .default
@@ -4481,6 +4483,22 @@ public final class AppModel {
                 }
             }
         }
+        // ADR-093 Phase 2 — offline queue depth 5초 주기 폴링 (BotStatusDock 표시용)
+        setupTelegramQueueDepthPolling()
+    }
+
+    /// **ADR-093 Phase 2** — Queue depth 5초 주기 폴링 Task.
+    private func setupTelegramQueueDepthPolling() {
+        Task { [weak self] in
+            while !Task.isCancelled {
+                if let depth = await self?.telegramOfflineQueueDepth() {
+                    await MainActor.run {
+                        self?.telegramQueueDepth = depth
+                    }
+                }
+                try? await Task.sleep(for: .seconds(5))
+            }
+        }
     }
 
     // MARK: - ADR-086 Phase 1 — Telegram error log access
@@ -4498,6 +4516,22 @@ public final class AppModel {
     public func telegramClearErrorLog() async {
         guard let bot = telegramBot as? LiveTelegramBot else { return }
         await bot.errorLog.clear()
+    }
+
+    // MARK: - ADR-093 Phase 2 — Queue depth + chat activity
+
+    /// Offline queue에 대기 중인 메시지 수 반환.
+    public func telegramOfflineQueueDepth() async -> Int {
+        guard let bot = telegramBot as? LiveTelegramBot else { return 0 }
+        return await bot.offlineQueue.count()
+    }
+
+    /// 최근 활동 chat 목록 (chatId + lastUsedAt). BotStatusDock / ChatContextCard 표시용.
+    public func telegramRecentChatActivity() async -> [(Int64, Date)] {
+        let snapshot = await telegramUsageStore.snapshot()
+        return snapshot.chatStats.values
+            .sorted { $0.lastUsedAt > $1.lastUsedAt }
+            .map { ($0.chatId, $0.lastUsedAt) }
     }
 
     // MARK: - ADR-086 Phase 4 — Multi-bot management

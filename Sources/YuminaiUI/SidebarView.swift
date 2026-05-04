@@ -14,6 +14,9 @@ import YuminaiCore
 /// 7. **Update card** (필요 시)
 /// 8. **Bottom user card**: 사용자 + 설정
 public struct SidebarView: View {
+    // ADR-093 Phase 2 — BotStatusDockView popover 상태
+    @State private var showBotDockPopover = false
+
     public let workspaces: [Workspace]
     @Binding public var selectedId: UUID?
     public let telegramBoundId: UUID?
@@ -75,6 +78,14 @@ public struct SidebarView: View {
     public let onOpenTelegramErrorLog: () -> Void
     /// **ADR-092 Phase 1** — Telegram Hub sheet 열기.
     public let onOpenTelegramHub: () -> Void
+    /// **ADR-093 Phase 2** — Offline queue depth (BotStatusDockView 표시용).
+    public let telegramQueueDepth: Int
+    /// **ADR-093 Phase 2** — 봇 목록 (BotStatusDockView 다중 봇 배지).
+    public let telegramBotCount: Int
+    /// **ADR-093 Phase 2** — 첫 번째 활성 봇 username (BotStatusDockView 레이블).
+    public let telegramFirstBotUsername: String?
+    /// **ADR-093 Phase 2** — 최근 에러 (BotStatusDockView popover).
+    public let telegramRecentErrors: [TelegramErrorEntry]
     /// **ADR-089** — 활성 chat sessions (lastActiveAt desc로 정렬됨).
     public let chatSessions: [ChatSession]
     /// **ADR-089** — 현재 활성 chat session id (강조 표시용).
@@ -134,6 +145,10 @@ public struct SidebarView: View {
         telegramHealth: TelegramHealthSnapshot = TelegramHealthSnapshot(),
         onOpenTelegramErrorLog: @escaping () -> Void = {},
         onOpenTelegramHub: @escaping () -> Void = {},
+        telegramQueueDepth: Int = 0,
+        telegramBotCount: Int = 0,
+        telegramFirstBotUsername: String? = nil,
+        telegramRecentErrors: [TelegramErrorEntry] = [],
         chatSessions: [ChatSession] = [],
         activeChatSessionId: UUID? = nil,
         workspaceNameById: @escaping (UUID) -> String? = { _ in nil },
@@ -184,6 +199,10 @@ public struct SidebarView: View {
         self.telegramHealth = telegramHealth
         self.onOpenTelegramErrorLog = onOpenTelegramErrorLog
         self.onOpenTelegramHub = onOpenTelegramHub
+        self.telegramQueueDepth = telegramQueueDepth
+        self.telegramBotCount = telegramBotCount
+        self.telegramFirstBotUsername = telegramFirstBotUsername
+        self.telegramRecentErrors = telegramRecentErrors
         self.chatSessions = chatSessions
         self.activeChatSessionId = activeChatSessionId
         self.workspaceNameById = workspaceNameById
@@ -222,12 +241,18 @@ public struct SidebarView: View {
                     .padding(.horizontal, Theme.Layout.sidebarPadding)
                     .padding(.bottom, Theme.Spacing.sm)
             }
-            // ADR-086 Phase 1 — 텔레그램 활성/오류 상황에서만 표시
+            // ADR-093 Phase 2 — BotStatusDockView (TelegramHealthPill 대체)
             if telegramAvailable || telegramHealth.state != .idle {
-                HStack {
-                    TelegramHealthPill(snapshot: telegramHealth, onTap: onOpenTelegramErrorLog)
-                    Spacer()
-                }
+                BotStatusDockView(
+                    health: telegramHealth,
+                    queueDepth: telegramQueueDepth,
+                    botCount: telegramBotCount,
+                    firstBotUsername: telegramFirstBotUsername,
+                    showPopover: $showBotDockPopover,
+                    onOpenHub: onOpenTelegramHub,
+                    onOpenErrorLog: onOpenTelegramErrorLog,
+                    recentErrors: telegramRecentErrors
+                )
                 .padding(.horizontal, Theme.Layout.sidebarPadding)
                 .padding(.bottom, Theme.Spacing.xs)
             }

@@ -8,6 +8,10 @@ import YuminaiCore
 /// - healthy: green checkmark
 /// - degraded: orange exclamation
 /// - failed: red xmark
+///
+/// - Note: **ADR-093 Phase 2 — Deprecated**. `BotStatusDockView`로 대체.
+///   SidebarView에서 더 이상 직접 사용되지 않음. 외부 사용처가 남아있는 동안 유지.
+@available(*, deprecated, renamed: "BotStatusDockView", message: "Use BotStatusDockView (ADR-093). TelegramHealthPill is superseded by BotStatusDock.")
 public struct TelegramHealthPill: View {
     public let snapshot: TelegramHealthSnapshot
     public let onTap: () -> Void

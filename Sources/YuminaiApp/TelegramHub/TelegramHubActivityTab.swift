@@ -2,13 +2,10 @@ import SwiftUI
 import YuminaiCore
 import YuminaiUI
 
-/// **ADR-092 Phase 1** — Telegram Hub Activity 탭 (Phase 2/3 확장 예정).
+/// **ADR-092 Phase 1 / ADR-093 Phase 2** — Telegram Hub Activity 탭.
 ///
-/// 현재: 사용량 대시보드 요약 링크 + 에러 로그 바로가기.
-/// Phase 2/3에서 추가 예정:
-/// - 실시간 메시지 피드
-/// - /start 자동 감지 알림
-/// - HITL 이벤트 타임라인
+/// Phase 1: 사용량 대시보드 요약 + 에러 로그 바로가기 + placeholder.
+/// Phase 2: `ActivityFeedView`로 placeholder 교체. 실시간 에러 피드 + 통합 통계.
 struct TelegramHubActivityTab: View {
     @Environment(AppModel.self) private var appModel
 
@@ -16,7 +13,8 @@ struct TelegramHubActivityTab: View {
         VStack(alignment: .leading, spacing: Theme.Spacing.lg) {
             usageSummarySection
             errorLogSection
-            placeholderSection
+            // ADR-093 Phase 2 — 실시간 피드 (placeholder 교체)
+            ActivityFeedView()
         }
     }
 
@@ -107,16 +105,5 @@ struct TelegramHubActivityTab: View {
         case .failed:
             return "영구 실패 상태예요. 에러 로그를 열어 원인을 확인하고 봇 설정을 점검하세요."
         }
-    }
-
-    // MARK: - Phase 2/3 Placeholder
-
-    private var placeholderSection: some View {
-        AnimatedEmptyState(
-            icon: "clock.fill",
-            iconTint: Theme.Color.textTertiary,
-            title: "실시간 활동 피드",
-            message: "Phase 2/3에서 추가 예정\n\n실시간 메시지 피드, /start 자동 감지, HITL 이벤트 타임라인이 여기에 표시될 예정이에요."
-        )
     }
 }
