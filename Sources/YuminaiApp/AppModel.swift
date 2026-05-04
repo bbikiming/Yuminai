@@ -5327,4 +5327,100 @@ public final class AppModel {
             showHITLSheet = false
         }
     }
+
+    // MARK: - ADR-095 Phase 4 — Multi-device 알림 정책 + Quiet Hours
+
+    /// **ADR-095 Phase 4** — 현재 디바이스 상태.
+    /// `desktopActive` (기본) → `desktopIdle` (5분 무입력) → `desktopOff` (명시적 설정).
+    public var deviceState: DeviceState = .desktopActive
+
+    /// **ADR-095 Phase 4** — idle timer task.
+    private var idleTimer: Task<Void, Never>?
+
+    /// **ADR-095 Phase 4** — 마지막 사용자 입력 시각.
+    private var lastInputAt: Date = .now
+
+    /// **ADR-095 Phase 4** — 사용자 입력 감지 (메시지 전송, UI 조작 등).
+    public func recordUserInput() {
+        lastInputAt = Date.now
+        if deviceState == .desktopIdle {
+            deviceState = .desktopActive
+        }
+        resetIdleTimer()
+    }
+
+    /// **ADR-095 Phase 4** — 5분 무입력 타이머 시작.
+    public func setupDeviceStateMonitor() {
+        resetIdleTimer()
+
+        // macOS 수면 알림 구독
+        NotificationCenter.default.addObserver(
+            forName: NSWorkspace.willSleepNotification,
+            object: nil,
+            queue: .main
+        ) { [weak self] _ in
+            self?.deviceState = .desktopIdle
+        }
+        NotificationCenter.default.addObserver(
+            forName: NSWorkspace.didWakeNotification,
+            object: nil,
+            queue: .main
+        ) { [weak self] _ in
+            self?.deviceState = .desktopActive
+            self?.resetIdleTimer()
+        }
+    }
+
+    private func resetIdleTimer() {
+        idleTimer?.cancel()
+        idleTimer = Task { [weak self] in
+            do {
+                // 5분 = 300초
+                try await Task.sleep(nanoseconds: 300_000_000_000)
+                await MainActor.run {
+                    guard let self, self.deviceState == .desktopActive else { return }
+                    self.deviceState = .desktopIdle
+                }
+            } catch {
+                // 취소됨 — 정상
+            }
+        }
+    }
+
+    /// **ADR-095 Phase 4** — Quiet hours + 디바이스 상태를 고려한 실제 전달 채널 반환.
+    ///
+    /// 1. notificationPolicy.channel(for:in:) 기본값 조회
+    /// 2. quiet hours 범위이면 `generalAlert`, `taskCompleteSuccess` → `suppressed`로 격하
+    public func currentDeliveryChannel(for kind: NotificationKind) -> DeliveryChannel {
+        let baseChannel = preferences.notificationPolicy.channel(for: kind, in: deviceState)
+
+        // Quiet hours 격하 체크
+        if isInQuietHours() {
+            switch kind {
+            case .generalAlert, .taskCompleteSuccess:
+                return .suppressed
+            default:
+                break
+            }
+        }
+
+        return baseChannel
+    }
+
+    /// **ADR-095 Phase 4** — 현재 시각이 quiet hours 범위에 있는지 확인.
+    private func isInQuietHours() -> Bool {
+        guard let start = preferences.quietHoursStart,
+              let end = preferences.quietHoursEnd else { return false }
+
+        let calendar = Calendar.current
+        let hour = calendar.component(.hour, from: Date())
+
+        if start <= end {
+            // 예: 9~17시 (낮)
+            return hour >= start && hour < end
+        } else {
+            // 예: 22~8시 (자정 걸침)
+            return hour >= start || hour < end
+        }
+    }
 }

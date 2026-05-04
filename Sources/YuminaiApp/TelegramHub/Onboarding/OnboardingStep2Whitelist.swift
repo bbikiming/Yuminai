@@ -1,21 +1,30 @@
 import SwiftUI
 import YuminaiCore
+import YuminaiTelegram
 import YuminaiUI
 
-/// **ADR-092 Phase 1** — Onboarding Step 2: 사용자 허용 목록.
+/// **ADR-092 Phase 1 / ADR-095 Phase 4** — Onboarding Step 2: 사용자 허용 목록.
 ///
 /// - 수동 user_id 입력 (콤마 구분)
 /// - "비어있으면 모든 사용자 허용 (위험)" 경고 InfoCallout
-///
-/// **Phase 2 예정**: /start 메시지 자동 감지로 user_id 추가.
+/// - **/start 자동 감지** (ADR-095): 토큰이 있으면 즉시 polling 시작 →
+///   `/start` 보낸 사용자 목록 표시 → 클릭 시 허용 목록 자동 추가.
 struct OnboardingStep2Whitelist: View {
     @Binding var allowedUserIdsText: String
+    /// Step 1에서 입력한 토큰 — 자동 감지에 사용. 빈 문자열이면 자동 감지 비활성.
+    var token: String
+
+    @State private var detectedUsers: [TelegramFirstMessageDetector.Detection] = []
+    @State private var detector = TelegramFirstMessageDetector()
+    @State private var isDetecting: Bool = false
+    @State private var detectionTask: Task<Void, Never>? = nil
 
     private var parsedIds: [Int64] {
         TelegramTokenValidator.parseUserIds(allowedUserIdsText)
     }
 
     private var isEmpty: Bool { allowedUserIdsText.trimmingCharacters(in: .whitespaces).isEmpty }
+    private var tokenValid: Bool { TelegramTokenValidator.validate(token).isValid }
 
     var body: some View {
         VStack(alignment: .leading, spacing: Theme.Spacing.lg) {
@@ -72,25 +81,101 @@ struct OnboardingStep2Whitelist: View {
                 }
             }
 
-            // Phase 2 placeholder
+            // /start 자동 감지 카드 (ADR-095 Phase 4)
             CardSection(style: .subtle) {
-                VStack(alignment: .leading, spacing: Theme.Spacing.sm) {
+                VStack(alignment: .leading, spacing: Theme.Spacing.md) {
                     SectionHeaderRow(
                         icon: "antenna.radiowaves.left.and.right",
-                        iconColor: Theme.Color.textTertiary,
+                        iconColor: tokenValid ? Theme.Color.accent : Theme.Color.textTertiary,
                         title: "/start 자동 감지",
-                        caption: "Phase 2에서 추가 예정"
-                    )
-                    Text("Phase 2에서는 봇에 /start를 보낸 사용자를 자동으로 감지하여 허용 목록에 추가할 수 있어요.")
-                        .font(Theme.Typography.small)
-                        .foregroundStyle(Theme.Color.textTertiary)
-                        .fixedSize(horizontal: false, vertical: true)
+                        caption: isDetecting ? "감지 중…" : (tokenValid ? "활성" : "토큰 입력 후 활성화")
+                    ) {
+                        if isDetecting {
+                            ProgressView()
+                                .scaleEffect(0.7)
+                        }
+                    }
+
+                    if tokenValid {
+                        Text("봇에 /start를 보내면 자동으로 감지됩니다. 감지된 사용자를 클릭하면 허용 목록에 추가할 수 있어요.")
+                            .font(Theme.Typography.small)
+                            .foregroundStyle(Theme.Color.textSecondary)
+                            .fixedSize(horizontal: false, vertical: true)
+
+                        if !detectedUsers.isEmpty {
+                            detectedUserList
+                        } else if isDetecting {
+                            HStack(spacing: 6) {
+                                Image(systemName: "iphone.radiowaves.left.and.right")
+                                    .foregroundStyle(Theme.Color.textTertiary)
+                                    .font(.system(size: 14))
+                                Text("폰에서 봇에 /start를 보내세요…")
+                                    .font(Theme.Typography.small)
+                                    .foregroundStyle(Theme.Color.textTertiary)
+                            }
+                            .transition(.opacity)
+                        }
+                    } else {
+                        Text("Step 1에서 유효한 토큰을 입력하면 /start 자동 감지가 활성화됩니다.")
+                            .font(Theme.Typography.small)
+                            .foregroundStyle(Theme.Color.textTertiary)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
                 }
             }
 
             Spacer(minLength: 0)
         }
         .animation(.spring(response: 0.4, dampingFraction: 0.85), value: isEmpty)
+        .animation(.spring(response: 0.4, dampingFraction: 0.85), value: detectedUsers.count)
+        .task {
+            await startDetectionIfPossible()
+        }
+        .onDisappear {
+            stopDetection()
+        }
+    }
+
+    // MARK: - 감지된 사용자 목록
+
+    private var detectedUserList: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            ForEach(detectedUsers) { user in
+                detectedUserRow(user)
+            }
+        }
+        .transition(.opacity.combined(with: .move(edge: .top)))
+    }
+
+    private func detectedUserRow(_ user: TelegramFirstMessageDetector.Detection) -> some View {
+        let alreadyAdded = parsedIds.contains(user.userId)
+        return HStack(spacing: 8) {
+            Image(systemName: alreadyAdded ? "checkmark.circle.fill" : "person.circle")
+                .foregroundStyle(alreadyAdded ? Theme.Color.success : Theme.Color.accent)
+                .font(.system(size: 18))
+
+            VStack(alignment: .leading, spacing: 2) {
+                Text(user.firstName + (user.username.map { " (@\($0))" } ?? ""))
+                    .font(Theme.Typography.small.weight(.medium))
+                    .foregroundStyle(Theme.Color.text)
+                Text("ID: \(user.userId)")
+                    .font(Theme.Typography.micro)
+                    .foregroundStyle(Theme.Color.textTertiary)
+            }
+
+            Spacer()
+
+            if !alreadyAdded {
+                FlatButton("추가", icon: "plus.circle.fill", variant: .secondary) {
+                    addUserToWhitelist(user.userId)
+                }
+            } else {
+                Text("추가됨")
+                    .font(Theme.Typography.micro)
+                    .foregroundStyle(Theme.Color.success)
+            }
+        }
+        .padding(.vertical, 4)
     }
 
     // MARK: - Helpers
@@ -111,6 +196,43 @@ struct OnboardingStep2Whitelist: View {
                     )
             }
         }
+    }
+
+    private func addUserToWhitelist(_ userId: Int64) {
+        let current = allowedUserIdsText.trimmingCharacters(in: .whitespaces)
+        if current.isEmpty {
+            allowedUserIdsText = "\(userId)"
+        } else {
+            allowedUserIdsText = "\(current), \(userId)"
+        }
+    }
+
+    private func startDetectionIfPossible() async {
+        guard tokenValid, !token.isEmpty else { return }
+
+        isDetecting = true
+        detectionTask?.cancel()
+
+        detectionTask = Task {
+            do {
+                let stream = try await detector.startDetecting(token: token)
+                for await detection in stream {
+                    // 중복 제거
+                    if !detectedUsers.contains(where: { $0.userId == detection.userId }) {
+                        detectedUsers.append(detection)
+                    }
+                }
+            } catch {
+                // 토큰 오류 등 — 조용히 무시
+            }
+            isDetecting = false
+        }
+    }
+
+    private func stopDetection() {
+        detectionTask?.cancel()
+        detectionTask = nil
+        Task { await detector.stop() }
     }
 }
 

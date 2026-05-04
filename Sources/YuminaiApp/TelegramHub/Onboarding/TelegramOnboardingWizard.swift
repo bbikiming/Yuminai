@@ -1,6 +1,7 @@
 import SwiftUI
 import YuminaiCore
 import YuminaiUI
+import YuminaiTelegram
 
 /// **ADR-092 Phase 1** — Telegram 봇 등록 3-step Onboarding Wizard.
 ///
@@ -144,7 +145,8 @@ struct TelegramOnboardingWizard: View {
             .transition(stepTransition)
         case 2:
             OnboardingStep2Whitelist(
-                allowedUserIdsText: $allowedUserIdsText
+                allowedUserIdsText: $allowedUserIdsText,
+                token: token
             )
             .transition(stepTransition)
         case 3:

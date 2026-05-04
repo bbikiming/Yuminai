@@ -139,6 +139,17 @@ public struct AppPreferences: Sendable, Codable, Hashable {
     /// **ADR-094 Phase 3** — BotFather에 등록할 커맨드 목록.
     /// 기존 사용자는 7개 기본 커맨드로 시작 (decodeIfPresent ?? defaultTelegramCommands).
     public var telegramCommands: [TelegramCommand]
+    /// **ADR-095 Phase 4** — 다중 디바이스 알림 정책 매트릭스.
+    /// 기존 사용자는 default 정책으로 시작.
+    public var notificationPolicy: NotificationPolicyMatrix
+    /// **ADR-095 Phase 4** — Quiet hours 시작 시각 (0-23). nil이면 비활성.
+    public var quietHoursStart: Int?
+    /// **ADR-095 Phase 4** — Quiet hours 종료 시각 (0-23). nil이면 비활성.
+    public var quietHoursEnd: Int?
+    /// **ADR-095 Phase 4** — HITL 타임아웃 (초). 기본 60초.
+    public var hitlTimeoutSeconds: Int
+    /// **ADR-095 Phase 4** — Diff 미리보기 라인 한도. 기본 30줄.
+    public var diffPreviewLineLimit: Int
 
     public init(
         claudeBinaryPath: String = AppPreferences.detectClaudeBinaryPath(),
@@ -194,7 +205,12 @@ public struct AppPreferences: Sendable, Codable, Hashable {
         telegramWebhookURL: String? = nil,
         chatSessions: [ChatSession] = [],  // ADR-089
         activeChatSessionId: UUID? = nil,
-        telegramCommands: [TelegramCommand] = TelegramCommand.defaultCommands  // ADR-094 Phase 3
+        telegramCommands: [TelegramCommand] = TelegramCommand.defaultCommands,  // ADR-094 Phase 3
+        notificationPolicy: NotificationPolicyMatrix = .default,  // ADR-095 Phase 4
+        quietHoursStart: Int? = nil,  // ADR-095 Phase 4
+        quietHoursEnd: Int? = nil,  // ADR-095 Phase 4
+        hitlTimeoutSeconds: Int = 60,  // ADR-095 Phase 4
+        diffPreviewLineLimit: Int = 30  // ADR-095 Phase 4
     ) {
         self.claudeBinaryPath = claudeBinaryPath
         self.codexBinaryPath = codexBinaryPath
@@ -250,6 +266,11 @@ public struct AppPreferences: Sendable, Codable, Hashable {
         self.chatSessions = chatSessions
         self.activeChatSessionId = activeChatSessionId
         self.telegramCommands = telegramCommands
+        self.notificationPolicy = notificationPolicy
+        self.quietHoursStart = quietHoursStart
+        self.quietHoursEnd = quietHoursEnd
+        self.hitlTimeoutSeconds = hitlTimeoutSeconds
+        self.diffPreviewLineLimit = diffPreviewLineLimit
     }
 
     // ADR-046 — 신규 필드 backward-compat: 기존 JSON에 없으면 default 적용
@@ -321,6 +342,12 @@ public struct AppPreferences: Sendable, Codable, Hashable {
         self.activeChatSessionId = try c.decodeIfPresent(UUID.self, forKey: .activeChatSessionId)
         // ADR-094 Phase 3 — 기존 사용자도 7개 기본 커맨드 받음 (즉시 유용)
         self.telegramCommands = try c.decodeIfPresent([TelegramCommand].self, forKey: .telegramCommands) ?? TelegramCommand.defaultCommands
+        // ADR-095 Phase 4 — 기존 사용자는 default 정책으로 시작
+        self.notificationPolicy = try c.decodeIfPresent(NotificationPolicyMatrix.self, forKey: .notificationPolicy) ?? .default
+        self.quietHoursStart = try c.decodeIfPresent(Int.self, forKey: .quietHoursStart)
+        self.quietHoursEnd = try c.decodeIfPresent(Int.self, forKey: .quietHoursEnd)
+        self.hitlTimeoutSeconds = try c.decodeIfPresent(Int.self, forKey: .hitlTimeoutSeconds) ?? 60
+        self.diffPreviewLineLimit = try c.decodeIfPresent(Int.self, forKey: .diffPreviewLineLimit) ?? 30
     }
 
     /// `claude` CLI의 가능성 높은 위치들을 순서대로 시도해 첫 번째 존재하는 경로 반환.
