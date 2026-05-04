@@ -46,14 +46,25 @@ public final actor TelegramAlertDispatcher {
         let channel = deliveryChannelProvider?(kind) ?? .telegramOnly
 
         switch channel {
-        case .telegramOnly, .both:
+        case .telegramOnly:
             let formatted = Self.formatted(category, message)
             _ = try? await client.send(formatted, to: chatId)
+        case .both:
+            let formatted = Self.formatted(category, message)
+            _ = try? await client.send(formatted, to: chatId)
+            // **ADR-098 P0-4** — macOS 알림도 동시 발송
+            try? await MacOSNotificationSender.send(
+                title: Self.notificationTitle(for: category),
+                body: message
+            )
         case .macOSOnly:
-            // macOS 알림은 AppModel 쪽에서 처리 — 여기선 Telegram 전송만 담당
-            break
+            // **ADR-098 P0-4** — macOS 알림 발송 (Telegram 전송 skip)
+            try? await MacOSNotificationSender.send(
+                title: Self.notificationTitle(for: category),
+                body: message
+            )
         case .suppressed:
-            // no-op (로그만)
+            // no-op (quiet hours / matrix 정책 적용됨)
             break
         }
     }
@@ -88,5 +99,15 @@ public final actor TelegramAlertDispatcher {
         case .info: label = "[INFO]"
         }
         return "\(label) \(message)"
+    }
+
+    /// **ADR-098 P0-4** — macOS 알림 제목 (Telegram label과 별도 UX).
+    private static func notificationTitle(for category: AlertCategory) -> String {
+        switch category {
+        case .workComplete: return "Yuminai — 작업 완료"
+        case .workFailed: return "Yuminai — 작업 실패"
+        case .decisionRequired: return "Yuminai — 승인 필요"
+        case .info: return "Yuminai"
+        }
     }
 }

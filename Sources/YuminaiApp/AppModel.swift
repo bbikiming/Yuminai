@@ -578,6 +578,8 @@ public final class AppModel {
         await refreshSecretStatuses()
         await activateTelegramIfReady()
         await setupObsidianVault()
+        // **ADR-098 P0-4** — macOS 알림 카테고리 등록 (HITL Approve/Reject 버튼)
+        MacOSNotificationSender.registerCategories()
         // ADR-052 — routing decision log + palette pin/recent 로드
         await loadRoutingDecisionLog()
         await loadPalettePins()
@@ -4501,6 +4503,18 @@ public final class AppModel {
         setupTelegramQueueDepthPolling()
         // ADR-094 Phase 3 — HITL coordinator 초기화 + AsyncStream 구독
         setupTelegramHITLCoordinator()
+        // ADR-095 Phase 4 + ADR-098 P0-3 — deliveryChannelProvider 주입
+        // (NotificationPolicyMatrix + quiet hours + deviceState 정책이 실제 alarmRouting에 반영됨)
+        // 클로저는 @Sendable nonisolated이므로 MainActor.assumeIsolated로 main actor 상태에 접근.
+        // TelegramAlertDispatcher.dispatch()는 항상 async context에서 호출되며,
+        // dispatch 시점에 main actor 접근을 보장하는 형태로 future refactor 가능.
+        if let dispatcher = alertDispatcher {
+            await dispatcher.updateDeliveryChannelProvider { [weak self] kind in
+                MainActor.assumeIsolated {
+                    self?.currentDeliveryChannel(for: kind) ?? .telegramOnly
+                }
+            }
+        }
     }
 
     /// **ADR-093 Phase 2** — Queue depth 5초 주기 폴링 Task.
@@ -5307,6 +5321,12 @@ public final class AppModel {
         let coordinator = TelegramHITLCoordinator()
         hitlCoordinator = coordinator
 
+        // **ADR-098 P0-1** — HITL coordinator를 sessionBridge에 주입해 destructive action 차단 흐름 활성화.
+        let timeoutSecs = preferences.hitlTimeoutSeconds
+        Task { [weak self] in
+            await self?.sessionBridge?.setHITLCoordinator(coordinator, timeoutSeconds: timeoutSecs)
+        }
+
         Task { [weak self] in
             let stream = await coordinator.requestStream()
             for await request in stream {
@@ -5328,6 +5348,12 @@ public final class AppModel {
                     let text = "⚠️ HITL 승인 필요\n\n**Action:** `\(request.action)`\n**Timeout:** \(request.timeoutSeconds)s"
                     _ = try? await self.telegramBot?.sendWithKeyboard(text, to: chatId, buttons: buttons)
                 }
+                // **ADR-098 P0-4** — macOS UserNotification 동시 발송 (HITL actionable)
+                try? await MacOSNotificationSender.sendHITL(
+                    requestId: request.id,
+                    action: request.action,
+                    workspaceName: request.workspace
+                )
             }
         }
     }

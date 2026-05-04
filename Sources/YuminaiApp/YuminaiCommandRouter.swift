@@ -121,6 +121,18 @@ public final class YuminaiCommandRouter: TelegramCommandRouter, @unchecked Senda
             return await statusCommand()
         case "/cancel", "/stop":
             return await cancelCommand()
+        case "/abort":
+            // **ADR-098 P0-2** — BotFather에 등록된 /abort를 /cancel과 동일하게 처리.
+            return await cancelCommand()
+        case "/run":
+            // **ADR-098 P0-2** — 워크스페이스에서 쉘 명령 실행.
+            return await runCommand(arg)
+        case "/approve":
+            // **ADR-098 P0-2** — 가장 최근 (또는 지정) HITL 요청 승인.
+            return await approveCommand(arg)
+        case "/reject":
+            // **ADR-098 P0-2** — 가장 최근 (또는 지정) HITL 요청 거절.
+            return await rejectCommand(arg)
         case "/start":
             // ADR-045 R1.L6 — onboarding (Telegram convention: /start은 권한 안내)
             return await startCommand(requestChatId: requestChatId)
@@ -245,6 +257,102 @@ public final class YuminaiCommandRouter: TelegramCommandRouter, @unchecked Senda
         guard let model = appModel else { return "Yuminai 연결 안 됨" }
         let cancelled = await model.cancelBoundTurn()
         return cancelled ? "🛑 진행 중인 turn 중단됨" : "진행 중인 turn이 없어요."
+    }
+
+    /// **ADR-098 P0-2** — 워크스페이스에서 쉘 명령 실행.
+    /// 사용법: /run <command>
+    /// HITL guard를 거쳐 위험 패턴은 승인 없이 실행되지 않는다.
+    private func runCommand(_ cmd: String) async -> String? {
+        guard let model = appModel else { return "Yuminai 연결 안 됨" }
+        guard !cmd.isEmpty else {
+            return "사용법: /run <command>\n예: /run swift test\n/run git status"
+        }
+        // HITLActionGuard — 위험 패턴 사전 차단 (coordinator 없을 때도 경고)
+        if HITLActionGuard.shouldRequestApproval(command: cmd) {
+            let cat = HITLActionGuard.category(for: cmd) ?? "unknown"
+            let hasPendingHITL = await MainActor.run { !model.hitlPendingRequests.isEmpty }
+            if hasPendingHITL {
+                return """
+                ⚠️ 위험 명령 [\(cat)] 감지됨.
+                HITL coordinator가 승인 요청을 처리 중입니다.
+                /approve 또는 /reject로 응답한 후 재시도하세요.
+                """
+            }
+            // HITL coordinator가 있으면 request() → suspend → 응답 반환
+            if let coordinator = await MainActor.run(body: { model.hitlCoordinator }) {
+                let wName = await MainActor.run { model.boundWorkspaceName }
+                let response = await coordinator.request(
+                    action: cmd,
+                    workspace: wName,
+                    diffPreview: nil,
+                    timeout: await MainActor.run { model.preferences.hitlTimeoutSeconds }
+                )
+                switch response {
+                case .approved:
+                    break  // 승인 → 실행 계속
+                case .rejected(let by):
+                    return "❌ /run 거절됨 (by \(by)) — 실행 취소."
+                case .timeout:
+                    return "⏱ HITL 응답 시간 초과 — 실행 취소."
+                case .cancelled:
+                    return "🛑 HITL 취소됨 — 실행 취소."
+                }
+            } else {
+                // coordinator 없음 — 경고 후 실행 허용 (기존 동작)
+                return """
+                ⚠️ 위험 명령 [\(cat)] 감지됨.
+                HITL coordinator가 초기화되지 않아 실행이 차단됩니다.
+                PC Yuminai 앱이 실행 중이고 Telegram이 활성화돼 있는지 확인해주세요.
+                """
+            }
+        }
+        await MainActor.run { Task { await model.runCommand(cmd) } }
+        return "▶ 실행 중: `\(cmd)`\n결과는 완료 시 자동 전송됩니다."
+    }
+
+    /// **ADR-098 P0-2** — 가장 최근 (또는 지정 UUID) HITL 요청 승인.
+    /// 사용법: /approve [uuid]
+    private func approveCommand(_ arg: String) async -> String? {
+        guard let model = appModel else { return "Yuminai 연결 안 됨" }
+        let id: UUID?
+        if arg.isEmpty {
+            // 가장 오래된 pending request 사용
+            id = await MainActor.run { model.hitlPendingRequests.first?.id }
+        } else {
+            id = UUID(uuidString: arg)
+        }
+        guard let requestId = id else {
+            let pending = await MainActor.run { model.hitlPendingRequests }
+            if pending.isEmpty {
+                return "⚠️ 승인할 HITL 요청이 없어요."
+            }
+            return "잘못된 요청 ID: '\(arg)'\n진행 중인 요청: \(pending.count)개"
+        }
+        let by = "telegram:user:\(lastUserId)"
+        await model.respondToHITL(id: requestId, response: .approved(by: by))
+        return "✅ 승인됨 (HITL \(requestId.uuidString.prefix(8))...)"
+    }
+
+    /// **ADR-098 P0-2** — 가장 최근 (또는 지정 UUID) HITL 요청 거절.
+    /// 사용법: /reject [uuid]
+    private func rejectCommand(_ arg: String) async -> String? {
+        guard let model = appModel else { return "Yuminai 연결 안 됨" }
+        let id: UUID?
+        if arg.isEmpty {
+            id = await MainActor.run { model.hitlPendingRequests.first?.id }
+        } else {
+            id = UUID(uuidString: arg)
+        }
+        guard let requestId = id else {
+            let pending = await MainActor.run { model.hitlPendingRequests }
+            if pending.isEmpty {
+                return "⚠️ 거절할 HITL 요청이 없어요."
+            }
+            return "잘못된 요청 ID: '\(arg)'\n진행 중인 요청: \(pending.count)개"
+        }
+        let by = "telegram:user:\(lastUserId)"
+        await model.respondToHITL(id: requestId, response: .rejected(by: by))
+        return "❌ 거절됨 (HITL \(requestId.uuidString.prefix(8))...)"
     }
 
     private func listWorkspaces() async -> String? {
@@ -705,12 +813,18 @@ public final class YuminaiCommandRouter: TelegramCommandRouter, @unchecked Senda
     📊 상태 / 작업:
     /status       — 현재 상태 + 외부 turn 누적 비용
     /cancel       — 진행 중 turn + ChildProcess 모두 중단 (위험 작업 보면 즉시!)
+    /abort        — /cancel과 동일 (긴급 중단)
+    /run <cmd>    — 워크스페이스에서 쉘 명령 실행 (위험 패턴은 HITL 승인 필요)
     /diff         — 보류 중인 변경 diff (chunk 보존)
     /changes      — 변경 파일 목록만 요약
     /model <name> — 모델 전환 (claude/codex/auto/status)
     /decompose <설명> — 큰 task를 sub-task로 LLM 자동 분해 (격리 호출, 결과 자동 forward)
     /cost         — 5 buckets 비용 분리 (main/decomp/rehearsal/parallel/routing)
     /budget [USD] — per-turn cost cap 설정 (off로 해제)
+
+    ✅ HITL (Human-In-The-Loop):
+    /approve [id] — 가장 최근 (또는 지정 UUID) HITL 요청 승인
+    /reject [id]  — 가장 최근 (또는 지정 UUID) HITL 요청 거절
 
     📋 Task 컨트롤 (ADR-056):
     /tasks         — TaskGraph 조회 (번호 포함)
@@ -722,7 +836,7 @@ public final class YuminaiCommandRouter: TelegramCommandRouter, @unchecked Senda
 
     ⚠ 주의:
     • 외부 명령은 PC confirmation 없이 실행돼요
-    • 위험한 작업 (rm -rf 등)은 🚨 알림 + /cancel 보낼 시간 있어요
+    • 위험한 작업 (rm -rf 등)은 🚨 HITL 알림 + /approve 또는 /reject 로 응답
     • 외부 turn은 PC와 같은 컨텍스트 — 비용 누적 (/status)
     """
 }

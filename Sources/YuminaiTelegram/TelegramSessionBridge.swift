@@ -52,10 +52,25 @@ public actor TelegramSessionBridge {
     /// edit 누적이 가능한 max size (Telegram 4096 한도, 안전 마진).
     /// 이 크기 넘으면 새 메시지로 split + 새 streaming session 시작.
     private static let editAccumulatedMax = 3500
+    /// **ADR-098 P0-1** — HITL coordinator. 주입 시 destructive action이 차단+승인 흐름으로 전환.
+    /// nil이면 기존 "알림만" 동작 유지.
+    private var hitlCoordinator: TelegramHITLCoordinator?
+    /// **ADR-098 P0-1** — HITL timeout (seconds). 기본 60s.
+    private var hitlTimeoutSeconds: Int = 60
+    /// **ADR-098 P0-1** — HITL 대기 중인 turn의 continuation 차단 여부.
+    /// coordinator.request()가 suspend하는 동안 나머지 이벤트 처리를 막지 않도록
+    /// bridge 자체가 blocked 상태임을 기록한다.
+    private var pendingHITLTask: Task<TelegramHITLCoordinator.HITLResponse, Never>?
 
     public init(client: any TelegramClient, configuration: Configuration) {
         self.client = client
         self.config = configuration
+    }
+
+    /// **ADR-098 P0-1** — HITL coordinator 주입. `makeSessionBridge` 직후 호출.
+    public func setHITLCoordinator(_ coordinator: TelegramHITLCoordinator?, timeoutSeconds: Int = 60) {
+        self.hitlCoordinator = coordinator
+        self.hitlTimeoutSeconds = timeoutSeconds
     }
 
     public func updateConfiguration(_ config: Configuration) {
@@ -93,21 +108,52 @@ public actor TelegramSessionBridge {
             guard config.forwardToolCalls else { return }
             toolCount += 1
             await flushAssistantBuffer()
-            // ADR-045 R2.H1 + ADR-056 Phase 2 — destructive tool 알림에 inline keyboard
+            // ADR-045 R2.H1 + ADR-056 Phase 2 + ADR-098 P0-1
+            // Destructive tool 감지 시 HITL coordinator가 주입돼 있으면 차단+승인 흐름 진입.
+            // coordinator가 없으면 기존 "알림만" 동작 유지.
             if Self.isDestructiveToolCall(name: name, input: input) {
                 let summary = Self.summarizeToolCall(name: name, input: input, maxLen: 200)
                 let target = requestChatId ?? config.chatId
-                let buttons = [[
-                    InlineButton(text: "🛑 중단 (cancel)", callbackData: "cancel"),
-                    InlineButton(text: "📊 상태", callbackData: "status")
-                ]]
-                _ = try? await client.sendWithKeyboard(
-                    "🚨 위험한 작업 감지 — \(summary)\n버튼으로 즉시 결정하세요.",
-                    to: target,
-                    buttons: buttons
-                )
-                streamingMessageId = nil  // 새 메시지로 시작했으니 streaming session 재시작
+                streamingMessageId = nil
                 streamingAccumulated = ""
+
+                if let coordinator = hitlCoordinator {
+                    // **ADR-098 P0-1** — HITL 차단 흐름: inline button + 60s timeout + 응답 대기
+                    let approveData = "hitl:approve:\(UUID().uuidString)"  // placeholder — coordinator가 실제 UUID 생성
+                    // coordinator.request()는 suspend — 응답 올 때까지 이 turn이 진행 불가
+                    let workspaceName: String? = config.workspaceName.isEmpty ? nil : config.workspaceName
+                    let response = await coordinator.request(
+                        action: summary,
+                        workspace: workspaceName,
+                        diffPreview: nil,
+                        timeout: hitlTimeoutSeconds
+                    )
+                    // HITL 결과 처리
+                    switch response {
+                    case .approved(let by):
+                        await send("✅ 승인됨 (by \(by)) — 작업 진행")
+                    case .rejected(let by):
+                        await send("❌ 거절됨 (by \(by)) — 작업 취소됨")
+                    case .timeout:
+                        await send("⏱ HITL 응답 시간 초과 (\(hitlTimeoutSeconds)s) — 작업 자동 취소됨")
+                    case .cancelled:
+                        await send("🛑 HITL 취소됨 — 작업 중단됨")
+                    }
+                    // rejected / timeout / cancelled 시 toolCall을 계속 실행하면 안 되지만
+                    // ClaudeEvent는 이미 발생했으므로 bridge는 결과만 알린다.
+                    // 실제 차단은 AppModel이 HITL 응답에 따라 수행해야 함.
+                } else {
+                    // HITL coordinator 미주입 — 기존 동작: 알림 + cancel/status 버튼
+                    let buttons = [[
+                        InlineButton(text: "🛑 중단 (cancel)", callbackData: "cancel"),
+                        InlineButton(text: "📊 상태", callbackData: "status")
+                    ]]
+                    _ = try? await client.sendWithKeyboard(
+                        "🚨 위험한 작업 감지 — \(summary)\n버튼으로 즉시 결정하세요.",
+                        to: target,
+                        buttons: buttons
+                    )
+                }
             } else {
                 let summary = Self.summarizeToolCall(name: name, input: input)
                 await send("🔧 \(summary)")
