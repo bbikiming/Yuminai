@@ -2,13 +2,14 @@ import SwiftUI
 import YuminaiCore
 import YuminaiUI
 
-/// **ADR-086 Phase 4 / ADR-101** — 봇 그룹 섹션 (그룹 추가/편집/삭제).
+/// **ADR-086 Phase 4 / ADR-101 / ADR-102** — 봇 그룹 섹션.
 ///
-/// ADR-101: List + swipeActions + contextMenu + ExpandableInfoSection 점진 노출.
+/// ADR-102: List → LazyVStack 카드 (TelegramBotListSection과 동일 패턴 — nested scroll 회피).
 struct TelegramBotGroupSection: View {
     @Environment(AppModel.self) private var appModel
     @State private var showAddGroup: Bool = false
     @State private var editingGroupId: UUID? = nil
+    @State private var confirmDeleteGroupId: UUID? = nil
 
     var body: some View {
         VStack(alignment: .leading, spacing: Theme.Spacing.md) {
@@ -17,7 +18,7 @@ struct TelegramBotGroupSection: View {
                     .font(Theme.Typography.label)
                     .foregroundStyle(Theme.Color.textSecondary)
                 Spacer()
-                FlatButton("새 그룹", variant: .secondary) {
+                FlatButton("새 그룹", icon: "plus", variant: .secondary) {
                     showAddGroup = true
                 }
             }
@@ -25,46 +26,16 @@ struct TelegramBotGroupSection: View {
                 EmptyStateHint(
                     icon: "rectangle.3.group.fill",
                     title: "그룹이 없어요",
-                    message: "그룹을 만들면 여러 봇에 공통 응답 모드/budget을 적용할 수 있어요."
+                    message: "그룹을 만들면 여러 봇에 공통 응답 모드/예산을 적용할 수 있어요."
                 )
-                .frame(maxHeight: .infinity)
+                .frame(maxWidth: .infinity)
+                .padding(.vertical, Theme.Spacing.lg)
             } else {
-                List {
+                LazyVStack(spacing: Theme.Spacing.sm) {
                     ForEach(appModel.preferences.telegramBotGroups) { group in
-                        groupRow(group)
-                            .listRowBackground(Theme.Color.surface)
-                            .listRowSeparatorTint(Theme.Color.borderSubtle)
-                            .swipeActions(edge: .trailing, allowsFullSwipe: false) {
-                                Button(role: .destructive) {
-                                    Task { await appModel.removeTelegramBotGroup(group.id) }
-                                } label: {
-                                    Label("삭제", systemImage: "trash")
-                                }
-                                Button {
-                                    editingGroupId = group.id
-                                } label: {
-                                    Label("편집", systemImage: "pencil")
-                                }
-                                .tint(.blue)
-                            }
-                            .contextMenu {
-                                Button {
-                                    editingGroupId = group.id
-                                } label: {
-                                    Label("편집", systemImage: "pencil")
-                                }
-                                Divider()
-                                Button(role: .destructive) {
-                                    Task { await appModel.removeTelegramBotGroup(group.id) }
-                                } label: {
-                                    Label("삭제", systemImage: "trash")
-                                }
-                            }
+                        groupCard(group)
                     }
                 }
-                .listStyle(.inset)
-                .scrollContentBackground(.hidden)
-                .frame(maxHeight: 200)
             }
         }
         .sheet(isPresented: $showAddGroup) {
@@ -90,30 +61,51 @@ struct TelegramBotGroupSection: View {
                 editingGroupId = nil
             }
         }
+        .confirmationDialog(
+            "이 그룹을 삭제할까요?",
+            isPresented: Binding(
+                get: { confirmDeleteGroupId != nil },
+                set: { if !$0 { confirmDeleteGroupId = nil } }
+            ),
+            titleVisibility: .visible,
+            presenting: confirmDeleteGroupId
+        ) { id in
+            Button("삭제", role: .destructive) {
+                Task { await appModel.removeTelegramBotGroup(id) }
+                confirmDeleteGroupId = nil
+            }
+            Button("취소", role: .cancel) {
+                confirmDeleteGroupId = nil
+            }
+        } message: { _ in
+            Text("그룹에 속한 봇들은 사라지지 않고 그룹 소속만 해제돼요.")
+        }
     }
 
-    // MARK: - Group Row
+    // MARK: - Group Card
 
-    private func groupRow(_ group: TelegramBotGroup) -> some View {
+    private func groupCard(_ group: TelegramBotGroup) -> some View {
         let memberCount = appModel.preferences.telegramBots.filter { $0.groupId == group.id }.count
-        return VStack(alignment: .leading, spacing: 4) {
-            HStack(alignment: .center, spacing: 10) {
+        return VStack(alignment: .leading, spacing: Theme.Spacing.sm) {
+            HStack(alignment: .center, spacing: Theme.Spacing.sm + 2) {
                 Image(systemName: group.iconName)
-                    .font(.system(size: 16))
+                    .font(.system(size: 18, weight: .medium))
                     .foregroundStyle(Theme.Color.folderColor(for: group.colorName))
-                    .frame(width: 28)
+                    .frame(width: 32, height: 32)
+                    .background(Theme.Color.folderColor(for: group.colorName).opacity(0.10))
+                    .clipShape(RoundedRectangle(cornerRadius: Theme.Radius.sm))
                     .accessibilityHidden(true)
 
-                VStack(alignment: .leading, spacing: 3) {
+                VStack(alignment: .leading, spacing: 2) {
                     HStack(spacing: 6) {
                         Text(group.displayName)
-                            .font(Theme.Typography.label)
+                            .font(Theme.Typography.body.weight(.semibold))
                             .foregroundStyle(Theme.Color.text)
                         Text("봇 \(memberCount)개")
                             .font(Theme.Typography.micro)
                             .foregroundStyle(Theme.Color.textTertiary)
-                            .padding(.horizontal, 5)
-                            .padding(.vertical, 1)
+                            .padding(.horizontal, 6)
+                            .padding(.vertical, 2)
                             .background(Theme.Color.surfaceHi)
                             .clipShape(Capsule())
                     }
@@ -121,22 +113,45 @@ struct TelegramBotGroupSection: View {
 
                 Spacer()
 
-                Button("편집") { editingGroupId = group.id }
+                HStack(spacing: 4) {
+                    Button {
+                        editingGroupId = group.id
+                    } label: {
+                        Image(systemName: "pencil")
+                            .font(.system(size: 12, weight: .medium))
+                            .frame(width: 28, height: 28)
+                            .foregroundStyle(Theme.Color.accent)
+                            .background(Theme.Color.accentMuted)
+                            .clipShape(RoundedRectangle(cornerRadius: Theme.Radius.sm))
+                    }
                     .buttonStyle(.plain)
-                    .foregroundStyle(Theme.Color.accent)
-                    .font(Theme.Typography.small)
+                    .help("이 그룹 편집")
                     .accessibilityLabel("\(group.displayName) 그룹 편집")
+
+                    Button {
+                        confirmDeleteGroupId = group.id
+                    } label: {
+                        Image(systemName: "trash")
+                            .font(.system(size: 12, weight: .medium))
+                            .frame(width: 28, height: 28)
+                            .foregroundStyle(Theme.Color.danger)
+                            .background(Theme.Color.danger.opacity(0.10))
+                            .clipShape(RoundedRectangle(cornerRadius: Theme.Radius.sm))
+                    }
+                    .buttonStyle(.plain)
+                    .help("이 그룹 삭제")
+                    .accessibilityLabel("\(group.displayName) 그룹 삭제")
+                }
             }
 
-            // 점진 정보 노출 — override/budget 정보
             if group.responseModeOverride != nil || group.budgetOverride != nil || !group.sharedSkillIds.isEmpty {
                 ExpandableInfoSection(label: "자세히 보기", labelIcon: "info.circle") {
                     VStack(alignment: .leading, spacing: Theme.Spacing.xs) {
                         if let mode = group.responseModeOverride {
-                            infoLine(label: "응답 모드 override", value: mode.displayName)
+                            infoLine(label: "응답 모드 (그룹 우선)", value: mode.displayName)
                         }
                         if group.budgetOverride != nil {
-                            infoLine(label: "Budget override", value: "설정됨")
+                            infoLine(label: "예산 한도 (그룹 우선)", value: "설정됨")
                         }
                         if !group.sharedSkillIds.isEmpty {
                             infoLine(label: "공유 스킬", value: "\(group.sharedSkillIds.count)개")
@@ -145,7 +160,26 @@ struct TelegramBotGroupSection: View {
                 }
             }
         }
-        .padding(.vertical, Theme.Spacing.xs)
+        .padding(Theme.Spacing.md)
+        .background(Theme.Color.surface)
+        .clipShape(RoundedRectangle(cornerRadius: Theme.Radius.md))
+        .overlay(
+            RoundedRectangle(cornerRadius: Theme.Radius.md)
+                .stroke(Theme.Color.borderSubtle, lineWidth: 0.5)
+        )
+        .contextMenu {
+            Button {
+                editingGroupId = group.id
+            } label: {
+                Label("편집", systemImage: "pencil")
+            }
+            Divider()
+            Button(role: .destructive) {
+                confirmDeleteGroupId = group.id
+            } label: {
+                Label("삭제", systemImage: "trash")
+            }
+        }
         .accessibilityElement(children: .contain)
     }
 
