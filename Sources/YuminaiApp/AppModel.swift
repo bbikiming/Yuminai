@@ -3968,8 +3968,22 @@ public final class AppModel {
     ///
     /// 결과는 `commands.blocks` 마지막 entry에서 추출 — 동일 command를 동시에 실행하면
     /// 두 번째가 첫 번째 결과를 가로채지 않도록 실행 전 카운트를 기준점으로 둔다.
-    public func runCommandFromTelegram(_ command: String) async {
-        guard let workspace = currentWorkspace else { return }
+    ///
+    /// **ADR-114 P0-1** — `chatId`가 있으면 해당 chat에 bind된 워크스페이스에서 실행한다.
+    /// `telegramBotChatBindings`에서 `chatId` 매칭 binding → `activeWorkspaceId`로 조회.
+    /// binding 없거나 chatId nil → `currentWorkspace` fallback (legacy 동작 유지).
+    public func runCommandFromTelegram(_ command: String, chatId: Int64? = nil) async {
+        // ADR-114 P0-1 — chat-specific workspace lookup
+        let workspace: Workspace?
+        if let chatId,
+           let binding = preferences.telegramBotChatBindings.first(where: { $0.chatId == chatId }),
+           let wsId = binding.activeWorkspaceId,
+           let bound = workspaces.first(where: { $0.id == wsId }) {
+            workspace = bound
+        } else {
+            workspace = currentWorkspace  // fallback: legacy 동작
+        }
+        guard let workspace else { return }
         let workingDir = URL(fileURLWithPath: workspace.directoryPath)
         let baselineCount = commands.blocks.count
         await commands.run(command, in: workingDir)

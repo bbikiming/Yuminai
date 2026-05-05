@@ -308,7 +308,9 @@ public final class YuminaiCommandRouter: TelegramCommandRouter, @unchecked Senda
         }
         // ADR-098 P1-1 — Telegram 진입은 runCommandFromTelegram을 사용 →
         // 완료 후 build log artifact가 store + deep link 경로로 forwarding됨.
-        await MainActor.run { Task { await model.runCommandFromTelegram(cmd) } }
+        // ADR-114 P0-1 — lastChatId 전달 → chat-specific workspace에서 실행.
+        let chatId = lastChatId != 0 ? lastChatId : nil
+        await MainActor.run { Task { await model.runCommandFromTelegram(cmd, chatId: chatId) } }
         return "▶ 실행 중: `\(cmd)`\n결과는 완료 시 자동 전송됩니다."
     }
 

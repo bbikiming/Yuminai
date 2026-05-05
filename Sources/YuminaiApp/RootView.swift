@@ -803,6 +803,13 @@ struct RootView: View {
             onOpenTelegramHub: {
                 appModel.presentExclusiveSheet { $0.showTelegramHubSheet = true }
             },
+            // ADR-114 P0-2 — 사이드바 라이브러리/번들 직접 진입
+            onOpenLibrary: {
+                appModel.presentExclusiveSheet { $0.showLibrarySheet = true }
+            },
+            onOpenBundles: {
+                appModel.presentExclusiveSheet { $0.showBundleCatalogSheet = true }
+            },
             // ADR-093 Phase 2 — BotStatusDock 데이터
             telegramQueueDepth: appModel.telegramQueueDepth,
             telegramBotCount: appModel.preferences.telegramBots.count,

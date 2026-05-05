@@ -81,6 +81,10 @@ public struct SidebarView: View {
     public let onOpenTelegramErrorLog: () -> Void
     /// **ADR-092 Phase 1** — Telegram Hub sheet 열기.
     public let onOpenTelegramHub: () -> Void
+    /// **ADR-114 P0-2** — 자료 라이브러리 sheet 열기 (사이드바 직접 진입).
+    public let onOpenLibrary: () -> Void
+    /// **ADR-114 P0-2** — 스택 번들 카탈로그 sheet 열기 (사이드바 직접 진입).
+    public let onOpenBundles: () -> Void
     /// **ADR-093 Phase 2** — Offline queue depth (BotStatusDockView 표시용).
     public let telegramQueueDepth: Int
     /// **ADR-093 Phase 2** — 봇 목록 (BotStatusDockView 다중 봇 배지).
@@ -149,6 +153,8 @@ public struct SidebarView: View {
         telegramHealth: TelegramHealthSnapshot = TelegramHealthSnapshot(),
         onOpenTelegramErrorLog: @escaping () -> Void = {},
         onOpenTelegramHub: @escaping () -> Void = {},
+        onOpenLibrary: @escaping () -> Void = {},
+        onOpenBundles: @escaping () -> Void = {},
         telegramQueueDepth: Int = 0,
         telegramBotCount: Int = 0,
         telegramFirstBotUsername: String? = nil,
@@ -204,6 +210,8 @@ public struct SidebarView: View {
         self.telegramHealth = telegramHealth
         self.onOpenTelegramErrorLog = onOpenTelegramErrorLog
         self.onOpenTelegramHub = onOpenTelegramHub
+        self.onOpenLibrary = onOpenLibrary
+        self.onOpenBundles = onOpenBundles
         self.telegramQueueDepth = telegramQueueDepth
         self.telegramBotCount = telegramBotCount
         self.telegramFirstBotUsername = telegramFirstBotUsername
@@ -523,6 +531,17 @@ public struct SidebarView: View {
                 label: "Telegram Hub",
                 icon: "paperplane.circle.fill",
                 action: onOpenTelegramHub
+            )
+            // ADR-114 P0-2 — 라이브러리 + 번들 직접 진입 (UserProfileSheet 5단 깊이 제거)
+            SidebarMenuRow(
+                label: "📚 라이브러리",
+                icon: "books.vertical.circle.fill",
+                action: onOpenLibrary
+            )
+            SidebarMenuRow(
+                label: "🎁 스택 번들",
+                icon: "shippingbox.circle.fill",
+                action: onOpenBundles
             )
             SidebarMenuRow(
                 label: "사용자 가이드",
