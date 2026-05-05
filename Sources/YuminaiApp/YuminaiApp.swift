@@ -171,6 +171,11 @@ struct YuminaiAppMain: App {
                 Button("단축키 도움말…") {
                     appModel.presentExclusiveSheet { $0.showShortcutHelp = true }
                 }
+                Divider()
+                // ADR-104 — 초기 설정 가이드 재진입
+                Button("초기 설정 가이드…") {
+                    appModel.openSetupWizard()
+                }
             }
         }
 

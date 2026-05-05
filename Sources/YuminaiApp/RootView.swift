@@ -273,6 +273,11 @@ struct RootView: View {
         .sheet(isPresented: $bindable.showShortcutHelp) {
             ShortcutHelpSheet(onClose: { appModel.showShortcutHelp = false })
         }
+        // ADR-104 — 첫 실행 setup wizard (onboarding 완료 후, setup 미완료 시)
+        .sheet(isPresented: $bindable.showSetupWizard) {
+            SetupWizardSheet()
+                .environment(appModel)
+        }
         .sheet(isPresented: $bindable.showFileSearchSheet) {
             FileSearchSheet(
                 allFiles: appModel.workspaceFileTree,

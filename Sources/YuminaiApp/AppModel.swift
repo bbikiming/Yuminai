@@ -320,6 +320,12 @@ public final class AppModel {
     public var showTelegramUsageDashboard: Bool = false
     /// **ADR-062 Phase 3** — Chat binding audit log viewer sheet
     public var showChatBindingAuditLog: Bool = false
+    /// **ADR-104** — 첫 실행 setup wizard sheet 표시 여부.
+    public var showSetupWizard: Bool = false
+    /// **ADR-104** — 각 도구의 설치 상태 캐시.
+    public var setupToolStatus: [SetupTool: SetupChecker.InstallStatus] = [:]
+    /// **ADR-104** — 설치 상태 검사 actor.
+    public let setupChecker: SetupChecker = SetupChecker()
     /// ADR-052 — Walk-through rehearsal sheet 대상 task id (nil이면 닫힘)
     public var rehearsalTaskId: UUID?
     public var selectedFilePaths: Set<String> {
@@ -598,6 +604,11 @@ public final class AppModel {
         await loadPersistedDailyCosts()
         // ADR-062 Phase 6 — Telegram usage snapshot 로드
         await loadTelegramUsage()
+        // ADR-104 — onboarding 완료 + setup 미완료 시 setup wizard 자동 표시
+        if preferences.hasCompletedOnboarding && !preferences.hasCompletedSetup {
+            await refreshSetupStatus()
+            showSetupWizard = true
+        }
     }
 
     // MARK: - Obsidian Vault
@@ -4172,6 +4183,30 @@ public final class AppModel {
 
     // MARK: - Composer prefix queue (ADR-042 R1.H7)
 
+    // MARK: - ADR-104 — Setup Wizard
+
+    /// 모든 도구의 설치 상태를 재검사하고 `setupToolStatus`를 갱신.
+    public func refreshSetupStatus() async {
+        let result = await setupChecker.checkAll()
+        setupToolStatus = result
+    }
+
+    /// Setup wizard를 명시적으로 열기 (Help 메뉴 등에서 사용).
+    public func openSetupWizard() {
+        Task { await refreshSetupStatus() }
+        presentExclusiveSheet { $0.showSetupWizard = true }
+    }
+
+    /// Setup wizard 닫기.
+    /// - Parameter markCompleted: true이면 `hasCompletedSetup = true`로 저장. false이면 다음 실행 시 다시 표시.
+    public func dismissSetupWizard(markCompleted: Bool) {
+        showSetupWizard = false
+        if markCompleted {
+            preferences.hasCompletedSetup = true
+            Task { await savePreferences() }
+        }
+    }
+
     // MARK: - Sheet mutual exclusion (ADR-042 R5.A)
 
     /// 모든 sheet/alert state를 한 번에 닫음 — 새 sheet 열기 전에 호출.
@@ -4222,6 +4257,8 @@ public final class AppModel {
         showTelegramHubSheet = false
         // ADR-089
         showNewChatSessionSheet = false
+        // ADR-104
+        showSetupWizard = false
     }
 
     /// 새 sheet/alert을 열기 전에 다른 sheet 모두 닫고 setter 실행.

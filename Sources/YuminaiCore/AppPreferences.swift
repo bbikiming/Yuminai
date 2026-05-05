@@ -150,6 +150,9 @@ public struct AppPreferences: Sendable, Codable, Hashable {
     public var hitlTimeoutSeconds: Int
     /// **ADR-095 Phase 4** — Diff 미리보기 라인 한도. 기본 30줄.
     public var diffPreviewLineLimit: Int
+    /// **ADR-104** — 첫 실행 setup wizard 완료 여부.
+    /// false이면 onboarding 완료 후 SetupWizardSheet 자동 표시.
+    public var hasCompletedSetup: Bool
 
     public init(
         claudeBinaryPath: String = AppPreferences.detectClaudeBinaryPath(),
@@ -210,7 +213,8 @@ public struct AppPreferences: Sendable, Codable, Hashable {
         quietHoursStart: Int? = nil,  // ADR-095 Phase 4
         quietHoursEnd: Int? = nil,  // ADR-095 Phase 4
         hitlTimeoutSeconds: Int = 60,  // ADR-095 Phase 4
-        diffPreviewLineLimit: Int = 30  // ADR-095 Phase 4
+        diffPreviewLineLimit: Int = 30,  // ADR-095 Phase 4
+        hasCompletedSetup: Bool = false  // ADR-104 — 신규 사용자는 setup wizard 표시
     ) {
         self.claudeBinaryPath = claudeBinaryPath
         self.codexBinaryPath = codexBinaryPath
@@ -271,6 +275,7 @@ public struct AppPreferences: Sendable, Codable, Hashable {
         self.quietHoursEnd = quietHoursEnd
         self.hitlTimeoutSeconds = hitlTimeoutSeconds
         self.diffPreviewLineLimit = diffPreviewLineLimit
+        self.hasCompletedSetup = hasCompletedSetup
     }
 
     // ADR-046 — 신규 필드 backward-compat: 기존 JSON에 없으면 default 적용
@@ -348,6 +353,8 @@ public struct AppPreferences: Sendable, Codable, Hashable {
         self.quietHoursEnd = try c.decodeIfPresent(Int.self, forKey: .quietHoursEnd)
         self.hitlTimeoutSeconds = try c.decodeIfPresent(Int.self, forKey: .hitlTimeoutSeconds) ?? 60
         self.diffPreviewLineLimit = try c.decodeIfPresent(Int.self, forKey: .diffPreviewLineLimit) ?? 30
+        // ADR-104 — 기존 사용자는 true (이미 도구 설치된 가능성 높음). 신규만 false → wizard.
+        self.hasCompletedSetup = try c.decodeIfPresent(Bool.self, forKey: .hasCompletedSetup) ?? true
     }
 
     /// `claude` CLI의 가능성 높은 위치들을 순서대로 시도해 첫 번째 존재하는 경로 반환.
