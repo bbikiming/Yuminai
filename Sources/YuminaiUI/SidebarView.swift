@@ -533,13 +533,14 @@ public struct SidebarView: View {
                 action: onOpenTelegramHub
             )
             // ADR-114 P0-2 — 라이브러리 + 번들 직접 진입 (UserProfileSheet 5단 깊이 제거)
+            // ADR-116 — 컬러 이모지 제거, SF Symbol 단색으로 통일
             SidebarMenuRow(
-                label: "📚 라이브러리",
+                label: "라이브러리",
                 icon: "books.vertical.circle.fill",
                 action: onOpenLibrary
             )
             SidebarMenuRow(
-                label: "🎁 스택 번들",
+                label: "스택 번들",
                 icon: "shippingbox.circle.fill",
                 action: onOpenBundles
             )

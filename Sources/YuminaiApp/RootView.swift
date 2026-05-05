@@ -484,6 +484,11 @@ struct RootView: View {
             BundleCatalogSheet()
                 .environment(appModel)
         }
+        // ADR-116 — GitHub 검색 sheet
+        .sheet(isPresented: $bindable.showGitHubSearchSheet) {
+            GitHubSearchSheet()
+                .environment(appModel)
+        }
         // ADR-097 — Telegram Artifact Viewer (diff / log deep link)
         .sheet(isPresented: $bindable.showTelegramArtifactSheet) {
             if let id = appModel.artifactSheetId {

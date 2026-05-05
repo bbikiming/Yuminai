@@ -529,26 +529,55 @@ struct LibrarySheet: View {
 
 // MARK: - 텍스트로 추가 Sheet
 
+/// **ADR-116** — 직접 입력 / 파일 첨부 두 가지 모드 지원.
 struct AddLibraryTextSheet: View {
     @Environment(AppModel.self) private var appModel
     @Environment(\.dismiss) private var dismiss
 
+    // MARK: - 입력 모드
+
+    enum InputMode: String, CaseIterable, Identifiable {
+        case text = "직접 입력"
+        case file = "파일 첨부"
+        var id: String { rawValue }
+    }
+
+    @State private var inputMode: InputMode = .text
+
+    // MARK: - 공통 상태
+
     @State private var displayName: String = ""
     @State private var category: CommunityResource.Category = .claudeMd
-    @State private var content: String = ""
     @State private var tags: String = ""
     @State private var isSaving: Bool = false
 
+    // MARK: - 텍스트 모드 상태
+
+    @State private var content: String = ""
+
+    // MARK: - 파일 모드 상태
+
+    @State private var selectedFileURL: URL? = nil
+    @State private var filePreview: String = ""
+    @State private var fileSize: Int = 0
+
+    // MARK: - 유효성
+
     private var canSave: Bool {
-        !displayName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty &&
-        !content.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        let nameOK = !displayName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        switch inputMode {
+        case .text:
+            return nameOK && !content.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        case .file:
+            return nameOK && selectedFileURL != nil
+        }
     }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             // 헤더
             HStack {
-                Text("텍스트로 라이브러리에 추가")
+                Text("라이브러리에 추가")
                     .font(.system(size: 16, weight: .semibold))
                     .foregroundStyle(Theme.Color.text)
                 Spacer()
@@ -560,14 +589,28 @@ struct AddLibraryTextSheet: View {
 
             Divider()
 
+            // 모드 선택
+            Picker("입력 방식", selection: $inputMode) {
+                ForEach(InputMode.allCases) { m in
+                    Text(m.rawValue).tag(m)
+                }
+            }
+            .pickerStyle(.segmented)
+            .padding(.horizontal, Theme.Spacing.lg)
+            .padding(.vertical, Theme.Spacing.md)
+
+            Divider()
+
             ScrollView {
                 VStack(alignment: .leading, spacing: Theme.Spacing.lg) {
+                    // 이름
                     PolishedInputField(
                         label: "이름 *",
-                        placeholder: "자료 이름",
+                        placeholder: inputMode == .file ? "파일명에서 자동 추출됩니다" : "자료 이름",
                         text: $displayName
                     )
 
+                    // 카테고리
                     VStack(alignment: .leading, spacing: 6) {
                         Text("카테고리")
                             .font(Theme.Typography.small.weight(.medium))
@@ -580,19 +623,15 @@ struct AddLibraryTextSheet: View {
                         .pickerStyle(.menu)
                     }
 
-                    VStack(alignment: .leading, spacing: 6) {
-                        Text("내용 * (Markdown 지원)")
-                            .font(Theme.Typography.small.weight(.medium))
-                            .foregroundStyle(Theme.Color.text)
-                        TextEditor(text: $content)
-                            .font(Theme.Typography.mono)
-                            .frame(minHeight: 200, maxHeight: 400)
-                            .scrollContentBackground(.hidden)
-                            .padding(Theme.Spacing.sm)
-                            .background(Theme.Color.surfaceHi)
-                            .clipShape(RoundedRectangle(cornerRadius: Theme.Radius.md))
+                    // 모드별 콘텐츠
+                    switch inputMode {
+                    case .text:
+                        textModeContent
+                    case .file:
+                        fileModeContent
                     }
 
+                    // 태그
                     PolishedInputField(
                         label: "태그",
                         placeholder: "swift, tdd, security (쉼표로 구분)",
@@ -607,32 +646,176 @@ struct AddLibraryTextSheet: View {
 
             HStack {
                 Spacer()
-                Button("추가") {
-                    Task {
-                        isSaving = true
-                        let tagList = tags.split(separator: ",").map { $0.trimmingCharacters(in: .whitespaces) }.filter { !$0.isEmpty }
-                        _ = await appModel.addToLibraryFromText(
-                            content.trimmingCharacters(in: .whitespacesAndNewlines),
-                            displayName: displayName.trimmingCharacters(in: .whitespacesAndNewlines),
-                            category: category,
-                            tags: tagList
-                        )
-                        isSaving = false
-                        dismiss()
-                    }
+                Button(isSaving ? "추가 중…" : "추가") {
+                    Task { await save() }
                 }
                 .font(Theme.Typography.body.weight(.semibold))
                 .foregroundStyle(.white)
                 .padding(.horizontal, Theme.Spacing.lg)
                 .padding(.vertical, Theme.Spacing.sm)
-                .background(canSave ? Theme.Color.accent : Theme.Color.surfaceHi)
+                .background(canSave && !isSaving ? Theme.Color.accent : Theme.Color.surfaceHi)
                 .clipShape(RoundedRectangle(cornerRadius: Theme.Radius.md))
                 .disabled(!canSave || isSaving)
             }
             .padding(Theme.Spacing.lg)
         }
-        .frame(width: 560, height: 560)
+        .frame(width: 580, height: 620)
         .background(Theme.Color.bg)
+    }
+
+    // MARK: - 직접 입력 모드
+
+    private var textModeContent: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Text("내용 * (Markdown 지원)")
+                .font(Theme.Typography.small.weight(.medium))
+                .foregroundStyle(Theme.Color.text)
+            TextEditor(text: $content)
+                .font(Theme.Typography.mono)
+                .frame(minHeight: 200, maxHeight: 360)
+                .scrollContentBackground(.hidden)
+                .padding(Theme.Spacing.sm)
+                .background(Theme.Color.surfaceHi)
+                .clipShape(RoundedRectangle(cornerRadius: Theme.Radius.md))
+        }
+    }
+
+    // MARK: - 파일 첨부 모드
+
+    private var fileModeContent: some View {
+        VStack(alignment: .leading, spacing: Theme.Spacing.sm) {
+            // 파일 선택 버튼
+            HStack(spacing: Theme.Spacing.sm) {
+                Button {
+                    selectFile()
+                } label: {
+                    HStack(spacing: 6) {
+                        Image(systemName: "folder.badge.plus")
+                            .font(.system(size: 13, weight: .semibold))
+                        Text(selectedFileURL == nil ? "파일 선택" : "다른 파일 선택")
+                            .font(Theme.Typography.body.weight(.medium))
+                    }
+                    .foregroundStyle(Theme.Color.accent)
+                    .padding(.horizontal, Theme.Spacing.md)
+                    .padding(.vertical, Theme.Spacing.sm)
+                    .background(Theme.Color.accentMuted.opacity(0.15))
+                    .clipShape(RoundedRectangle(cornerRadius: Theme.Radius.md))
+                }
+                .buttonStyle(.plain)
+
+                Text(".md, .txt, .markdown 파일 지원")
+                    .font(Theme.Typography.micro)
+                    .foregroundStyle(Theme.Color.textTertiary)
+            }
+
+            // 선택된 파일 정보 + 미리보기
+            if let url = selectedFileURL {
+                VStack(alignment: .leading, spacing: Theme.Spacing.xs) {
+                    HStack(spacing: Theme.Spacing.xs) {
+                        Image(systemName: "doc.text.fill")
+                            .font(.system(size: 12, weight: .semibold))
+                            .foregroundStyle(Theme.Color.accent)
+                        Text(url.lastPathComponent)
+                            .font(Theme.Typography.small.weight(.semibold))
+                            .foregroundStyle(Theme.Color.text)
+                        Spacer()
+                        Text(fileSizeDisplay)
+                            .font(Theme.Typography.micro)
+                            .foregroundStyle(Theme.Color.textTertiary)
+                    }
+
+                    if !filePreview.isEmpty {
+                        Text("미리보기 (첫 5줄)")
+                            .font(Theme.Typography.micro)
+                            .foregroundStyle(Theme.Color.textTertiary)
+                            .padding(.top, 2)
+                        Text(filePreview)
+                            .font(Theme.Typography.mono)
+                            .foregroundStyle(Theme.Color.textSecondary)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .padding(Theme.Spacing.sm)
+                            .background(Theme.Color.surfaceHi)
+                            .clipShape(RoundedRectangle(cornerRadius: Theme.Radius.sm))
+                            .lineLimit(5)
+                    }
+                }
+                .padding(Theme.Spacing.sm)
+                .background(Theme.Color.accent.opacity(0.05))
+                .clipShape(RoundedRectangle(cornerRadius: Theme.Radius.md))
+                .overlay(
+                    RoundedRectangle(cornerRadius: Theme.Radius.md)
+                        .stroke(Theme.Color.accent.opacity(0.2), lineWidth: 1)
+                )
+            }
+        }
+    }
+
+    private var fileSizeDisplay: String {
+        if fileSize < 1024 { return "\(fileSize) B" }
+        if fileSize < 1024 * 1024 { return String(format: "%.1f KB", Double(fileSize) / 1024.0) }
+        return String(format: "%.1f MB", Double(fileSize) / (1024.0 * 1024.0))
+    }
+
+    // MARK: - 파일 선택
+
+    private func selectFile() {
+        let panel = NSOpenPanel()
+        panel.canChooseFiles = true
+        panel.canChooseDirectories = false
+        panel.allowsMultipleSelection = false
+        panel.allowedContentTypes = [.plainText]
+        panel.message = "라이브러리에 추가할 텍스트 파일을 선택하세요 (.md, .txt, .markdown)"
+        panel.prompt = "선택"
+
+        guard panel.runModal() == .OK, let url = panel.url else { return }
+
+        selectedFileURL = url
+
+        // 이름 자동 추출 (사용자가 아직 입력하지 않은 경우)
+        if displayName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            displayName = url.deletingPathExtension().lastPathComponent
+        }
+
+        // 파일 크기 + 미리보기 (첫 5줄)
+        if let attrs = try? FileManager.default.attributesOfItem(atPath: url.path),
+           let size = attrs[.size] as? Int {
+            fileSize = size
+        }
+
+        if let text = try? String(contentsOf: url, encoding: .utf8) {
+            let lines = text.components(separatedBy: .newlines).prefix(5)
+            filePreview = lines.joined(separator: "\n")
+        } else {
+            filePreview = ""
+        }
+    }
+
+    // MARK: - 저장
+
+    private func save() async {
+        isSaving = true
+        defer { isSaving = false }
+
+        let tagList = tags
+            .split(separator: ",")
+            .map { $0.trimmingCharacters(in: .whitespaces) }
+            .filter { !$0.isEmpty }
+        let name = displayName.trimmingCharacters(in: .whitespacesAndNewlines)
+
+        switch inputMode {
+        case .text:
+            _ = await appModel.addToLibraryFromText(
+                content.trimmingCharacters(in: .whitespacesAndNewlines),
+                displayName: name,
+                category: category,
+                tags: tagList
+            )
+        case .file:
+            guard let url = selectedFileURL else { return }
+            _ = await appModel.addToLibraryFromURL(url, displayName: name, category: category)
+        }
+
+        dismiss()
     }
 }
 

@@ -155,6 +155,20 @@ struct CommunityResourcesPanel: View {
                 }
                 .buttonStyle(.plain)
 
+                // ADR-116 — GitHub 검색 버튼
+                Button {
+                    appModel.showGitHubSearchSheet = true
+                } label: {
+                    HStack(spacing: 4) {
+                        Image(systemName: "magnifyingglass.circle.fill")
+                            .font(.system(size: 11, weight: .semibold))
+                        Text("GitHub 검색")
+                            .font(Theme.Typography.small.weight(.medium))
+                    }
+                    .foregroundStyle(Theme.Color.accent)
+                }
+                .buttonStyle(.plain)
+
                 // 카탈로그 전체 보기
                 Button {
                     appModel.showCatalogSheet = true

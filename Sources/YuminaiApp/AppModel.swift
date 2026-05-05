@@ -5028,6 +5028,9 @@ public final class AppModel {
     /// **ADR-113** — 스택 번들 카탈로그 sheet 표시 여부.
     public var showBundleCatalogSheet: Bool = false
 
+    /// **ADR-116** — GitHub 검색 sheet 표시 여부.
+    public var showGitHubSearchSheet: Bool = false
+
     /// ADR-111 — 라이브러리 picker popover 표시 여부 (Composer 안).
     public var showLibraryPickerPopover: Bool = false
 

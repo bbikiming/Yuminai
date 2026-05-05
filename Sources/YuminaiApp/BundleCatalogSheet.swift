@@ -163,9 +163,14 @@ struct BundleCatalogSheet: View {
                     .foregroundStyle(isSelected ? Theme.Color.text : Theme.Color.textSecondary)
                 Spacer()
                 if count > 0 {
+                    // ADR-116 — Capsule 배지로 일관
                     Text("\(count)")
-                        .font(Theme.Typography.micro)
+                        .font(Theme.Typography.micro.weight(.medium))
                         .foregroundStyle(isSelected ? tint : Theme.Color.textTertiary)
+                        .padding(.horizontal, 6)
+                        .padding(.vertical, 2)
+                        .background(isSelected ? tint.opacity(0.15) : Theme.Color.surfaceHi)
+                        .clipShape(Capsule())
                 }
             }
             .padding(.horizontal, Theme.Spacing.md)
@@ -271,7 +276,7 @@ struct BundleCatalogSheet: View {
         }
     }
 
-    // MARK: - 카테고리 헤더
+    // MARK: - 카테고리 헤더 (ADR-116 — 라운딩 + 배지 일관성)
 
     private func categoryHeader(_ category: StackBundle.BundleCategory, count: Int) -> some View {
         HStack(spacing: Theme.Spacing.sm) {
@@ -281,14 +286,24 @@ struct BundleCatalogSheet: View {
             Text(category.displayName)
                 .font(.system(size: 13, weight: .semibold))
                 .foregroundStyle(Theme.Color.text)
-            Text("(\(count))")
-                .font(Theme.Typography.small)
-                .foregroundStyle(Theme.Color.textTertiary)
             Spacer()
+            // 카운트 Capsule 배지 — 일관 적용
+            Text("\(count)")
+                .font(Theme.Typography.micro.weight(.semibold))
+                .foregroundStyle(categoryColor(category))
+                .padding(.horizontal, 8)
+                .padding(.vertical, 3)
+                .background(categoryColor(category).opacity(0.12))
+                .clipShape(Capsule())
         }
-        .padding(.vertical, Theme.Spacing.xs)
-        .padding(.horizontal, 2)
+        .padding(.vertical, Theme.Spacing.sm)
+        .padding(.horizontal, Theme.Spacing.md)
         .background(Theme.Color.bg)
+        .clipShape(RoundedRectangle(cornerRadius: Theme.Radius.md))
+        .overlay(
+            RoundedRectangle(cornerRadius: Theme.Radius.md)
+                .stroke(Theme.Color.borderSubtle, lineWidth: 0.5)
+        )
     }
 
     // MARK: - 번들 카드
