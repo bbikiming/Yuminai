@@ -4596,6 +4596,42 @@ public final class AppModel {
         try? await keychainStore.get(KeychainKey.githubPersonalAccessToken)
     }
 
+    // MARK: - ADR-122 Phase 3 — 검색 히스토리 / 즐겨찾기
+
+    /// 검색 히스토리에 항목 추가 (ring buffer 50개, 중복 제거).
+    public func addSearchHistory(query: String, mode: GitHubSearchHistoryEntry.Mode, resultCount: Int) {
+        let entry = GitHubSearchHistoryEntry(query: query, mode: mode, resultCount: resultCount)
+        preferences = {
+            var p = preferences
+            p.githubSearchHistory = GitHubSearchHistoryBuffer.append(entry, to: p.githubSearchHistory)
+            return p
+        }()
+        Task { await savePreferences() }
+    }
+
+    /// 검색 히스토리 전체 초기화.
+    public func clearSearchHistory() {
+        preferences = { var p = preferences; p.githubSearchHistory = []; return p }()
+        Task { await savePreferences() }
+    }
+
+    /// 현재 검색어를 즐겨찾기에 저장.
+    public func saveSearchAsFavorite(query: String, mode: GitHubSearchHistoryEntry.Mode, label: String) {
+        let fav = GitHubSearchFavorite(query: query, mode: mode, label: label)
+        preferences = { var p = preferences; p.githubSearchFavorites.append(fav); return p }()
+        Task { await savePreferences() }
+    }
+
+    /// 즐겨찾기 항목 삭제.
+    public func removeSearchFavorite(_ favorite: GitHubSearchFavorite) {
+        preferences = {
+            var p = preferences
+            p.githubSearchFavorites = p.githubSearchFavorites.filter { $0.id != favorite.id }
+            return p
+        }()
+        Task { await savePreferences() }
+    }
+
     public func savePreferences() async {
         do {
             try await preferencesStore.save(preferences)

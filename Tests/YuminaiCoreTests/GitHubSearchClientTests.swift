@@ -106,8 +106,9 @@ struct GitHubSearchClientTests {
             sampleRepoItem(id: 2, fullName: "example/repo", stars: 500, language: nil, defaultBranch: "trunk")
         ])
 
-        let client = GitHubSearchClient(session: session)
-        let results = try await client.searchRepositories(query: "claude.md")
+        let client = GitHubSearchClient(session: session, retryPolicy: .fast, cache: nil)
+        let page = try await client.searchRepositories(query: "claude.md")
+        let results = page.items
 
         #expect(results.count == 2)
         #expect(results[0].fullName == "anthropics/anthropic-cookbook")
@@ -121,10 +122,10 @@ struct GitHubSearchClientTests {
         let session = MockGitHubSession()
         session.responseData = repoSearchJSON(items: [])
 
-        let client = GitHubSearchClient(session: session)
-        let results = try await client.searchRepositories(query: "nonexistent-xyzzy-99999")
+        let client = GitHubSearchClient(session: session, retryPolicy: .fast, cache: nil)
+        let page = try await client.searchRepositories(query: "nonexistent-xyzzy-99999")
 
-        #expect(results.isEmpty)
+        #expect(page.items.isEmpty)
     }
 
     @Test("searchRepositories — rawURL(for:) 헬퍼 동작 확인")
@@ -134,10 +135,10 @@ struct GitHubSearchClientTests {
             sampleRepoItem(id: 1, fullName: "owner/myrepo", defaultBranch: "main")
         ])
 
-        let client = GitHubSearchClient(session: session)
-        let results = try await client.searchRepositories(query: "test")
+        let client = GitHubSearchClient(session: session, retryPolicy: .fast, cache: nil)
+        let page = try await client.searchRepositories(query: "test")
 
-        let rawURL = results[0].rawURL(for: "CLAUDE.md")
+        let rawURL = page.items[0].rawURL(for: "CLAUDE.md")
         #expect(rawURL?.absoluteString == "https://raw.githubusercontent.com/owner/myrepo/main/CLAUDE.md")
     }
 
@@ -156,8 +157,9 @@ struct GitHubSearchClientTests {
             )
         ])
 
-        let client = GitHubSearchClient(session: session)
-        let results = try await client.searchCode(query: "filename:CLAUDE.md swift")
+        let client = GitHubSearchClient(session: session, retryPolicy: .fast, cache: nil)
+        let page = try await client.searchCode(query: "filename:CLAUDE.md swift")
+        let results = page.items
 
         #expect(results.count == 1)
         #expect(results[0].path == "CLAUDE.md")
@@ -173,17 +175,16 @@ struct GitHubSearchClientTests {
         let session = MockGitHubSession()
         session.responseStatus = 429
         session.responseData = Data("{\"message\":\"rate limit exceeded\"}".utf8)
-        // reset at 한 시간 후
         let resetTimestamp = Int(Date().timeIntervalSince1970) + 3600
         session.responseHeaders["X-RateLimit-Reset"] = "\(resetTimestamp)"
 
-        let client = GitHubSearchClient(session: session)
+        let client = GitHubSearchClient(session: session, retryPolicy: .fast, cache: nil)
 
         do {
             _ = try await client.searchRepositories(query: "test")
             Issue.record("Expected rateLimited error")
         } catch let error as GitHubSearchClient.SearchError {
-            if case .rateLimited(let resetAt) = error {
+            if case .rateLimited(_, let resetAt) = error {
                 #expect(resetAt != nil)
             } else {
                 Issue.record("Expected rateLimited, got \(error)")
@@ -196,8 +197,9 @@ struct GitHubSearchClientTests {
         let session = MockGitHubSession()
         session.responseStatus = 403
         session.responseData = Data("{\"message\":\"API rate limit exceeded\"}".utf8)
+        session.responseHeaders["X-RateLimit-Remaining"] = "0"
 
-        let client = GitHubSearchClient(session: session)
+        let client = GitHubSearchClient(session: session, retryPolicy: .fast, cache: nil)
 
         do {
             _ = try await client.searchRepositories(query: "test")
@@ -218,7 +220,7 @@ struct GitHubSearchClientTests {
         let session = MockGitHubSession()
         session.shouldThrow = URLError(.notConnectedToInternet)
 
-        let client = GitHubSearchClient(session: session)
+        let client = GitHubSearchClient(session: session, retryPolicy: .fast, cache: nil)
 
         do {
             _ = try await client.searchRepositories(query: "test")
@@ -239,16 +241,17 @@ struct GitHubSearchClientTests {
         let session = MockGitHubSession()
         session.responseData = Data("not json at all".utf8)
 
-        let client = GitHubSearchClient(session: session)
+        let client = GitHubSearchClient(session: session, retryPolicy: .fast, cache: nil)
 
         do {
             _ = try await client.searchRepositories(query: "test")
-            Issue.record("Expected invalidResponse error")
+            Issue.record("Expected decodingError")
         } catch let error as GitHubSearchClient.SearchError {
-            if case .invalidResponse = error {
-                // 정상
-            } else {
-                Issue.record("Expected invalidResponse, got \(error)")
+            switch error {
+            case .decodingError, .invalidResponse:
+                break  // 정상
+            default:
+                Issue.record("Expected decodingError or invalidResponse, got \(error)")
             }
         }
     }
@@ -262,10 +265,10 @@ struct GitHubSearchClientTests {
             sampleRepoItem(id: 1, stars: 999)
         ])
 
-        let client = GitHubSearchClient(session: session)
-        let results = try await client.searchRepositories(query: "test")
+        let client = GitHubSearchClient(session: session, retryPolicy: .fast, cache: nil)
+        let page = try await client.searchRepositories(query: "test")
 
-        #expect(results[0].starsDisplay == "999")
+        #expect(page.items[0].starsDisplay == "999")
     }
 
     @Test("starsDisplay — 10000 이상은 Xk 형식")
@@ -275,10 +278,10 @@ struct GitHubSearchClientTests {
             sampleRepoItem(id: 1, stars: 12345)
         ])
 
-        let client = GitHubSearchClient(session: session)
-        let results = try await client.searchRepositories(query: "test")
+        let client = GitHubSearchClient(session: session, retryPolicy: .fast, cache: nil)
+        let page = try await client.searchRepositories(query: "test")
 
-        #expect(results[0].starsDisplay == "12k")
+        #expect(page.items[0].starsDisplay == "12k")
     }
 
     @Test("starsDisplay — 1000~9999는 X.Xk 형식")
@@ -288,10 +291,10 @@ struct GitHubSearchClientTests {
             sampleRepoItem(id: 1, stars: 1500)
         ])
 
-        let client = GitHubSearchClient(session: session)
-        let results = try await client.searchRepositories(query: "test")
+        let client = GitHubSearchClient(session: session, retryPolicy: .fast, cache: nil)
+        let page = try await client.searchRepositories(query: "test")
 
-        #expect(results[0].starsDisplay == "1.5k")
+        #expect(page.items[0].starsDisplay == "1.5k")
     }
 
     // MARK: - HTTP 오류
@@ -302,7 +305,7 @@ struct GitHubSearchClientTests {
         session.responseStatus = 401
         session.responseData = Data("{\"message\":\"Bad credentials\"}".utf8)
 
-        let client = GitHubSearchClient(session: session)
+        let client = GitHubSearchClient(session: session, retryPolicy: .fast, cache: nil)
 
         do {
             _ = try await client.searchRepositories(query: "test")
@@ -322,7 +325,7 @@ struct GitHubSearchClientTests {
         session.responseStatus = 401
         session.responseData = Data("{\"message\":\"Requires authentication\"}".utf8)
 
-        let client = GitHubSearchClient(session: session)
+        let client = GitHubSearchClient(session: session, retryPolicy: .fast, cache: nil)
 
         do {
             _ = try await client.searchCode(query: "filename:CLAUDE.md")
@@ -345,7 +348,6 @@ struct GitHubSearchClientTests {
 
     @Test("토큰 주입 시 Authorization 헤더 포함 검증 (ADR-119)")
     func tokenInjectedInRequest() async throws {
-        // MockGitHubSession이 받은 request를 기록하도록 확장
         final class CapturingSession: GitHubSearchClient.URLSessionProtocol, @unchecked Sendable {
             var capturedRequest: URLRequest?
             func data(for request: URLRequest) async throws -> (Data, URLResponse) {
@@ -362,11 +364,58 @@ struct GitHubSearchClientTests {
         }
 
         let capturing = CapturingSession()
-        let client = GitHubSearchClient(session: capturing, token: "ghp_testtoken123")
+        let client = GitHubSearchClient(session: capturing, token: "ghp_testtoken123", retryPolicy: .fast, cache: nil)
         _ = try await client.searchRepositories(query: "test")
 
         let authHeader = capturing.capturedRequest?.value(forHTTPHeaderField: "Authorization")
         #expect(authHeader == "Bearer ghp_testtoken123")
+    }
+
+    // MARK: - ADR-122 Pagination
+
+    @Test("searchRepositories — hasMore 계산 (ADR-122)")
+    func paginationHasMore() async throws {
+        let session = MockGitHubSession()
+        // totalCount > items → hasMore = true
+        var json: [String: Any] = [
+            "total_count": 150,
+            "incomplete_results": false,
+            "items": [sampleRepoItem(id: 1, stars: 100)]
+        ]
+        session.responseData = try! JSONSerialization.data(withJSONObject: json)
+
+        let client = GitHubSearchClient(session: session, retryPolicy: .fast, cache: nil)
+        let page = try await client.searchRepositories(query: "test", perPage: 30, page: 1)
+
+        #expect(page.totalCount == 150)
+        #expect(page.hasMore == true)
+        _ = json  // suppress warning
+    }
+
+    @Test("searchRepositories — 마지막 페이지는 hasMore=false (ADR-122)")
+    func paginationNoMore() async throws {
+        let session = MockGitHubSession()
+        let json: [String: Any] = [
+            "total_count": 5,
+            "incomplete_results": false,
+            "items": (1...5).map { sampleRepoItem(id: $0, stars: $0 * 100) }
+        ]
+        session.responseData = try! JSONSerialization.data(withJSONObject: json)
+
+        let client = GitHubSearchClient(session: session, retryPolicy: .fast, cache: nil)
+        let page = try await client.searchRepositories(query: "test", perPage: 30, page: 1)
+
+        #expect(page.totalCount == 5)
+        #expect(page.hasMore == false)
+    }
+
+    // MARK: - ADR-122 Rate Limit (currentRateLimit)
+
+    @Test("currentRateLimit — 첫 요청 전 nil (ADR-122)")
+    func rateLimitInitiallyNil() async {
+        let client = GitHubSearchClient(retryPolicy: .fast, cache: nil)
+        let rl = await client.currentRateLimit()
+        #expect(rl == nil)
     }
 }
 

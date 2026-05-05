@@ -162,6 +162,12 @@ public struct AppPreferences: Sendable, Codable, Hashable {
     /// **ADR-119** — GitHub PAT가 Keychain에 저장됐는지 (UI 표시용 메타).
     /// 실제 토큰은 Keychain에만 저장. 기존 사용자는 false 로 시작.
     public var hasGitHubPAT: Bool
+    /// **ADR-122 Phase 3** — GitHub 검색 히스토리 (ring buffer 50개).
+    /// 기존 사용자는 빈 배열로 시작.
+    public var githubSearchHistory: [GitHubSearchHistoryEntry]
+    /// **ADR-122 Phase 3** — GitHub 즐겨찾기 검색어.
+    /// 기존 사용자는 빈 배열로 시작.
+    public var githubSearchFavorites: [GitHubSearchFavorite]
 
     public init(
         claudeBinaryPath: String = AppPreferences.detectClaudeBinaryPath(),
@@ -226,7 +232,9 @@ public struct AppPreferences: Sendable, Codable, Hashable {
         hasCompletedSetup: Bool = false,  // ADR-104 — 신규 사용자는 setup wizard 표시
         userProfile: UserProfile = .default,  // ADR-106
         libraryItems: [ResourceLibraryItem] = [],  // ADR-111
-        hasGitHubPAT: Bool = false  // ADR-119
+        hasGitHubPAT: Bool = false,  // ADR-119
+        githubSearchHistory: [GitHubSearchHistoryEntry] = [],  // ADR-122
+        githubSearchFavorites: [GitHubSearchFavorite] = []  // ADR-122
     ) {
         self.claudeBinaryPath = claudeBinaryPath
         self.codexBinaryPath = codexBinaryPath
@@ -291,6 +299,8 @@ public struct AppPreferences: Sendable, Codable, Hashable {
         self.userProfile = userProfile
         self.libraryItems = libraryItems
         self.hasGitHubPAT = hasGitHubPAT
+        self.githubSearchHistory = githubSearchHistory
+        self.githubSearchFavorites = githubSearchFavorites
     }
 
     // ADR-046 — 신규 필드 backward-compat: 기존 JSON에 없으면 default 적용
@@ -376,6 +386,9 @@ public struct AppPreferences: Sendable, Codable, Hashable {
         self.libraryItems = try c.decodeIfPresent([ResourceLibraryItem].self, forKey: .libraryItems) ?? []
         // ADR-119 — 기존 사용자는 false (PAT 미설정 상태)
         self.hasGitHubPAT = try c.decodeIfPresent(Bool.self, forKey: .hasGitHubPAT) ?? false
+        // ADR-122 Phase 3 — 기존 사용자는 빈 배열로 시작
+        self.githubSearchHistory = try c.decodeIfPresent([GitHubSearchHistoryEntry].self, forKey: .githubSearchHistory) ?? []
+        self.githubSearchFavorites = try c.decodeIfPresent([GitHubSearchFavorite].self, forKey: .githubSearchFavorites) ?? []
     }
 
     /// `claude` CLI의 가능성 높은 위치들을 순서대로 시도해 첫 번째 존재하는 경로 반환.
