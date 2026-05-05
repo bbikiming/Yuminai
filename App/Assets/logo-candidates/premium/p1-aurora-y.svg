@@ -1,0 +1,146 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  PREMIUM #1: AURORA Y
+  컨셉: 다층 aurora 글로우 + 입체 Y + 정교한 깊이감.
+  - 배경: 4-stop radial gradient (보라 → 인디고 → 네이비 → 검정)
+  - Y: 메탈릭 그라디언트 + inner highlight + drop shadow
+  - 전경: aurora glow halo (3겹) + 미세한 별
+  - 모서리 highlight (top-left)
+-->
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" width="1024" height="1024">
+  <defs>
+    <!-- 배경 gradient: 다층 깊이감 -->
+    <radialGradient id="bgP1" cx="0.4" cy="0.3" r="0.9">
+      <stop offset="0%" stop-color="#3B0764"/>
+      <stop offset="35%" stop-color="#1E1B4B"/>
+      <stop offset="65%" stop-color="#0B1020"/>
+      <stop offset="100%" stop-color="#020617"/>
+    </radialGradient>
+
+    <!-- Top-left 하이라이트 (glass effect) -->
+    <radialGradient id="topHL" cx="0.25" cy="0.15" r="0.4">
+      <stop offset="0%" stop-color="#FFFFFF" stop-opacity="0.18"/>
+      <stop offset="100%" stop-color="#FFFFFF" stop-opacity="0"/>
+    </radialGradient>
+
+    <!-- Aurora glow (cyan + magenta) -->
+    <radialGradient id="aurora1" cx="0.5" cy="0.5" r="0.5">
+      <stop offset="0%" stop-color="#22D3EE" stop-opacity="0.55"/>
+      <stop offset="60%" stop-color="#22D3EE" stop-opacity="0.1"/>
+      <stop offset="100%" stop-color="#22D3EE" stop-opacity="0"/>
+    </radialGradient>
+    <radialGradient id="aurora2" cx="0.5" cy="0.5" r="0.5">
+      <stop offset="0%" stop-color="#A855F7" stop-opacity="0.5"/>
+      <stop offset="60%" stop-color="#A855F7" stop-opacity="0.1"/>
+      <stop offset="100%" stop-color="#A855F7" stop-opacity="0"/>
+    </radialGradient>
+    <radialGradient id="aurora3" cx="0.5" cy="0.5" r="0.5">
+      <stop offset="0%" stop-color="#F472B6" stop-opacity="0.45"/>
+      <stop offset="60%" stop-color="#F472B6" stop-opacity="0.08"/>
+      <stop offset="100%" stop-color="#F472B6" stop-opacity="0"/>
+    </radialGradient>
+
+    <!-- Y 메탈릭 그라디언트 -->
+    <linearGradient id="yMetal" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#FFFFFF"/>
+      <stop offset="50%" stop-color="#E0F2FE"/>
+      <stop offset="100%" stop-color="#7DD3FC"/>
+    </linearGradient>
+
+    <!-- Y inner highlight (top edge) -->
+    <linearGradient id="yHL" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#FFFFFF" stop-opacity="0.9"/>
+      <stop offset="30%" stop-color="#FFFFFF" stop-opacity="0"/>
+    </linearGradient>
+
+    <!-- Drop shadow filter -->
+    <filter id="ydrop" x="-30%" y="-30%" width="160%" height="160%">
+      <feGaussianBlur in="SourceAlpha" stdDeviation="14"/>
+      <feOffset dx="0" dy="8" result="off"/>
+      <feFlood flood-color="#000000" flood-opacity="0.5"/>
+      <feComposite in2="off" operator="in"/>
+      <feMerge>
+        <feMergeNode/>
+        <feMergeNode in="SourceGraphic"/>
+      </feMerge>
+    </filter>
+
+    <!-- Y outer glow filter -->
+    <filter id="yglow" x="-50%" y="-50%" width="200%" height="200%">
+      <feGaussianBlur in="SourceGraphic" stdDeviation="20"/>
+    </filter>
+
+    <!-- Subtle noise pattern (depth) -->
+    <pattern id="noise" x="0" y="0" width="3" height="3" patternUnits="userSpaceOnUse">
+      <rect width="3" height="3" fill="#FFFFFF" opacity="0.015"/>
+    </pattern>
+  </defs>
+
+  <!-- 배경 squircle -->
+  <rect x="0" y="0" width="1024" height="1024" rx="220" fill="url(#bgP1)"/>
+  <rect x="0" y="0" width="1024" height="1024" rx="220" fill="url(#noise)"/>
+
+  <!-- Aurora 3겹 (cyan / purple / pink) -->
+  <ellipse cx="380" cy="480" rx="380" ry="280" fill="url(#aurora1)"/>
+  <ellipse cx="640" cy="540" rx="360" ry="260" fill="url(#aurora2)"/>
+  <ellipse cx="512" cy="620" rx="320" ry="220" fill="url(#aurora3)"/>
+
+  <!-- 별 (배경 디테일) -->
+  <g fill="#FFFFFF">
+    <circle cx="180" cy="220" r="2" opacity="0.7"/>
+    <circle cx="280" cy="160" r="1.5" opacity="0.5"/>
+    <circle cx="820" cy="200" r="2" opacity="0.7"/>
+    <circle cx="900" cy="280" r="1.5" opacity="0.5"/>
+    <circle cx="160" cy="820" r="2" opacity="0.6"/>
+    <circle cx="880" cy="860" r="1.5" opacity="0.5"/>
+    <circle cx="240" cy="900" r="2" opacity="0.6"/>
+  </g>
+
+  <!-- Y 외곽 발광 (큰 cyan halo) -->
+  <g filter="url(#yglow)" opacity="0.6">
+    <line x1="320" y1="320" x2="512" y2="540"
+          stroke="#22D3EE" stroke-width="60" stroke-linecap="round"/>
+    <line x1="704" y1="320" x2="512" y2="540"
+          stroke="#22D3EE" stroke-width="60" stroke-linecap="round"/>
+    <line x1="512" y1="540" x2="512" y2="780"
+          stroke="#22D3EE" stroke-width="60" stroke-linecap="round"/>
+  </g>
+
+  <!-- Y 메인 (메탈릭 그라디언트 + drop shadow) -->
+  <g filter="url(#ydrop)">
+    <line x1="320" y1="320" x2="512" y2="540"
+          stroke="url(#yMetal)" stroke-width="56" stroke-linecap="round"/>
+    <line x1="704" y1="320" x2="512" y2="540"
+          stroke="url(#yMetal)" stroke-width="56" stroke-linecap="round"/>
+    <line x1="512" y1="540" x2="512" y2="780"
+          stroke="url(#yMetal)" stroke-width="56" stroke-linecap="round"/>
+  </g>
+
+  <!-- Y top edge highlight (얇은 흰선) -->
+  <g opacity="0.6">
+    <line x1="320" y1="320" x2="512" y2="540"
+          stroke="url(#yHL)" stroke-width="56" stroke-linecap="round"/>
+    <line x1="704" y1="320" x2="512" y2="540"
+          stroke="url(#yHL)" stroke-width="56" stroke-linecap="round"/>
+  </g>
+
+  <!-- 끝 노드 (Y 모서리) -->
+  <g>
+    <circle cx="320" cy="320" r="28" fill="#FFFFFF"/>
+    <circle cx="320" cy="320" r="48" fill="none" stroke="#22D3EE" stroke-width="2" opacity="0.6"/>
+    <circle cx="704" cy="320" r="28" fill="#FFFFFF"/>
+    <circle cx="704" cy="320" r="48" fill="none" stroke="#22D3EE" stroke-width="2" opacity="0.6"/>
+    <circle cx="512" cy="780" r="28" fill="#FFFFFF"/>
+    <circle cx="512" cy="780" r="48" fill="none" stroke="#A855F7" stroke-width="2" opacity="0.6"/>
+  </g>
+
+  <!-- 중앙 합류 (큰 코어 + 핑크 inner) -->
+  <circle cx="512" cy="540" r="68" fill="#FFFFFF"/>
+  <circle cx="512" cy="540" r="44" fill="url(#yMetal)"/>
+  <circle cx="512" cy="540" r="22" fill="#F472B6"/>
+  <circle cx="512" cy="540" r="100" fill="none" stroke="#F472B6" stroke-width="3" opacity="0.5"/>
+  <circle cx="512" cy="540" r="140" fill="none" stroke="#F472B6" stroke-width="2" opacity="0.25"/>
+
+  <!-- Top-left glass highlight -->
+  <rect x="0" y="0" width="1024" height="1024" rx="220" fill="url(#topHL)"/>
+</svg>

@@ -1,0 +1,32 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  후보 #6: ARC Y
+  컨셉: 두 개의 호(arc)가 만나 Y를 형성. 부드러움 + 합류감.
+  팔레트: 핑크 → 오렌지 그라디언트 (Y) + 다크 배경
+-->
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" width="1024" height="1024">
+  <defs>
+    <linearGradient id="arc-grad" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#F472B6"/>
+      <stop offset="50%" stop-color="#FB923C"/>
+      <stop offset="100%" stop-color="#FBBF24"/>
+    </linearGradient>
+  </defs>
+
+  <rect x="0" y="0" width="1024" height="1024" rx="220" fill="#0B1020"/>
+
+  <!-- 좌측 arc -->
+  <path d="M 220 280 Q 220 540 512 540"
+        stroke="url(#arc-grad)" stroke-width="80" stroke-linecap="round" fill="none"/>
+
+  <!-- 우측 arc -->
+  <path d="M 804 280 Q 804 540 512 540"
+        stroke="url(#arc-grad)" stroke-width="80" stroke-linecap="round" fill="none"/>
+
+  <!-- 중앙 줄기 -->
+  <line x1="512" y1="540" x2="512" y2="780"
+        stroke="url(#arc-grad)" stroke-width="80" stroke-linecap="round"/>
+
+  <!-- 중앙 합류 점 -->
+  <circle cx="512" cy="540" r="50" fill="#FFFFFF"/>
+</svg>

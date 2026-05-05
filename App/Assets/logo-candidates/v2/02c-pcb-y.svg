@@ -1,0 +1,77 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  후보 #2c: PCB Y
+  컨셉: 회로 보드(PCB) — 직각 trace + corner round + via 노드. Y 메인 라인.
+  팔레트: 다크 그린 PCB + 시안 trace + 골드 via
+-->
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" width="1024" height="1024">
+  <defs>
+    <linearGradient id="bg2c" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#0F172A"/>
+      <stop offset="100%" stop-color="#020617"/>
+    </linearGradient>
+  </defs>
+
+  <rect x="0" y="0" width="1024" height="1024" rx="220" fill="url(#bg2c)"/>
+
+  <!-- 배경 PCB trace (직각, 흐릿) -->
+  <g stroke="#22D3EE" stroke-width="4" fill="none" opacity="0.18">
+    <!-- 좌측 trace -->
+    <path d="M 100 300 L 200 300 L 200 200 L 320 200"/>
+    <path d="M 100 500 L 240 500 L 240 420 L 320 420"/>
+    <!-- 우측 trace -->
+    <path d="M 924 300 L 824 300 L 824 200 L 704 200"/>
+    <path d="M 924 500 L 784 500 L 784 420 L 704 420"/>
+    <!-- 하단 trace -->
+    <path d="M 512 880 L 512 920 L 200 920"/>
+    <path d="M 512 880 L 824 920 L 824 920"/>
+  </g>
+
+  <!-- 배경 via (점) -->
+  <g fill="#FBBF24" opacity="0.4">
+    <circle cx="100" cy="300" r="6"/>
+    <circle cx="100" cy="500" r="6"/>
+    <circle cx="924" cy="300" r="6"/>
+    <circle cx="924" cy="500" r="6"/>
+    <circle cx="200" cy="920" r="6"/>
+    <circle cx="824" cy="920" r="6"/>
+  </g>
+
+  <!-- Y 메인 trace (굵은 시안) — 모서리 둥글게 -->
+  <g stroke="#22D3EE" stroke-width="46" stroke-linecap="round" stroke-linejoin="round" fill="none">
+    <line x1="320" y1="280" x2="512" y2="510"/>
+    <line x1="704" y1="280" x2="512" y2="510"/>
+    <line x1="512" y1="510" x2="512" y2="800"/>
+  </g>
+
+  <!-- Y trace 외곽 광 -->
+  <g stroke="#22D3EE" stroke-width="74" stroke-linecap="round" fill="none" opacity="0.16">
+    <line x1="320" y1="280" x2="512" y2="510"/>
+    <line x1="704" y1="280" x2="512" y2="510"/>
+    <line x1="512" y1="510" x2="512" y2="800"/>
+  </g>
+
+  <!-- Via 노드 (골드) — Y 모서리 -->
+  <g>
+    <circle cx="320" cy="280" r="26" fill="#FBBF24"/>
+    <circle cx="320" cy="280" r="14" fill="#0F172A"/>
+    <circle cx="704" cy="280" r="26" fill="#FBBF24"/>
+    <circle cx="704" cy="280" r="14" fill="#0F172A"/>
+    <circle cx="512" cy="800" r="26" fill="#FBBF24"/>
+    <circle cx="512" cy="800" r="14" fill="#0F172A"/>
+  </g>
+
+  <!-- 중앙 IC 칩 모양 -->
+  <rect x="468" y="466" width="88" height="88" rx="8" fill="#0F172A" stroke="#FBBF24" stroke-width="6"/>
+  <!-- IC 핀 -->
+  <g fill="#FBBF24">
+    <rect x="446" y="478" width="12" height="6"/>
+    <rect x="446" y="500" width="12" height="6"/>
+    <rect x="446" y="522" width="12" height="6"/>
+    <rect x="446" y="544" width="12" height="6"/>
+    <rect x="566" y="478" width="12" height="6"/>
+    <rect x="566" y="500" width="12" height="6"/>
+    <rect x="566" y="522" width="12" height="6"/>
+    <rect x="566" y="544" width="12" height="6"/>
+  </g>
+</svg>

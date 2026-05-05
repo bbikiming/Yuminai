@@ -1,0 +1,68 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  후보 #2a: NEURAL Y
+  컨셉: 신경망 다층 구조. 입력 노드 → Y 합류 → 출력. AI 추론 흐름 시각화.
+  팔레트: 다크 + 청록 노드 + 시안 라인 + 핑크 액센트
+-->
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" width="1024" height="1024">
+  <defs>
+    <radialGradient id="bg2a" cx="0.5" cy="0.4" r="0.6">
+      <stop offset="0%" stop-color="#1E1B4B"/>
+      <stop offset="100%" stop-color="#0B1020"/>
+    </radialGradient>
+    <radialGradient id="glow2a" cx="0.5" cy="0.5" r="0.5">
+      <stop offset="0%" stop-color="#22D3EE" stop-opacity="0.55"/>
+      <stop offset="100%" stop-color="#22D3EE" stop-opacity="0"/>
+    </radialGradient>
+  </defs>
+
+  <rect x="0" y="0" width="1024" height="1024" rx="220" fill="url(#bg2a)"/>
+
+  <!-- 중심 glow halo -->
+  <circle cx="512" cy="512" r="320" fill="url(#glow2a)"/>
+
+  <!-- 입력 layer (5 노드, 좌측) — Y의 두 가지로 합류 -->
+  <g stroke="#22D3EE" stroke-width="3" opacity="0.35" fill="none">
+    <line x1="180" y1="240" x2="320" y2="320"/>
+    <line x1="180" y1="340" x2="320" y2="320"/>
+    <line x1="180" y1="440" x2="320" y2="320"/>
+    <line x1="844" y1="240" x2="704" y2="320"/>
+    <line x1="844" y1="340" x2="704" y2="320"/>
+    <line x1="844" y1="440" x2="704" y2="320"/>
+  </g>
+  <g fill="#22D3EE" opacity="0.7">
+    <circle cx="180" cy="240" r="10"/>
+    <circle cx="180" cy="340" r="10"/>
+    <circle cx="180" cy="440" r="10"/>
+    <circle cx="844" cy="240" r="10"/>
+    <circle cx="844" cy="340" r="10"/>
+    <circle cx="844" cy="440" r="10"/>
+  </g>
+
+  <!-- Y 메인 라인 -->
+  <g stroke="#FFFFFF" stroke-width="44" stroke-linecap="round" fill="none">
+    <line x1="320" y1="320" x2="512" y2="540"/>
+    <line x1="704" y1="320" x2="512" y2="540"/>
+    <line x1="512" y1="540" x2="512" y2="800"/>
+  </g>
+  <!-- Y 외광 -->
+  <g stroke="#22D3EE" stroke-width="68" stroke-linecap="round" fill="none" opacity="0.18">
+    <line x1="320" y1="320" x2="512" y2="540"/>
+    <line x1="704" y1="320" x2="512" y2="540"/>
+    <line x1="512" y1="540" x2="512" y2="800"/>
+  </g>
+
+  <!-- 분기 노드 -->
+  <g fill="#FFFFFF">
+    <circle cx="320" cy="320" r="22"/>
+    <circle cx="704" cy="320" r="22"/>
+  </g>
+
+  <!-- 중심 합류 node -->
+  <circle cx="512" cy="540" r="56" fill="#FFFFFF"/>
+  <circle cx="512" cy="540" r="86" fill="none" stroke="#F472B6" stroke-width="6" opacity="0.7"/>
+  <circle cx="512" cy="540" r="32" fill="#F472B6"/>
+
+  <!-- 출력 노드 -->
+  <circle cx="512" cy="800" r="22" fill="#FFFFFF"/>
+</svg>

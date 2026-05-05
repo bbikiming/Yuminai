@@ -1,0 +1,34 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  후보 #5: HEX Y
+  컨셉: 육각형 + Y 음각. 단단함 + 기술감.
+  팔레트: 청록 그라디언트
+-->
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" width="1024" height="1024">
+  <defs>
+    <linearGradient id="bg5" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#0EA5E9"/>
+      <stop offset="100%" stop-color="#0F766E"/>
+    </linearGradient>
+    <mask id="ymask">
+      <rect width="1024" height="1024" fill="white"/>
+      <g stroke="black" stroke-width="92" stroke-linecap="round" stroke-linejoin="round" fill="none">
+        <line x1="340" y1="320" x2="512" y2="540"/>
+        <line x1="684" y1="320" x2="512" y2="540"/>
+        <line x1="512" y1="540" x2="512" y2="740"/>
+      </g>
+    </mask>
+  </defs>
+
+  <rect x="0" y="0" width="1024" height="1024" rx="220" fill="#0F172A"/>
+
+  <!-- 육각형 (flat-top) -->
+  <g transform="translate(512 512)">
+    <polygon points="-280,-160 -280,160 0,320 280,160 280,-160 0,-320"
+             fill="url(#bg5)" mask="url(#ymask)"/>
+
+    <!-- 육각형 외곽선 -->
+    <polygon points="-280,-160 -280,160 0,320 280,160 280,-160 0,-320"
+             fill="none" stroke="#22D3EE" stroke-width="6" opacity="0.5"/>
+  </g>
+</svg>

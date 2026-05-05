@@ -1,0 +1,26 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  후보 #4: MONO Y (미니멀)
+  컨셉: 굵은 단색 Y. 가장 미니멀, 가독성 최고.
+  팔레트: 보라 squircle + 흰 Y
+-->
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" width="1024" height="1024">
+  <defs>
+    <linearGradient id="bg4" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#7C3AED"/>
+      <stop offset="100%" stop-color="#4F46E5"/>
+    </linearGradient>
+  </defs>
+
+  <rect x="0" y="0" width="1024" height="1024" rx="220" fill="url(#bg4)"/>
+
+  <!-- Y 글자 (굵은 stroke) -->
+  <g stroke="#FFFFFF" stroke-width="92" stroke-linecap="round" stroke-linejoin="round" fill="none">
+    <line x1="320" y1="280" x2="512" y2="540"/>
+    <line x1="704" y1="280" x2="512" y2="540"/>
+    <line x1="512" y1="540" x2="512" y2="780"/>
+  </g>
+
+  <!-- 작은 액센트 점 -->
+  <circle cx="512" cy="540" r="22" fill="#FBBF24"/>
+</svg>

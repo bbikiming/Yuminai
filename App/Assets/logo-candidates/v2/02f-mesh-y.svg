@@ -1,0 +1,83 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  후보 #2f: MESH Y
+  컨셉: 삼각 mesh / wireframe — 3D mesh 위에 Y가 빛으로 emerge.
+  팔레트: 다크 + 시안 wireframe + 흰 Y + 핑크 코어
+-->
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" width="1024" height="1024">
+  <defs>
+    <linearGradient id="bg2f" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#0F172A"/>
+      <stop offset="100%" stop-color="#020617"/>
+    </linearGradient>
+    <radialGradient id="ycore2f" cx="0.5" cy="0.5" r="0.4">
+      <stop offset="0%" stop-color="#FFFFFF"/>
+      <stop offset="60%" stop-color="#22D3EE"/>
+      <stop offset="100%" stop-color="#22D3EE" stop-opacity="0.2"/>
+    </radialGradient>
+  </defs>
+
+  <rect x="0" y="0" width="1024" height="1024" rx="220" fill="url(#bg2f)"/>
+
+  <!-- 삼각 mesh wireframe (배경) -->
+  <g stroke="#22D3EE" stroke-width="1.2" fill="none" opacity="0.3">
+    <!-- 상단 mesh -->
+    <polygon points="180,200 360,140 280,300"/>
+    <polygon points="360,140 540,200 460,320"/>
+    <polygon points="540,200 720,140 640,300"/>
+    <polygon points="720,140 900,200 820,300"/>
+    <!-- 중간 mesh -->
+    <polygon points="180,400 320,360 240,500"/>
+    <polygon points="320,360 480,420 400,540"/>
+    <polygon points="540,420 700,360 620,500"/>
+    <polygon points="700,360 860,420 780,540"/>
+    <!-- 하단 mesh -->
+    <polygon points="160,640 320,580 240,720"/>
+    <polygon points="320,580 480,640 400,760"/>
+    <polygon points="540,640 700,580 620,760"/>
+    <polygon points="700,580 860,640 780,760"/>
+    <polygon points="240,820 380,780 320,920"/>
+    <polygon points="640,820 800,780 720,920"/>
+  </g>
+
+  <!-- 추가 mesh 노드 (작은 점) -->
+  <g fill="#22D3EE" opacity="0.5">
+    <circle cx="180" cy="200" r="3"/>
+    <circle cx="360" cy="140" r="3"/>
+    <circle cx="540" cy="200" r="3"/>
+    <circle cx="720" cy="140" r="3"/>
+    <circle cx="900" cy="200" r="3"/>
+    <circle cx="180" cy="400" r="3"/>
+    <circle cx="860" cy="420" r="3"/>
+    <circle cx="160" cy="640" r="3"/>
+    <circle cx="860" cy="640" r="3"/>
+  </g>
+
+  <!-- Y 코어 발광 (반경) -->
+  <circle cx="512" cy="540" r="280" fill="url(#ycore2f)" opacity="0.5"/>
+
+  <!-- Y 메인 (굵은 흰 라인) -->
+  <g stroke="#FFFFFF" stroke-width="46" stroke-linecap="round" fill="none">
+    <line x1="320" y1="300" x2="512" y2="540"/>
+    <line x1="704" y1="300" x2="512" y2="540"/>
+    <line x1="512" y1="540" x2="512" y2="800"/>
+  </g>
+  <!-- Y 발광 -->
+  <g stroke="#22D3EE" stroke-width="80" stroke-linecap="round" fill="none" opacity="0.22">
+    <line x1="320" y1="300" x2="512" y2="540"/>
+    <line x1="704" y1="300" x2="512" y2="540"/>
+    <line x1="512" y1="540" x2="512" y2="800"/>
+  </g>
+
+  <!-- Y 끝 큰 노드 -->
+  <g fill="#FFFFFF">
+    <circle cx="320" cy="300" r="22"/>
+    <circle cx="704" cy="300" r="22"/>
+    <circle cx="512" cy="800" r="22"/>
+  </g>
+
+  <!-- 중앙 합류 코어 -->
+  <circle cx="512" cy="540" r="60" fill="#FFFFFF"/>
+  <circle cx="512" cy="540" r="36" fill="#F472B6"/>
+  <circle cx="512" cy="540" r="100" fill="none" stroke="#F472B6" stroke-width="3" opacity="0.5"/>
+</svg>

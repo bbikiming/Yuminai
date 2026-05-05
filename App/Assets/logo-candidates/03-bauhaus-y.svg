@@ -1,0 +1,25 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  후보 #3: BAUHAUS Y
+  컨셉: 바우하우스 스타일 — 원·삼각·사각의 기하학 레이어로 Y 형태.
+  팔레트: 빨강(원) + 파랑(삼각) + 노랑(사각)
+-->
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" width="1024" height="1024">
+  <rect x="0" y="0" width="1024" height="1024" rx="220" fill="#F8FAFC"/>
+
+  <!-- 노란 사각형 (배경 강조) -->
+  <rect x="180" y="180" width="664" height="664" rx="40" fill="#FBBF24" opacity="0.95"/>
+
+  <!-- 파란 삼각형 (Y 위쪽) -->
+  <polygon points="512,200 820,720 204,720" fill="#3B82F6" opacity="0.92"/>
+
+  <!-- 빨간 원 (Y 중심) -->
+  <circle cx="512" cy="512" r="180" fill="#EF4444"/>
+
+  <!-- Y 흰색 라인 -->
+  <g stroke="#FFFFFF" stroke-width="38" stroke-linecap="square" fill="none">
+    <line x1="382" y1="382" x2="512" y2="540"/>
+    <line x1="642" y1="382" x2="512" y2="540"/>
+    <line x1="512" y1="540" x2="512" y2="700"/>
+  </g>
+</svg>

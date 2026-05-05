@@ -1,0 +1,152 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  PREMIUM #4: LIQUID LIGHT Y
+  컨셉: 액체 빛 / liquid metal — Apple Intelligence 같은 부드러운 흐름.
+  - Y가 액체처럼 부드럽게 합류
+  - 다중 그라디언트 + 흐름 효과
+  - 큰 발광 + 입자
+-->
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" width="1024" height="1024">
+  <defs>
+    <radialGradient id="bgP4" cx="0.4" cy="0.3" r="0.9">
+      <stop offset="0%" stop-color="#312E81"/>
+      <stop offset="50%" stop-color="#0F172A"/>
+      <stop offset="100%" stop-color="#020617"/>
+    </radialGradient>
+
+    <!-- Liquid gradient (Apple Intelligence 풍) -->
+    <linearGradient id="liquid1" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#A78BFA"/>
+      <stop offset="50%" stop-color="#22D3EE"/>
+      <stop offset="100%" stop-color="#34D399"/>
+    </linearGradient>
+    <linearGradient id="liquid2" x1="1" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#F472B6"/>
+      <stop offset="50%" stop-color="#A78BFA"/>
+      <stop offset="100%" stop-color="#22D3EE"/>
+    </linearGradient>
+    <linearGradient id="liquid3" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#22D3EE"/>
+      <stop offset="100%" stop-color="#A78BFA"/>
+    </linearGradient>
+
+    <!-- Y core highlight -->
+    <linearGradient id="coreHL" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#FFFFFF" stop-opacity="0.8"/>
+      <stop offset="40%" stop-color="#FFFFFF" stop-opacity="0"/>
+    </linearGradient>
+
+    <!-- Aurora blobs -->
+    <radialGradient id="blob1" cx="0.5" cy="0.5" r="0.5">
+      <stop offset="0%" stop-color="#22D3EE" stop-opacity="0.7"/>
+      <stop offset="100%" stop-color="#22D3EE" stop-opacity="0"/>
+    </radialGradient>
+    <radialGradient id="blob2" cx="0.5" cy="0.5" r="0.5">
+      <stop offset="0%" stop-color="#A855F7" stop-opacity="0.6"/>
+      <stop offset="100%" stop-color="#A855F7" stop-opacity="0"/>
+    </radialGradient>
+    <radialGradient id="blob3" cx="0.5" cy="0.5" r="0.5">
+      <stop offset="0%" stop-color="#F472B6" stop-opacity="0.5"/>
+      <stop offset="100%" stop-color="#F472B6" stop-opacity="0"/>
+    </radialGradient>
+    <radialGradient id="blob4" cx="0.5" cy="0.5" r="0.5">
+      <stop offset="0%" stop-color="#34D399" stop-opacity="0.4"/>
+      <stop offset="100%" stop-color="#34D399" stop-opacity="0"/>
+    </radialGradient>
+
+    <radialGradient id="topHLP4" cx="0.3" cy="0.15" r="0.5">
+      <stop offset="0%" stop-color="#FFFFFF" stop-opacity="0.18"/>
+      <stop offset="100%" stop-color="#FFFFFF" stop-opacity="0"/>
+    </radialGradient>
+
+    <filter id="liquidGlow" x="-50%" y="-50%" width="200%" height="200%">
+      <feGaussianBlur in="SourceGraphic" stdDeviation="22"/>
+    </filter>
+
+    <filter id="dropP4" x="-30%" y="-30%" width="160%" height="160%">
+      <feGaussianBlur in="SourceAlpha" stdDeviation="18"/>
+      <feOffset dx="0" dy="14" result="off"/>
+      <feFlood flood-color="#000000" flood-opacity="0.55"/>
+      <feComposite in2="off" operator="in"/>
+      <feMerge>
+        <feMergeNode/>
+        <feMergeNode in="SourceGraphic"/>
+      </feMerge>
+    </filter>
+  </defs>
+
+  <!-- 배경 -->
+  <rect x="0" y="0" width="1024" height="1024" rx="220" fill="url(#bgP4)"/>
+
+  <!-- Aurora blobs (다층 합성) -->
+  <ellipse cx="320" cy="380" rx="280" ry="200" fill="url(#blob1)"/>
+  <ellipse cx="704" cy="380" rx="280" ry="200" fill="url(#blob2)"/>
+  <ellipse cx="512" cy="700" rx="320" ry="200" fill="url(#blob3)"/>
+  <ellipse cx="512" cy="540" rx="380" ry="240" fill="url(#blob4)"/>
+
+  <!-- Y backlight -->
+  <g filter="url(#liquidGlow)" opacity="0.75">
+    <path d="M 320,300 Q 380,400 484,520 L 484,800 L 540,800 L 540,520 Q 644,400 704,300"
+          fill="none" stroke="#22D3EE" stroke-width="80" stroke-linecap="round" stroke-linejoin="round"/>
+  </g>
+
+  <!--
+    Y Liquid path — 부드럽게 합류 (Q curve)
+    좌측 가지 + 우측 가지 + 줄기를 하나의 path로
+  -->
+  <g filter="url(#dropP4)">
+    <!-- Left arm (이중 stroke for liquid feel) -->
+    <path d="M 320,300 Q 416,400 484,520 Q 484,540 484,556 L 484,800"
+          fill="none" stroke="url(#liquid1)" stroke-width="64"
+          stroke-linecap="round" stroke-linejoin="round"/>
+    <!-- Right arm -->
+    <path d="M 704,300 Q 608,400 540,520 Q 540,540 540,556 L 540,800"
+          fill="none" stroke="url(#liquid2)" stroke-width="64"
+          stroke-linecap="round" stroke-linejoin="round"/>
+    <!-- 중앙 합류 stem (gradient) -->
+    <rect x="464" y="510" width="96" height="290" rx="48" fill="url(#liquid3)"/>
+  </g>
+
+  <!-- Top edge highlight (Y) -->
+  <g opacity="0.7">
+    <path d="M 320,300 Q 416,400 484,520"
+          fill="none" stroke="url(#coreHL)" stroke-width="64"
+          stroke-linecap="round"/>
+    <path d="M 704,300 Q 608,400 540,520"
+          fill="none" stroke="url(#coreHL)" stroke-width="64"
+          stroke-linecap="round"/>
+  </g>
+
+  <!-- 끝 노드 (액체 입자) -->
+  <g>
+    <circle cx="320" cy="300" r="44" fill="url(#blob1)" opacity="0.9"/>
+    <circle cx="320" cy="300" r="22" fill="#FFFFFF"/>
+
+    <circle cx="704" cy="300" r="44" fill="url(#blob2)" opacity="0.9"/>
+    <circle cx="704" cy="300" r="22" fill="#FFFFFF"/>
+
+    <circle cx="512" cy="800" r="44" fill="url(#blob3)" opacity="0.9"/>
+    <circle cx="512" cy="800" r="22" fill="#FFFFFF"/>
+  </g>
+
+  <!-- 중앙 코어 (큰 발광 별) -->
+  <g>
+    <circle cx="512" cy="540" r="120" fill="url(#blob4)" opacity="0.6"/>
+    <circle cx="512" cy="540" r="80" fill="url(#blob1)" opacity="0.7"/>
+    <circle cx="512" cy="540" r="50" fill="#FFFFFF"/>
+    <circle cx="512" cy="540" r="22" fill="url(#liquid2)"/>
+  </g>
+
+  <!-- 떠다니는 입자들 (액체 droplet) -->
+  <g fill="#FFFFFF" opacity="0.7">
+    <circle cx="220" cy="640" r="6"/>
+    <circle cx="280" cy="720" r="4"/>
+    <circle cx="804" cy="640" r="6"/>
+    <circle cx="744" cy="720" r="4"/>
+    <circle cx="180" cy="240" r="4"/>
+    <circle cx="844" cy="280" r="4"/>
+  </g>
+
+  <!-- Top hl on squircle -->
+  <rect x="0" y="0" width="1024" height="1024" rx="220" fill="url(#topHLP4)"/>
+</svg>

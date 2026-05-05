@@ -1,0 +1,73 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  후보 #2b: CONSTELLATION Y
+  컨셉: 별자리. 작은 점 다수 + 흐릿한 연결선 + Y 메인 노드 강조.
+  팔레트: 깊은 네이비 + 시안 별 + 핑크 메인
+-->
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" width="1024" height="1024">
+  <defs>
+    <radialGradient id="bg2b" cx="0.5" cy="0.5" r="0.7">
+      <stop offset="0%" stop-color="#1E293B"/>
+      <stop offset="100%" stop-color="#020617"/>
+    </radialGradient>
+  </defs>
+
+  <rect x="0" y="0" width="1024" height="1024" rx="220" fill="url(#bg2b)"/>
+
+  <!-- 배경 작은 별 점들 -->
+  <g fill="#94A3B8" opacity="0.4">
+    <circle cx="160" cy="180" r="3"/>
+    <circle cx="240" cy="120" r="2"/>
+    <circle cx="380" cy="180" r="2"/>
+    <circle cx="640" cy="140" r="3"/>
+    <circle cx="780" cy="200" r="2"/>
+    <circle cx="880" cy="160" r="3"/>
+    <circle cx="140" cy="440" r="2"/>
+    <circle cx="200" cy="600" r="3"/>
+    <circle cx="160" cy="820" r="2"/>
+    <circle cx="320" cy="880" r="3"/>
+    <circle cx="600" cy="900" r="2"/>
+    <circle cx="780" cy="860" r="3"/>
+    <circle cx="880" cy="600" r="2"/>
+    <circle cx="900" cy="420" r="3"/>
+  </g>
+
+  <!-- 흐릿한 연결선 (구도 보조) -->
+  <g stroke="#22D3EE" stroke-width="1.5" opacity="0.25" fill="none">
+    <line x1="280" y1="280" x2="512" y2="500"/>
+    <line x1="744" y1="280" x2="512" y2="500"/>
+    <line x1="512" y1="500" x2="512" y2="800"/>
+    <line x1="280" y1="280" x2="380" y2="180"/>
+    <line x1="744" y1="280" x2="640" y2="140"/>
+    <line x1="512" y1="800" x2="320" y2="880"/>
+    <line x1="512" y1="800" x2="600" y2="900"/>
+  </g>
+
+  <!-- Y 메인 라인 (시안 발광) -->
+  <g stroke="#22D3EE" stroke-width="14" stroke-linecap="round" fill="none">
+    <line x1="280" y1="280" x2="512" y2="500"/>
+    <line x1="744" y1="280" x2="512" y2="500"/>
+    <line x1="512" y1="500" x2="512" y2="800"/>
+  </g>
+  <!-- Y 외광 -->
+  <g stroke="#22D3EE" stroke-width="40" stroke-linecap="round" fill="none" opacity="0.20">
+    <line x1="280" y1="280" x2="512" y2="500"/>
+    <line x1="744" y1="280" x2="512" y2="500"/>
+    <line x1="512" y1="500" x2="512" y2="800"/>
+  </g>
+
+  <!-- Y 모서리 별 (큰 노드) -->
+  <g>
+    <circle cx="280" cy="280" r="20" fill="#FFFFFF"/>
+    <circle cx="280" cy="280" r="36" fill="none" stroke="#22D3EE" stroke-width="2" opacity="0.5"/>
+    <circle cx="744" cy="280" r="20" fill="#FFFFFF"/>
+    <circle cx="744" cy="280" r="36" fill="none" stroke="#22D3EE" stroke-width="2" opacity="0.5"/>
+    <circle cx="512" cy="800" r="20" fill="#FFFFFF"/>
+    <circle cx="512" cy="800" r="36" fill="none" stroke="#22D3EE" stroke-width="2" opacity="0.5"/>
+  </g>
+
+  <!-- 중앙 큰 별 (합류) -->
+  <circle cx="512" cy="500" r="44" fill="#FFFFFF"/>
+  <circle cx="512" cy="500" r="68" fill="none" stroke="#F472B6" stroke-width="4" opacity="0.7"/>
+  <circle cx="512" cy="500" r="92" fill="none" stroke="#F472B6" stroke-width="2" opacity="0.4"/>
+</svg>

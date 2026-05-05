@@ -1,0 +1,44 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  후보 #2: CIRCUIT Y
+  컨셉: Y 형태의 회로. node + branch — 분기와 합류, AI 흐름.
+  팔레트: 다크 보라 배경 + 청록 회로
+-->
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" width="1024" height="1024">
+  <defs>
+    <linearGradient id="bg2" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#1E1B4B"/>
+      <stop offset="100%" stop-color="#0F172A"/>
+    </linearGradient>
+    <radialGradient id="glow" cx="0.5" cy="0.5" r="0.5">
+      <stop offset="0%" stop-color="#06B6D4" stop-opacity="1"/>
+      <stop offset="100%" stop-color="#06B6D4" stop-opacity="0"/>
+    </radialGradient>
+  </defs>
+
+  <rect x="0" y="0" width="1024" height="1024" rx="220" fill="url(#bg2)"/>
+
+  <!-- 중심 glow -->
+  <circle cx="512" cy="512" r="280" fill="url(#glow)" opacity="0.4"/>
+
+  <!-- Y 회로 라인 -->
+  <g stroke="#22D3EE" stroke-width="40" stroke-linecap="round" fill="none">
+    <!-- 좌측 가지 -->
+    <line x1="280" y1="280" x2="512" y2="512"/>
+    <!-- 우측 가지 -->
+    <line x1="744" y1="280" x2="512" y2="512"/>
+    <!-- 중앙 줄기 -->
+    <line x1="512" y1="512" x2="512" y2="780"/>
+  </g>
+
+  <!-- 노드 점들 (회로 노드) -->
+  <g fill="#FFFFFF">
+    <circle cx="280" cy="280" r="22"/>
+    <circle cx="744" cy="280" r="22"/>
+    <circle cx="512" cy="780" r="22"/>
+  </g>
+
+  <!-- 중앙 큰 노드 + 링 -->
+  <circle cx="512" cy="512" r="44" fill="#FFFFFF"/>
+  <circle cx="512" cy="512" r="68" fill="none" stroke="#22D3EE" stroke-width="6" opacity="0.6"/>
+</svg>

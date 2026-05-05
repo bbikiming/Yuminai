@@ -1,0 +1,146 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  PREMIUM #3: CRYSTAL Y
+  컨셉: 크리스탈 / 보석 facet — 다면 빛 굴절. Premium 보석 같은 느낌.
+  - Y가 두꺼운 다면 prism으로 형성
+  - 각 면 다른 그라디언트 (light refraction)
+  - 어두운 배경에 빛이 emerge
+-->
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" width="1024" height="1024">
+  <defs>
+    <!-- 깊은 우주 배경 -->
+    <radialGradient id="bgP3" cx="0.5" cy="0.45" r="0.8">
+      <stop offset="0%" stop-color="#312E81"/>
+      <stop offset="40%" stop-color="#1E1B4B"/>
+      <stop offset="100%" stop-color="#020617"/>
+    </radialGradient>
+
+    <!-- Crystal facet 그라디언트들 -->
+    <linearGradient id="facetA" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#67E8F9"/>
+      <stop offset="100%" stop-color="#0891B2"/>
+    </linearGradient>
+    <linearGradient id="facetB" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#A5F3FC"/>
+      <stop offset="100%" stop-color="#0E7490"/>
+    </linearGradient>
+    <linearGradient id="facetC" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#FFFFFF"/>
+      <stop offset="100%" stop-color="#22D3EE"/>
+    </linearGradient>
+    <linearGradient id="facetD" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0%" stop-color="#A855F7"/>
+      <stop offset="100%" stop-color="#22D3EE"/>
+    </linearGradient>
+
+    <!-- Crystal glow halo -->
+    <radialGradient id="crystalGlow" cx="0.5" cy="0.5" r="0.5">
+      <stop offset="0%" stop-color="#22D3EE" stop-opacity="0.5"/>
+      <stop offset="100%" stop-color="#22D3EE" stop-opacity="0"/>
+    </radialGradient>
+
+    <!-- 별 패턴 + lens flare -->
+    <radialGradient id="starP3" cx="0.5" cy="0.5" r="0.5">
+      <stop offset="0%" stop-color="#FFFFFF"/>
+      <stop offset="40%" stop-color="#FFFFFF" stop-opacity="0.4"/>
+      <stop offset="100%" stop-color="#FFFFFF" stop-opacity="0"/>
+    </radialGradient>
+
+    <!-- Top highlight -->
+    <radialGradient id="topHLP3" cx="0.3" cy="0.15" r="0.5">
+      <stop offset="0%" stop-color="#FFFFFF" stop-opacity="0.18"/>
+      <stop offset="100%" stop-color="#FFFFFF" stop-opacity="0"/>
+    </radialGradient>
+
+    <filter id="glowP3" x="-50%" y="-50%" width="200%" height="200%">
+      <feGaussianBlur in="SourceGraphic" stdDeviation="24"/>
+    </filter>
+
+    <filter id="dropP3" x="-30%" y="-30%" width="160%" height="160%">
+      <feGaussianBlur in="SourceAlpha" stdDeviation="16"/>
+      <feOffset dx="0" dy="14" result="off"/>
+      <feFlood flood-color="#000000" flood-opacity="0.6"/>
+      <feComposite in2="off" operator="in"/>
+      <feMerge>
+        <feMergeNode/>
+        <feMergeNode in="SourceGraphic"/>
+      </feMerge>
+    </filter>
+  </defs>
+
+  <!-- 배경 -->
+  <rect x="0" y="0" width="1024" height="1024" rx="220" fill="url(#bgP3)"/>
+
+  <!-- 별 (배경) -->
+  <g fill="url(#starP3)">
+    <circle cx="180" cy="200" r="6" opacity="0.7"/>
+    <circle cx="280" cy="140" r="3"/>
+    <circle cx="800" cy="180" r="6" opacity="0.7"/>
+    <circle cx="900" cy="240" r="3"/>
+    <circle cx="160" cy="800" r="5" opacity="0.6"/>
+    <circle cx="880" cy="850" r="4"/>
+    <circle cx="240" cy="900" r="3"/>
+  </g>
+
+  <!-- Crystal halo glow -->
+  <ellipse cx="512" cy="540" rx="380" ry="320" fill="url(#crystalGlow)"/>
+
+  <!-- Y backlight (외광) -->
+  <g filter="url(#glowP3)" opacity="0.65">
+    <polygon points="320,300 380,260 540,500 460,540" fill="#22D3EE"/>
+    <polygon points="704,300 644,260 484,500 564,540" fill="#22D3EE"/>
+    <polygon points="464,500 560,500 540,800 484,800" fill="#A855F7"/>
+  </g>
+
+  <!--
+    Y crystal facets — 각 가지가 다면 prism으로
+    Left arm: 4개 facet
+    Right arm: 4개 facet
+    Stem: 4개 facet
+    Center hub: 6각형 코어
+  -->
+  <g filter="url(#dropP3)">
+    <!-- LEFT arm (top-left to center) - 2 facets stacked -->
+    <polygon points="296,296 344,272 540,492 488,540" fill="url(#facetA)"/>
+    <polygon points="296,296 344,272 540,492 484,524" fill="url(#facetB)" opacity="0.85"/>
+    <polygon points="296,296 280,332 484,524 488,540" fill="url(#facetC)" opacity="0.5"/>
+
+    <!-- RIGHT arm (top-right to center) -->
+    <polygon points="728,296 680,272 484,492 536,540" fill="url(#facetA)"/>
+    <polygon points="728,296 680,272 484,492 540,524" fill="url(#facetD)" opacity="0.85"/>
+    <polygon points="728,296 744,332 540,524 536,540" fill="url(#facetC)" opacity="0.5"/>
+
+    <!-- STEM (center down) -->
+    <polygon points="464,500 560,500 552,820 472,820" fill="url(#facetA)"/>
+    <polygon points="464,500 512,500 504,820 472,820" fill="url(#facetB)" opacity="0.9"/>
+    <polygon points="512,500 560,500 552,820 504,820" fill="url(#facetC)" opacity="0.5"/>
+  </g>
+
+  <!-- 중심 hub (hexagon crystal core) -->
+  <g transform="translate(512 510)">
+    <polygon points="0,-90 78,-45 78,45 0,90 -78,45 -78,-45" fill="url(#facetD)" filter="url(#dropP3)"/>
+    <polygon points="0,-90 78,-45 0,0" fill="url(#facetC)" opacity="0.7"/>
+    <polygon points="0,-90 -78,-45 0,0" fill="url(#facetB)" opacity="0.85"/>
+    <polygon points="78,-45 78,45 0,0" fill="url(#facetA)" opacity="0.7"/>
+    <polygon points="-78,-45 -78,45 0,0" fill="url(#facetA)" opacity="0.55"/>
+    <polygon points="78,45 0,90 0,0" fill="url(#facetD)" opacity="0.6"/>
+    <polygon points="-78,45 0,90 0,0" fill="url(#facetB)" opacity="0.5"/>
+
+    <!-- 중앙 highlight 별 -->
+    <circle cx="0" cy="0" r="22" fill="#FFFFFF"/>
+    <circle cx="0" cy="0" r="8" fill="#F472B6"/>
+  </g>
+
+  <!-- 끝 노드 (보석 처럼) -->
+  <g>
+    <circle cx="320" cy="296" r="36" fill="url(#starP3)" opacity="0.9"/>
+    <circle cx="320" cy="296" r="16" fill="#FFFFFF"/>
+    <circle cx="704" cy="296" r="36" fill="url(#starP3)" opacity="0.9"/>
+    <circle cx="704" cy="296" r="16" fill="#FFFFFF"/>
+    <circle cx="512" cy="820" r="36" fill="url(#starP3)" opacity="0.9"/>
+    <circle cx="512" cy="820" r="16" fill="#FFFFFF"/>
+  </g>
+
+  <!-- Top hl -->
+  <rect x="0" y="0" width="1024" height="1024" rx="220" fill="url(#topHLP3)"/>
+</svg>
