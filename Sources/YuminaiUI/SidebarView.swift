@@ -85,6 +85,8 @@ public struct SidebarView: View {
     public let onOpenLibrary: () -> Void
     /// **ADR-114 P0-2** — 스택 번들 카탈로그 sheet 열기 (사이드바 직접 진입).
     public let onOpenBundles: () -> Void
+    /// **ADR-117** — 커뮤니티 자료 sheet 열기 (사이드바 직접 진입).
+    public let onOpenCommunityResources: () -> Void
     /// **ADR-093 Phase 2** — Offline queue depth (BotStatusDockView 표시용).
     public let telegramQueueDepth: Int
     /// **ADR-093 Phase 2** — 봇 목록 (BotStatusDockView 다중 봇 배지).
@@ -155,6 +157,7 @@ public struct SidebarView: View {
         onOpenTelegramHub: @escaping () -> Void = {},
         onOpenLibrary: @escaping () -> Void = {},
         onOpenBundles: @escaping () -> Void = {},
+        onOpenCommunityResources: @escaping () -> Void = {},
         telegramQueueDepth: Int = 0,
         telegramBotCount: Int = 0,
         telegramFirstBotUsername: String? = nil,
@@ -212,6 +215,7 @@ public struct SidebarView: View {
         self.onOpenTelegramHub = onOpenTelegramHub
         self.onOpenLibrary = onOpenLibrary
         self.onOpenBundles = onOpenBundles
+        self.onOpenCommunityResources = onOpenCommunityResources
         self.telegramQueueDepth = telegramQueueDepth
         self.telegramBotCount = telegramBotCount
         self.telegramFirstBotUsername = telegramFirstBotUsername
@@ -534,6 +538,12 @@ public struct SidebarView: View {
             )
             // ADR-114 P0-2 — 라이브러리 + 번들 직접 진입 (UserProfileSheet 5단 깊이 제거)
             // ADR-116 — 컬러 이모지 제거, SF Symbol 단색으로 통일
+            // ADR-117 — 커뮤니티 자료 직접 진입 추가
+            SidebarMenuRow(
+                label: "커뮤니티 자료",
+                icon: "cube.box.circle.fill",
+                action: onOpenCommunityResources
+            )
             SidebarMenuRow(
                 label: "라이브러리",
                 icon: "books.vertical.circle.fill",

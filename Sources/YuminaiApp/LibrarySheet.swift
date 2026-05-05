@@ -373,92 +373,169 @@ struct LibrarySheet: View {
         }
     }
 
-    // MARK: - 항목 카드
+    // MARK: - 항목 카드 (ADR-117 폴리시)
 
     private func itemCard(_ item: ResourceLibraryItem) -> some View {
-        GroupBox {
-            VStack(alignment: .leading, spacing: Theme.Spacing.sm) {
-                // 헤더
-                HStack(alignment: .top, spacing: Theme.Spacing.sm) {
+        let color = categoryColor(item.category)
+        return VStack(alignment: .leading, spacing: 0) {
+            // 헤더: 아이콘 + 제목 + 메타
+            HStack(alignment: .top, spacing: Theme.Spacing.md) {
+                // 44×44 카테고리 아이콘 박스
+                ZStack {
+                    RoundedRectangle(cornerRadius: Theme.Radius.md)
+                        .fill(color.opacity(0.12))
+                        .frame(width: 44, height: 44)
                     Image(systemName: item.category.icon)
-                        .font(.system(size: 16, weight: .semibold))
-                        .foregroundStyle(categoryColor(item.category))
-                        .frame(width: 22)
-
-                    VStack(alignment: .leading, spacing: 3) {
-                        Text(item.displayName)
-                            .font(Theme.Typography.body.weight(.semibold))
-                            .foregroundStyle(Theme.Color.text)
-                        HStack(spacing: Theme.Spacing.xs) {
-                            categoryBadge(item.category)
-                            Text("·")
-                                .foregroundStyle(Theme.Color.textTertiary)
-                            Image(systemName: item.source.iconName)
-                                .font(.system(size: 9, weight: .medium))
-                                .foregroundStyle(Theme.Color.textTertiary)
-                            Text(item.source.displayLabel)
-                                .font(Theme.Typography.micro)
-                                .foregroundStyle(Theme.Color.textTertiary)
-                            Text("·")
-                                .foregroundStyle(Theme.Color.textTertiary)
-                            Text(item.byteSizeDisplay)
-                                .font(Theme.Typography.micro)
-                                .foregroundStyle(Theme.Color.textTertiary)
-                        }
-                    }
-
-                    Spacer()
-
-                    // 추가일
-                    Text(relativeDate(item.addedAt))
-                        .font(Theme.Typography.micro)
-                        .foregroundStyle(Theme.Color.textTertiary)
+                        .font(.system(size: 20, weight: .semibold))
+                        .foregroundStyle(color)
                 }
 
-                // 메모
-                if !item.notes.isEmpty {
-                    Text(item.notes)
-                        .font(Theme.Typography.small)
-                        .foregroundStyle(Theme.Color.textSecondary)
+                VStack(alignment: .leading, spacing: 4) {
+                    // 제목
+                    Text(item.displayName)
+                        .font(Theme.Typography.body.weight(.semibold))
+                        .foregroundStyle(Theme.Color.text)
                         .lineLimit(2)
+
+                    // 메타 행: 카테고리 배지 + 출처 + 크기
+                    HStack(spacing: Theme.Spacing.xs) {
+                        categoryBadge(item.category)
+                        Text("·")
+                            .font(Theme.Typography.micro)
+                            .foregroundStyle(Theme.Color.textTertiary)
+                        Image(systemName: item.source.iconName)
+                            .font(.system(size: 9, weight: .medium))
+                            .foregroundStyle(Theme.Color.textTertiary)
+                        Text(item.source.displayLabel)
+                            .font(Theme.Typography.micro)
+                            .foregroundStyle(Theme.Color.textTertiary)
+                        Text("·")
+                            .font(Theme.Typography.micro)
+                            .foregroundStyle(Theme.Color.textTertiary)
+                        Text(item.byteSizeDisplay)
+                            .font(Theme.Typography.micro.monospacedDigit())
+                            .foregroundStyle(Theme.Color.textTertiary)
+                    }
                 }
 
-                // 태그
-                if !item.tags.isEmpty {
-                    itemTagChips(item.tags)
-                }
+                Spacer()
+            }
+            .padding(Theme.Spacing.md)
 
-                Divider()
-
-                // 액션 버튼
-                HStack(spacing: Theme.Spacing.sm) {
-                    Button("내용 보기") {
-                        viewingItem = item
-                    }
-                    .font(Theme.Typography.small)
-                    .foregroundStyle(Theme.Color.accent)
-                    .buttonStyle(.plain)
-
-                    Button("편집") {
-                        editingItem = item
-                    }
+            // 메모 (있을 때만)
+            if !item.notes.isEmpty {
+                Text(item.notes)
                     .font(Theme.Typography.small)
                     .foregroundStyle(Theme.Color.textSecondary)
-                    .buttonStyle(.plain)
-
-                    Spacer()
-
-                    Button("삭제") {
-                        deletingItem = item
-                        confirmDelete = true
-                    }
-                    .font(Theme.Typography.small)
-                    .foregroundStyle(Theme.Color.danger)
-                    .buttonStyle(.plain)
-                }
+                    .lineLimit(2)
+                    .padding(.horizontal, Theme.Spacing.md)
+                    .padding(.bottom, Theme.Spacing.sm)
             }
+
+            // 태그 chips (있을 때만)
+            if !item.tags.isEmpty {
+                itemTagChips(item.tags)
+                    .padding(.horizontal, Theme.Spacing.md)
+                    .padding(.bottom, Theme.Spacing.sm)
+            }
+
+            // 추가일 행
+            Divider()
+                .padding(.horizontal, Theme.Spacing.md)
+
+            HStack(spacing: 5) {
+                Image(systemName: "clock")
+                    .font(.system(size: 10, weight: .medium))
+                    .foregroundStyle(Theme.Color.textTertiary)
+                Text(relativeDate(item.addedAt))
+                    .font(Theme.Typography.micro.weight(.medium))
+                    .foregroundStyle(Theme.Color.textTertiary)
+                Text("·")
+                    .font(Theme.Typography.micro)
+                    .foregroundStyle(Theme.Color.textTertiary)
+                Text(absoluteDate(item.addedAt))
+                    .font(Theme.Typography.micro.monospacedDigit())
+                    .foregroundStyle(Theme.Color.textTertiary)
+                    .help(item.addedAt.formatted(date: .complete, time: .shortened))
+            }
+            .padding(.horizontal, Theme.Spacing.md)
+            .padding(.vertical, 6)
+
+            // 액션 버튼 행
+            Divider()
+
+            HStack(spacing: Theme.Spacing.sm) {
+                // 내용 보기
+                Button {
+                    viewingItem = item
+                } label: {
+                    HStack(spacing: 4) {
+                        Image(systemName: "eye.fill")
+                            .font(.system(size: 10, weight: .semibold))
+                        Text("내용 보기")
+                            .font(Theme.Typography.small.weight(.medium))
+                    }
+                    .foregroundStyle(Theme.Color.accent)
+                    .padding(.horizontal, Theme.Spacing.sm)
+                    .padding(.vertical, 5)
+                    .background(Theme.Color.accentMuted.opacity(0.12))
+                    .clipShape(RoundedRectangle(cornerRadius: Theme.Radius.sm))
+                }
+                .buttonStyle(.plain)
+
+                // 편집
+                Button {
+                    editingItem = item
+                } label: {
+                    HStack(spacing: 4) {
+                        Image(systemName: "pencil")
+                            .font(.system(size: 10, weight: .semibold))
+                        Text("편집")
+                            .font(Theme.Typography.small.weight(.medium))
+                    }
+                    .foregroundStyle(Theme.Color.textSecondary)
+                    .padding(.horizontal, Theme.Spacing.sm)
+                    .padding(.vertical, 5)
+                    .background(Theme.Color.surfaceHi)
+                    .clipShape(RoundedRectangle(cornerRadius: Theme.Radius.sm))
+                }
+                .buttonStyle(.plain)
+
+                Spacer()
+
+                // 삭제 (destructive — 빨강 outline)
+                Button {
+                    deletingItem = item
+                    confirmDelete = true
+                } label: {
+                    HStack(spacing: 4) {
+                        Image(systemName: "trash")
+                            .font(.system(size: 10, weight: .semibold))
+                        Text("삭제")
+                            .font(Theme.Typography.small.weight(.medium))
+                    }
+                    .foregroundStyle(Theme.Color.danger)
+                    .padding(.horizontal, Theme.Spacing.sm)
+                    .padding(.vertical, 5)
+                    .background(Theme.Color.danger.opacity(0.08))
+                    .clipShape(RoundedRectangle(cornerRadius: Theme.Radius.sm))
+                    .overlay(
+                        RoundedRectangle(cornerRadius: Theme.Radius.sm)
+                            .stroke(Theme.Color.danger.opacity(0.25), lineWidth: 0.5)
+                    )
+                }
+                .buttonStyle(.plain)
+            }
+            .padding(.horizontal, Theme.Spacing.md)
+            .padding(.vertical, Theme.Spacing.sm)
         }
-        .groupBoxStyle(.automatic)
+        .background(Theme.Color.surface)
+        .clipShape(RoundedRectangle(cornerRadius: Theme.Radius.md))
+        .overlay(
+            RoundedRectangle(cornerRadius: Theme.Radius.md)
+                .stroke(Theme.Color.surfaceHi, lineWidth: 1)
+        )
+        .shadow(color: .black.opacity(0.04), radius: 3, x: 0, y: 1)
     }
 
     private func categoryBadge(_ category: CommunityResource.Category) -> some View {
@@ -496,8 +573,9 @@ struct LibrarySheet: View {
     }
 
     private func itemTagChips(_ tags: [String]) -> some View {
-        HStack(spacing: 4) {
-            ForEach(tags.prefix(5), id: \.self) { tag in
+        let maxVisible = 4
+        return HStack(spacing: 4) {
+            ForEach(tags.prefix(maxVisible), id: \.self) { tag in
                 Text("#\(tag)")
                     .font(Theme.Typography.micro)
                     .foregroundStyle(Theme.Color.textTertiary)
@@ -506,10 +584,14 @@ struct LibrarySheet: View {
                     .background(Theme.Color.surfaceHi)
                     .clipShape(RoundedRectangle(cornerRadius: Theme.Radius.sm))
             }
-            if tags.count > 5 {
-                Text("+\(tags.count - 5)")
+            if tags.count > maxVisible {
+                Text("+\(tags.count - maxVisible)")
                     .font(Theme.Typography.micro)
                     .foregroundStyle(Theme.Color.textTertiary)
+                    .padding(.horizontal, 5)
+                    .padding(.vertical, 2)
+                    .background(Theme.Color.surfaceHi)
+                    .clipShape(RoundedRectangle(cornerRadius: Theme.Radius.sm))
             }
         }
     }
@@ -520,9 +602,12 @@ struct LibrarySheet: View {
         if diff < 3600 { return "\(Int(diff / 60))분 전" }
         if diff < 86400 { return "\(Int(diff / 3600))시간 전" }
         if diff < 86400 * 7 { return "\(Int(diff / 86400))일 전" }
+        return "\(Int(diff / 86400))일 전"
+    }
+
+    private func absoluteDate(_ date: Date) -> String {
         let fmt = DateFormatter()
-        fmt.dateStyle = .short
-        fmt.timeStyle = .none
+        fmt.dateFormat = "yyyy-MM-dd HH:mm"
         return fmt.string(from: date)
     }
 }

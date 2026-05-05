@@ -5031,6 +5031,9 @@ public final class AppModel {
     /// **ADR-116** — GitHub 검색 sheet 표시 여부.
     public var showGitHubSearchSheet: Bool = false
 
+    /// **ADR-117** — 커뮤니티 자료 sheet 표시 여부 (사이드바 직접 진입).
+    public var showCommunityResourcesSheet: Bool = false
+
     /// ADR-111 — 라이브러리 picker popover 표시 여부 (Composer 안).
     public var showLibraryPickerPopover: Bool = false
 

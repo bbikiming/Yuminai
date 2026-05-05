@@ -489,6 +489,11 @@ struct RootView: View {
             GitHubSearchSheet()
                 .environment(appModel)
         }
+        // ADR-117 — 커뮤니티 자료 sheet (사이드바 직접 진입)
+        .sheet(isPresented: $bindable.showCommunityResourcesSheet) {
+            CommunityResourcesSheet()
+                .environment(appModel)
+        }
         // ADR-097 — Telegram Artifact Viewer (diff / log deep link)
         .sheet(isPresented: $bindable.showTelegramArtifactSheet) {
             if let id = appModel.artifactSheetId {
@@ -814,6 +819,10 @@ struct RootView: View {
             },
             onOpenBundles: {
                 appModel.presentExclusiveSheet { $0.showBundleCatalogSheet = true }
+            },
+            // ADR-117 — 사이드바 커뮤니티 자료 직접 진입
+            onOpenCommunityResources: {
+                appModel.presentExclusiveSheet { $0.showCommunityResourcesSheet = true }
             },
             // ADR-093 Phase 2 — BotStatusDock 데이터
             telegramQueueDepth: appModel.telegramQueueDepth,
