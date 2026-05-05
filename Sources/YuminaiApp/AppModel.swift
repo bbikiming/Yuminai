@@ -4638,13 +4638,13 @@ public final class AppModel {
         case .template:
             return .success("GitHub 리포지토리를 직접 클론하거나 다운로드하세요.")
 
-        case .claudeMd:
+        case .claudeMd, .styleGuide, .workflow, .architecture, .promptPattern, .rules:
             guard let rawURL = resource.rawURL else {
                 return .failure(CommunityResourceError.noRawURL)
             }
             return await downloadAndAppendToCLAUDEMd(rawURL: rawURL, resource: resource, workspaceURL: workspaceURL)
 
-        case .skill:
+        case .skill, .mcp:
             guard let rawURL = resource.rawURL else {
                 return .failure(CommunityResourceError.noRawURL)
             }
@@ -4934,6 +4934,9 @@ public final class AppModel {
 
     /// ADR-111 — 라이브러리 sheet 표시 여부.
     public var showLibrarySheet: Bool = false
+
+    /// ADR-112 — 카탈로그 전체 탐색 sheet 표시 여부.
+    public var showCatalogSheet: Bool = false
 
     /// ADR-111 — 라이브러리 picker popover 표시 여부 (Composer 안).
     public var showLibraryPickerPopover: Bool = false

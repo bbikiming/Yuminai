@@ -2,13 +2,16 @@ import SwiftUI
 import YuminaiCore
 import YuminaiUI
 
-/// **ADR-109 + ADR-111** — 커뮤니티 자료 탐색·라이브러리 추가 패널.
+/// **ADR-112** — 커뮤니티 자료 탐색·라이브러리 추가 패널.
 ///
 /// UserProfileSheet의 "커뮤니티 자료" 섹션에서 렌더링된다.
-/// - 카테고리 필터 (전체 / CLAUDE.md / Skill / 템플릿)
-/// - 자료 카드 리스트 (이름, 스타, 설명, 태그, GitHub/라이브러리 추가 버튼)
+///
+/// ADR-112 개선:
+/// - 카테고리 필터 9개 (Capsule chip)
+/// - 검색 TextField (이름 + 설명 + 태그)
+/// - 정렬: 추천도 / 스타 수
+/// - 자료 카드: 공식 배지, 언어 indicator, 사용 사례, 라이브러리 추가 여부
 /// - 사용자 정의 URL 직접 추가
-/// - ADR-111: [워크스페이스에 적용] → [라이브러리에 추가] 변경
 struct CommunityResourcesPanel: View {
 
     @Environment(AppModel.self) private var appModel
@@ -16,6 +19,8 @@ struct CommunityResourcesPanel: View {
     // MARK: - 상태
 
     @State private var selectedCategory: FilterCategory = .all
+    @State private var searchQuery: String = ""
+    @State private var sortOrder: SortOrder = .recommended
     @State private var customURL: String = ""
     @State private var addResult: AddResult? = nil
     @State private var addingId: UUID? = nil
@@ -24,10 +29,37 @@ struct CommunityResourcesPanel: View {
     // MARK: - 타입
 
     enum FilterCategory: String, CaseIterable, Identifiable {
-        case all       = "전체"
-        case claudeMd  = "CLAUDE.md"
-        case skill     = "Skill"
-        case template  = "템플릿"
+        case all         = "전체"
+        case claudeMd    = "CLAUDE.md"
+        case skill       = "Skill"
+        case template    = "템플릿"
+        case styleGuide  = "디자인 가이드"
+        case workflow    = "워크플로우"
+        case architecture = "시스템 설계"
+        case promptPattern = "프롬프트 패턴"
+        case rules       = "에디터 규칙"
+        case mcp         = "MCP 서버"
+        var id: String { rawValue }
+
+        var coreCategory: CommunityResource.Category? {
+            switch self {
+            case .all:           return nil
+            case .claudeMd:      return .claudeMd
+            case .skill:         return .skill
+            case .template:      return .template
+            case .styleGuide:    return .styleGuide
+            case .workflow:      return .workflow
+            case .architecture:  return .architecture
+            case .promptPattern: return .promptPattern
+            case .rules:         return .rules
+            case .mcp:           return .mcp
+            }
+        }
+    }
+
+    enum SortOrder: String, CaseIterable, Identifiable {
+        case recommended = "추천도"
+        case stars       = "스타 수"
         var id: String { rawValue }
     }
 
@@ -36,11 +68,44 @@ struct CommunityResourcesPanel: View {
         case failure(String)
     }
 
+    // MARK: - 필터된 자료
+
+    private var filteredResources: [CommunityResource] {
+        var resources = CommunityCatalog.curated
+
+        // 카테고리 필터
+        if let cat = selectedCategory.coreCategory {
+            resources = resources.filter { $0.category == cat }
+        }
+
+        // 검색 필터
+        let q = searchQuery.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        if !q.isEmpty {
+            resources = resources.filter { r in
+                r.displayName.lowercased().contains(q) ||
+                r.summary.lowercased().contains(q) ||
+                r.tags.contains { $0.lowercased().contains(q) } ||
+                r.author.lowercased().contains(q)
+            }
+        }
+
+        // 정렬
+        switch sortOrder {
+        case .recommended:
+            resources = resources.sorted { $0.recommendedRank > $1.recommendedRank }
+        case .stars:
+            resources = resources.sorted { $0.starsApprox > $1.starsApprox }
+        }
+
+        return resources
+    }
+
     // MARK: - 뷰
 
     var body: some View {
         VStack(alignment: .leading, spacing: Theme.Spacing.xl) {
             headerSection
+            searchAndSort
             filterBar
             resourceList
             customURLSection
@@ -59,7 +124,25 @@ struct CommunityResourcesPanel: View {
                     .font(.system(size: 16, weight: .semibold))
                     .foregroundStyle(Theme.Color.text)
                 Spacer()
-                // ADR-111 — 라이브러리 바로 열기
+                // 카탈로그 전체 보기
+                Button {
+                    appModel.showCatalogSheet = true
+                } label: {
+                    HStack(spacing: 4) {
+                        Image(systemName: "square.grid.2x2.fill")
+                            .font(.system(size: 11, weight: .semibold))
+                        Text("전체 카탈로그")
+                            .font(Theme.Typography.small.weight(.medium))
+                    }
+                    .foregroundStyle(.white)
+                    .padding(.horizontal, 8)
+                    .padding(.vertical, 4)
+                    .background(Theme.Color.accent)
+                    .clipShape(Capsule())
+                }
+                .buttonStyle(.plain)
+
+                // 라이브러리 바로 열기
                 Button {
                     appModel.showLibrarySheet = true
                 } label: {
@@ -73,10 +156,50 @@ struct CommunityResourcesPanel: View {
                 }
                 .buttonStyle(.plain)
             }
-            Text("GitHub에서 검증된 CLAUDE.md 가이드와 Claude Skill을 라이브러리에 추가하세요. 대화창에서 자료를 첨부해 Claude에게 전달할 수 있어요.")
+            Text("GitHub에서 검증된 CLAUDE.md, Skills, MCP 서버 설정 등을 라이브러리에 추가하세요. 대화창에서 자료를 첨부해 Claude에게 전달할 수 있어요.")
                 .font(Theme.Typography.small)
                 .foregroundStyle(Theme.Color.textSecondary)
                 .fixedSize(horizontal: false, vertical: true)
+        }
+    }
+
+    // MARK: - 검색 + 정렬
+
+    private var searchAndSort: some View {
+        HStack(spacing: Theme.Spacing.sm) {
+            // 검색
+            HStack(spacing: 6) {
+                Image(systemName: "magnifyingglass")
+                    .font(.system(size: 12, weight: .medium))
+                    .foregroundStyle(Theme.Color.textTertiary)
+                TextField("자료 검색 (이름, 태그, 작성자)…", text: $searchQuery)
+                    .font(Theme.Typography.small)
+                    .textFieldStyle(.plain)
+                if !searchQuery.isEmpty {
+                    Button {
+                        searchQuery = ""
+                    } label: {
+                        Image(systemName: "xmark.circle.fill")
+                            .font(.system(size: 11))
+                            .foregroundStyle(Theme.Color.textTertiary)
+                    }
+                    .buttonStyle(.plain)
+                }
+            }
+            .padding(.horizontal, Theme.Spacing.sm)
+            .padding(.vertical, 6)
+            .background(Theme.Color.surfaceHi)
+            .clipShape(RoundedRectangle(cornerRadius: Theme.Radius.sm))
+
+            // 정렬
+            Picker("정렬", selection: $sortOrder) {
+                ForEach(SortOrder.allCases) { order in
+                    Text(order.rawValue).tag(order)
+                }
+            }
+            .pickerStyle(.menu)
+            .font(Theme.Typography.small)
+            .frame(maxWidth: 100)
         }
     }
 
@@ -95,47 +218,60 @@ struct CommunityResourcesPanel: View {
 
     private func filterChip(_ category: FilterCategory) -> some View {
         let isSelected = selectedCategory == category
+        let count = category.coreCategory.map { cat in
+            CommunityCatalog.resources(for: cat).count
+        } ?? CommunityCatalog.curated.count
+
         return Button {
-            withAnimation(.easeOut(duration: 0.15)) {
+            withAnimation(.spring(response: 0.2, dampingFraction: 0.8)) {
                 selectedCategory = category
             }
         } label: {
-            Text(category.rawValue)
-                .font(Theme.Typography.small.weight(isSelected ? .semibold : .regular))
-                .foregroundStyle(isSelected ? .white : Theme.Color.text)
-                .padding(.horizontal, Theme.Spacing.md)
-                .padding(.vertical, 6)
-                .background(
-                    Capsule()
-                        .fill(isSelected ? Theme.Color.accent : Theme.Color.surfaceHi)
-                )
-                .overlay(
-                    Capsule()
-                        .stroke(isSelected ? Color.clear : Theme.Color.borderSubtle, lineWidth: 0.5)
-                )
+            HStack(spacing: 4) {
+                Text(category.rawValue)
+                    .font(Theme.Typography.small.weight(isSelected ? .semibold : .regular))
+                if isSelected {
+                    Text("\(count)")
+                        .font(Theme.Typography.micro.weight(.semibold))
+                        .foregroundStyle(isSelected ? .white.opacity(0.8) : Theme.Color.textTertiary)
+                }
+            }
+            .foregroundStyle(isSelected ? .white : Theme.Color.text)
+            .padding(.horizontal, Theme.Spacing.md)
+            .padding(.vertical, 6)
+            .background(
+                Capsule()
+                    .fill(isSelected ? chipColor(category) : Theme.Color.surfaceHi)
+            )
+            .overlay(
+                Capsule()
+                    .stroke(isSelected ? Color.clear : Theme.Color.borderSubtle, lineWidth: 0.5)
+            )
         }
         .buttonStyle(.plain)
     }
 
-    // MARK: - 자료 목록
-
-    private var filteredResources: [CommunityResource] {
-        switch selectedCategory {
-        case .all:      return CommunityCatalog.curated
-        case .claudeMd: return CommunityCatalog.resources(for: .claudeMd)
-        case .skill:    return CommunityCatalog.resources(for: .skill)
-        case .template: return CommunityCatalog.resources(for: .template)
+    private func chipColor(_ category: FilterCategory) -> Color {
+        switch category {
+        case .all:           return Theme.Color.accent
+        case .claudeMd:      return Theme.Color.accent
+        case .skill:         return .orange
+        case .template:      return Theme.Color.success
+        case .styleGuide:    return .purple
+        case .workflow:      return .blue
+        case .architecture:  return .indigo
+        case .promptPattern: return .teal
+        case .rules:         return .red
+        case .mcp:           return .cyan
         }
     }
+
+    // MARK: - 자료 목록
 
     private var resourceList: some View {
         VStack(spacing: Theme.Spacing.md) {
             if filteredResources.isEmpty {
-                Text("해당 카테고리 자료가 없어요.")
-                    .font(Theme.Typography.small)
-                    .foregroundStyle(Theme.Color.textTertiary)
-                    .frame(maxWidth: .infinity, alignment: .center)
-                    .padding(.vertical, Theme.Spacing.xl)
+                emptyState
             } else {
                 ForEach(filteredResources) { resource in
                     resourceCard(resource)
@@ -144,17 +280,36 @@ struct CommunityResourcesPanel: View {
         }
     }
 
+    private var emptyState: some View {
+        VStack(spacing: Theme.Spacing.sm) {
+            Image(systemName: "magnifyingglass")
+                .font(.system(size: 28, weight: .ultraLight))
+                .foregroundStyle(Theme.Color.textTertiary)
+            Text("검색 결과가 없어요")
+                .font(Theme.Typography.small)
+                .foregroundStyle(Theme.Color.textTertiary)
+        }
+        .frame(maxWidth: .infinity, alignment: .center)
+        .padding(.vertical, Theme.Spacing.xl)
+    }
+
     // MARK: - 자료 카드
 
     private func resourceCard(_ resource: CommunityResource) -> some View {
         GroupBox {
             VStack(alignment: .leading, spacing: Theme.Spacing.sm) {
-                // 헤더 행: 이름 + 스타 + 카테고리 배지
+                // 헤더 행: 이름 + 배지들 + 카테고리
                 HStack(alignment: .top, spacing: Theme.Spacing.sm) {
                     VStack(alignment: .leading, spacing: 3) {
-                        Text(resource.displayName)
-                            .font(Theme.Typography.body.weight(.semibold))
-                            .foregroundStyle(Theme.Color.text)
+                        HStack(spacing: 6) {
+                            Text(resource.displayName)
+                                .font(Theme.Typography.body.weight(.semibold))
+                                .foregroundStyle(Theme.Color.text)
+                            // 공식 배지
+                            if resource.officialBadge {
+                                officialBadgeView
+                            }
+                        }
                         HStack(spacing: Theme.Spacing.xs) {
                             Text("by \(resource.author)")
                                 .font(Theme.Typography.micro)
@@ -168,6 +323,12 @@ struct CommunityResourcesPanel: View {
                             Text(resource.starsDisplay)
                                 .font(Theme.Typography.micro)
                                 .foregroundStyle(Theme.Color.textSecondary)
+                            Text("·")
+                                .font(Theme.Typography.micro)
+                                .foregroundStyle(Theme.Color.textTertiary)
+                            // 언어 indicator
+                            Text(resource.language.flag)
+                                .font(.system(size: 10))
                         }
                     }
                     Spacer()
@@ -179,6 +340,19 @@ struct CommunityResourcesPanel: View {
                     .font(Theme.Typography.small)
                     .foregroundStyle(Theme.Color.textSecondary)
                     .fixedSize(horizontal: false, vertical: true)
+
+                // 사용 사례
+                if let useCase = resource.useCase {
+                    HStack(spacing: 4) {
+                        Image(systemName: "lightbulb.fill")
+                            .font(.system(size: 9))
+                            .foregroundStyle(.yellow)
+                        Text(useCase)
+                            .font(Theme.Typography.micro)
+                            .foregroundStyle(Theme.Color.textSecondary)
+                            .italic()
+                    }
+                }
 
                 // 태그
                 if !resource.tags.isEmpty {
@@ -192,6 +366,20 @@ struct CommunityResourcesPanel: View {
             }
         }
         .groupBoxStyle(.automatic)
+    }
+
+    private var officialBadgeView: some View {
+        HStack(spacing: 3) {
+            Image(systemName: "checkmark.seal.fill")
+                .font(.system(size: 9, weight: .semibold))
+            Text("공식")
+                .font(Theme.Typography.micro.weight(.semibold))
+        }
+        .foregroundStyle(.white)
+        .padding(.horizontal, 6)
+        .padding(.vertical, 2)
+        .background(Color.blue.opacity(0.85))
+        .clipShape(Capsule())
     }
 
     private func categoryBadge(_ category: CommunityResource.Category) -> some View {
@@ -210,9 +398,15 @@ struct CommunityResourcesPanel: View {
 
     private func badgeColor(_ category: CommunityResource.Category) -> Color {
         switch category {
-        case .claudeMd:  return Theme.Color.accent
-        case .skill:     return .orange
-        case .template:  return Theme.Color.success
+        case .claudeMd:      return Theme.Color.accent
+        case .skill:         return .orange
+        case .template:      return Theme.Color.success
+        case .styleGuide:    return .purple
+        case .workflow:      return .blue
+        case .architecture:  return .indigo
+        case .promptPattern: return .teal
+        case .rules:         return .red
+        case .mcp:           return .cyan
         }
     }
 
@@ -246,11 +440,10 @@ struct CommunityResourcesPanel: View {
 
             Spacer()
 
-            // ADR-111 — 라이브러리에 추가 (rawURL 있고 template 아닌 경우만)
+            // 라이브러리에 추가 (rawURL 있고 template 아닌 경우만)
             if resource.rawURL != nil && resource.category != .template {
                 addToLibraryButton(resource)
             } else if resource.category != .template {
-                // rawURL 없으면 "직접 추가" 힌트
                 Text("직접 URL 입력 후 추가 가능")
                     .font(Theme.Typography.micro)
                     .foregroundStyle(Theme.Color.textTertiary)
@@ -263,7 +456,6 @@ struct CommunityResourcesPanel: View {
         let isAdding = addingId == resource.id
         let isAlreadyInLibrary = appModel.isInLibrary(resource)
 
-        // 결과 인라인 표시
         if case .success(let msg) = addResult, addingId == resource.id {
             HStack(spacing: 4) {
                 Image(systemName: "checkmark.circle.fill")
@@ -283,7 +475,6 @@ struct CommunityResourcesPanel: View {
                     .foregroundStyle(Theme.Color.danger)
             }
         } else if isAlreadyInLibrary {
-            // 이미 추가된 경우 — 비활성 표시
             HStack(spacing: 4) {
                 Image(systemName: "checkmark.circle.fill")
                     .font(.system(size: 11))

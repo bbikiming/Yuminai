@@ -2,16 +2,15 @@ import SwiftUI
 import YuminaiCore
 import YuminaiUI
 
-/// **ADR-111** — 자료 라이브러리 Sheet.
+/// **ADR-112** — 자료 라이브러리 Sheet.
 ///
 /// macOS Settings.app 패턴: 좌측 카테고리 사이드바 + 우측 항목 리스트.
 ///
-/// 기능:
-/// - 카테고리 필터 (전체 / CLAUDE.md / Skill / 템플릿)
-/// - 검색 (displayName / tags)
-/// - 라이브러리 항목 카드 (아이콘·이름·카테고리·바이트 크기·출처·tags·notes·추가일)
-/// - [텍스트로 추가] [URL로 추가] 버튼
-/// - 항목별 [편집] [삭제] [내용 보기]
+/// ADR-112 변경:
+/// - 카테고리 사이드바 9개 (전체 포함 10개)
+/// - 카테고리별 tint color
+/// - 빈 카테고리 hint ("커뮤니티 자료에서 추가하세요")
+/// - 검색 + 카테고리 + 출처 필터
 struct LibrarySheet: View {
 
     @Environment(AppModel.self) private var appModel
@@ -31,18 +30,31 @@ struct LibrarySheet: View {
     // MARK: - 타입
 
     enum FilterCategory: String, CaseIterable, Identifiable {
-        case all       = "전체"
-        case claudeMd  = "CLAUDE.md"
-        case skill     = "Skill"
-        case template  = "템플릿"
+        case all         = "전체"
+        case claudeMd    = "CLAUDE.md"
+        case skill       = "Skill"
+        case template    = "템플릿"
+        case styleGuide  = "디자인 가이드"
+        case workflow    = "워크플로우"
+        case architecture = "시스템 설계"
+        case promptPattern = "프롬프트 패턴"
+        case rules       = "에디터 규칙"
+        case mcp         = "MCP 서버"
+
         var id: String { rawValue }
 
         var coreCategory: CommunityResource.Category? {
             switch self {
-            case .all: return nil
-            case .claudeMd: return .claudeMd
-            case .skill: return .skill
-            case .template: return .template
+            case .all:           return nil
+            case .claudeMd:      return .claudeMd
+            case .skill:         return .skill
+            case .template:      return .template
+            case .styleGuide:    return .styleGuide
+            case .workflow:      return .workflow
+            case .architecture:  return .architecture
+            case .promptPattern: return .promptPattern
+            case .rules:         return .rules
+            case .mcp:           return .mcp
             }
         }
     }
@@ -80,7 +92,7 @@ struct LibrarySheet: View {
             Divider()
             contentArea
         }
-        .frame(minWidth: 720, minHeight: 520)
+        .frame(minWidth: 760, minHeight: 540)
         .sheet(isPresented: $showAddTextSheet) { AddLibraryTextSheet() }
         .sheet(isPresented: $showAddURLSheet) { AddLibraryURLSheet() }
         .sheet(item: $editingItem) { item in EditLibraryItemSheet(item: item) }
@@ -112,11 +124,15 @@ struct LibrarySheet: View {
             .padding(.top, Theme.Spacing.lg)
             .padding(.bottom, Theme.Spacing.sm)
 
-            Divider().padding(.bottom, Theme.Spacing.sm)
+            Divider().padding(.bottom, Theme.Spacing.xs)
 
-            // 카테고리 필터
-            ForEach(FilterCategory.allCases) { cat in
-                sidebarRow(cat)
+            // 카테고리 필터 (스크롤 가능)
+            ScrollView(.vertical, showsIndicators: false) {
+                VStack(spacing: 0) {
+                    ForEach(FilterCategory.allCases) { cat in
+                        sidebarRow(cat)
+                    }
+                }
             }
 
             Spacer()
@@ -130,7 +146,7 @@ struct LibrarySheet: View {
                 .padding(.horizontal, Theme.Spacing.md)
                 .padding(.vertical, Theme.Spacing.sm)
         }
-        .frame(width: 180)
+        .frame(width: 190)
         .background(Theme.Color.surfaceHi)
     }
 
@@ -151,7 +167,7 @@ struct LibrarySheet: View {
             HStack(spacing: Theme.Spacing.sm) {
                 Image(systemName: categoryIcon(category))
                     .font(.system(size: 12, weight: isSelected ? .semibold : .regular))
-                    .foregroundStyle(isSelected ? Theme.Color.accent : Theme.Color.textSecondary)
+                    .foregroundStyle(isSelected ? categoryTintColor(category) : Theme.Color.textSecondary)
                     .frame(width: 16)
                 Text(category.rawValue)
                     .font(Theme.Typography.small.weight(isSelected ? .semibold : .regular))
@@ -160,12 +176,12 @@ struct LibrarySheet: View {
                 if count > 0 {
                     Text("\(count)")
                         .font(Theme.Typography.micro)
-                        .foregroundStyle(isSelected ? Theme.Color.accent : Theme.Color.textTertiary)
+                        .foregroundStyle(isSelected ? categoryTintColor(category) : Theme.Color.textTertiary)
                 }
             }
             .padding(.horizontal, Theme.Spacing.md)
             .padding(.vertical, Theme.Spacing.sm - 1)
-            .background(isSelected ? Theme.Color.accentMuted.opacity(0.2) : .clear)
+            .background(isSelected ? categoryTintColor(category).opacity(0.12) : .clear)
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
@@ -173,10 +189,31 @@ struct LibrarySheet: View {
 
     private func categoryIcon(_ category: FilterCategory) -> String {
         switch category {
-        case .all: return "tray.full.fill"
-        case .claudeMd: return "doc.text.fill"
-        case .skill: return "bolt.fill"
-        case .template: return "square.grid.2x2.fill"
+        case .all:           return "tray.full.fill"
+        case .claudeMd:      return "doc.text.fill"
+        case .skill:         return "bolt.fill"
+        case .template:      return "square.grid.2x2.fill"
+        case .styleGuide:    return "paintbrush.fill"
+        case .workflow:      return "arrow.triangle.2.circlepath"
+        case .architecture:  return "building.columns.fill"
+        case .promptPattern: return "text.bubble.fill"
+        case .rules:         return "shield.fill"
+        case .mcp:           return "plug.fill"
+        }
+    }
+
+    private func categoryTintColor(_ category: FilterCategory) -> Color {
+        switch category {
+        case .all:           return Theme.Color.accent
+        case .claudeMd:      return Theme.Color.accent
+        case .skill:         return .orange
+        case .template:      return Theme.Color.success
+        case .styleGuide:    return .purple
+        case .workflow:      return .blue
+        case .architecture:  return .indigo
+        case .promptPattern: return .teal
+        case .rules:         return .red
+        case .mcp:           return .cyan
         }
     }
 
@@ -284,10 +321,17 @@ struct LibrarySheet: View {
                 .font(.system(size: 15, weight: .medium))
                 .foregroundStyle(Theme.Color.textSecondary)
             if searchQuery.isEmpty {
-                Text("커뮤니티 자료 패널에서 자료를 추가하거나,\n위 버튼으로 URL이나 텍스트를 직접 추가하세요.")
-                    .font(Theme.Typography.small)
-                    .foregroundStyle(Theme.Color.textTertiary)
-                    .multilineTextAlignment(.center)
+                if selectedCategory == .all {
+                    Text("커뮤니티 자료 패널에서 자료를 추가하거나,\n위 버튼으로 URL이나 텍스트를 직접 추가하세요.")
+                        .font(Theme.Typography.small)
+                        .foregroundStyle(Theme.Color.textTertiary)
+                        .multilineTextAlignment(.center)
+                } else {
+                    Text("'\(selectedCategory.rawValue)' 카테고리에 자료가 없어요.\n커뮤니티 자료 패널에서 이 카테고리 자료를 추가해 보세요.")
+                        .font(Theme.Typography.small)
+                        .foregroundStyle(Theme.Color.textTertiary)
+                        .multilineTextAlignment(.center)
+                }
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -408,9 +452,15 @@ struct LibrarySheet: View {
 
     private func categoryColor(_ category: CommunityResource.Category) -> Color {
         switch category {
-        case .claudeMd:  return Theme.Color.accent
-        case .skill:     return .orange
-        case .template:  return Theme.Color.success
+        case .claudeMd:      return Theme.Color.accent
+        case .skill:         return .orange
+        case .template:      return Theme.Color.success
+        case .styleGuide:    return .purple
+        case .workflow:      return .blue
+        case .architecture:  return .indigo
+        case .promptPattern: return .teal
+        case .rules:         return .red
+        case .mcp:           return .cyan
         }
     }
 
@@ -496,7 +546,7 @@ struct AddLibraryTextSheet: View {
                                 Text(cat.displayName).tag(cat)
                             }
                         }
-                        .pickerStyle(.segmented)
+                        .pickerStyle(.menu)
                     }
 
                     VStack(alignment: .leading, spacing: 6) {
@@ -610,7 +660,7 @@ struct AddLibraryURLSheet: View {
                             Text(cat.displayName).tag(cat)
                         }
                     }
-                    .pickerStyle(.segmented)
+                    .pickerStyle(.menu)
                 }
 
                 if let errorMessage {
@@ -672,7 +722,7 @@ struct AddLibraryURLSheet: View {
             }
             .padding(Theme.Spacing.lg)
         }
-        .frame(width: 480, height: 380)
+        .frame(width: 480, height: 400)
         .background(Theme.Color.bg)
     }
 }
