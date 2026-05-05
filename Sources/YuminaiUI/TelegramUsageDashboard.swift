@@ -114,7 +114,7 @@ public struct TelegramUsageDashboard: View {
             Divider()
             footer
         }
-        .frame(width: 880, height: 720)
+        .yuminaiSheetFrame(width: 880, height: 720, wrapInScrollView: false)
         .background(Theme.Color.bg)
         // ADR-065 Phase 5 + ADR-066 Phase 1 — Chat detail with chat-specific buckets
         .sheet(item: $selectedChatForDetail) { chat in

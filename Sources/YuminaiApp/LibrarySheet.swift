@@ -744,7 +744,7 @@ struct AddLibraryTextSheet: View {
             }
             .padding(Theme.Spacing.lg)
         }
-        .frame(width: 580, height: 620)
+        .yuminaiSheetFrame(width: 580, height: 620, wrapInScrollView: false)
         .background(Theme.Color.bg)
     }
 
@@ -1021,7 +1021,7 @@ struct AddLibraryURLSheet: View {
             }
             .padding(Theme.Spacing.lg)
         }
-        .frame(width: 480, height: 400)
+        .yuminaiSheetFrame(width: 480, height: 400, wrapInScrollView: false)
         .background(Theme.Color.bg)
     }
 }
@@ -1061,7 +1061,7 @@ struct LibraryItemContentSheet: View {
                     .padding(Theme.Spacing.lg)
             }
         }
-        .frame(width: 600, height: 500)
+        .yuminaiSheetFrame(width: 600, height: 500, wrapInScrollView: false)
         .background(Theme.Color.bg)
     }
 }
@@ -1158,7 +1158,7 @@ struct EditLibraryItemSheet: View {
             }
             .padding(Theme.Spacing.lg)
         }
-        .frame(width: 440, height: 340)
+        .yuminaiSheetFrame(width: 440, height: 340, wrapInScrollView: false)
         .background(Theme.Color.bg)
     }
 }

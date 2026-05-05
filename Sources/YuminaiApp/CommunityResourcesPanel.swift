@@ -16,6 +16,10 @@ struct CommunityResourcesPanel: View {
 
     @Environment(AppModel.self) private var appModel
 
+    /// **ADR-120** — Sheet 컨텍스트에서 사용 시 헤더를 숨겨 이중 헤더 방지.
+    /// `CommunityResourcesSheet`는 SheetHeader를 직접 제공하므로 false로 설정.
+    var showHeader: Bool = true
+
     // MARK: - 상태
 
     @State private var selectedCategory: FilterCategory = .all
@@ -117,7 +121,9 @@ struct CommunityResourcesPanel: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: Theme.Spacing.xl) {
-            headerSection
+            if showHeader {
+                headerSection
+            }
             searchAndSort
             filterBar
             resourceList

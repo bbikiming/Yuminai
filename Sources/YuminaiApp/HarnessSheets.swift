@@ -44,7 +44,7 @@ struct WalkthroughSheet: View {
             Divider()
             footer
         }
-        .frame(width: 720, height: 540)
+        .yuminaiSheetFrame(width: 720, height: 540, wrapInScrollView: false)
         .background(Theme.Color.bg)
     }
 
@@ -263,7 +263,7 @@ struct HarnessHelpSheet: View {
             Divider()
             footer
         }
-        .frame(width: 640, height: 600)
+        .yuminaiSheetFrame(width: 640, height: 600, wrapInScrollView: false)
         .background(Theme.Color.bg)
     }
 

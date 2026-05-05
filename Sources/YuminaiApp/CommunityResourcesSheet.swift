@@ -2,11 +2,14 @@ import SwiftUI
 import YuminaiCore
 import YuminaiUI
 
-/// **ADR-117** — 커뮤니티 자료 독립 Sheet.
+/// **ADR-117 + ADR-120** — 커뮤니티 자료 독립 Sheet.
 ///
-/// 기존에는 UserProfileSheet → "커뮤니티 자료" 섹션 안에만 있어 접근이 어려웠다.
-/// ADR-117에서 사이드바 직접 진입점을 추가하면서, CommunityResourcesPanel을
+/// ADR-117: 사이드바 직접 진입점에서 CommunityResourcesPanel을
 /// 별도 Sheet로 감싸 onOpenCommunityResources 액션으로 바로 열 수 있도록 한다.
+///
+/// ADR-120: 이중 헤더 제거 — Sheet wrapper의 SheetHeader만 사용하고,
+/// Panel 내부 headerSection의 제목/아이콘 영역을 제거하여 헤더가 한 번만 보이도록 수정.
+/// 또한 .frame(width:height:) 고정 → yuminaiSheetFrame(width:height:) 반응형으로 전환.
 ///
 /// 크기: 860×640 — CommunityResourcesPanel의 넉넉한 표시 공간 확보.
 struct CommunityResourcesSheet: View {
@@ -16,39 +19,79 @@ struct CommunityResourcesSheet: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            // 헤더 바
-            HStack(spacing: Theme.Spacing.sm) {
-                Image(systemName: "cube.box.fill")
-                    .font(.system(size: 15, weight: .semibold))
-                    .foregroundStyle(Theme.Color.accent)
-                Text("커뮤니티 자료")
-                    .font(.system(size: 16, weight: .semibold))
-                    .foregroundStyle(Theme.Color.text)
-                Spacer()
-                Button {
-                    dismiss()
-                } label: {
-                    Image(systemName: "xmark.circle.fill")
-                        .font(.system(size: 16))
-                        .foregroundStyle(Theme.Color.textSecondary)
+            SheetHeader(
+                icon: "cube.box.fill",
+                title: "커뮤니티 자료",
+                onClose: { dismiss() }
+            ) {
+                // 액션 버튼 그룹 (ADR-120: Panel에서 Sheet header로 이동)
+                HStack(spacing: Theme.Spacing.sm) {
+                    Button {
+                        appModel.showBundleCatalogSheet = true
+                    } label: {
+                        HStack(spacing: 4) {
+                            Image(systemName: "rectangle.stack.fill")
+                                .font(.system(size: 11, weight: .semibold))
+                            Text("스택 번들")
+                                .font(Theme.Typography.small.weight(.medium))
+                        }
+                        .foregroundStyle(.white)
+                        .padding(.horizontal, 8)
+                        .padding(.vertical, 4)
+                        .background(Theme.Color.accent)
+                        .clipShape(Capsule())
+                    }
+                    .buttonStyle(.plain)
+
+                    Button {
+                        appModel.showGitHubSearchSheet = true
+                    } label: {
+                        HStack(spacing: 4) {
+                            Image(systemName: "magnifyingglass.circle.fill")
+                                .font(.system(size: 11, weight: .semibold))
+                            Text("GitHub 검색")
+                                .font(Theme.Typography.small.weight(.medium))
+                        }
+                        .foregroundStyle(Theme.Color.accent)
+                    }
+                    .buttonStyle(.plain)
+
+                    Button {
+                        appModel.showCatalogSheet = true
+                    } label: {
+                        HStack(spacing: 4) {
+                            Image(systemName: "square.grid.2x2.fill")
+                                .font(.system(size: 11, weight: .semibold))
+                            Text("전체 카탈로그")
+                                .font(Theme.Typography.small.weight(.medium))
+                        }
+                        .foregroundStyle(Theme.Color.accent)
+                    }
+                    .buttonStyle(.plain)
+
+                    Button {
+                        appModel.showLibrarySheet = true
+                    } label: {
+                        HStack(spacing: 4) {
+                            Image(systemName: "books.vertical.fill")
+                                .font(.system(size: 11, weight: .semibold))
+                            Text("라이브러리 보기")
+                                .font(Theme.Typography.small.weight(.medium))
+                        }
+                        .foregroundStyle(Theme.Color.accent)
+                    }
+                    .buttonStyle(.plain)
                 }
-                .buttonStyle(.plain)
-                .help("닫기")
             }
-            .padding(.horizontal, Theme.Spacing.lg)
-            .padding(.vertical, Theme.Spacing.md)
-            .background(Theme.Color.surface)
 
-            Divider()
-
-            // 패널 본체 (스크롤 포함)
+            // 패널 본체 — headerSection은 ADR-120에서 숨김 처리됨 (showHeader: false)
             ScrollView {
-                CommunityResourcesPanel()
+                CommunityResourcesPanel(showHeader: false)
                     .environment(appModel)
                     .padding(Theme.Spacing.lg)
             }
         }
-        .frame(width: 860, height: 640)
+        .yuminaiSheetFrame(width: 860, height: 640)
         .background(Theme.Color.bg)
     }
 }

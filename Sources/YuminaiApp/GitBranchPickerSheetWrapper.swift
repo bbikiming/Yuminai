@@ -25,7 +25,7 @@ struct GitBranchPickerSheetWrapper: View {
                 mainContent
             }
         }
-        .frame(width: 380)
+        .yuminaiSheetFrame(width: 380)
         .frame(maxHeight: showPRComposer ? 460 : 540)
         .background(Theme.Color.bg)
         .task {

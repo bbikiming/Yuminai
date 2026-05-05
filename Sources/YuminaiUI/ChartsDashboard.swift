@@ -98,7 +98,7 @@ public struct ChartsDashboard: View {
             Divider()
             footer
         }
-        .frame(width: 920, height: 700)
+        .yuminaiSheetFrame(width: 920, height: 700, wrapInScrollView: false)
         .background(Theme.Color.bg)
     }
 
