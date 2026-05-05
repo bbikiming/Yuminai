@@ -340,79 +340,142 @@ struct CommunityResourcesPanel: View {
         .padding(.vertical, Theme.Spacing.xl)
     }
 
-    // MARK: - 자료 카드
+    // MARK: - 자료 카드 (ADR-119 — LibraryItemCard 패턴 통일)
 
     private func resourceCard(_ resource: CommunityResource) -> some View {
-        GroupBox {
-            VStack(alignment: .leading, spacing: Theme.Spacing.sm) {
-                // 헤더 행: 이름 + 배지들 + 카테고리
-                HStack(alignment: .top, spacing: Theme.Spacing.sm) {
-                    VStack(alignment: .leading, spacing: 3) {
-                        HStack(spacing: 6) {
-                            Text(resource.displayName)
-                                .font(Theme.Typography.body.weight(.semibold))
-                                .foregroundStyle(Theme.Color.text)
-                            // 공식 배지
-                            if resource.officialBadge {
-                                officialBadgeView
-                            }
-                        }
-                        HStack(spacing: Theme.Spacing.xs) {
-                            Text("by \(resource.author)")
-                                .font(Theme.Typography.micro)
-                                .foregroundStyle(Theme.Color.textTertiary)
-                            Text("·")
-                                .font(Theme.Typography.micro)
-                                .foregroundStyle(Theme.Color.textTertiary)
-                            Image(systemName: "star.fill")
-                                .font(.system(size: 9))
-                                .foregroundStyle(.yellow)
-                            Text(resource.starsDisplay)
-                                .font(Theme.Typography.micro)
-                                .foregroundStyle(Theme.Color.textSecondary)
-                            Text("·")
-                                .font(Theme.Typography.micro)
-                                .foregroundStyle(Theme.Color.textTertiary)
-                            // 언어 indicator
-                            Text(resource.language.flag)
-                                .font(.system(size: 10))
-                        }
-                    }
-                    Spacer()
-                    categoryBadge(resource.category)
+        let color = badgeColor(resource.category)
+        return VStack(alignment: .leading, spacing: 0) {
+            // 헤더: 44×44 아이콘 박스 + 제목 + 메타 행
+            HStack(alignment: .top, spacing: Theme.Spacing.md) {
+                // 44×44 카테고리 아이콘 박스
+                ZStack {
+                    RoundedRectangle(cornerRadius: Theme.Radius.md)
+                        .fill(color.opacity(0.12))
+                        .frame(width: 44, height: 44)
+                    Image(systemName: resource.category.icon)
+                        .font(.system(size: 20, weight: .semibold))
+                        .foregroundStyle(color)
                 }
 
-                // 요약
+                VStack(alignment: .leading, spacing: 4) {
+                    // 제목 + 공식 배지
+                    HStack(spacing: 6) {
+                        Text(resource.displayName)
+                            .font(Theme.Typography.body.weight(.semibold))
+                            .foregroundStyle(Theme.Color.text)
+                            .lineLimit(2)
+                        if resource.officialBadge {
+                            officialBadgeView
+                        }
+                    }
+                    // 메타 행: 카테고리 배지 · ⭐ stars · 언어
+                    HStack(spacing: Theme.Spacing.xs) {
+                        categoryBadge(resource.category)
+                        Text("·")
+                            .font(Theme.Typography.micro)
+                            .foregroundStyle(Theme.Color.textTertiary)
+                        Image(systemName: "star.fill")
+                            .font(.system(size: 9))
+                            .foregroundStyle(.yellow)
+                        Text(resource.starsDisplay)
+                            .font(Theme.Typography.micro.monospacedDigit())
+                            .foregroundStyle(Theme.Color.textSecondary)
+                        Text("·")
+                            .font(Theme.Typography.micro)
+                            .foregroundStyle(Theme.Color.textTertiary)
+                        Text(resource.language.flag)
+                            .font(.system(size: 10))
+                        Text("·")
+                            .font(Theme.Typography.micro)
+                            .foregroundStyle(Theme.Color.textTertiary)
+                        Text("by \(resource.author)")
+                            .font(Theme.Typography.micro)
+                            .foregroundStyle(Theme.Color.textTertiary)
+                    }
+                }
+
+                Spacer()
+            }
+            .padding(Theme.Spacing.md)
+
+            // 설명 (lineLimit 2)
+            if !resource.summary.isEmpty {
                 Text(resource.summary)
                     .font(Theme.Typography.small)
                     .foregroundStyle(Theme.Color.textSecondary)
-                    .fixedSize(horizontal: false, vertical: true)
-
-                // 사용 사례
-                if let useCase = resource.useCase {
-                    HStack(spacing: 4) {
-                        Image(systemName: "lightbulb.fill")
-                            .font(.system(size: 9))
-                            .foregroundStyle(.yellow)
-                        Text(useCase)
-                            .font(Theme.Typography.micro)
-                            .foregroundStyle(Theme.Color.textSecondary)
-                            .italic()
-                    }
-                }
-
-                // 태그
-                if !resource.tags.isEmpty {
-                    tagChips(resource.tags)
-                }
-
-                Divider()
-
-                // 액션 버튼
-                actionButtons(resource)
+                    .lineLimit(2)
+                    .padding(.horizontal, Theme.Spacing.md)
+                    .padding(.bottom, Theme.Spacing.sm)
             }
+
+            // 태그 chips (최대 4개 + +N)
+            if !resource.tags.isEmpty {
+                resourceTagChips(resource.tags)
+                    .padding(.horizontal, Theme.Spacing.md)
+                    .padding(.bottom, Theme.Spacing.sm)
+            }
+
+            // 사용 사례 행 (있을 때만, divider 포함)
+            if let useCase = resource.useCase {
+                Divider()
+                    .padding(.horizontal, Theme.Spacing.md)
+                HStack(spacing: 4) {
+                    Image(systemName: "lightbulb")
+                        .font(.system(size: 9, weight: .medium))
+                        .foregroundStyle(Theme.Color.textTertiary)
+                    Text("사용 사례: \(useCase)")
+                        .font(Theme.Typography.micro)
+                        .foregroundStyle(Theme.Color.textTertiary)
+                        .lineLimit(1)
+                }
+                .padding(.horizontal, Theme.Spacing.md)
+                .padding(.vertical, 5)
+            }
+
+            Divider()
+
+            // 액션 버튼 행
+            HStack(spacing: Theme.Spacing.sm) {
+                // GitHub 열기 (secondary)
+                Link(destination: resource.repoURL) {
+                    HStack(spacing: 4) {
+                        Image(systemName: "arrow.up.right.square")
+                            .font(.system(size: 11, weight: .semibold))
+                        Text("GitHub 열기")
+                            .font(Theme.Typography.small.weight(.medium))
+                    }
+                    .foregroundStyle(Theme.Color.accent)
+                    .padding(.horizontal, Theme.Spacing.sm)
+                    .padding(.vertical, 5)
+                    .background(Theme.Color.accentMuted.opacity(0.12))
+                    .clipShape(RoundedRectangle(cornerRadius: Theme.Radius.sm))
+                }
+                .buttonStyle(.plain)
+
+                Spacer()
+
+                // 라이브러리에 추가 (primary)
+                if resource.rawURL != nil && resource.category != .template {
+                    addToLibraryButton(resource)
+                } else if resource.category != .template {
+                    Text("직접 URL 입력 후 추가 가능")
+                        .font(Theme.Typography.micro)
+                        .foregroundStyle(Theme.Color.textTertiary)
+                }
+            }
+            .padding(.horizontal, Theme.Spacing.md)
+            .padding(.vertical, Theme.Spacing.sm)
         }
-        .groupBoxStyle(.automatic)
+        .background(Theme.Color.surface)
+        .clipShape(RoundedRectangle(cornerRadius: Theme.Radius.md))
+        .overlay(
+            RoundedRectangle(cornerRadius: Theme.Radius.md)
+                .stroke(
+                    resource.officialBadge ? Theme.Color.accent.opacity(0.35) : Theme.Color.surfaceHi,
+                    lineWidth: resource.officialBadge ? 1.5 : 1
+                )
+        )
+        .shadow(color: .black.opacity(0.04), radius: 3, x: 0, y: 1)
     }
 
     private var officialBadgeView: some View {
@@ -430,15 +493,15 @@ struct CommunityResourcesPanel: View {
     }
 
     private func categoryBadge(_ category: CommunityResource.Category) -> some View {
-        HStack(spacing: 4) {
+        HStack(spacing: 3) {
             Image(systemName: category.icon)
-                .font(.system(size: 10, weight: .semibold))
+                .font(.system(size: 9, weight: .semibold))
             Text(category.displayName)
                 .font(Theme.Typography.micro.weight(.medium))
         }
         .foregroundStyle(badgeColor(category))
-        .padding(.horizontal, 8)
-        .padding(.vertical, 4)
+        .padding(.horizontal, 6)
+        .padding(.vertical, 2)
         .background(badgeColor(category).opacity(0.12))
         .clipShape(Capsule())
     }
@@ -463,13 +526,23 @@ struct CommunityResourcesPanel: View {
         }
     }
 
-    private func tagChips(_ tags: [String]) -> some View {
-        FlowLayout(spacing: 4) {
-            ForEach(tags, id: \.self) { tag in
+    private func resourceTagChips(_ tags: [String]) -> some View {
+        let maxVisible = 4
+        return HStack(spacing: 4) {
+            ForEach(tags.prefix(maxVisible), id: \.self) { tag in
                 Text("#\(tag)")
                     .font(Theme.Typography.micro)
                     .foregroundStyle(Theme.Color.textTertiary)
                     .padding(.horizontal, 6)
+                    .padding(.vertical, 2)
+                    .background(Theme.Color.surfaceHi)
+                    .clipShape(RoundedRectangle(cornerRadius: Theme.Radius.sm))
+            }
+            if tags.count > maxVisible {
+                Text("+\(tags.count - maxVisible)")
+                    .font(Theme.Typography.micro)
+                    .foregroundStyle(Theme.Color.textTertiary)
+                    .padding(.horizontal, 5)
                     .padding(.vertical, 2)
                     .background(Theme.Color.surfaceHi)
                     .clipShape(RoundedRectangle(cornerRadius: Theme.Radius.sm))
@@ -479,7 +552,6 @@ struct CommunityResourcesPanel: View {
 
     private func actionButtons(_ resource: CommunityResource) -> some View {
         HStack(spacing: Theme.Spacing.sm) {
-            // GitHub에서 보기
             Link(destination: resource.repoURL) {
                 HStack(spacing: 4) {
                     Image(systemName: "arrow.up.right.square")
@@ -490,10 +562,7 @@ struct CommunityResourcesPanel: View {
                 .foregroundStyle(Theme.Color.accent)
             }
             .buttonStyle(.plain)
-
             Spacer()
-
-            // 라이브러리에 추가 (rawURL 있고 template 아닌 경우만)
             if resource.rawURL != nil && resource.category != .template {
                 addToLibraryButton(resource)
             } else if resource.category != .template {
@@ -528,35 +597,40 @@ struct CommunityResourcesPanel: View {
                     .foregroundStyle(Theme.Color.danger)
             }
         } else if isAlreadyInLibrary {
-            HStack(spacing: 4) {
+            // ADR-119 — 이미 추가된 경우: success 배지 (Capsule, GitHubSearchSheet 패턴 통일)
+            HStack(spacing: 3) {
                 Image(systemName: "checkmark.circle.fill")
                     .font(.system(size: 11))
                     .foregroundStyle(Theme.Color.success)
                 Text("라이브러리에 추가됨")
-                    .font(Theme.Typography.micro)
+                    .font(Theme.Typography.micro.weight(.medium))
                     .foregroundStyle(Theme.Color.success)
             }
+            .padding(.horizontal, Theme.Spacing.sm)
+            .padding(.vertical, 5)
+            .background(Theme.Color.success.opacity(0.10))
+            .clipShape(Capsule())
         } else {
             Button {
                 Task { await addResourceToLibrary(resource) }
             } label: {
-                HStack(spacing: 4) {
+                HStack(spacing: 3) {
                     if isAdding {
                         ProgressView()
-                            .scaleEffect(0.7)
-                            .frame(width: 11, height: 11)
+                            .scaleEffect(0.6)
+                            .frame(width: 10, height: 10)
                     } else {
                         Image(systemName: "books.vertical.fill")
-                            .font(.system(size: 11, weight: .semibold))
+                            .font(.system(size: 10, weight: .semibold))
                     }
                     Text(isAdding ? "추가 중…" : "라이브러리에 추가")
-                        .font(Theme.Typography.small.weight(.medium))
+                        .font(Theme.Typography.small.weight(.semibold))
                 }
-                .foregroundStyle(isAdding ? Theme.Color.textSecondary : .white)
-                .padding(.horizontal, Theme.Spacing.md)
-                .padding(.vertical, 6)
+                .foregroundStyle(.white)
+                .padding(.horizontal, 9)
+                .padding(.vertical, 5)
                 .background(isAdding ? Theme.Color.surfaceHi : Theme.Color.accent)
-                .clipShape(RoundedRectangle(cornerRadius: Theme.Radius.sm))
+                .clipShape(Capsule())
             }
             .buttonStyle(.plain)
             .disabled(isAdding)
@@ -662,47 +736,3 @@ struct CommunityResourcesPanel: View {
     }
 }
 
-// MARK: - FlowLayout (태그 chip 줄바꿈용)
-
-/// 자동 줄바꿈 HStack. 태그 chip처럼 크기가 다양한 요소 나열에 사용.
-private struct FlowLayout: Layout {
-    var spacing: CGFloat = 4
-
-    func sizeThatFits(proposal: ProposedViewSize, subviews: Subviews, cache: inout Void) -> CGSize {
-        let width = proposal.width ?? 320
-        var height: CGFloat = 0
-        var x: CGFloat = 0
-        var rowHeight: CGFloat = 0
-
-        for subview in subviews {
-            let size = subview.sizeThatFits(.unspecified)
-            if x + size.width > width && x > 0 {
-                height += rowHeight + spacing
-                x = 0
-                rowHeight = 0
-            }
-            x += size.width + spacing
-            rowHeight = max(rowHeight, size.height)
-        }
-        height += rowHeight
-        return CGSize(width: width, height: max(height, 0))
-    }
-
-    func placeSubviews(in bounds: CGRect, proposal: ProposedViewSize, subviews: Subviews, cache: inout Void) {
-        var x = bounds.minX
-        var y = bounds.minY
-        var rowHeight: CGFloat = 0
-
-        for subview in subviews {
-            let size = subview.sizeThatFits(.unspecified)
-            if x + size.width > bounds.maxX && x > bounds.minX {
-                y += rowHeight + spacing
-                x = bounds.minX
-                rowHeight = 0
-            }
-            subview.place(at: CGPoint(x: x, y: y), proposal: ProposedViewSize(size))
-            x += size.width + spacing
-            rowHeight = max(rowHeight, size.height)
-        }
-    }
-}

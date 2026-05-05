@@ -116,6 +116,8 @@ public actor GitHubSearchClient {
         case invalidResponse
         /// HTTP 오류 (401, 403, 404 등).
         case httpError(Int)
+        /// **ADR-119** — 401 Unauthorized: 코드 검색에 PAT가 필요하거나 토큰이 만료됨.
+        case unauthorized
 
         public var errorDescription: String? {
             switch self {
@@ -132,6 +134,8 @@ public actor GitHubSearchClient {
                 return "GitHub API 응답 파싱 실패. 잠시 후 다시 시도해 주세요."
             case .httpError(let code):
                 return "GitHub API HTTP 오류 \(code)."
+            case .unauthorized:
+                return "토큰이 만료됐거나 권한이 없어요. GitHub PAT를 재설정해 주세요."
             }
         }
     }
@@ -269,6 +273,9 @@ public actor GitHubSearchClient {
         switch http.statusCode {
         case 200:
             return data
+        case 401:
+            // 인증 실패 — PAT 없음 또는 만료
+            throw SearchError.unauthorized
         case 403, 429:
             // Rate limit 처리
             let resetAt = rateLimit(from: http)

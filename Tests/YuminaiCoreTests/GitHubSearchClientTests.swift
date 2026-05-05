@@ -296,8 +296,8 @@ struct GitHubSearchClientTests {
 
     // MARK: - HTTP 오류
 
-    @Test("searchRepositories — 401 HTTP 오류")
-    func httpError401() async throws {
+    @Test("searchRepositories — 401 Unauthorized → .unauthorized 에러 (ADR-119)")
+    func httpError401Unauthorized() async throws {
         let session = MockGitHubSession()
         session.responseStatus = 401
         session.responseData = Data("{\"message\":\"Bad credentials\"}".utf8)
@@ -306,14 +306,148 @@ struct GitHubSearchClientTests {
 
         do {
             _ = try await client.searchRepositories(query: "test")
-            Issue.record("Expected httpError")
+            Issue.record("Expected unauthorized error")
         } catch let error as GitHubSearchClient.SearchError {
-            if case .httpError(let code) = error {
-                #expect(code == 401)
+            if case .unauthorized = error {
+                // 정상 — ADR-119: 401은 .unauthorized
             } else {
-                Issue.record("Expected httpError(401), got \(error)")
+                Issue.record("Expected .unauthorized, got \(error)")
             }
         }
+    }
+
+    @Test("searchCode — 401 Unauthorized → .unauthorized 에러 (ADR-119)")
+    func codeSearch401Unauthorized() async throws {
+        let session = MockGitHubSession()
+        session.responseStatus = 401
+        session.responseData = Data("{\"message\":\"Requires authentication\"}".utf8)
+
+        let client = GitHubSearchClient(session: session)
+
+        do {
+            _ = try await client.searchCode(query: "filename:CLAUDE.md")
+            Issue.record("Expected unauthorized error")
+        } catch let error as GitHubSearchClient.SearchError {
+            if case .unauthorized = error {
+                // 정상
+            } else {
+                Issue.record("Expected .unauthorized, got \(error)")
+            }
+        }
+    }
+
+    @Test("unauthorized 에러는 localizedDescription이 있다 (ADR-119)")
+    func unauthorizedLocalizedDescription() {
+        let error = GitHubSearchClient.SearchError.unauthorized
+        #expect(error.localizedDescription != nil)
+        #expect(!(error.errorDescription ?? "").isEmpty)
+    }
+
+    @Test("토큰 주입 시 Authorization 헤더 포함 검증 (ADR-119)")
+    func tokenInjectedInRequest() async throws {
+        // MockGitHubSession이 받은 request를 기록하도록 확장
+        final class CapturingSession: GitHubSearchClient.URLSessionProtocol, @unchecked Sendable {
+            var capturedRequest: URLRequest?
+            func data(for request: URLRequest) async throws -> (Data, URLResponse) {
+                capturedRequest = request
+                let json = repoSearchJSON(items: [])
+                let resp = HTTPURLResponse(
+                    url: request.url!,
+                    statusCode: 200,
+                    httpVersion: "HTTP/1.1",
+                    headerFields: ["Content-Type": "application/json"]
+                )!
+                return (json, resp)
+            }
+        }
+
+        let capturing = CapturingSession()
+        let client = GitHubSearchClient(session: capturing, token: "ghp_testtoken123")
+        _ = try await client.searchRepositories(query: "test")
+
+        let authHeader = capturing.capturedRequest?.value(forHTTPHeaderField: "Authorization")
+        #expect(authHeader == "Bearer ghp_testtoken123")
+    }
+}
+
+// MARK: - ADR-119 KeychainKey 검증
+
+@Suite("KeychainKey (ADR-119)")
+struct KeychainKeyADR119Tests {
+
+    @Test("githubPersonalAccessToken 키 이름이 정의되어 있다")
+    func githubPATKeyDefined() {
+        #expect(!KeychainKey.githubPersonalAccessToken.isEmpty)
+        #expect(KeychainKey.githubPersonalAccessToken == "yuminai.github.pat")
+    }
+
+    @Test("githubPersonalAccessToken은 다른 키와 충돌하지 않는다")
+    func githubPATKeyUnique() {
+        let allKeys = [
+            KeychainKey.anthropicAPIKey,
+            KeychainKey.telegramBotToken,
+            KeychainKey.telegramChatID,
+            KeychainKey.obsidianVaultPath,
+            KeychainKey.githubPersonalAccessToken
+        ]
+        let uniqueKeys = Set(allKeys)
+        #expect(uniqueKeys.count == allKeys.count)
+    }
+}
+
+// MARK: - ADR-119 AppPreferences.hasGitHubPAT backward-compat
+
+@Suite("AppPreferences hasGitHubPAT (ADR-119)")
+struct AppPreferencesGitHubPATTests {
+
+    @Test("기본 init은 hasGitHubPAT = false")
+    func defaultHasGitHubPATIsFalse() {
+        let prefs = AppPreferences()
+        #expect(prefs.hasGitHubPAT == false)
+    }
+
+    @Test("기존 JSON (hasGitHubPAT 필드 없음) decode → false")
+    func existingJSONDecodeDefaultsFalse() throws {
+        let oldJSON = """
+        {
+            "claudeBinaryPath": "/usr/local/bin/claude",
+            "codexBinaryPath": "/usr/local/bin/codex",
+            "telegramEnabled": false,
+            "telegramAllowedUserIds": [],
+            "fontSizeOffset": 0,
+            "showInspectorByDefault": false
+        }
+        """.data(using: .utf8)!
+
+        let prefs = try JSONDecoder().decode(AppPreferences.self, from: oldJSON)
+        #expect(prefs.hasGitHubPAT == false)
+    }
+
+    @Test("hasGitHubPAT = true 명시적 값 보존")
+    func explicitTrueIsPreserved() throws {
+        let json = """
+        {
+            "claudeBinaryPath": "/usr/local/bin/claude",
+            "codexBinaryPath": "/usr/local/bin/codex",
+            "telegramEnabled": false,
+            "telegramAllowedUserIds": [],
+            "fontSizeOffset": 0,
+            "showInspectorByDefault": false,
+            "hasGitHubPAT": true
+        }
+        """.data(using: .utf8)!
+
+        let prefs = try JSONDecoder().decode(AppPreferences.self, from: json)
+        #expect(prefs.hasGitHubPAT == true)
+    }
+
+    @Test("encode + decode round-trip preserves hasGitHubPAT")
+    func roundTrip() throws {
+        var prefs = AppPreferences()
+        prefs.hasGitHubPAT = true
+        let data = try JSONEncoder().encode(prefs)
+        let decoded = try JSONDecoder().decode(AppPreferences.self, from: data)
+        #expect(decoded.hasGitHubPAT == true)
     }
 }
 

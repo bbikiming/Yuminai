@@ -107,4 +107,6 @@ public enum KeychainKey {
     public static let telegramBotToken = "telegram_bot_token"
     public static let telegramChatID = "telegram_chat_id"
     public static let obsidianVaultPath = "obsidian_vault_path"
+    /// **ADR-119** — GitHub Personal Access Token (코드 검색 API 인증용).
+    public static let githubPersonalAccessToken = "yuminai.github.pat"
 }

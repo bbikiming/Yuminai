@@ -50,7 +50,8 @@ struct GitHubSearchSheet: View {
     @State private var sortOrder: SortOrder = .stars
     @State private var languageFilter: String? = nil
 
-    private let client = GitHubSearchClient()
+    /// **ADR-119** — PAT sheet 표시 여부 (로컬 상태로 제어).
+    @State private var showPATSheet: Bool = false
 
     // MARK: - 추천 키워드
 
@@ -98,7 +99,11 @@ struct GitHubSearchSheet: View {
             toolbarRow
             Divider()
             searchControls
-            Divider()
+            // ADR-119 — 코드 검색 모드에서 PAT 상태 표시
+            if mode == .code {
+                patStatusBanner
+                Divider()
+            }
             if mode == .repository && !repoResults.isEmpty {
                 filterSortBar
                 Divider()
@@ -107,6 +112,10 @@ struct GitHubSearchSheet: View {
         }
         .frame(minWidth: 720, minHeight: 580)
         .background(Theme.Color.bg)
+        .sheet(isPresented: $showPATSheet) {
+            GitHubPATSheet()
+                .environment(appModel)
+        }
     }
 
     // MARK: - 툴바
@@ -133,6 +142,55 @@ struct GitHubSearchSheet: View {
         .padding(.horizontal, Theme.Spacing.lg)
         .padding(.vertical, Theme.Spacing.md)
         .background(Theme.Color.surface)
+    }
+
+    // MARK: - ADR-119 PAT 상태 배너
+
+    @ViewBuilder
+    private var patStatusBanner: some View {
+        let hasPAT = appModel.githubPATStatus == .set
+        HStack(spacing: Theme.Spacing.sm) {
+            Image(systemName: hasPAT ? "checkmark.seal.fill" : "exclamationmark.triangle.fill")
+                .font(.system(size: 13, weight: .semibold))
+                .foregroundStyle(hasPAT ? Theme.Color.success : .orange)
+
+            if hasPAT {
+                Text("토큰 설정됨 — 코드 검색이 활성화되어 있어요.")
+                    .font(Theme.Typography.small)
+                    .foregroundStyle(Theme.Color.textSecondary)
+                Spacer()
+                Button("재설정") {
+                    showPATSheet = true
+                }
+                .font(Theme.Typography.micro.weight(.semibold))
+                .foregroundStyle(Theme.Color.accent)
+                .buttonStyle(.plain)
+                Button("삭제") {
+                    Task { await appModel.removeGitHubPAT() }
+                }
+                .font(Theme.Typography.micro.weight(.semibold))
+                .foregroundStyle(Theme.Color.danger)
+                .buttonStyle(.plain)
+            } else {
+                Text("코드 검색을 사용하려면 GitHub Personal Access Token이 필요해요.")
+                    .font(Theme.Typography.small)
+                    .foregroundStyle(Theme.Color.textSecondary)
+                Spacer()
+                Button("PAT 설정") {
+                    showPATSheet = true
+                }
+                .font(Theme.Typography.small.weight(.semibold))
+                .foregroundStyle(.white)
+                .padding(.horizontal, Theme.Spacing.sm)
+                .padding(.vertical, 4)
+                .background(Theme.Color.accent)
+                .clipShape(Capsule())
+                .buttonStyle(.plain)
+            }
+        }
+        .padding(.horizontal, Theme.Spacing.lg)
+        .padding(.vertical, Theme.Spacing.sm)
+        .background(hasPAT ? Theme.Color.success.opacity(0.08) : Color.orange.opacity(0.08))
     }
 
     // MARK: - 검색 컨트롤
@@ -753,11 +811,21 @@ struct GitHubSearchSheet: View {
         let q = query.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !q.isEmpty else { return }
 
+        // ADR-119 — 코드 검색은 PAT 없이 차단
+        if mode == .code && appModel.githubPATStatus != .set {
+            searchError = "코드 검색은 GitHub PAT가 필요해요. 위 배너에서 토큰을 설정해 주세요."
+            return
+        }
+
         isSearching = true
         searchError = nil
         languageFilter = nil
 
         Task {
+            // ADR-119 — Keychain에서 PAT 로드 후 client 생성
+            let pat = await appModel.loadGitHubPAT()
+            let client = GitHubSearchClient(token: pat)
+
             do {
                 switch mode {
                 case .repository:
@@ -769,6 +837,10 @@ struct GitHubSearchSheet: View {
                     codeResults = results
                     repoResults = []
                 }
+            } catch GitHubSearchClient.SearchError.unauthorized {
+                // ADR-119 — 401 처리: PAT 재설정 안내
+                searchError = "토큰이 만료됐거나 권한이 없어요. 위 배너에서 PAT를 재설정해 주세요."
+                await appModel.removeGitHubPAT()
             } catch let error as GitHubSearchClient.SearchError {
                 searchError = error.localizedDescription
             } catch {

@@ -44,6 +44,8 @@ public final class AppModel {
 
     public var anthropicKeyStatus: SecretStatus = .notSet
     public var telegramTokenStatus: SecretStatus = .notSet
+    /// **ADR-119** — GitHub PAT Keychain 저장 상태 (코드 검색 인증용).
+    public var githubPATStatus: SecretStatus = .notSet
     public var cokacdirBots: [CokacdirBot] = []
     public var cokacdirChatLabels: [Int64: CokacdirChatLabel] = [:]
     public var cokacdirImportError: String?
@@ -948,6 +950,7 @@ public final class AppModel {
     public func refreshSecretStatuses() async {
         anthropicKeyStatus = await secretStatus(for: KeychainKey.anthropicAPIKey)
         telegramTokenStatus = await secretStatus(for: KeychainKey.telegramBotToken)
+        githubPATStatus = await secretStatus(for: KeychainKey.githubPersonalAccessToken)
     }
 
     private func secretStatus(for key: String) async -> SecretStatus {
@@ -4570,6 +4573,29 @@ public final class AppModel {
         await deactivateTelegram()
     }
 
+    // MARK: - ADR-119 — GitHub PAT
+
+    /// GitHub PAT를 Keychain에 저장하고 preferences 메타를 갱신한다.
+    public func saveGitHubPAT(_ token: String) async throws {
+        try await keychainStore.set(token, for: KeychainKey.githubPersonalAccessToken)
+        githubPATStatus = .set
+        preferences.hasGitHubPAT = true
+        await savePreferences()
+    }
+
+    /// GitHub PAT를 Keychain에서 삭제하고 preferences 메타를 초기화한다.
+    public func removeGitHubPAT() async {
+        try? await keychainStore.remove(KeychainKey.githubPersonalAccessToken)
+        githubPATStatus = .notSet
+        preferences.hasGitHubPAT = false
+        await savePreferences()
+    }
+
+    /// Keychain에서 GitHub PAT를 읽어 반환한다. 없으면 nil.
+    public func loadGitHubPAT() async -> String? {
+        try? await keychainStore.get(KeychainKey.githubPersonalAccessToken)
+    }
+
     public func savePreferences() async {
         do {
             try await preferencesStore.save(preferences)
@@ -5030,6 +5056,9 @@ public final class AppModel {
 
     /// **ADR-116** — GitHub 검색 sheet 표시 여부.
     public var showGitHubSearchSheet: Bool = false
+
+    /// **ADR-119** — GitHub PAT 입력 sheet 표시 여부.
+    public var showGitHubPATSheet: Bool = false
 
     /// **ADR-117** — 커뮤니티 자료 sheet 표시 여부 (사이드바 직접 진입).
     public var showCommunityResourcesSheet: Bool = false
