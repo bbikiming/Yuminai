@@ -332,3 +332,183 @@ struct BridgeArtifactWireUpTests {
         #expect(afterTexts.contains("after artifact"))
     }
 }
+
+// MARK: - ADR-114-B: HITL auto-cancel callback wiring
+
+/// 콜백 호출 횟수를 actor-safe하게 추적.
+private actor CallCounter {
+    private(set) var count: Int = 0
+    func increment() { count += 1 }
+}
+
+@Suite("TelegramSessionBridge — HITL auto-cancel (ADR-114-B)")
+struct BridgeHITLAutoCancelTests {
+    /// destructive Bash command — bridge.isDestructiveToolCall이 true 반환하도록.
+    private static let destructiveBashInput = #"{"command":"rm -rf /tmp/xyz"}"#
+
+    /// HITL coordinator + counter callback 구성된 bridge를 반환.
+    private func setupBridgeWithHITL(
+        timeoutSeconds: Int = 60
+    ) async -> (bridge: TelegramSessionBridge, bot: MockTelegramBot, coordinator: TelegramHITLCoordinator, counter: CallCounter) {
+        let bot = MockTelegramBot()
+        let coordinator = TelegramHITLCoordinator()
+        let counter = CallCounter()
+        let bridge = TelegramSessionBridge(client: bot, configuration: makeConfig())
+        await bridge.setHITLCoordinator(coordinator, timeoutSeconds: timeoutSeconds)
+        await bridge.setOnHITLCancelRequired { await counter.increment() }
+        return (bridge, bot, coordinator, counter)
+    }
+
+    /// destructive toolCall을 별도 Task에서 시작하고, coordinator가 pending request를 받을
+    /// 때까지 polling. 첫 번째 pending request의 id를 반환 → 호출자가 respond/cancel.
+    private func awaitFirstPending(_ coordinator: TelegramHITLCoordinator) async -> UUID? {
+        for _ in 0..<50 {  // 최대 ~500ms (10ms × 50)
+            let pending = await coordinator.pendingRequests()
+            if let first = pending.first {
+                return first.id
+            }
+            try? await Task.sleep(for: .milliseconds(10))
+        }
+        return nil
+    }
+
+    @Test("HITL rejected 응답 시 cancel callback 자동 호출")
+    func rejectInvokesCancelCallback() async {
+        let (bridge, _, coordinator, counter) = await setupBridgeWithHITL()
+
+        let consumeTask = Task {
+            await bridge.consume(event: .toolCall(name: "Bash", input: Self.destructiveBashInput))
+        }
+
+        guard let reqId = await awaitFirstPending(coordinator) else {
+            Issue.record("HITL coordinator received no pending request")
+            consumeTask.cancel()
+            return
+        }
+        await coordinator.respond(id: reqId, response: .rejected(by: "tester"))
+        await consumeTask.value
+
+        let invocations = await counter.count
+        #expect(invocations == 1)
+    }
+
+    @Test("HITL timeout 응답 시 cancel callback 자동 호출")
+    func timeoutInvokesCancelCallback() async {
+        // 짧은 timeout으로 빠른 만료 유도 (1초)
+        let (bridge, _, _, counter) = await setupBridgeWithHITL(timeoutSeconds: 1)
+
+        let consumeTask = Task {
+            await bridge.consume(event: .toolCall(name: "Bash", input: Self.destructiveBashInput))
+        }
+        await consumeTask.value  // timeout이 발화할 때까지 대기 (~1s)
+
+        let invocations = await counter.count
+        #expect(invocations == 1)
+    }
+
+    @Test("HITL cancelled 응답 시 cancel callback 자동 호출")
+    func cancelledInvokesCancelCallback() async {
+        let (bridge, _, coordinator, counter) = await setupBridgeWithHITL()
+
+        let consumeTask = Task {
+            await bridge.consume(event: .toolCall(name: "Bash", input: Self.destructiveBashInput))
+        }
+
+        guard let reqId = await awaitFirstPending(coordinator) else {
+            Issue.record("HITL coordinator received no pending request")
+            consumeTask.cancel()
+            return
+        }
+        await coordinator.cancel(id: reqId)
+        await consumeTask.value
+
+        let invocations = await counter.count
+        #expect(invocations == 1)
+    }
+
+    @Test("HITL approved 응답 시에는 cancel callback 호출되지 않음")
+    func approvedDoesNotInvokeCancelCallback() async {
+        let (bridge, _, coordinator, counter) = await setupBridgeWithHITL()
+
+        let consumeTask = Task {
+            await bridge.consume(event: .toolCall(name: "Bash", input: Self.destructiveBashInput))
+        }
+
+        guard let reqId = await awaitFirstPending(coordinator) else {
+            Issue.record("HITL coordinator received no pending request")
+            consumeTask.cancel()
+            return
+        }
+        await coordinator.respond(id: reqId, response: .approved(by: "tester"))
+        await consumeTask.value
+
+        let invocations = await counter.count
+        #expect(invocations == 0)
+    }
+
+    @Test("callback 미주입 시 reject 응답이 와도 silent (기존 동작 유지)")
+    func missingCallbackKeepsLegacyBehavior() async {
+        let bot = MockTelegramBot()
+        let coordinator = TelegramHITLCoordinator()
+        let bridge = TelegramSessionBridge(client: bot, configuration: makeConfig())
+        await bridge.setHITLCoordinator(coordinator, timeoutSeconds: 60)
+        // 의도적으로 setOnHITLCancelRequired 호출 안 함
+
+        let consumeTask = Task {
+            await bridge.consume(event: .toolCall(name: "Bash", input: Self.destructiveBashInput))
+        }
+
+        // pending request poll
+        var foundId: UUID?
+        for _ in 0..<50 {
+            if let first = await coordinator.pendingRequests().first {
+                foundId = first.id
+                break
+            }
+            try? await Task.sleep(for: .milliseconds(10))
+        }
+        guard let reqId = foundId else {
+            Issue.record("HITL coordinator received no pending request")
+            consumeTask.cancel()
+            return
+        }
+        await coordinator.respond(id: reqId, response: .rejected(by: "tester"))
+        await consumeTask.value
+
+        // 거절 메시지는 발송되지만 callback은 없음 — 크래시도 없어야 한다
+        let log = await bot.sentLog
+        #expect(log.contains { $0.text.contains("❌ 거절됨") })
+    }
+
+    @Test("non-destructive toolCall은 HITL 흐름을 타지 않아 callback 미발화")
+    func nonDestructiveToolCallSkipsHITL() async {
+        let (bridge, _, _, counter) = await setupBridgeWithHITL()
+
+        // Read는 destructive 아님 — 즉시 처리되고 HITL 흐름 진입 X
+        await bridge.consume(event: .toolCall(name: "Read", input: "{\"file_path\":\"foo.swift\"}"))
+
+        let invocations = await counter.count
+        #expect(invocations == 0)
+    }
+
+    @Test("setOnHITLCancelRequired(nil)로 콜백을 해제할 수 있다")
+    func nilCallbackDeactivatesAutoCancel() async {
+        let (bridge, _, coordinator, counter) = await setupBridgeWithHITL()
+        await bridge.setOnHITLCancelRequired(nil)  // 해제
+
+        let consumeTask = Task {
+            await bridge.consume(event: .toolCall(name: "Bash", input: Self.destructiveBashInput))
+        }
+
+        guard let reqId = await awaitFirstPending(coordinator) else {
+            Issue.record("HITL coordinator received no pending request")
+            consumeTask.cancel()
+            return
+        }
+        await coordinator.respond(id: reqId, response: .rejected(by: "tester"))
+        await consumeTask.value
+
+        let invocations = await counter.count
+        #expect(invocations == 0)
+    }
+}

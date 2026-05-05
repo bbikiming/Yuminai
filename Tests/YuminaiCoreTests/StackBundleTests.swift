@@ -248,4 +248,90 @@ struct StackBundleTests {
             #expect(bundle.officialBadge == true)
         }
     }
+
+    // MARK: - StackBundleCatalog.findMatching (ADR-115 P1-4)
+
+    @Test("빈 ProjectProfile → findMatching 빈 결과")
+    func findMatchingEmptyProfile() {
+        let empty = ProjectProfile()
+        let result = StackBundleCatalog.findMatching(for: empty)
+        #expect(result.isEmpty)
+    }
+
+    @Test("Next.js 감지 → fullstack/AI 번들 추천")
+    func findMatchingNextJsDetected() {
+        let profile = ProjectProfile(
+            platform: .web,
+            primaryLanguage: .typescript,
+            frameworks: ["Next.js"]
+        )
+        let result = StackBundleCatalog.findMatching(for: profile, limit: 3)
+        #expect(!result.isEmpty)
+        // Next.js 번들이 결과에 포함돼야 함
+        let containsNextJs = result.contains { $0.stackTags.contains("nextjs") }
+        #expect(containsNextJs, "Next.js 태그를 가진 번들이 없음")
+    }
+
+    @Test("React Native 감지 → 모바일 번들 추천")
+    func findMatchingReactNativeDetected() {
+        let profile = ProjectProfile(
+            platform: .mobile,
+            primaryLanguage: .typescript,
+            frameworks: ["React Native", "Expo"]
+        )
+        let result = StackBundleCatalog.findMatching(for: profile, limit: 3)
+        #expect(!result.isEmpty)
+        let containsMobile = result.contains { $0.category == .mobileApp }
+        #expect(containsMobile, "모바일 번들이 없음")
+    }
+
+    @Test("Flutter 감지 → Flutter 번들 추천")
+    func findMatchingFlutterDetected() {
+        let profile = ProjectProfile(
+            platform: .mobile,
+            primaryLanguage: .dart,
+            frameworks: ["Flutter"]
+        )
+        let result = StackBundleCatalog.findMatching(for: profile, limit: 3)
+        #expect(!result.isEmpty)
+        let containsFlutter = result.contains { $0.stackTags.contains("flutter") }
+        #expect(containsFlutter, "Flutter 태그 번들이 없음")
+    }
+
+    @Test("매칭 없는 stack → 빈 결과")
+    func findMatchingNoMatch() {
+        // 존재하지 않는 프레임워크
+        let profile = ProjectProfile(
+            platform: .cli,
+            primaryLanguage: .clojure,
+            frameworks: []
+        )
+        let result = StackBundleCatalog.findMatching(for: profile, limit: 3)
+        #expect(result.isEmpty)
+    }
+
+    @Test("findMatching limit 적용 — 최대 limit개")
+    func findMatchingLimitRespected() {
+        let profile = ProjectProfile(
+            platform: .web,
+            primaryLanguage: .typescript,
+            frameworks: ["Next.js", "React", "Svelte"]
+        )
+        let result = StackBundleCatalog.findMatching(for: profile, limit: 2)
+        #expect(result.count <= 2)
+    }
+
+    @Test("findMatching — 반환 번들 모두 curated에 존재")
+    func findMatchingReturnsCuratedBundles() {
+        let profile = ProjectProfile(
+            platform: .web,
+            primaryLanguage: .typescript,
+            frameworks: ["Next.js"]
+        )
+        let result = StackBundleCatalog.findMatching(for: profile)
+        let curatedIds = Set(StackBundleCatalog.curated.map { $0.id })
+        for bundle in result {
+            #expect(curatedIds.contains(bundle.id))
+        }
+    }
 }

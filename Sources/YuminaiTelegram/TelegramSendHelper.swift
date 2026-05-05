@@ -20,7 +20,9 @@ public enum TelegramSendHelper {
     ///   - files: 변경된 파일 수
     ///   - added: 추가된 라인 수
     ///   - removed: 삭제된 라인 수
-    ///   - workspace: 워크스페이스 이름 (nil 가능)
+    ///   - workspace: 워크스페이스 이름 (nil 가능). artifact store에 연결됨.
+    ///   - workspaceName: 발송 메시지 prefix용 이름 (ADR-115 P1-1).
+    ///     nil이면 `workspace`와 동일하게 처리. 둘 다 nil이면 prefix 생략.
     ///   - chatId: 대상 chat ID
     ///   - store: `TelegramArtifactStore` — 저장 후 deep link UUID 생성
     ///   - client: `TelegramClient` 구현체
@@ -32,6 +34,7 @@ public enum TelegramSendHelper {
         added: Int,
         removed: Int,
         workspace: String?,
+        workspaceName: String? = nil,
         to chatId: Int64,
         store: TelegramArtifactStore,
         client: any TelegramClient
@@ -44,14 +47,21 @@ public enum TelegramSendHelper {
         let caption = "📝 Diff Preview · \(files) file\(files == 1 ? "" : "s"), +\(added)/-\(removed)"
         let diffByteCount = diff.utf8.count
 
+        // ADR-115 P1-1 — 워크스페이스 prefix 라인.
+        let effectiveName = workspaceName ?? workspace
+        let workspacePrefix: String? = effectiveName.flatMap { name in
+            name.trimmingCharacters(in: .whitespaces).isEmpty ? nil : "📁 [\(name)] ▶ git diff"
+        }
+
         // P1-3: 5MB+ raw diff → sendDocument (전체 내용 첨부 + caption preview)
         // < 5MB → P1-2 formatter 적용 후 send
         if TelegramMessageFormatter.shouldSendAsDocument(byteCount: diffByteCount) {
             guard let data = diff.data(using: .utf8) else { return id }
+            let fullCaption = workspacePrefix.map { "\($0)\n\(caption)" } ?? caption
             _ = try await client.sendDocument(
                 fileName: "diff-\(id.uuidString.prefix(8)).txt",
                 data: data,
-                caption: String(caption.prefix(1024)),
+                caption: String(fullCaption.prefix(1024)),
                 to: chatId
             )
         } else {
@@ -63,8 +73,9 @@ public enum TelegramSendHelper {
                 removed: removed,
                 deepLinkId: id
             )
+            let finalText = workspacePrefix.map { "\($0)\n\(formatted)" } ?? formatted
             try await TelegramLargePayloadSender.sendOrAttach(
-                text: formatted,
+                text: finalText,
                 fileName: "diff-\(id.uuidString.prefix(8)).txt",
                 caption: caption,
                 to: chatId,
@@ -85,6 +96,8 @@ public enum TelegramSendHelper {
     ///   - elapsed: 소요 시간 (초)
     ///   - success: 성공 여부
     ///   - chatId: 대상 chat ID
+    ///   - workspaceName: 워크스페이스 이름 — 멀티 chat 환경에서 출처 표시용 (ADR-115 P1-1).
+    ///     nil이면 prefix 없이 기존 포맷 유지.
     ///   - store: `TelegramArtifactStore`
     ///   - client: `TelegramClient` 구현체
     /// - Returns: 저장된 artifact UUID
@@ -95,6 +108,7 @@ public enum TelegramSendHelper {
         elapsed: TimeInterval,
         success: Bool,
         to chatId: Int64,
+        workspaceName: String? = nil,
         store: TelegramArtifactStore,
         client: any TelegramClient
     ) async throws -> UUID {
@@ -107,14 +121,21 @@ public enum TelegramSendHelper {
         let caption = "🔨 \(title) · \(badge)"
         let logByteCount = log.utf8.count
 
+        // ADR-115 P1-1 — 워크스페이스 prefix 라인.
+        // 멀티 chat 환경에서 어느 워크스페이스 결과인지 한눈에 식별 가능.
+        let workspacePrefix: String? = workspaceName.flatMap { name in
+            name.trimmingCharacters(in: .whitespaces).isEmpty ? nil : "📁 [\(name)] ▶ \(title)"
+        }
+
         // P1-3: 5MB+ raw log → sendDocument (전체 내용 첨부 + caption preview)
         // < 5MB → P1-2 formatter 적용 후 send
         if TelegramMessageFormatter.shouldSendAsDocument(byteCount: logByteCount) {
             guard let data = log.data(using: .utf8) else { return id }
+            let fullCaption = workspacePrefix.map { "\($0)\n\(caption)" } ?? caption
             _ = try await client.sendDocument(
                 fileName: "log-\(id.uuidString.prefix(8)).txt",
                 data: data,
-                caption: String(caption.prefix(1024)),
+                caption: String(fullCaption.prefix(1024)),
                 to: chatId
             )
         } else {
@@ -126,8 +147,9 @@ public enum TelegramSendHelper {
                 success: success,
                 deepLinkId: id
             )
+            let finalText = workspacePrefix.map { "\($0)\n\(formatted)" } ?? formatted
             try await TelegramLargePayloadSender.sendOrAttach(
-                text: formatted,
+                text: finalText,
                 fileName: "log-\(id.uuidString.prefix(8)).txt",
                 caption: caption,
                 to: chatId,

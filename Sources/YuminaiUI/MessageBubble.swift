@@ -68,6 +68,8 @@ public struct UserMessageBlock: View {
 public struct AssistantMessageBlock: View {
     public let message: Message
     public let label: String
+    @State private var showAttributionDetail: Bool = false
+
     public init(message: Message, label: String = "Claude") {
         self.message = message
         self.label = label
@@ -85,6 +87,10 @@ public struct AssistantMessageBlock: View {
                 .foregroundStyle(Theme.Color.assistantText)
                 .textSelection(.enabled)
                 .frame(maxWidth: .infinity, alignment: .leading)
+            // **ADR-115 P1-2** — attribution footer (참고 자료/프로필)
+            if let attribution = message.attribution, !attribution.isEmpty {
+                attributionFooter(attribution)
+            }
         }
         .padding(.horizontal, Theme.Layout.contentPaddingH)
         .padding(.vertical, Theme.Spacing.md)
@@ -97,6 +103,63 @@ public struct AssistantMessageBlock: View {
     private var displayContent: String {
         message.content.isEmpty ? "(empty)" : message.content
     }
+
+    /// **ADR-115 P1-2** — 참고 자료/프로필 attribution footer.
+    /// 작고 회색 텍스트 + disclosure 토글.
+    @ViewBuilder
+    private func attributionFooter(_ attribution: MessageAttribution) -> some View {
+        VStack(alignment: .leading, spacing: 2) {
+            Button {
+                withAnimation(.easeInOut(duration: 0.15)) {
+                    showAttributionDetail.toggle()
+                }
+            } label: {
+                HStack(spacing: 4) {
+                    Image(systemName: showAttributionDetail ? "chevron.down" : "chevron.right")
+                        .font(.system(size: 8, weight: .medium))
+                    Text(attribution.displaySummary)
+                        .font(Theme.Typography.caption)
+                        .lineLimit(1)
+                }
+                .foregroundStyle(Theme.Color.textTertiary)
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel("참고 정보 \(showAttributionDetail ? "숨기기" : "보기")")
+
+            if showAttributionDetail {
+                VStack(alignment: .leading, spacing: 2) {
+                    if !attribution.attachedLibraryItems.isEmpty {
+                        Label {
+                            Text(attribution.attachedLibraryItems.joined(separator: ", "))
+                                .font(Theme.Typography.caption)
+                                .foregroundStyle(Theme.Color.textTertiary)
+                        } icon: {
+                            Image(systemName: "books.vertical")
+                                .font(.system(size: 9))
+                                .foregroundStyle(Theme.Color.textTertiary)
+                        }
+                    }
+                    if let profile = attribution.profileSnapshotSummary, !profile.isEmpty {
+                        Label {
+                            Text(profile)
+                                .font(Theme.Typography.caption)
+                                .foregroundStyle(Theme.Color.textTertiary)
+                        } icon: {
+                            Image(systemName: "person.circle")
+                                .font(.system(size: 9))
+                                .foregroundStyle(Theme.Color.textTertiary)
+                        }
+                    }
+                }
+                .padding(.leading, Theme.Spacing.md)
+            }
+        }
+    }
+}
+
+// MARK: - Theme extension for caption typography
+private extension Theme.Typography {
+    static var caption: Font { .system(size: 10) }
 }
 
 // MARK: - Tool — inline subtle

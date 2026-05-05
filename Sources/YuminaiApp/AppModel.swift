@@ -478,6 +478,8 @@ public final class AppModel {
     private var sessionBridge: TelegramSessionBridge?
     private let checkpointManager = CheckpointManager()
     private let deliveryRunner = DeliveryRunner()
+    /// **ADR-115 P1-2** — 다음 assistant 메시지에 붙일 attribution. sendMessage 시 캡처 → 응답 도착 시 소비.
+    private var pendingAttribution: MessageAttribution?
 
     private let logger = Logger(subsystem: "com.yuminai", category: "AppModel")
 
@@ -4165,7 +4167,15 @@ public final class AppModel {
 
     private func appendMessage(role: Message.Role, content: String) {
         guard let session = currentSession else { return }
-        let msg = Message(sessionId: session.id, role: role, content: content)
+        // **ADR-115 P1-2** — assistant 응답에 attribution 첨부 (1회 소비).
+        let attribution: MessageAttribution?
+        if role == .assistant {
+            attribution = pendingAttribution
+            pendingAttribution = nil
+        } else {
+            attribution = nil
+        }
+        let msg = Message(sessionId: session.id, role: role, content: content, attribution: attribution)
         messages.append(msg)
         let store = sessionStore
         Task { try? await store.append(msg) }
@@ -4218,11 +4228,21 @@ public final class AppModel {
 
     /// Setup wizard 닫기.
     /// - Parameter markCompleted: true이면 `hasCompletedSetup = true`로 저장. false이면 다음 실행 시 다시 표시.
+    ///
+    /// **ADR-115 P1-3** — 완료 시 프로필이 비어 있으면 300ms 후 프로필 sheet를 자동으로 표시한다.
+    /// 애니메이션 완료 후 열어야 자연스럽게 나타난다.
     public func dismissSetupWizard(markCompleted: Bool) {
         showSetupWizard = false
         if markCompleted {
             preferences.hasCompletedSetup = true
             Task { await savePreferences() }
+            // ADR-115 P1-3 — 프로필 미입력이면 setup 닫힘 후 프로필 sheet 자동 유도
+            if preferences.userProfile.isEmpty {
+                Task { @MainActor in
+                    try? await Task.sleep(nanoseconds: 300_000_000)  // 0.3s — sheet 닫힘 애니메이션 대기
+                    self.showUserProfileSheet = true
+                }
+            }
         }
     }
 
@@ -4336,6 +4356,8 @@ public final class AppModel {
 
         // ADR-111 — 라이브러리 항목 prepend (첨부된 라이브러리 자료를 메시지 앞에 삽입)
         let libraryPreamble: String
+        // ADR-115 P1-2 — attribution 캡처 (클리어 전에)
+        let libraryItemNames = attachedLibraryItems.map(\.displayName)
         if !attachedLibraryItems.isEmpty {
             let sections = attachedLibraryItems.map { item in
                 "--- 첨부 자료: \(item.displayName) ---\n\(item.content.trimmingCharacters(in: .whitespacesAndNewlines))\n---"
@@ -4345,6 +4367,25 @@ public final class AppModel {
             libraryPreamble = ""
         }
         attachedLibraryItems = []  // 송신 후 자동 클리어
+
+        // ADR-115 P1-2 — 사용자 프로필 스냅샷 요약 캡처
+        let profileSummary: String? = {
+            guard !preferences.userProfile.isEmpty else { return nil }
+            let job = preferences.userProfile.jobTitle.trimmingCharacters(in: .whitespacesAndNewlines)
+            let goal = preferences.userProfile.primaryGoal.trimmingCharacters(in: .whitespacesAndNewlines)
+            let parts = [job, goal].filter { !$0.isEmpty }
+            return parts.isEmpty ? nil : parts.joined(separator: " · ")
+        }()
+
+        // attribution은 라이브러리나 프로필이 하나라도 있을 때만 생성
+        if !libraryItemNames.isEmpty || profileSummary != nil {
+            pendingAttribution = MessageAttribution(
+                attachedLibraryItems: libraryItemNames,
+                profileSnapshotSummary: profileSummary
+            )
+        } else {
+            pendingAttribution = nil
+        }
 
         // 첨부 prepend — Claude Code의 @ mention 구문
         let attachmentPreamble: String
@@ -5078,6 +5119,8 @@ public final class AppModel {
         guard let bot = telegramBot else { return nil }
         let targetChatId = chatId ?? preferences.telegramChatId
         guard let targetChatId else { return nil }
+        // ADR-115 P1-1 — 현재 워크스페이스 이름을 prefix로 전달
+        let wsName: String? = currentWorkspace?.name
         do {
             return try await TelegramSendHelper.sendBuildLog(
                 log: log,
@@ -5085,6 +5128,7 @@ public final class AppModel {
                 elapsed: elapsed,
                 success: success,
                 to: targetChatId,
+                workspaceName: wsName,
                 store: telegramArtifactStore,
                 client: bot
             )
@@ -5118,7 +5162,7 @@ public final class AppModel {
             policy: preferences.telegramAlertPolicy,
             chatId: chatId
         )
-        sessionBridge = makeSessionBridge(client: bot, chatId: chatId)
+        sessionBridge = await makeSessionBridge(client: bot, chatId: chatId)
         // ADR-098 P1-1 — bridge에 artifact store 주입 → diff/log 발송이 store + deep link 경로로 라우팅.
         await sessionBridge?.setArtifactStore(telegramArtifactStore)
         let router = YuminaiCommandRouter(appModel: self)
@@ -5397,7 +5441,10 @@ public final class AppModel {
     }
 
     /// bound workspace가 있을 때만 bridge 생성. 없으면 nil.
-    private func makeSessionBridge(client: any TelegramClient, chatId: Int64) -> TelegramSessionBridge? {
+    /// **ADR-114-B** — bridge 생성 시 HITL 자동 취소 콜백을 함께 주입한다.
+    /// HITL이 reject/timeout/cancelled로 끝나면 bridge가 콜백을 통해
+    /// `cancelBoundTurn()`을 트리거 → 사용자가 `/cancel`을 직접 입력할 필요 없음.
+    private func makeSessionBridge(client: any TelegramClient, chatId: Int64) async -> TelegramSessionBridge? {
         guard let boundId = preferences.telegramBoundWorkspaceId,
               let workspace = workspaces.first(where: { $0.id == boundId })
         else { return nil }
@@ -5407,7 +5454,13 @@ public final class AppModel {
             forwardAssistant: preferences.telegramForwardAssistant,
             forwardToolCalls: preferences.telegramForwardToolCalls
         )
-        return TelegramSessionBridge(client: client, configuration: config)
+        let bridge = TelegramSessionBridge(client: client, configuration: config)
+        // ADR-114-B — 자동 취소 콜백: HITL reject/timeout/cancelled 시 호출됨.
+        let cancelCallback: TelegramSessionBridge.HITLCancelCallback = { [weak self] in
+            _ = await self?.cancelBoundTurn()
+        }
+        await bridge.setOnHITLCancelRequired(cancelCallback)
+        return bridge
     }
 
     // MARK: - cokacdir bot import (ADR-024)
@@ -5575,7 +5628,7 @@ public final class AppModel {
             if let bridge = sessionBridge {
                 await bridge.reset()
             }
-            sessionBridge = makeSessionBridge(client: bot, chatId: chatId)
+            sessionBridge = await makeSessionBridge(client: bot, chatId: chatId)
             // ADR-098 P1-1 — 재구성된 bridge에도 artifact store 주입 유지.
             await sessionBridge?.setArtifactStore(telegramArtifactStore)
             if let bridge = sessionBridge, let name = boundWorkspaceName {
@@ -6075,6 +6128,26 @@ public final class AppModel {
                 chatId: chatId,
                 client: bot
             )
+        }
+
+        // **ADR-115 P0-3** — reject/timeout/cancelled 시 Claude 프로세스 자동 중단.
+        // Telegram 경로: bridge.consume(event:)의 onHITLCancelRequired 콜백이 cancelBoundTurn()을
+        // 이미 호출하므로 여기서는 desktop-only 시나리오(bridge 없음)를 보완한다.
+        // bridge가 있는 경우 cancelBoundTurn()은 자체 notifyCancelled()를 보내므로
+        // 중복 알림 없이 프로세스만 추가 중단 시도한다.
+        switch response {
+        case .rejected, .timeout, .cancelled:
+            // bridge가 없으면(desktop 단독 흐름) cancelStream()을 직접 호출해야 한다.
+            // bridge가 있으면 onHITLCancelRequired 콜백이 이미 cancelBoundTurn()을 불렀으므로
+            // cancelStream()은 중복 호출이지만 idempotent하므로 안전하다.
+            if !isStreaming {
+                break  // 이미 중단됨
+            }
+            cancelStream()
+            // bridge가 없는 경우(desktop 단독)에만 별도 notice 불필요.
+            // bridge가 있는 경우 cancelBoundTurn()→notifyCancelled() 메시지가 이미 발송됨.
+        case .approved:
+            break
         }
     }
 

@@ -364,4 +364,69 @@ public enum StackBundleCatalog {
     public static var officialBundles: [StackBundle] {
         curated.filter { $0.officialBadge }
     }
+
+    /// **ADR-115 P1-4** — ProjectProfile의 detected stack으로 매칭 번들 추천.
+    ///
+    /// 매칭 알고리즘:
+    /// 1. `projectProfile.frameworks`를 소문자로 정규화 → StackBundle.stackTags와 교집합 계산.
+    /// 2. platform + primaryLanguage를 tag 목록에 추가해 더 넓은 매칭 지원.
+    /// 3. 교집합 크기가 큰 번들 순으로 정렬 → 상위 `limit`개 반환.
+    /// 4. 교집합이 0인 번들은 제외 (의미 없는 추천 방지).
+    ///
+    /// - Parameters:
+    ///   - profile: 감지된 ProjectProfile
+    ///   - limit: 최대 반환 수 (기본 3)
+    /// - Returns: 교집합 크기 내림차순 StackBundle 배열 (빈 배열 가능)
+    public static func findMatching(for profile: ProjectProfile, limit: Int = 3) -> [StackBundle] {
+        // profile에서 후보 키워드 수집 (소문자 정규화)
+        var profileTags: Set<String> = []
+
+        // frameworks — 쉼표/공백 분리 후 소문자 정규화
+        for fw in profile.frameworks {
+            let normalized = fw.lowercased()
+                .replacingOccurrences(of: ".js", with: "js")  // Next.js → nextjs
+                .replacingOccurrences(of: " ", with: "-")     // React Native → react-native
+            profileTags.insert(normalized)
+            // 원본도 추가 (partial 매칭)
+            profileTags.insert(fw.lowercased())
+        }
+
+        // platform → tag
+        switch profile.platform {
+        case .web:                         profileTags.insert("web")
+        case .iosApp:                      profileTags.formUnion(["ios", "swift", "swiftui"])
+        case .androidApp:                  profileTags.formUnion(["android", "kotlin"])
+        case .mobile:                      profileTags.formUnion(["mobile", "react-native", "flutter"])
+        case .backend:                     profileTags.insert("backend")
+        case .macosApp:                    profileTags.formUnion(["macos", "swift"])
+        case .dataScience:                 profileTags.formUnion(["data", "python"])
+        default:                           break
+        }
+
+        // primaryLanguage → tag
+        switch profile.primaryLanguage {
+        case .typescript:   profileTags.insert("typescript")
+        case .javascript:   profileTags.insert("javascript")
+        case .python:       profileTags.insert("python")
+        case .swift:        profileTags.insert("swift")
+        case .dart:         profileTags.formUnion(["dart", "flutter"])
+        case .kotlin:       profileTags.insert("kotlin")
+        default:            break
+        }
+
+        guard !profileTags.isEmpty else { return [] }
+
+        // 번들별 교집합 크기 계산
+        let scored: [(bundle: StackBundle, score: Int)] = curated.compactMap { bundle in
+            let bundleTags = Set(bundle.stackTags.map { $0.lowercased() })
+            let intersect = profileTags.intersection(bundleTags).count
+            guard intersect > 0 else { return nil }
+            return (bundle, intersect)
+        }
+
+        return scored
+            .sorted { $0.score > $1.score }
+            .prefix(limit)
+            .map(\.bundle)
+    }
 }

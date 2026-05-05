@@ -296,4 +296,97 @@ struct TelegramSendHelperTests {
         #expect(!docLog.isEmpty)
         #expect(docLog[0].chatId == 7001)
     }
+
+    // MARK: - ADR-115 P1-1: workspaceName prefix
+
+    @Test("sendBuildLog — workspaceName 있으면 📁 prefix 포함")
+    func sendBuildLogWithWorkspaceName() async throws {
+        let bot = MockTelegramBot()
+        let store = TelegramArtifactStore()
+
+        try await TelegramSendHelper.sendBuildLog(
+            log: "Build OK",
+            title: "swift test",
+            elapsed: 1.5,
+            success: true,
+            to: 8001,
+            workspaceName: "MyProject",
+            store: store,
+            client: bot
+        )
+
+        let sentLog = await bot.sentLog
+        #expect(!sentLog.isEmpty)
+        let text = sentLog.first?.text ?? ""
+        #expect(text.hasPrefix("📁 [MyProject] ▶ swift test"))
+    }
+
+    @Test("sendBuildLog — workspaceName nil이면 prefix 없음")
+    func sendBuildLogWithoutWorkspaceName() async throws {
+        let bot = MockTelegramBot()
+        let store = TelegramArtifactStore()
+
+        try await TelegramSendHelper.sendBuildLog(
+            log: "Build OK",
+            title: "swift build",
+            elapsed: 2.0,
+            success: true,
+            to: 8002,
+            workspaceName: nil,
+            store: store,
+            client: bot
+        )
+
+        let sentLog = await bot.sentLog
+        #expect(!sentLog.isEmpty)
+        let text = sentLog.first?.text ?? ""
+        #expect(!text.hasPrefix("📁"))
+    }
+
+    @Test("sendDiffPreview — workspaceName 있으면 📁 prefix 포함")
+    func sendDiffPreviewWithWorkspaceName() async throws {
+        let bot = MockTelegramBot()
+        let store = TelegramArtifactStore()
+
+        try await TelegramSendHelper.sendDiffPreview(
+            diff: "diff --git a/A.swift b/A.swift\n+new line",
+            files: 1,
+            added: 1,
+            removed: 0,
+            workspace: nil,
+            workspaceName: "WorkspaceAlpha",
+            to: 9001,
+            store: store,
+            client: bot
+        )
+
+        let sentLog = await bot.sentLog
+        #expect(!sentLog.isEmpty)
+        let text = sentLog.first?.text ?? ""
+        #expect(text.hasPrefix("📁 [WorkspaceAlpha] ▶ git diff"))
+    }
+
+    @Test("sendDiffPreview — workspaceName nil이면 workspace fallback 또는 prefix 없음")
+    func sendDiffPreviewNoWorkspaceName() async throws {
+        let bot = MockTelegramBot()
+        let store = TelegramArtifactStore()
+
+        try await TelegramSendHelper.sendDiffPreview(
+            diff: "diff --git a/B.swift b/B.swift\n+line",
+            files: 1,
+            added: 1,
+            removed: 0,
+            workspace: nil,
+            workspaceName: nil,
+            to: 9002,
+            store: store,
+            client: bot
+        )
+
+        let sentLog = await bot.sentLog
+        #expect(!sentLog.isEmpty)
+        let text = sentLog.first?.text ?? ""
+        // workspace와 workspaceName 둘 다 nil → prefix 없음
+        #expect(!text.hasPrefix("📁"))
+    }
 }

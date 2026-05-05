@@ -65,6 +65,14 @@ public actor TelegramSessionBridge {
     /// store에 저장 → UUID로 deep link 생성 → "📂 View Full in Yuminai" 링크 첨부.
     /// nil이면 artifact 발송 메서드는 즉시 반환 (legacy fallback).
     private var artifactStore: TelegramArtifactStore?
+    /// **ADR-114-B** — HITL이 reject/timeout/cancelled로 끝났을 때 외부에 자동 취소를 요청하는 콜백.
+    /// 주입되면 bridge가 destructive toolCall에 대한 HITL 응답을 받은 직후 호출 →
+    /// AppModel이 `cancelBoundTurn()`으로 Claude 프로세스를 종료하도록 트리거.
+    /// nil이면 기존 동작 유지 (사용자가 직접 `/cancel` 입력해야 함).
+    private var onHITLCancelRequired: HITLCancelCallback?
+
+    /// **ADR-114-B** — HITL 자동 취소 콜백 타입.
+    public typealias HITLCancelCallback = @Sendable () async -> Void
 
     public init(client: any TelegramClient, configuration: Configuration) {
         self.client = client
@@ -80,6 +88,14 @@ public actor TelegramSessionBridge {
     /// **ADR-098 P1-1** — artifact store 주입. nil이면 artifact 발송이 비활성화된다.
     public func setArtifactStore(_ store: TelegramArtifactStore?) {
         self.artifactStore = store
+    }
+
+    /// **ADR-114-B** — HITL 자동 취소 콜백 주입.
+    /// HITL 응답이 rejected/timeout/cancelled일 때 콜백을 호출 → AppModel이
+    /// `cancelBoundTurn()`을 통해 진행 중인 Claude turn을 종료한다.
+    /// nil로 호출하면 자동 취소가 비활성화되며 기존 "결과만 알림" 동작으로 복귀한다.
+    public func setOnHITLCancelRequired(_ callback: HITLCancelCallback?) {
+        self.onHITLCancelRequired = callback
     }
 
     public func updateConfiguration(_ config: Configuration) {
@@ -138,19 +154,22 @@ public actor TelegramSessionBridge {
                         timeout: hitlTimeoutSeconds
                     )
                     // HITL 결과 처리
+                    // **ADR-114-B** — rejected/timeout/cancelled 시 onHITLCancelRequired 콜백 호출 →
+                    // AppModel이 `cancelBoundTurn()`으로 Claude 프로세스 자동 종료.
+                    // 콜백 미주입 시 기존 동작 유지 (사용자가 직접 `/cancel` 필요).
                     switch response {
                     case .approved(let by):
                         await send("✅ 승인됨 (by \(by)) — 작업 진행")
                     case .rejected(let by):
                         await send("❌ 거절됨 (by \(by)) — 작업 취소됨")
+                        await onHITLCancelRequired?()
                     case .timeout:
                         await send("⏱ HITL 응답 시간 초과 (\(hitlTimeoutSeconds)s) — 작업 자동 취소됨")
+                        await onHITLCancelRequired?()
                     case .cancelled:
                         await send("🛑 HITL 취소됨 — 작업 중단됨")
+                        await onHITLCancelRequired?()
                     }
-                    // rejected / timeout / cancelled 시 toolCall을 계속 실행하면 안 되지만
-                    // ClaudeEvent는 이미 발생했으므로 bridge는 결과만 알린다.
-                    // 실제 차단은 AppModel이 HITL 응답에 따라 수행해야 함.
                 } else {
                     // HITL coordinator 미주입 — 기존 동작: 알림 + cancel/status 버튼
                     let buttons = [[
@@ -313,6 +332,7 @@ public actor TelegramSessionBridge {
                 added: added,
                 removed: removed,
                 workspace: workspace,
+                workspaceName: config.workspaceName.isEmpty ? nil : config.workspaceName,
                 to: target,
                 store: store,
                 client: client
@@ -354,6 +374,7 @@ public actor TelegramSessionBridge {
                 elapsed: elapsed,
                 success: success,
                 to: target,
+                workspaceName: config.workspaceName.isEmpty ? nil : config.workspaceName,
                 store: store,
                 client: client
             )
