@@ -316,3 +316,136 @@ struct GitHubSearchClientTests {
         }
     }
 }
+
+// MARK: - ADR-118 정렬/필터 로직 Tests
+
+/// GitHubRepoResult 배열에 대한 client-side 정렬/필터 로직을 검증한다.
+/// 이 로직은 GitHubSearchSheet.displayedRepoResults 에 구현되어 있으며
+/// 순수 함수로 테스트 가능하다.
+@Suite("GitHubSearchSheet 정렬/필터 로직 (ADR-118)")
+struct GitHubSearchSortFilterTests {
+
+    // MARK: - 테스트 픽스처
+
+    private func makeRepo(
+        id: Int,
+        fullName: String,
+        stars: Int,
+        language: String? = nil,
+        updatedAt: Date? = nil
+    ) -> GitHubSearchClient.GitHubRepoResult {
+        GitHubSearchClient.GitHubRepoResult(
+            id: id,
+            fullName: fullName,
+            description: nil,
+            stars: stars,
+            language: language,
+            url: URL(string: "https://github.com/\(fullName)")!,
+            defaultBranch: "main",
+            updatedAt: updatedAt
+        )
+    }
+
+    private func sortByStars(_ repos: [GitHubSearchClient.GitHubRepoResult]) -> [GitHubSearchClient.GitHubRepoResult] {
+        repos.sorted { $0.stars > $1.stars }
+    }
+
+    private func sortByUpdatedAt(_ repos: [GitHubSearchClient.GitHubRepoResult]) -> [GitHubSearchClient.GitHubRepoResult] {
+        repos.sorted { lhs, rhs in
+            let l = lhs.updatedAt ?? .distantPast
+            let r = rhs.updatedAt ?? .distantPast
+            return l > r
+        }
+    }
+
+    private func sortByName(_ repos: [GitHubSearchClient.GitHubRepoResult]) -> [GitHubSearchClient.GitHubRepoResult] {
+        repos.sorted { $0.fullName.localizedCaseInsensitiveCompare($1.fullName) == .orderedAscending }
+    }
+
+    private func filterByLanguage(_ repos: [GitHubSearchClient.GitHubRepoResult], language: String) -> [GitHubSearchClient.GitHubRepoResult] {
+        repos.filter { $0.language == language }
+    }
+
+    // MARK: - 정렬 — 스타 내림차순
+
+    @Test("스타 많은 순 정렬 — 가장 스타 많은 리포가 첫 번째")
+    func sortByStarsDescending() {
+        let repos = [
+            makeRepo(id: 1, fullName: "a/low", stars: 100),
+            makeRepo(id: 2, fullName: "b/high", stars: 9999),
+            makeRepo(id: 3, fullName: "c/mid", stars: 1234),
+        ]
+        let sorted = sortByStars(repos)
+        #expect(sorted[0].stars == 9999)
+        #expect(sorted[1].stars == 1234)
+        #expect(sorted[2].stars == 100)
+    }
+
+    // MARK: - 정렬 — 갱신일 내림차순
+
+    @Test("최근 갱신순 정렬 — 가장 최근 리포가 첫 번째")
+    func sortByUpdatedAtDescending() {
+        let now = Date()
+        let repos = [
+            makeRepo(id: 1, fullName: "a/old", stars: 0, updatedAt: now.addingTimeInterval(-86400 * 30)),
+            makeRepo(id: 2, fullName: "b/recent", stars: 0, updatedAt: now.addingTimeInterval(-3600)),
+            makeRepo(id: 3, fullName: "c/medium", stars: 0, updatedAt: now.addingTimeInterval(-86400 * 7)),
+        ]
+        let sorted = sortByUpdatedAt(repos)
+        #expect(sorted[0].fullName == "b/recent")
+        #expect(sorted[1].fullName == "c/medium")
+        #expect(sorted[2].fullName == "a/old")
+    }
+
+    @Test("최근 갱신순 정렬 — updatedAt nil인 리포는 맨 끝")
+    func sortByUpdatedAtNilLast() {
+        let now = Date()
+        let repos = [
+            makeRepo(id: 1, fullName: "a/nil", stars: 5000, updatedAt: nil),
+            makeRepo(id: 2, fullName: "b/recent", stars: 10, updatedAt: now.addingTimeInterval(-60)),
+        ]
+        let sorted = sortByUpdatedAt(repos)
+        #expect(sorted[0].fullName == "b/recent")
+        #expect(sorted[1].fullName == "a/nil")
+    }
+
+    // MARK: - 정렬 — 이름 알파벳순
+
+    @Test("이름순 정렬 — 알파벳 오름차순")
+    func sortByNameAscending() {
+        let repos = [
+            makeRepo(id: 1, fullName: "zebra/repo", stars: 1000),
+            makeRepo(id: 2, fullName: "alpha/repo", stars: 0),
+            makeRepo(id: 3, fullName: "mango/repo", stars: 500),
+        ]
+        let sorted = sortByName(repos)
+        #expect(sorted[0].fullName == "alpha/repo")
+        #expect(sorted[1].fullName == "mango/repo")
+        #expect(sorted[2].fullName == "zebra/repo")
+    }
+
+    // MARK: - 언어 필터
+
+    @Test("언어 필터 — Swift만 선택 시 Swift 리포만 반환")
+    func filterSwiftOnly() {
+        let repos = [
+            makeRepo(id: 1, fullName: "a/swift", stars: 100, language: "Swift"),
+            makeRepo(id: 2, fullName: "b/python", stars: 200, language: "Python"),
+            makeRepo(id: 3, fullName: "c/swift2", stars: 50, language: "Swift"),
+            makeRepo(id: 4, fullName: "d/ts", stars: 300, language: "TypeScript"),
+        ]
+        let filtered = filterByLanguage(repos, language: "Swift")
+        #expect(filtered.count == 2)
+        #expect(filtered.allSatisfy { $0.language == "Swift" })
+    }
+
+    @Test("언어 필터 — 해당 언어 없을 때 빈 배열 반환")
+    func filterEmptyResult() {
+        let repos = [
+            makeRepo(id: 1, fullName: "a/python", stars: 100, language: "Python"),
+            makeRepo(id: 2, fullName: "b/go", stars: 200, language: "Go"),
+        ]
+        let filtered = filterByLanguage(repos, language: "Rust")
+        #expect(filtered.isEmpty)
+    }
+}

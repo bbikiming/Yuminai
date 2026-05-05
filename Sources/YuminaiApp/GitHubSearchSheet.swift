@@ -2,20 +2,16 @@ import SwiftUI
 import YuminaiCore
 import YuminaiUI
 
-/// **ADR-116** — GitHub 검색 Sheet.
+/// **ADR-118** — GitHub 검색 Sheet (카드 UI 고도화 + 정렬/필터).
 ///
 /// GitHub Search API를 통해 리포지토리 또는 코드 파일(CLAUDE.md 등)을 검색하고
 /// 검색 결과를 라이브러리에 직접 추가할 수 있다.
 ///
-/// ```
-/// [검색어 TextField]
-/// [리포지토리 / 코드파일 segmented]
-/// ─────────────────────────────────
-/// (결과 카드 목록)
-/// ─ anthropics/anthropic-cookbook (⭐ 12k)
-///   Anthropic 공식 쿡북
-///   [GitHub 열기]  [라이브러리에 추가]
-/// ```
+/// 변경 사항 (ADR-116 → ADR-118):
+/// - 리포 카드 디자인 시스템 적용 (LibraryItemCard 패턴 차용)
+/// - 정렬: 스타 많은 순 / 최근 갱신순 / 이름순
+/// - 언어 필터: 검색 결과 unique 언어 추출, client-side 필터
+/// - 빈 상태 / 검색 전 상태 hint + 추천 키워드 chips
 struct GitHubSearchSheet: View {
 
     @Environment(AppModel.self) private var appModel
@@ -26,6 +22,15 @@ struct GitHubSearchSheet: View {
     enum SearchMode: String, CaseIterable, Identifiable {
         case repository = "리포지토리"
         case code       = "코드 파일"
+        var id: String { rawValue }
+    }
+
+    // MARK: - 정렬 옵션 (ADR-118)
+
+    enum SortOrder: String, CaseIterable, Identifiable {
+        case stars     = "스타 많은 순"
+        case updatedAt = "최근 갱신순"
+        case name      = "이름순"
         var id: String { rawValue }
     }
 
@@ -41,7 +46,50 @@ struct GitHubSearchSheet: View {
     @State private var addedIds: Set<String> = []
     @State private var addErrors: [String: String] = [:]
 
+    // 정렬/필터 상태 (ADR-118)
+    @State private var sortOrder: SortOrder = .stars
+    @State private var languageFilter: String? = nil
+
     private let client = GitHubSearchClient()
+
+    // MARK: - 추천 키워드
+
+    private let suggestedKeywords = [
+        "CLAUDE.md tdd", "react cursorrules", "swift claude",
+        "python rules", "nextjs cursorrules", "cursor rules"
+    ]
+
+    // MARK: - computed: 정렬+필터 적용된 결과
+
+    /// client-side 정렬 + 언어 필터를 적용한 최종 리포 목록.
+    var displayedRepoResults: [GitHubSearchClient.GitHubRepoResult] {
+        var filtered = repoResults
+        if let lang = languageFilter {
+            filtered = filtered.filter { $0.language == lang }
+        }
+        switch sortOrder {
+        case .stars:
+            filtered.sort { $0.stars > $1.stars }
+        case .updatedAt:
+            filtered.sort { lhs, rhs in
+                let lhsDate = lhs.updatedAt ?? .distantPast
+                let rhsDate = rhs.updatedAt ?? .distantPast
+                return lhsDate > rhsDate
+            }
+        case .name:
+            filtered.sort { $0.fullName.localizedCaseInsensitiveCompare($1.fullName) == .orderedAscending }
+        }
+        return filtered
+    }
+
+    /// 검색 결과에서 unique 언어 목록 추출 (nil 제외, 알파벳 정렬).
+    var availableLanguages: [String] {
+        let langs = repoResults.compactMap { $0.language }
+        return Array(Set(langs)).sorted()
+    }
+
+    /// 언어 필터 활성 여부.
+    var hasActiveFilter: Bool { languageFilter != nil }
 
     // MARK: - 뷰
 
@@ -51,9 +99,13 @@ struct GitHubSearchSheet: View {
             Divider()
             searchControls
             Divider()
+            if mode == .repository && !repoResults.isEmpty {
+                filterSortBar
+                Divider()
+            }
             resultArea
         }
-        .frame(minWidth: 720, minHeight: 560)
+        .frame(minWidth: 720, minHeight: 580)
         .background(Theme.Color.bg)
     }
 
@@ -109,6 +161,7 @@ struct GitHubSearchSheet: View {
                             repoResults = []
                             codeResults = []
                             searchError = nil
+                            languageFilter = nil
                         } label: {
                             Image(systemName: "xmark.circle.fill")
                                 .font(.system(size: 11))
@@ -154,6 +207,10 @@ struct GitHubSearchSheet: View {
             }
             .pickerStyle(.segmented)
             .frame(maxWidth: 300)
+            .onChange(of: mode) { _, _ in
+                languageFilter = nil
+                sortOrder = .stars
+            }
 
             // 검색 힌트
             Text(mode == .repository
@@ -171,6 +228,69 @@ struct GitHubSearchSheet: View {
         !query.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
     }
 
+    // MARK: - 정렬/필터 바 (ADR-118)
+
+    private var filterSortBar: some View {
+        HStack(spacing: Theme.Spacing.sm) {
+            // 결과 수
+            Text("\(displayedRepoResults.count)개")
+                .font(Theme.Typography.micro.weight(.semibold))
+                .foregroundStyle(Theme.Color.textSecondary)
+
+            if repoResults.count != displayedRepoResults.count {
+                Text("/ \(repoResults.count)개 중")
+                    .font(Theme.Typography.micro)
+                    .foregroundStyle(Theme.Color.textTertiary)
+            }
+
+            Spacer()
+
+            // 언어 필터 Picker
+            if !availableLanguages.isEmpty {
+                Picker("언어", selection: $languageFilter) {
+                    Text("전체 언어").tag(String?.none)
+                    ForEach(availableLanguages, id: \.self) { lang in
+                        Text(lang).tag(String?.some(lang))
+                    }
+                }
+                .labelsHidden()
+                .pickerStyle(.menu)
+                .font(Theme.Typography.small)
+                .frame(maxWidth: 130)
+            }
+
+            // 정렬 Picker
+            Picker("정렬", selection: $sortOrder) {
+                ForEach(SortOrder.allCases) { order in
+                    Text(order.rawValue).tag(order)
+                }
+            }
+            .labelsHidden()
+            .pickerStyle(.menu)
+            .font(Theme.Typography.small)
+            .frame(maxWidth: 130)
+
+            // 필터 해제
+            if hasActiveFilter {
+                Button {
+                    languageFilter = nil
+                } label: {
+                    HStack(spacing: 3) {
+                        Image(systemName: "xmark.circle.fill")
+                            .font(.system(size: 10))
+                        Text("필터 해제")
+                            .font(Theme.Typography.micro.weight(.medium))
+                    }
+                    .foregroundStyle(Theme.Color.accent)
+                }
+                .buttonStyle(.plain)
+            }
+        }
+        .padding(.horizontal, Theme.Spacing.lg)
+        .padding(.vertical, 7)
+        .background(Theme.Color.surface)
+    }
+
     // MARK: - 결과 영역
 
     @ViewBuilder
@@ -183,28 +303,44 @@ struct GitHubSearchSheet: View {
             repoResultList
         } else if mode == .code && !codeResults.isEmpty {
             codeResultList
-        } else if !query.isEmpty {
+        } else if !query.isEmpty && !isSearching {
             emptyState
         } else {
             idleState
         }
     }
 
+    // MARK: - Idle 상태 (검색 전, 추천 키워드 chips)
+
     private var idleState: some View {
-        VStack(spacing: Theme.Spacing.md) {
-            Image(systemName: "magnifyingglass.circle")
-                .font(.system(size: 48, weight: .ultraLight))
+        VStack(spacing: Theme.Spacing.lg) {
+            Spacer()
+            Image(systemName: "archivebox.circle")
+                .font(.system(size: 52, weight: .ultraLight))
                 .foregroundStyle(Theme.Color.textTertiary)
-            Text("GitHub에서 검색하세요")
-                .font(.system(size: 15, weight: .medium))
-                .foregroundStyle(Theme.Color.textSecondary)
-            Text("위 검색창에 키워드를 입력하고 검색 버튼을 누르거나 Return을 누르세요.")
-                .font(Theme.Typography.small)
-                .foregroundStyle(Theme.Color.textTertiary)
-                .multilineTextAlignment(.center)
+            VStack(spacing: Theme.Spacing.xs) {
+                Text("GitHub에서 커뮤니티 자료 검색")
+                    .font(.system(size: 15, weight: .semibold))
+                    .foregroundStyle(Theme.Color.textSecondary)
+                Text("검색창에 키워드를 입력하거나 아래 추천 키워드를 눌러 시작하세요.")
+                    .font(Theme.Typography.small)
+                    .foregroundStyle(Theme.Color.textTertiary)
+                    .multilineTextAlignment(.center)
+            }
+            // 추천 키워드 chips
+            VStack(spacing: Theme.Spacing.sm) {
+                Text("추천 검색어")
+                    .font(Theme.Typography.micro.weight(.semibold))
+                    .foregroundStyle(Theme.Color.textTertiary)
+                FlexWrapChips(keywords: suggestedKeywords) { keyword in
+                    query = keyword
+                    performSearch()
+                }
+            }
+            Spacer()
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .padding()
+        .padding(Theme.Spacing.lg)
     }
 
     private var loadingState: some View {
@@ -218,18 +354,29 @@ struct GitHubSearchSheet: View {
     }
 
     private var emptyState: some View {
-        VStack(spacing: Theme.Spacing.md) {
-            Image(systemName: "doc.questionmark")
-                .font(.system(size: 36, weight: .ultraLight))
+        VStack(spacing: Theme.Spacing.lg) {
+            Spacer()
+            Image(systemName: "doc.questionmark.fill")
+                .font(.system(size: 40, weight: .ultraLight))
                 .foregroundStyle(Theme.Color.textTertiary)
-            Text("검색 결과가 없어요")
-                .font(.system(size: 14, weight: .medium))
-                .foregroundStyle(Theme.Color.textSecondary)
-            Text("다른 키워드로 다시 시도해 보세요.")
-                .font(Theme.Typography.small)
-                .foregroundStyle(Theme.Color.textTertiary)
+            VStack(spacing: Theme.Spacing.xs) {
+                Text("검색 결과가 없어요")
+                    .font(.system(size: 14, weight: .semibold))
+                    .foregroundStyle(Theme.Color.textSecondary)
+                Text("'\(query)'로 결과를 찾지 못했어요. 다른 키워드로 다시 시도해 보세요.")
+                    .font(Theme.Typography.small)
+                    .foregroundStyle(Theme.Color.textTertiary)
+                    .multilineTextAlignment(.center)
+            }
+            // 다른 추천어 chips
+            FlexWrapChips(keywords: suggestedKeywords.filter { $0 != query }) { keyword in
+                query = keyword
+                performSearch()
+            }
+            Spacer()
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .padding(Theme.Spacing.lg)
     }
 
     private func errorState(_ message: String) -> some View {
@@ -260,13 +407,37 @@ struct GitHubSearchSheet: View {
     private var repoResultList: some View {
         ScrollView {
             LazyVStack(spacing: Theme.Spacing.md) {
-                ForEach(repoResults) { repo in
+                ForEach(displayedRepoResults) { repo in
                     repoCard(repo)
+                }
+                if displayedRepoResults.isEmpty && hasActiveFilter {
+                    emptyFilterState
                 }
             }
             .padding(Theme.Spacing.lg)
         }
     }
+
+    private var emptyFilterState: some View {
+        VStack(spacing: Theme.Spacing.sm) {
+            Image(systemName: "line.3.horizontal.decrease.circle")
+                .font(.system(size: 28, weight: .ultraLight))
+                .foregroundStyle(Theme.Color.textTertiary)
+            Text("선택한 언어의 결과가 없어요.")
+                .font(Theme.Typography.small)
+                .foregroundStyle(Theme.Color.textTertiary)
+            Button("필터 해제") {
+                languageFilter = nil
+            }
+            .font(Theme.Typography.small.weight(.medium))
+            .foregroundStyle(Theme.Color.accent)
+            .buttonStyle(.plain)
+        }
+        .frame(maxWidth: .infinity)
+        .padding(.vertical, Theme.Spacing.xl)
+    }
+
+    // MARK: - 리포 카드 (ADR-118 polished design)
 
     private func repoCard(_ repo: GitHubSearchClient.GitHubRepoResult) -> some View {
         let itemId = "repo-\(repo.id)"
@@ -274,114 +445,161 @@ struct GitHubSearchSheet: View {
         let isAdded = addedIds.contains(itemId)
         let addError = addErrors[itemId]
 
-        return GroupBox {
-            VStack(alignment: .leading, spacing: Theme.Spacing.sm) {
-                // 헤더
-                HStack(alignment: .top) {
-                    VStack(alignment: .leading, spacing: 4) {
-                        Text(repo.fullName)
-                            .font(Theme.Typography.body.weight(.semibold))
-                            .foregroundStyle(Theme.Color.text)
-                        HStack(spacing: Theme.Spacing.xs) {
-                            Image(systemName: "star.fill")
-                                .font(.system(size: 9))
-                                .foregroundStyle(.yellow)
-                            Text(repo.starsDisplay)
-                                .font(Theme.Typography.micro)
-                                .foregroundStyle(Theme.Color.textSecondary)
-                            if let lang = repo.language {
-                                Text("·")
-                                    .foregroundStyle(Theme.Color.textTertiary)
-                                    .font(Theme.Typography.micro)
-                                Text(lang)
-                                    .font(Theme.Typography.micro)
-                                    .foregroundStyle(Theme.Color.textTertiary)
-                            }
-                        }
-                    }
-                    Spacer()
-                    // 기본 브랜치 배지
-                    Text(repo.defaultBranch)
-                        .font(Theme.Typography.micro.weight(.medium))
-                        .foregroundStyle(Theme.Color.textTertiary)
-                        .padding(.horizontal, 6)
-                        .padding(.vertical, 2)
-                        .background(Theme.Color.surfaceHi)
-                        .clipShape(Capsule())
-                }
-
-                // 설명
-                if let desc = repo.description, !desc.isEmpty {
-                    Text(desc)
-                        .font(Theme.Typography.small)
-                        .foregroundStyle(Theme.Color.textSecondary)
-                        .lineLimit(2)
-                }
-
-                if let errorMsg = addError {
-                    HStack(spacing: 4) {
-                        Image(systemName: "xmark.circle.fill")
-                            .font(.system(size: 10))
-                            .foregroundStyle(Theme.Color.danger)
-                        Text(errorMsg)
-                            .font(Theme.Typography.micro)
-                            .foregroundStyle(Theme.Color.danger)
-                    }
-                }
-
-                Divider()
-
-                // 액션
-                HStack(spacing: Theme.Spacing.sm) {
-                    Link(destination: repo.url) {
-                        HStack(spacing: 4) {
-                            Image(systemName: "arrow.up.right.square")
-                                .font(.system(size: 11, weight: .semibold))
-                            Text("GitHub 열기")
-                                .font(Theme.Typography.small.weight(.medium))
-                        }
+        return VStack(alignment: .leading, spacing: 0) {
+            // 헤더: 아이콘 + 제목 + 메타
+            HStack(alignment: .top, spacing: Theme.Spacing.md) {
+                // 36×36 아이콘 박스
+                ZStack {
+                    RoundedRectangle(cornerRadius: Theme.Radius.md)
+                        .fill(Theme.Color.accent.opacity(0.12))
+                        .frame(width: 36, height: 36)
+                    Image(systemName: "chevron.left.forwardslash.chevron.right")
+                        .font(.system(size: 15, weight: .semibold))
                         .foregroundStyle(Theme.Color.accent)
+                }
+
+                VStack(alignment: .leading, spacing: 4) {
+                    // 리포 이름
+                    Text(repo.fullName)
+                        .font(Theme.Typography.body.weight(.semibold))
+                        .foregroundStyle(Theme.Color.text)
+                        .lineLimit(1)
+
+                    // 메타: ⭐ stars · 언어 · 갱신일
+                    HStack(spacing: Theme.Spacing.xs) {
+                        Image(systemName: "star.fill")
+                            .font(.system(size: 9))
+                            .foregroundStyle(.yellow)
+                        Text(repo.starsDisplay)
+                            .font(Theme.Typography.micro.monospacedDigit())
+                            .foregroundStyle(Theme.Color.textSecondary)
+                        if let lang = repo.language {
+                            Text("·")
+                                .font(Theme.Typography.micro)
+                                .foregroundStyle(Theme.Color.textTertiary)
+                            Text(lang)
+                                .font(Theme.Typography.micro)
+                                .foregroundStyle(Theme.Color.textTertiary)
+                        }
+                        if let updatedAt = repo.updatedAt {
+                            Text("·")
+                                .font(Theme.Typography.micro)
+                                .foregroundStyle(Theme.Color.textTertiary)
+                            Text(relativeDate(updatedAt))
+                                .font(Theme.Typography.micro)
+                                .foregroundStyle(Theme.Color.textTertiary)
+                                .help(absoluteDate(updatedAt))
+                        }
+                    }
+                }
+
+                Spacer()
+
+                // 브랜치 배지
+                Text(repo.defaultBranch)
+                    .font(Theme.Typography.micro.weight(.medium))
+                    .foregroundStyle(Theme.Color.textTertiary)
+                    .padding(.horizontal, 6)
+                    .padding(.vertical, 2)
+                    .background(Theme.Color.surfaceHi)
+                    .clipShape(Capsule())
+            }
+            .padding(Theme.Spacing.md)
+
+            // 설명
+            if let desc = repo.description, !desc.isEmpty {
+                Text(desc)
+                    .font(Theme.Typography.small)
+                    .foregroundStyle(Theme.Color.textSecondary)
+                    .lineLimit(2)
+                    .padding(.horizontal, Theme.Spacing.md)
+                    .padding(.bottom, Theme.Spacing.sm)
+            }
+
+            // 추가 오류 배지
+            if let errorMsg = addError {
+                HStack(spacing: 4) {
+                    Image(systemName: "xmark.circle.fill")
+                        .font(.system(size: 10))
+                        .foregroundStyle(Theme.Color.danger)
+                    Text(errorMsg)
+                        .font(Theme.Typography.micro)
+                        .foregroundStyle(Theme.Color.danger)
+                }
+                .padding(.horizontal, Theme.Spacing.md)
+                .padding(.bottom, Theme.Spacing.sm)
+            }
+
+            Divider()
+
+            // 액션 버튼 행
+            HStack(spacing: Theme.Spacing.sm) {
+                // GitHub 열기 (secondary)
+                Link(destination: repo.url) {
+                    HStack(spacing: 4) {
+                        Image(systemName: "arrow.up.right.square")
+                            .font(.system(size: 11, weight: .semibold))
+                        Text("GitHub 열기")
+                            .font(Theme.Typography.small.weight(.medium))
+                    }
+                    .foregroundStyle(Theme.Color.accent)
+                    .padding(.horizontal, Theme.Spacing.sm)
+                    .padding(.vertical, 5)
+                    .background(Theme.Color.accentMuted.opacity(0.12))
+                    .clipShape(RoundedRectangle(cornerRadius: Theme.Radius.sm))
+                }
+                .buttonStyle(.plain)
+
+                Spacer()
+
+                // 추가 상태
+                if isAdded {
+                    HStack(spacing: 3) {
+                        Image(systemName: "checkmark.circle.fill")
+                            .font(.system(size: 11))
+                            .foregroundStyle(Theme.Color.success)
+                        Text("라이브러리에 있음")
+                            .font(Theme.Typography.micro.weight(.medium))
+                            .foregroundStyle(Theme.Color.success)
+                    }
+                    .padding(.horizontal, Theme.Spacing.sm)
+                    .padding(.vertical, 5)
+                    .background(Theme.Color.success.opacity(0.10))
+                    .clipShape(Capsule())
+                } else {
+                    Button {
+                        Task { await addRepoToLibrary(repo, itemId: itemId) }
+                    } label: {
+                        HStack(spacing: 3) {
+                            if isAdding {
+                                ProgressView().scaleEffect(0.6).frame(width: 10, height: 10)
+                            } else {
+                                Image(systemName: "books.vertical.fill")
+                                    .font(.system(size: 10, weight: .semibold))
+                            }
+                            Text(isAdding ? "추가 중…" : "라이브러리에 추가")
+                                .font(Theme.Typography.small.weight(.semibold))
+                        }
+                        .foregroundStyle(.white)
+                        .padding(.horizontal, 9)
+                        .padding(.vertical, 5)
+                        .background(isAdding ? Theme.Color.surfaceHi : Theme.Color.accent)
+                        .clipShape(Capsule())
                     }
                     .buttonStyle(.plain)
-
-                    Spacer()
-
-                    if isAdded {
-                        HStack(spacing: 3) {
-                            Image(systemName: "checkmark.circle.fill")
-                                .font(.system(size: 11))
-                                .foregroundStyle(Theme.Color.success)
-                            Text("라이브러리에 추가됨")
-                                .font(Theme.Typography.micro)
-                                .foregroundStyle(Theme.Color.success)
-                        }
-                    } else {
-                        Button {
-                            Task { await addRepoToLibrary(repo, itemId: itemId) }
-                        } label: {
-                            HStack(spacing: 3) {
-                                if isAdding {
-                                    ProgressView().scaleEffect(0.6).frame(width: 10, height: 10)
-                                } else {
-                                    Image(systemName: "books.vertical.fill")
-                                        .font(.system(size: 10, weight: .semibold))
-                                }
-                                Text(isAdding ? "추가 중…" : "라이브러리에 추가")
-                                    .font(Theme.Typography.small.weight(.semibold))
-                            }
-                            .foregroundStyle(.white)
-                            .padding(.horizontal, 9)
-                            .padding(.vertical, 4)
-                            .background(isAdding ? Theme.Color.surfaceHi : Theme.Color.accent)
-                            .clipShape(Capsule())
-                        }
-                        .buttonStyle(.plain)
-                        .disabled(isAdding)
-                    }
+                    .disabled(isAdding)
                 }
             }
+            .padding(.horizontal, Theme.Spacing.md)
+            .padding(.vertical, Theme.Spacing.sm)
         }
-        .groupBoxStyle(.automatic)
+        .background(Theme.Color.surface)
+        .clipShape(RoundedRectangle(cornerRadius: Theme.Radius.md))
+        .overlay(
+            RoundedRectangle(cornerRadius: Theme.Radius.md)
+                .stroke(Theme.Color.surfaceHi, lineWidth: 1)
+        )
+        .shadow(color: .black.opacity(0.04), radius: 3, x: 0, y: 1)
     }
 
     // MARK: - 코드 파일 결과 목록
@@ -403,101 +621,130 @@ struct GitHubSearchSheet: View {
         let isAdded = addedIds.contains(itemId)
         let addError = addErrors[itemId]
 
-        return GroupBox {
-            VStack(alignment: .leading, spacing: Theme.Spacing.sm) {
-                // 헤더
-                HStack(alignment: .top) {
-                    VStack(alignment: .leading, spacing: 4) {
-                        Text(file.repoFullName)
-                            .font(Theme.Typography.body.weight(.semibold))
-                            .foregroundStyle(Theme.Color.text)
-                        HStack(spacing: Theme.Spacing.xs) {
-                            Image(systemName: "doc.text.fill")
-                                .font(.system(size: 9))
-                                .foregroundStyle(Theme.Color.accent)
-                            Text(file.path)
-                                .font(Theme.Typography.micro.weight(.medium))
-                                .foregroundStyle(Theme.Color.accent)
-                            if file.stars > 0 {
-                                Text("·")
-                                    .font(Theme.Typography.micro)
-                                    .foregroundStyle(Theme.Color.textTertiary)
-                                Image(systemName: "star.fill")
-                                    .font(.system(size: 9))
-                                    .foregroundStyle(.yellow)
-                                Text(starsDisplay(file.stars))
-                                    .font(Theme.Typography.micro)
-                                    .foregroundStyle(Theme.Color.textSecondary)
-                            }
-                        }
-                    }
-                    Spacer()
-                }
-
-                if let errorMsg = addError {
-                    HStack(spacing: 4) {
-                        Image(systemName: "xmark.circle.fill")
-                            .font(.system(size: 10))
-                            .foregroundStyle(Theme.Color.danger)
-                        Text(errorMsg)
-                            .font(Theme.Typography.micro)
-                            .foregroundStyle(Theme.Color.danger)
-                    }
-                }
-
-                Divider()
-
-                // 액션
-                HStack(spacing: Theme.Spacing.sm) {
-                    Link(destination: file.htmlURL) {
-                        HStack(spacing: 4) {
-                            Image(systemName: "arrow.up.right.square")
-                                .font(.system(size: 11, weight: .semibold))
-                            Text("GitHub 열기")
-                                .font(Theme.Typography.small.weight(.medium))
-                        }
+        return VStack(alignment: .leading, spacing: 0) {
+            // 헤더: 아이콘 + 경로 + 리포 + 스타
+            HStack(alignment: .top, spacing: Theme.Spacing.md) {
+                // 36×36 파일 아이콘 박스
+                ZStack {
+                    RoundedRectangle(cornerRadius: Theme.Radius.md)
+                        .fill(Theme.Color.accent.opacity(0.12))
+                        .frame(width: 36, height: 36)
+                    Image(systemName: "doc.text.fill")
+                        .font(.system(size: 15, weight: .semibold))
                         .foregroundStyle(Theme.Color.accent)
+                }
+
+                VStack(alignment: .leading, spacing: 4) {
+                    Text(file.repoFullName)
+                        .font(Theme.Typography.body.weight(.semibold))
+                        .foregroundStyle(Theme.Color.text)
+                        .lineLimit(1)
+                    HStack(spacing: Theme.Spacing.xs) {
+                        Image(systemName: "doc.text.fill")
+                            .font(.system(size: 9))
+                            .foregroundStyle(Theme.Color.accent)
+                        Text(file.path)
+                            .font(Theme.Typography.micro.weight(.medium))
+                            .foregroundStyle(Theme.Color.accent)
+                        if file.stars > 0 {
+                            Text("·")
+                                .font(Theme.Typography.micro)
+                                .foregroundStyle(Theme.Color.textTertiary)
+                            Image(systemName: "star.fill")
+                                .font(.system(size: 9))
+                                .foregroundStyle(.yellow)
+                            Text(starsDisplay(file.stars))
+                                .font(Theme.Typography.micro)
+                                .foregroundStyle(Theme.Color.textSecondary)
+                        }
+                    }
+                }
+
+                Spacer()
+            }
+            .padding(Theme.Spacing.md)
+
+            if let errorMsg = addError {
+                HStack(spacing: 4) {
+                    Image(systemName: "xmark.circle.fill")
+                        .font(.system(size: 10))
+                        .foregroundStyle(Theme.Color.danger)
+                    Text(errorMsg)
+                        .font(Theme.Typography.micro)
+                        .foregroundStyle(Theme.Color.danger)
+                }
+                .padding(.horizontal, Theme.Spacing.md)
+                .padding(.bottom, Theme.Spacing.sm)
+            }
+
+            Divider()
+
+            // 액션 버튼 행
+            HStack(spacing: Theme.Spacing.sm) {
+                Link(destination: file.htmlURL) {
+                    HStack(spacing: 4) {
+                        Image(systemName: "arrow.up.right.square")
+                            .font(.system(size: 11, weight: .semibold))
+                        Text("GitHub 열기")
+                            .font(Theme.Typography.small.weight(.medium))
+                    }
+                    .foregroundStyle(Theme.Color.accent)
+                    .padding(.horizontal, Theme.Spacing.sm)
+                    .padding(.vertical, 5)
+                    .background(Theme.Color.accentMuted.opacity(0.12))
+                    .clipShape(RoundedRectangle(cornerRadius: Theme.Radius.sm))
+                }
+                .buttonStyle(.plain)
+
+                Spacer()
+
+                if isAdded {
+                    HStack(spacing: 3) {
+                        Image(systemName: "checkmark.circle.fill")
+                            .font(.system(size: 11))
+                            .foregroundStyle(Theme.Color.success)
+                        Text("라이브러리에 있음")
+                            .font(Theme.Typography.micro.weight(.medium))
+                            .foregroundStyle(Theme.Color.success)
+                    }
+                    .padding(.horizontal, Theme.Spacing.sm)
+                    .padding(.vertical, 5)
+                    .background(Theme.Color.success.opacity(0.10))
+                    .clipShape(Capsule())
+                } else {
+                    Button {
+                        Task { await addCodeToLibrary(file, itemId: itemId) }
+                    } label: {
+                        HStack(spacing: 3) {
+                            if isAdding {
+                                ProgressView().scaleEffect(0.6).frame(width: 10, height: 10)
+                            } else {
+                                Image(systemName: "books.vertical.fill")
+                                    .font(.system(size: 10, weight: .semibold))
+                            }
+                            Text(isAdding ? "추가 중…" : "라이브러리에 추가")
+                                .font(Theme.Typography.small.weight(.semibold))
+                        }
+                        .foregroundStyle(.white)
+                        .padding(.horizontal, 9)
+                        .padding(.vertical, 5)
+                        .background(isAdding ? Theme.Color.surfaceHi : Theme.Color.accent)
+                        .clipShape(Capsule())
                     }
                     .buttonStyle(.plain)
-
-                    Spacer()
-
-                    if isAdded {
-                        HStack(spacing: 3) {
-                            Image(systemName: "checkmark.circle.fill")
-                                .font(.system(size: 11))
-                                .foregroundStyle(Theme.Color.success)
-                            Text("라이브러리에 추가됨")
-                                .font(Theme.Typography.micro)
-                                .foregroundStyle(Theme.Color.success)
-                        }
-                    } else {
-                        Button {
-                            Task { await addCodeToLibrary(file, itemId: itemId) }
-                        } label: {
-                            HStack(spacing: 3) {
-                                if isAdding {
-                                    ProgressView().scaleEffect(0.6).frame(width: 10, height: 10)
-                                } else {
-                                    Image(systemName: "books.vertical.fill")
-                                        .font(.system(size: 10, weight: .semibold))
-                                }
-                                Text(isAdding ? "추가 중…" : "라이브러리에 추가")
-                                    .font(Theme.Typography.small.weight(.semibold))
-                            }
-                            .foregroundStyle(.white)
-                            .padding(.horizontal, 9)
-                            .padding(.vertical, 4)
-                            .background(isAdding ? Theme.Color.surfaceHi : Theme.Color.accent)
-                            .clipShape(Capsule())
-                        }
-                        .buttonStyle(.plain)
-                        .disabled(isAdding)
-                    }
+                    .disabled(isAdding)
                 }
             }
+            .padding(.horizontal, Theme.Spacing.md)
+            .padding(.vertical, Theme.Spacing.sm)
         }
-        .groupBoxStyle(.automatic)
+        .background(Theme.Color.surface)
+        .clipShape(RoundedRectangle(cornerRadius: Theme.Radius.md))
+        .overlay(
+            RoundedRectangle(cornerRadius: Theme.Radius.md)
+                .stroke(Theme.Color.surfaceHi, lineWidth: 1)
+        )
+        .shadow(color: .black.opacity(0.04), radius: 3, x: 0, y: 1)
     }
 
     // MARK: - 검색 액션
@@ -508,21 +755,22 @@ struct GitHubSearchSheet: View {
 
         isSearching = true
         searchError = nil
+        languageFilter = nil
 
         Task {
             do {
                 switch mode {
                 case .repository:
-                    let results = try await client.searchRepositories(query: q, perPage: 20)
+                    let results = try await client.searchRepositories(query: q, perPage: 30)
                     repoResults = results
                     codeResults = []
                 case .code:
-                    let results = try await client.searchCode(query: q, perPage: 20)
+                    let results = try await client.searchCode(query: q, perPage: 30)
                     codeResults = results
                     repoResults = []
                 }
             } catch let error as GitHubSearchClient.SearchError {
-                searchError = error.localizedDescription ?? "알 수 없는 오류"
+                searchError = error.localizedDescription
             } catch {
                 searchError = error.localizedDescription
             }
@@ -536,7 +784,6 @@ struct GitHubSearchSheet: View {
         addingIds.insert(itemId)
         addErrors.removeValue(forKey: itemId)
 
-        // CLAUDE.md → README.md 순으로 시도
         let candidates = ["CLAUDE.md", "README.md"]
         var addedURL: URL? = nil
 
@@ -588,5 +835,60 @@ struct GitHubSearchSheet: View {
         if stars >= 10000 { return "\(stars / 1000)k" }
         if stars >= 1000 { return String(format: "%.1fk", Double(stars) / 1000.0) }
         return "\(stars)"
+    }
+
+    private func relativeDate(_ date: Date) -> String {
+        let diff = Date().timeIntervalSince(date)
+        if diff < 60 { return "방금 전" }
+        if diff < 3600 { return "\(Int(diff / 60))분 전" }
+        if diff < 86400 { return "\(Int(diff / 3600))시간 전" }
+        if diff < 86400 * 7 { return "\(Int(diff / 86400))일 전" }
+        if diff < 86400 * 30 { return "\(Int(diff / 86400))일 전" }
+        if diff < 86400 * 365 { return "\(Int(diff / (86400 * 30)))개월 전" }
+        return "\(Int(diff / (86400 * 365)))년 전"
+    }
+
+    private func absoluteDate(_ date: Date) -> String {
+        let fmt = DateFormatter()
+        fmt.dateFormat = "yyyy-MM-dd"
+        return fmt.string(from: date)
+    }
+}
+
+// MARK: - FlexWrap Chips (추천 키워드)
+
+/// 추천 키워드를 감싸는 flex-wrap 스타일 chip 뷰.
+private struct FlexWrapChips: View {
+    let keywords: [String]
+    let onTap: (String) -> Void
+
+    var body: some View {
+        // macOS에서는 LazyVGrid로 flex-wrap 효과
+        LazyVGrid(columns: [GridItem(.adaptive(minimum: 120, maximum: 220))], spacing: 6) {
+            ForEach(keywords, id: \.self) { kw in
+                Button {
+                    onTap(kw)
+                } label: {
+                    HStack(spacing: 4) {
+                        Image(systemName: "magnifyingglass")
+                            .font(.system(size: 9, weight: .medium))
+                        Text(kw)
+                            .font(Theme.Typography.micro.weight(.medium))
+                            .lineLimit(1)
+                    }
+                    .foregroundStyle(Theme.Color.accent)
+                    .padding(.horizontal, 9)
+                    .padding(.vertical, 5)
+                    .frame(maxWidth: .infinity)
+                    .background(Theme.Color.accentMuted.opacity(0.15))
+                    .clipShape(RoundedRectangle(cornerRadius: Theme.Radius.sm))
+                    .overlay(
+                        RoundedRectangle(cornerRadius: Theme.Radius.sm)
+                            .stroke(Theme.Color.accent.opacity(0.25), lineWidth: 0.5)
+                    )
+                }
+                .buttonStyle(.plain)
+            }
+        }
     }
 }

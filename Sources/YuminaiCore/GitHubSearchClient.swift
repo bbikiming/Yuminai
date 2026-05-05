@@ -33,6 +33,8 @@ public actor GitHubSearchClient {
         /// 리포지토리 HTML URL.
         public let url: URL
         public let defaultBranch: String
+        /// 마지막 push 날짜 (GitHub API `updated_at` 필드). nil이면 정보 없음.
+        public let updatedAt: Date?
 
         public init(
             id: Int,
@@ -41,7 +43,8 @@ public actor GitHubSearchClient {
             stars: Int,
             language: String?,
             url: URL,
-            defaultBranch: String
+            defaultBranch: String,
+            updatedAt: Date? = nil
         ) {
             self.id = id
             self.fullName = fullName
@@ -50,6 +53,7 @@ public actor GitHubSearchClient {
             self.language = language
             self.url = url
             self.defaultBranch = defaultBranch
+            self.updatedAt = updatedAt
         }
 
         /// 리포지토리의 특정 파일에 대한 raw content URL.
@@ -183,7 +187,8 @@ public actor GitHubSearchClient {
                 stars: item.stargazersCount,
                 language: item.language,
                 url: htmlURL,
-                defaultBranch: item.defaultBranch ?? "main"
+                defaultBranch: item.defaultBranch ?? "main",
+                updatedAt: item.updatedAt.flatMap { ISO8601DateFormatter().date(from: $0) }
             )
         }
     }
@@ -299,6 +304,8 @@ private struct GitHubRepoSearchResponse: Decodable {
         let language: String?
         let htmlUrl: String
         let defaultBranch: String?
+        /// ISO8601 문자열 (예: "2024-01-15T10:30:00Z"). 파싱은 호출자 측에서 수행.
+        let updatedAt: String?
 
         enum CodingKeys: String, CodingKey {
             case id
@@ -308,6 +315,7 @@ private struct GitHubRepoSearchResponse: Decodable {
             case language
             case htmlUrl = "html_url"
             case defaultBranch = "default_branch"
+            case updatedAt = "updated_at"
         }
     }
 }
