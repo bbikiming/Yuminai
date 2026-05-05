@@ -469,6 +469,11 @@ struct RootView: View {
             UserProfileSheet()
                 .environment(appModel)
         }
+        // ADR-111 — 자료 라이브러리 sheet
+        .sheet(isPresented: $bindable.showLibrarySheet) {
+            LibrarySheet()
+                .environment(appModel)
+        }
         // ADR-097 — Telegram Artifact Viewer (diff / log deep link)
         .sheet(isPresented: $bindable.showTelegramArtifactSheet) {
             if let id = appModel.artifactSheetId {
@@ -1248,6 +1253,10 @@ struct ChatPane: View {
                     attachedFiles: appModel.attachedFiles,
                     onRemoveAttachment: { url in appModel.removeAttachment(url) },
                     onClearAttachments: { appModel.clearAttachments() },
+                    // ADR-111 — 라이브러리 첨부
+                    attachedLibraryItems: appModel.attachedLibraryItems,
+                    onRemoveLibraryItem: { item in appModel.removeLibraryItemAttachment(item) },
+                    onAttachLibrary: { appModel.showLibraryPickerPopover.toggle() },
                     onSend: {
                         Task {
                             // mention dispatch 시도 — 매칭되면 sendMessage가 그 안에서 호출됨
@@ -1279,6 +1288,15 @@ struct ChatPane: View {
                         query: $bindable.notePickerQuery,
                         onSelectPath: { path in appModel.attachNoteByPath(path) },
                         onClose: { appModel.showNotePicker = false }
+                    )
+                }
+                // ADR-111 — 라이브러리 picker popover
+                .popover(isPresented: $bindable.showLibraryPickerPopover, arrowEdge: .bottom) {
+                    LibraryPickerPopover(
+                        items: appModel.preferences.libraryItems,
+                        attachedItems: appModel.attachedLibraryItems,
+                        onSelect: { item in appModel.attachLibraryItem(item) },
+                        onClose: { appModel.showLibraryPickerPopover = false }
                     )
                 }
                 // ADR-042 R1.H7 — pendingComposerPrefix 큐 consume.

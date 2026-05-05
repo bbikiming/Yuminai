@@ -156,6 +156,9 @@ public struct AppPreferences: Sendable, Codable, Hashable {
     /// **ADR-106** — 사용자 프로필 (이름·직업·목표 등).
     /// 기존 사용자는 .default (빈 프로필) 로 시작.
     public var userProfile: UserProfile
+    /// **ADR-111** — 자료 라이브러리 항목 목록.
+    /// 기존 사용자는 빈 배열로 시작 (backward-compat: decodeIfPresent ?? []).
+    public var libraryItems: [ResourceLibraryItem]
 
     public init(
         claudeBinaryPath: String = AppPreferences.detectClaudeBinaryPath(),
@@ -218,7 +221,8 @@ public struct AppPreferences: Sendable, Codable, Hashable {
         hitlTimeoutSeconds: Int = 60,  // ADR-095 Phase 4
         diffPreviewLineLimit: Int = 30,  // ADR-095 Phase 4
         hasCompletedSetup: Bool = false,  // ADR-104 — 신규 사용자는 setup wizard 표시
-        userProfile: UserProfile = .default  // ADR-106
+        userProfile: UserProfile = .default,  // ADR-106
+        libraryItems: [ResourceLibraryItem] = []  // ADR-111
     ) {
         self.claudeBinaryPath = claudeBinaryPath
         self.codexBinaryPath = codexBinaryPath
@@ -281,6 +285,7 @@ public struct AppPreferences: Sendable, Codable, Hashable {
         self.diffPreviewLineLimit = diffPreviewLineLimit
         self.hasCompletedSetup = hasCompletedSetup
         self.userProfile = userProfile
+        self.libraryItems = libraryItems
     }
 
     // ADR-046 — 신규 필드 backward-compat: 기존 JSON에 없으면 default 적용
@@ -362,6 +367,8 @@ public struct AppPreferences: Sendable, Codable, Hashable {
         self.hasCompletedSetup = try c.decodeIfPresent(Bool.self, forKey: .hasCompletedSetup) ?? true
         // ADR-106 — 기존 사용자는 빈 프로필로 시작 (처음 입력 시 onboarding)
         self.userProfile = try c.decodeIfPresent(UserProfile.self, forKey: .userProfile) ?? .default
+        // ADR-111 — 기존 사용자는 빈 라이브러리로 시작
+        self.libraryItems = try c.decodeIfPresent([ResourceLibraryItem].self, forKey: .libraryItems) ?? []
     }
 
     /// `claude` CLI의 가능성 높은 위치들을 순서대로 시도해 첫 번째 존재하는 경로 반환.

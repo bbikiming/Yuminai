@@ -27,6 +27,13 @@ public struct Composer: View {
     public let onRemoveAttachment: (URL) -> Void
     public let onClearAttachments: () -> Void
 
+    // ADR-111 — 라이브러리 첨부
+    /// 현재 첨부된 라이브러리 항목 목록.
+    public let attachedLibraryItems: [YuminaiCore.ResourceLibraryItem]
+    public let onRemoveLibraryItem: (YuminaiCore.ResourceLibraryItem) -> Void
+    /// 라이브러리 picker popover 표시 콜백.
+    public let onAttachLibrary: (() -> Void)?
+
     // Optional git meta
     public let gitBranch: String?
     public let gitDiffPlus: Int?
@@ -61,6 +68,9 @@ public struct Composer: View {
         attachedFiles: [URL] = [],
         onRemoveAttachment: @escaping (URL) -> Void = { _ in },
         onClearAttachments: @escaping () -> Void = {},
+        attachedLibraryItems: [YuminaiCore.ResourceLibraryItem] = [],
+        onRemoveLibraryItem: @escaping (YuminaiCore.ResourceLibraryItem) -> Void = { _ in },
+        onAttachLibrary: (() -> Void)? = nil,
         gitBranch: String? = nil,
         gitDiffPlus: Int? = nil,
         gitDiffMinus: Int? = nil,
@@ -87,6 +97,9 @@ public struct Composer: View {
         self.attachedFiles = attachedFiles
         self.onRemoveAttachment = onRemoveAttachment
         self.onClearAttachments = onClearAttachments
+        self.attachedLibraryItems = attachedLibraryItems
+        self.onRemoveLibraryItem = onRemoveLibraryItem
+        self.onAttachLibrary = onAttachLibrary
         self.gitBranch = gitBranch
         self.gitDiffPlus = gitDiffPlus
         self.gitDiffMinus = gitDiffMinus
@@ -139,6 +152,11 @@ public struct Composer: View {
 
     public var body: some View {
         VStack(spacing: 0) {
+            // ADR-111 — 라이브러리 첨부 chips (파일 첨부보다 위에)
+            if !attachedLibraryItems.isEmpty {
+                libraryAttachmentChips
+                FlatHDivider().opacity(0.5)
+            }
             if !attachedFiles.isEmpty {
                 attachmentChips
                 FlatHDivider().opacity(0.5)
@@ -173,6 +191,20 @@ public struct Composer: View {
         .padding(.horizontal, Theme.Layout.composerOuterPadding(for: layoutMode))
         .padding(.bottom, Theme.Layout.composerOuterPadding(for: layoutMode))
         .padding(.top, Theme.Spacing.sm)
+    }
+
+    // MARK: - ADR-111 라이브러리 첨부 chips
+
+    private var libraryAttachmentChips: some View {
+        ScrollView(.horizontal, showsIndicators: false) {
+            HStack(spacing: 6) {
+                ForEach(attachedLibraryItems) { item in
+                    LibraryAttachmentChip(item: item, onRemove: { onRemoveLibraryItem(item) })
+                }
+            }
+            .padding(.horizontal, Theme.Layout.composerPadding)
+            .padding(.vertical, Theme.Spacing.sm)
+        }
     }
 
     // MARK: - Attached files chips
@@ -348,6 +380,16 @@ public struct Composer: View {
                 help: "파일이나 폴더를 첨부합니다. Claude가 자동으로 살펴봐요.",
                 action: onAttach
             )
+
+            // ADR-111 — 라이브러리 첨부 버튼
+            if let onAttachLibrary, !hidesSecondaryFooterItems {
+                IconButton(
+                    "books.vertical",
+                    size: 13,
+                    help: "라이브러리 자료를 메시지에 첨부합니다.",
+                    action: onAttachLibrary
+                )
+            }
 
             if let onAttachNote, !hidesSecondaryFooterItems {
                 IconButton(
@@ -548,6 +590,48 @@ public struct MessageMeta: View {
         }
         let h = Int(interval / 3600)
         return "\(h)h"
+    }
+}
+
+// MARK: - ADR-111 라이브러리 첨부 chip
+
+/// 라이브러리 항목 첨부 chip — 파일 첨부 chip과 같은 스타일, 📚 아이콘 차별화.
+struct LibraryAttachmentChip: View {
+    let item: YuminaiCore.ResourceLibraryItem
+    let onRemove: () -> Void
+
+    @State private var hovering = false
+
+    var body: some View {
+        HStack(spacing: 6) {
+            Image(systemName: "books.vertical.fill")
+                .font(.system(size: 11, weight: .medium))
+                .foregroundStyle(.orange)
+            Text(item.displayName)
+                .font(Theme.Typography.small)
+                .foregroundStyle(Theme.Color.text)
+                .lineLimit(1)
+                .truncationMode(.middle)
+            Button(action: onRemove) {
+                Image(systemName: "xmark")
+                    .font(.system(size: 9, weight: .semibold))
+                    .foregroundStyle(hovering ? Theme.Color.danger : Theme.Color.textSecondary)
+            }
+            .buttonStyle(.plain)
+            .help("이 첨부 제거")
+        }
+        .padding(.horizontal, 8)
+        .padding(.vertical, 4)
+        .background(hovering ? Theme.Color.surfaceHi : Theme.Color.elevated)
+        .overlay(
+            RoundedRectangle(cornerRadius: Theme.Radius.sm)
+                .stroke(Theme.Color.borderSubtle, lineWidth: Theme.Stroke.hairline)
+        )
+        .clipShape(RoundedRectangle(cornerRadius: Theme.Radius.sm))
+        .frame(maxWidth: 220)
+        .animation(.easeOut(duration: 0.10), value: hovering)
+        .onHover { hovering = $0 }
+        .help("라이브러리: \(item.displayName) (\(item.byteSizeDisplay))")
     }
 }
 

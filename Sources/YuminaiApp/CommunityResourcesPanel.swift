@@ -2,12 +2,13 @@ import SwiftUI
 import YuminaiCore
 import YuminaiUI
 
-/// **ADR-109** — 커뮤니티 자료 탐색·적용 패널.
+/// **ADR-109 + ADR-111** — 커뮤니티 자료 탐색·라이브러리 추가 패널.
 ///
 /// UserProfileSheet의 "커뮤니티 자료" 섹션에서 렌더링된다.
 /// - 카테고리 필터 (전체 / CLAUDE.md / Skill / 템플릿)
-/// - 자료 카드 리스트 (이름, 스타, 설명, 태그, GitHub/적용 버튼)
+/// - 자료 카드 리스트 (이름, 스타, 설명, 태그, GitHub/라이브러리 추가 버튼)
 /// - 사용자 정의 URL 직접 추가
+/// - ADR-111: [워크스페이스에 적용] → [라이브러리에 추가] 변경
 struct CommunityResourcesPanel: View {
 
     @Environment(AppModel.self) private var appModel
@@ -16,8 +17,8 @@ struct CommunityResourcesPanel: View {
 
     @State private var selectedCategory: FilterCategory = .all
     @State private var customURL: String = ""
-    @State private var applyResult: ApplyResult? = nil
-    @State private var applyingId: UUID? = nil
+    @State private var addResult: AddResult? = nil
+    @State private var addingId: UUID? = nil
     @State private var showCustomURLField: Bool = false
 
     // MARK: - 타입
@@ -30,7 +31,7 @@ struct CommunityResourcesPanel: View {
         var id: String { rawValue }
     }
 
-    enum ApplyResult {
+    enum AddResult {
         case success(String)
         case failure(String)
     }
@@ -57,8 +58,22 @@ struct CommunityResourcesPanel: View {
                 Text("커뮤니티 자료")
                     .font(.system(size: 16, weight: .semibold))
                     .foregroundStyle(Theme.Color.text)
+                Spacer()
+                // ADR-111 — 라이브러리 바로 열기
+                Button {
+                    appModel.showLibrarySheet = true
+                } label: {
+                    HStack(spacing: 4) {
+                        Image(systemName: "books.vertical.fill")
+                            .font(.system(size: 11, weight: .semibold))
+                        Text("라이브러리 보기")
+                            .font(Theme.Typography.small.weight(.medium))
+                    }
+                    .foregroundStyle(Theme.Color.accent)
+                }
+                .buttonStyle(.plain)
             }
-            Text("GitHub에서 검증된 CLAUDE.md 가이드와 Claude Skill을 현재 워크스페이스에 적용할 수 있어요.")
+            Text("GitHub에서 검증된 CLAUDE.md 가이드와 Claude Skill을 라이브러리에 추가하세요. 대화창에서 자료를 첨부해 Claude에게 전달할 수 있어요.")
                 .font(Theme.Typography.small)
                 .foregroundStyle(Theme.Color.textSecondary)
                 .fixedSize(horizontal: false, vertical: true)
@@ -231,19 +246,25 @@ struct CommunityResourcesPanel: View {
 
             Spacer()
 
-            // 적용 버튼 (rawURL 있고 template 아닌 경우만)
+            // ADR-111 — 라이브러리에 추가 (rawURL 있고 template 아닌 경우만)
             if resource.rawURL != nil && resource.category != .template {
-                applyButton(resource)
+                addToLibraryButton(resource)
+            } else if resource.category != .template {
+                // rawURL 없으면 "직접 추가" 힌트
+                Text("직접 URL 입력 후 추가 가능")
+                    .font(Theme.Typography.micro)
+                    .foregroundStyle(Theme.Color.textTertiary)
             }
         }
     }
 
     @ViewBuilder
-    private func applyButton(_ resource: CommunityResource) -> some View {
-        let isApplying = applyingId == resource.id
+    private func addToLibraryButton(_ resource: CommunityResource) -> some View {
+        let isAdding = addingId == resource.id
+        let isAlreadyInLibrary = appModel.isInLibrary(resource)
 
-        // 적용 결과 인라인 표시
-        if case .success(let msg) = applyResult, applyingId == resource.id {
+        // 결과 인라인 표시
+        if case .success(let msg) = addResult, addingId == resource.id {
             HStack(spacing: 4) {
                 Image(systemName: "checkmark.circle.fill")
                     .font(.system(size: 11))
@@ -252,7 +273,7 @@ struct CommunityResourcesPanel: View {
                     .font(Theme.Typography.micro)
                     .foregroundStyle(Theme.Color.success)
             }
-        } else if case .failure(let msg) = applyResult, applyingId == resource.id {
+        } else if case .failure(let msg) = addResult, addingId == resource.id {
             HStack(spacing: 4) {
                 Image(systemName: "xmark.circle.fill")
                     .font(.system(size: 11))
@@ -261,30 +282,40 @@ struct CommunityResourcesPanel: View {
                     .font(Theme.Typography.micro)
                     .foregroundStyle(Theme.Color.danger)
             }
+        } else if isAlreadyInLibrary {
+            // 이미 추가된 경우 — 비활성 표시
+            HStack(spacing: 4) {
+                Image(systemName: "checkmark.circle.fill")
+                    .font(.system(size: 11))
+                    .foregroundStyle(Theme.Color.success)
+                Text("라이브러리에 추가됨")
+                    .font(Theme.Typography.micro)
+                    .foregroundStyle(Theme.Color.success)
+            }
         } else {
             Button {
-                Task { await applyResource(resource) }
+                Task { await addResourceToLibrary(resource) }
             } label: {
                 HStack(spacing: 4) {
-                    if isApplying {
+                    if isAdding {
                         ProgressView()
                             .scaleEffect(0.7)
                             .frame(width: 11, height: 11)
                     } else {
-                        Image(systemName: "square.and.arrow.down")
+                        Image(systemName: "books.vertical.fill")
                             .font(.system(size: 11, weight: .semibold))
                     }
-                    Text(isApplying ? "적용 중…" : "워크스페이스에 적용")
+                    Text(isAdding ? "추가 중…" : "라이브러리에 추가")
                         .font(Theme.Typography.small.weight(.medium))
                 }
-                .foregroundStyle(isApplying ? Theme.Color.textSecondary : .white)
+                .foregroundStyle(isAdding ? Theme.Color.textSecondary : .white)
                 .padding(.horizontal, Theme.Spacing.md)
                 .padding(.vertical, 6)
-                .background(isApplying ? Theme.Color.surfaceHi : Theme.Color.accent)
+                .background(isAdding ? Theme.Color.surfaceHi : Theme.Color.accent)
                 .clipShape(RoundedRectangle(cornerRadius: Theme.Radius.sm))
             }
             .buttonStyle(.plain)
-            .disabled(isApplying || !hasWorkspace)
+            .disabled(isAdding)
         }
     }
 
@@ -301,7 +332,7 @@ struct CommunityResourcesPanel: View {
                     Image(systemName: showCustomURLField ? "chevron.down" : "plus.circle")
                         .font(.system(size: 11, weight: .semibold))
                         .foregroundStyle(Theme.Color.accent)
-                    Text("직접 URL 입력")
+                    Text("직접 URL로 라이브러리에 추가")
                         .font(Theme.Typography.small.weight(.medium))
                         .foregroundStyle(Theme.Color.accent)
                 }
@@ -311,21 +342,21 @@ struct CommunityResourcesPanel: View {
             if showCustomURLField {
                 GroupBox {
                     VStack(alignment: .leading, spacing: Theme.Spacing.sm) {
-                        Text("GitHub Raw URL 또는 리포지토리 URL을 입력하세요.")
+                        Text("GitHub Raw URL 또는 텍스트 파일 URL을 입력하면 라이브러리에 추가됩니다.")
                             .font(Theme.Typography.micro)
                             .foregroundStyle(Theme.Color.textSecondary)
 
                         PolishedInputField(
                             label: "URL",
                             placeholder: "https://raw.githubusercontent.com/…/CLAUDE.md",
-                            helperText: "입력한 URL에서 파일을 다운로드해 워크스페이스 CLAUDE.md에 추가해요.",
+                            helperText: "입력한 URL에서 파일을 다운로드해 라이브러리에 저장해요. 대화창에서 첨부해 사용할 수 있어요.",
                             text: $customURL
                         )
 
                         HStack {
                             Spacer()
-                            Button("적용") {
-                                Task { await applyCustomURL() }
+                            Button("라이브러리에 추가") {
+                                Task { await addCustomURLToLibrary() }
                             }
                             .font(Theme.Typography.small.weight(.semibold))
                             .foregroundStyle(.white)
@@ -333,7 +364,7 @@ struct CommunityResourcesPanel: View {
                             .padding(.vertical, 6)
                             .background(isValidCustomURL ? Theme.Color.accent : Theme.Color.surfaceHi)
                             .clipShape(RoundedRectangle(cornerRadius: Theme.Radius.sm))
-                            .disabled(!isValidCustomURL || !hasWorkspace)
+                            .disabled(!isValidCustomURL)
                         }
                     }
                 }
@@ -344,64 +375,45 @@ struct CommunityResourcesPanel: View {
 
     // MARK: - 헬퍼
 
-    private var hasWorkspace: Bool {
-        appModel.selectedWorkspaceId != nil &&
-        appModel.workspaces.first(where: { $0.id == appModel.selectedWorkspaceId }) != nil
-    }
-
     private var isValidCustomURL: Bool {
         guard let url = URL(string: customURL.trimmingCharacters(in: .whitespacesAndNewlines)) else { return false }
         return url.scheme == "https" && url.host != nil
     }
 
-    private func applyResource(_ resource: CommunityResource) async {
-        guard let ws = appModel.workspaces.first(where: { $0.id == appModel.selectedWorkspaceId }) else { return }
-        applyingId = resource.id
-        applyResult = nil
+    private func addResourceToLibrary(_ resource: CommunityResource) async {
+        addingId = resource.id
+        addResult = nil
 
-        let wsURL = URL(fileURLWithPath: ws.directoryPath)
-        let result = await appModel.applyCommunityResource(resource, to: wsURL)
+        let result = await appModel.addToLibraryFromCommunity(resource)
 
         switch result {
-        case .success(let msg):
-            applyResult = .success(msg)
+        case .success:
+            addResult = .success("라이브러리에 추가됐어요!")
         case .failure(let err):
-            applyResult = .failure(err.localizedDescription)
+            addResult = .failure(err.localizedDescription)
         }
 
         // 3초 후 결과 메시지 사라짐
         try? await Task.sleep(for: .seconds(3))
-        if applyingId == resource.id {
-            applyResult = nil
-            applyingId = nil
+        if addingId == resource.id {
+            addResult = nil
+            addingId = nil
         }
     }
 
-    private func applyCustomURL() async {
+    private func addCustomURLToLibrary() async {
         let urlString = customURL.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard let url = URL(string: urlString),
-              let ws = appModel.workspaces.first(where: { $0.id == appModel.selectedWorkspaceId }) else { return }
+        guard let url = URL(string: urlString) else { return }
 
-        let tempResource = CommunityResource(
-            category: .claudeMd,
-            displayName: "사용자 정의 자료",
-            author: url.host ?? "unknown",
-            summary: "사용자가 직접 입력한 URL에서 가져온 자료",
-            starsApprox: 0,
-            repoURL: url,
-            rawURL: url,
-            tags: ["custom"]
-        )
-
-        let wsURL = URL(fileURLWithPath: ws.directoryPath)
-        let result = await appModel.applyCommunityResource(tempResource, to: wsURL)
+        let name = url.lastPathComponent.isEmpty ? "사용자 자료" : url.lastPathComponent
+        let result = await appModel.addToLibraryFromURL(url, displayName: name, category: .claudeMd)
 
         switch result {
         case .success:
             customURL = ""
             showCustomURLField = false
         case .failure(let err):
-            applyResult = .failure(err.localizedDescription)
+            addResult = .failure(err.localizedDescription)
         }
     }
 }

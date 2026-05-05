@@ -4320,6 +4320,18 @@ public final class AppModel {
         // ADR-048 — routing이 inputText에 handoff prefix를 추가했을 수 있으므로 재trim
         let effectiveInput = inputText.trimmingCharacters(in: .whitespacesAndNewlines)
 
+        // ADR-111 — 라이브러리 항목 prepend (첨부된 라이브러리 자료를 메시지 앞에 삽입)
+        let libraryPreamble: String
+        if !attachedLibraryItems.isEmpty {
+            let sections = attachedLibraryItems.map { item in
+                "--- 첨부 자료: \(item.displayName) ---\n\(item.content.trimmingCharacters(in: .whitespacesAndNewlines))\n---"
+            }.joined(separator: "\n\n")
+            libraryPreamble = "\(sections)\n\n"
+        } else {
+            libraryPreamble = ""
+        }
+        attachedLibraryItems = []  // 송신 후 자동 클리어
+
         // 첨부 prepend — Claude Code의 @ mention 구문
         let attachmentPreamble: String
         if hasAttachments {
@@ -4335,9 +4347,10 @@ public final class AppModel {
             pendingFailureFeedback = ""
         }
 
+        // ADR-111 — libraryPreamble은 다른 preamble보다 앞에 위치 (LLM이 자료를 먼저 참고)
         let bodyForUser = effectiveInput.isEmpty
-            ? (failurePrefix + attachmentPreamble).trimmingCharacters(in: .whitespacesAndNewlines)
-            : failurePrefix + attachmentPreamble + effectiveInput
+            ? (failurePrefix + libraryPreamble + attachmentPreamble).trimmingCharacters(in: .whitespacesAndNewlines)
+            : failurePrefix + libraryPreamble + attachmentPreamble + effectiveInput
 
         let userMsg = Message(sessionId: session.id, role: .user, content: bodyForUser)
         messages.append(userMsg)
@@ -4702,23 +4715,228 @@ public final class AppModel {
         }
     }
 
-    /// URL에서 원본 텍스트를 다운로드한다. timeout 30s.
+    /// URL에서 원본 텍스트를 다운로드한다.
+    /// - timeout: 60s (큰 파일 대비 ADR-111).
+    /// - 에러: CommunityResourceError (네트워크 / HTTP 4xx / HTTP 5xx / encoding).
     private func downloadRawContent(from url: URL) async throws -> String {
         let config = URLSessionConfiguration.ephemeral
-        config.timeoutIntervalForRequest = 30
-        config.timeoutIntervalForResource = 30
+        config.timeoutIntervalForRequest = 60
+        config.timeoutIntervalForResource = 60
         let session = URLSession(configuration: config)
-        let (data, response) = try await session.data(from: url)
-        guard let httpResponse = response as? HTTPURLResponse,
-              (200..<300).contains(httpResponse.statusCode) else {
-            let status = (response as? HTTPURLResponse)?.statusCode ?? -1
-            throw CommunityResourceError.httpError(status)
+        let data: Data
+        let response: URLResponse
+        do {
+            (data, response) = try await session.data(from: url)
+        } catch {
+            throw CommunityResourceError.networkError(error)
+        }
+        if let httpResponse = response as? HTTPURLResponse,
+           !(200..<300).contains(httpResponse.statusCode) {
+            throw CommunityResourceError.httpErrorWithURL(url, httpResponse.statusCode)
         }
         guard let text = String(data: data, encoding: .utf8) else {
             throw CommunityResourceError.invalidEncoding
         }
         return text
     }
+
+    // MARK: - ADR-111 라이브러리 관리
+
+    /// 라이브러리 디렉토리 URL: `~/Library/Application Support/Yuminai/library/`
+    private var libraryDirectoryURL: URL {
+        let appSupport = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first!
+        return appSupport.appendingPathComponent("Yuminai/library", isDirectory: true)
+    }
+
+    /// 라이브러리 항목의 디스크 URL.
+    private func libraryFileURL(for id: UUID) -> URL {
+        libraryDirectoryURL.appendingPathComponent("\(id.uuidString).md")
+    }
+
+    /// 라이브러리 디렉토리를 생성한다 (없으면).
+    private func ensureLibraryDirectory() throws {
+        let fm = FileManager.default
+        let dir = libraryDirectoryURL
+        if !fm.fileExists(atPath: dir.path) {
+            try fm.createDirectory(at: dir, withIntermediateDirectories: true)
+        }
+    }
+
+    /// 커뮤니티 자료 다운로드 → 라이브러리 추가.
+    /// 다운로드 실패 시 명확한 에러 (URL + status + suggestion).
+    public func addToLibraryFromCommunity(_ resource: CommunityResource) async -> Result<ResourceLibraryItem, Error> {
+        guard let rawURL = resource.rawURL else {
+            return .failure(LibraryItemError.noRawURL)
+        }
+
+        let content: String
+        do {
+            content = try await downloadRawContent(from: rawURL)
+        } catch let err as CommunityResourceError {
+            return .failure(err)
+        } catch {
+            return .failure(LibraryItemError.networkError(rawURL, error))
+        }
+
+        // 이미 라이브러리에 있으면 기존 항목 반환 (중복 방지)
+        if let existing = preferences.libraryItems.first(where: { item in
+            if case .community(let rid, _) = item.source { return rid == resource.id }
+            return false
+        }) {
+            return .success(existing)
+        }
+
+        let item = ResourceLibraryItem(
+            displayName: resource.displayName,
+            category: resource.category,
+            source: .community(resourceId: resource.id, originalURL: rawURL),
+            content: content,
+            tags: resource.tags
+        )
+
+        do {
+            try ensureLibraryDirectory()
+            let fileURL = libraryFileURL(for: item.id)
+            try content.write(to: fileURL, atomically: true, encoding: .utf8)
+        } catch {
+            return .failure(LibraryItemError.diskWriteError(libraryDirectoryURL, error))
+        }
+
+        preferences = { var p = preferences; p.libraryItems.append(item); return p }()
+        await savePreferences()
+        logger.info("라이브러리에 추가: \(item.displayName) [\(item.id)]")
+        return .success(item)
+    }
+
+    /// 사용자 직접 URL → 라이브러리 추가.
+    public func addToLibraryFromURL(
+        _ url: URL,
+        displayName: String,
+        category: CommunityResource.Category
+    ) async -> Result<ResourceLibraryItem, Error> {
+        let content: String
+        do {
+            content = try await downloadRawContent(from: url)
+        } catch let err as CommunityResourceError {
+            return .failure(err)
+        } catch {
+            return .failure(LibraryItemError.networkError(url, error))
+        }
+
+        let item = ResourceLibraryItem(
+            displayName: displayName.isEmpty ? (url.lastPathComponent.isEmpty ? "자료" : url.lastPathComponent) : displayName,
+            category: category,
+            source: .userImport(originalURL: url),
+            content: content,
+            tags: []
+        )
+
+        do {
+            try ensureLibraryDirectory()
+            try content.write(to: libraryFileURL(for: item.id), atomically: true, encoding: .utf8)
+        } catch {
+            return .failure(LibraryItemError.diskWriteError(libraryDirectoryURL, error))
+        }
+
+        preferences = { var p = preferences; p.libraryItems.append(item); return p }()
+        await savePreferences()
+        return .success(item)
+    }
+
+    /// 사용자 직접 텍스트 입력 → 라이브러리 추가.
+    public func addToLibraryFromText(
+        _ content: String,
+        displayName: String,
+        category: CommunityResource.Category,
+        tags: [String]
+    ) async -> ResourceLibraryItem {
+        let item = ResourceLibraryItem(
+            displayName: displayName.isEmpty ? "사용자 자료" : displayName,
+            category: category,
+            source: .userText,
+            content: content,
+            tags: tags
+        )
+
+        if let _ = try? ensureLibraryDirectory() {}
+        try? content.write(to: libraryFileURL(for: item.id), atomically: true, encoding: .utf8)
+
+        preferences = { var p = preferences; p.libraryItems.append(item); return p }()
+        await savePreferences()
+        return item
+    }
+
+    /// 라이브러리 항목 삭제 (디스크 + preferences).
+    public func removeLibraryItem(_ id: UUID) async {
+        let fileURL = libraryFileURL(for: id)
+        try? FileManager.default.removeItem(at: fileURL)
+        preferences = { var p = preferences; p.libraryItems.removeAll { $0.id == id }; return p }()
+        await savePreferences()
+    }
+
+    /// 라이브러리 항목 수정 (displayName / notes / tags).
+    public func updateLibraryItem(_ item: ResourceLibraryItem) async {
+        preferences = { var p = preferences
+            if let idx = p.libraryItems.firstIndex(where: { $0.id == item.id }) {
+                p.libraryItems[idx] = item
+            }
+            return p
+        }()
+        await savePreferences()
+    }
+
+    /// 라이브러리 항목 → 메시지 첨부용 파일 URL.
+    /// 파일이 디스크에 없으면 재생성 후 반환.
+    public func attachmentURL(for libraryItem: ResourceLibraryItem) async -> URL? {
+        let fileURL = libraryFileURL(for: libraryItem.id)
+        let fm = FileManager.default
+        if !fm.fileExists(atPath: fileURL.path) {
+            // 재생성 시도
+            do {
+                try ensureLibraryDirectory()
+                try libraryItem.content.write(to: fileURL, atomically: true, encoding: .utf8)
+            } catch {
+                logger.error("라이브러리 첨부 파일 생성 실패: \(error.localizedDescription)")
+                return nil
+            }
+        }
+        return fileURL
+    }
+
+    /// 특정 CommunityResource가 이미 라이브러리에 있는지 확인.
+    public func isInLibrary(_ resource: CommunityResource) -> Bool {
+        preferences.libraryItems.contains { item in
+            if case .community(let rid, _) = item.source { return rid == resource.id }
+            return false
+        }
+    }
+
+    // MARK: - ADR-111 라이브러리 첨부파일
+
+    /// 현재 Composer에 첨부된 라이브러리 항목 목록.
+    public var attachedLibraryItems: [ResourceLibraryItem] = []
+
+    /// 라이브러리 항목을 Composer에 첨부.
+    public func attachLibraryItem(_ item: ResourceLibraryItem) {
+        guard !attachedLibraryItems.contains(item) else { return }
+        attachedLibraryItems.append(item)
+    }
+
+    /// Composer에서 라이브러리 항목 첨부 제거.
+    public func removeLibraryItemAttachment(_ item: ResourceLibraryItem) {
+        attachedLibraryItems.removeAll { $0.id == item.id }
+    }
+
+    /// Composer 라이브러리 첨부 전체 제거.
+    public func clearLibraryItemAttachments() {
+        attachedLibraryItems = []
+    }
+
+    /// ADR-111 — 라이브러리 sheet 표시 여부.
+    public var showLibrarySheet: Bool = false
+
+    /// ADR-111 — 라이브러리 picker popover 표시 여부 (Composer 안).
+    public var showLibraryPickerPopover: Bool = false
 
     public func selectClaudeBinary() {
         let panel = NSOpenPanel()
