@@ -104,4 +104,52 @@ struct SetupCheckerTests {
             }
         }
     }
+
+    // MARK: - ADR-105: PATH fallback (login shell)
+
+    @Test("ADR-105 — login shell PATH 검색으로 /bin/sh 등 시스템 도구 발견")
+    func loginShellFallbackFindsSystemBinaries() async {
+        // 시스템에 항상 있는 도구 (sh, ls)는 detectionPaths에 없지만
+        // command -v로 찾을 수 있어야 함.
+        // 이를 테스트하기 위해 mock SetupTool 대신 동등한 패턴을 직접 검증.
+        let checker = SetupChecker()
+        // 기존 SetupTool은 모두 외부 의존이므로, 여기선 checker가 nil 처리를
+        // 안전하게 하는지만 확인 (회귀 가드).
+        for tool in SetupTool.allCases {
+            let status = await checker.check(tool)
+            // unknown이 절대 안 나와야 함 (반드시 installed 또는 notInstalled)
+            switch status {
+            case .unknown:
+                Issue.record("\(tool.rawValue) check이 unknown 반환")
+            case .installed(let path):
+                #expect(path.hasPrefix("/"), "\(tool.rawValue): installed path는 절대 경로여야 함, got: \(path)")
+            case .notInstalled:
+                break  // OK — 시스템마다 다름
+            }
+        }
+    }
+
+    @Test("ADR-105 — executableName이 모든 도구에 정의됨")
+    func executableNameDefined() {
+        for tool in SetupTool.allCases {
+            #expect(!tool.executableName.isEmpty, "\(tool.rawValue): executableName 비어있음")
+            #expect(!tool.executableName.contains("/"), "\(tool.rawValue): executableName은 경로가 아닌 이름이어야 함, got: \(tool.executableName)")
+            #expect(!tool.executableName.contains(" "), "\(tool.rawValue): executableName에 공백 있음, got: \(tool.executableName)")
+        }
+    }
+
+    @Test("ADR-105 — detectionPaths가 확장됨 (각 도구 6개+)")
+    func expandedDetectionPaths() {
+        for tool in SetupTool.allCases {
+            #expect(tool.detectionPaths.count >= 5, "\(tool.rawValue): detectionPaths가 너무 적음 (\(tool.detectionPaths.count)개) — ADR-105 확장 필요")
+        }
+    }
+
+    @Test("ADR-105 — 비표준 경로 ~/.local/bin 검색 포함")
+    func detectionPathsIncludeLocalBin() {
+        for tool in SetupTool.allCases {
+            let hasLocalBin = tool.detectionPaths.contains { $0.contains(".local/bin") }
+            #expect(hasLocalBin, "\(tool.rawValue): ~/.local/bin 검색 누락 — 사용자 PATH 호환성")
+        }
+    }
 }

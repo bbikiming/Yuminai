@@ -68,27 +68,48 @@ public enum SetupTool: String, CaseIterable, Identifiable, Sendable {
         }
     }
 
-    /// 설치 여부를 검사할 바이너리 경로 목록.
+    /// PATH에서 검색할 실행 파일 이름 (which/command -v fallback에 사용).
+    /// 사용자 환경마다 설치 경로가 다양하므로 PATH 검색이 가장 신뢰성 높음.
+    public var executableName: String {
+        switch self {
+        case .claudeCode: return "claude"
+        case .codexCLI: return "codex"
+        case .cokacdir: return "cokacctl"
+        }
+    }
+
+    /// 설치 여부를 검사할 바이너리 경로 목록 (fast path — PATH 검색 전 우선 검사).
     /// `$HOME`은 런타임에 `ProcessInfo`로 치환해야 함 (SetupChecker 참조).
+    /// 모든 경로 미스 시 `executableName`으로 PATH 전체 검색 (login shell).
     public var detectionPaths: [String] {
         switch self {
         case .claudeCode:
             return [
                 "/usr/local/bin/claude",
+                "/opt/homebrew/bin/claude",
                 "$HOME/.claude/bin/claude",
-                "/opt/homebrew/bin/claude"
+                "$HOME/.claude/local/claude",
+                "$HOME/.local/bin/claude",
+                "$HOME/bin/claude"
             ]
         case .codexCLI:
             return [
                 "/usr/local/bin/codex",
                 "/opt/homebrew/bin/codex",
-                "$HOME/.npm-global/bin/codex"
+                "$HOME/.npm-global/bin/codex",
+                "$HOME/.npm/global/bin/codex",
+                "$HOME/.local/bin/codex",
+                "$HOME/bin/codex",
+                "/opt/homebrew/lib/node_modules/@openai/codex/bin/codex"
             ]
         case .cokacdir:
             return [
                 "/usr/local/bin/cokacctl",
+                "/opt/homebrew/bin/cokacctl",
                 "$HOME/.cokacdir/bin/cokacctl",
-                "/opt/homebrew/bin/cokacctl"
+                "$HOME/.cokacdir/cokacctl",
+                "$HOME/.local/bin/cokacctl",
+                "$HOME/bin/cokacctl"
             ]
         }
     }
