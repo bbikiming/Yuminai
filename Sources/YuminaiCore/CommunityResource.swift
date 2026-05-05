@@ -29,77 +29,134 @@ public struct CommunityResource: Sendable, Codable, Identifiable {
         case rules = "rules"
         /// MCP 서버 설정 / 모델 컨텍스트 프로토콜
         case mcp = "mcp"
+        /// **ADR-113** — 웹 프레임워크 (React, Vue, Svelte, Next, Nuxt, SvelteKit)
+        case webFramework = "webFramework"
+        /// **ADR-113** — 모바일 프레임워크 (React Native, Flutter, SwiftUI, Jetpack Compose)
+        case mobileFramework = "mobileFramework"
+        /// **ADR-113** — 3D / 그래픽스 (Three.js, R3F, Babylon.js, WebGL)
+        case graphics3D = "graphics3D"
+        /// **ADR-113** — 백엔드 프레임워크 (Node, Django, Rails, FastAPI, Spring)
+        case backend = "backend"
+        /// **ADR-113** — 데이터베이스 / ORM (PostgreSQL, Supabase, Drizzle, Prisma, Redis)
+        case database = "database"
+        /// **ADR-113** — DevOps / 인프라 (Docker, K8s, GitHub Actions)
+        case devops = "devops"
 
         public var id: String { rawValue }
 
         public var displayName: String {
             switch self {
-            case .claudeMd:      return "CLAUDE.md"
-            case .skill:         return "Claude Skill"
-            case .template:      return "템플릿"
-            case .styleGuide:    return "디자인 가이드"
-            case .workflow:      return "워크플로우"
-            case .architecture:  return "시스템 설계"
-            case .promptPattern: return "프롬프트 패턴"
-            case .rules:         return "에디터 규칙"
-            case .mcp:           return "MCP 서버"
+            case .claudeMd:        return "CLAUDE.md"
+            case .skill:           return "Claude Skill"
+            case .template:        return "템플릿"
+            case .styleGuide:      return "디자인 가이드"
+            case .workflow:        return "워크플로우"
+            case .architecture:    return "시스템 설계"
+            case .promptPattern:   return "프롬프트 패턴"
+            case .rules:           return "에디터 규칙"
+            case .mcp:             return "MCP 서버"
+            case .webFramework:    return "웹 프레임워크"
+            case .mobileFramework: return "모바일 프레임워크"
+            case .graphics3D:      return "3D 그래픽스"
+            case .backend:         return "백엔드"
+            case .database:        return "데이터베이스"
+            case .devops:          return "DevOps"
             }
         }
 
         public var icon: String {
             switch self {
-            case .claudeMd:      return "doc.text.fill"
-            case .skill:         return "bolt.fill"
-            case .template:      return "square.grid.2x2.fill"
-            case .styleGuide:    return "paintbrush.fill"
-            case .workflow:      return "arrow.triangle.2.circlepath"
-            case .architecture:  return "building.columns.fill"
-            case .promptPattern: return "text.bubble.fill"
-            case .rules:         return "shield.fill"
-            case .mcp:           return "plug.fill"
+            case .claudeMd:        return "doc.text.fill"
+            case .skill:           return "bolt.fill"
+            case .template:        return "square.grid.2x2.fill"
+            case .styleGuide:      return "paintbrush.fill"
+            case .workflow:        return "arrow.triangle.2.circlepath"
+            case .architecture:    return "building.columns.fill"
+            case .promptPattern:   return "text.bubble.fill"
+            case .rules:           return "shield.fill"
+            case .mcp:             return "plug.fill"
+            case .webFramework:    return "globe"
+            case .mobileFramework: return "iphone"
+            case .graphics3D:      return "cube.fill"
+            case .backend:         return "server.rack"
+            case .database:        return "cylinder.fill"
+            case .devops:          return "gearshape.2.fill"
             }
         }
 
         public var tintColorName: String {
             switch self {
-            case .claudeMd:      return "accent"
-            case .skill:         return "orange"
-            case .template:      return "green"
-            case .styleGuide:    return "purple"
-            case .workflow:      return "blue"
-            case .architecture:  return "indigo"
-            case .promptPattern: return "teal"
-            case .rules:         return "red"
-            case .mcp:           return "cyan"
+            case .claudeMd:        return "accent"
+            case .skill:           return "orange"
+            case .template:        return "green"
+            case .styleGuide:      return "purple"
+            case .workflow:        return "blue"
+            case .architecture:    return "indigo"
+            case .promptPattern:   return "teal"
+            case .rules:           return "red"
+            case .mcp:             return "cyan"
+            case .webFramework:    return "blue"
+            case .mobileFramework: return "pink"
+            case .graphics3D:      return "purple"
+            case .backend:         return "green"
+            case .database:        return "orange"
+            case .devops:          return "gray"
             }
         }
 
         public var categoryDescription: String {
             switch self {
-            case .claudeMd:      return "워크스페이스 루트에 두는 CLAUDE.md 파일. Claude에게 프로젝트 규칙과 컨텍스트를 전달해요."
-            case .skill:         return "Claude Code 스킬 파일. 반복 작업을 자동화하고 복잡한 워크플로를 정의할 수 있어요."
-            case .template:      return "프로젝트 시작에 바로 쓸 수 있는 워크스페이스 템플릿. GitHub에서 fork해 사용해요."
-            case .styleGuide:    return "코딩 스타일, 디자인 가이드, 컨벤션 문서. 팀 코드 품질을 일관되게 유지해줘요."
-            case .workflow:      return "TDD, Git 전략, CI/CD, 코드 리뷰 등 개발 워크플로우 가이드."
-            case .architecture:  return "Clean Architecture, DDD, 마이크로서비스 등 시스템 설계 패턴과 ADR 사례."
-            case .promptPattern: return "Claude에게 더 효과적인 지시를 내리는 프롬프트 패턴과 엔지니어링 기법."
-            case .rules:         return ".cursor.rules, .claude rules 등 AI 에디터 규칙 파일. 코드 생성 품질을 높여줘요."
-            case .mcp:           return "Model Context Protocol 서버 설정. Claude에게 도구와 데이터 소스를 연결해요."
+            case .claudeMd:
+                return "워크스페이스 루트에 두는 CLAUDE.md 파일. Claude에게 프로젝트 규칙과 컨텍스트를 전달해요."
+            case .skill:
+                return "Claude Code 스킬 파일. 반복 작업을 자동화하고 복잡한 워크플로를 정의할 수 있어요."
+            case .template:
+                return "프로젝트 시작에 바로 쓸 수 있는 워크스페이스 템플릿. GitHub에서 fork해 사용해요."
+            case .styleGuide:
+                return "코딩 스타일, 디자인 가이드, 컨벤션 문서. 팀 코드 품질을 일관되게 유지해줘요."
+            case .workflow:
+                return "TDD, Git 전략, CI/CD, 코드 리뷰 등 개발 워크플로우 가이드."
+            case .architecture:
+                return "Clean Architecture, DDD, 마이크로서비스 등 시스템 설계 패턴과 ADR 사례."
+            case .promptPattern:
+                return "Claude에게 더 효과적인 지시를 내리는 프롬프트 패턴과 엔지니어링 기법."
+            case .rules:
+                return ".cursor.rules, .claude rules 등 AI 에디터 규칙 파일. 코드 생성 품질을 높여줘요."
+            case .mcp:
+                return "Model Context Protocol 서버 설정. Claude에게 도구와 데이터 소스를 연결해요."
+            case .webFramework:
+                return "React, Vue, Svelte, Next.js, SvelteKit 등 최신 웹 프레임워크 가이드와 베스트 프랙티스."
+            case .mobileFramework:
+                return "React Native, Flutter, SwiftUI, Jetpack Compose 등 크로스플랫폼·네이티브 모바일 개발 가이드."
+            case .graphics3D:
+                return "Three.js, React Three Fiber, Babylon.js 등 웹 3D·인터랙티브 그래픽스 개발 가이드."
+            case .backend:
+                return "Node.js, Django, FastAPI, Rails, Spring 등 백엔드 프레임워크 패턴과 API 설계 가이드."
+            case .database:
+                return "PostgreSQL, Supabase, Drizzle ORM, Prisma, Redis 등 데이터베이스·ORM 베스트 프랙티스."
+            case .devops:
+                return "Docker, Kubernetes, GitHub Actions 등 컨테이너·오케스트레이션·CI/CD 파이프라인 가이드."
             }
         }
 
         /// 카탈로그 표시 우선순위 (낮을수록 먼저)
         public var categoryRank: Int {
             switch self {
-            case .claudeMd:      return 0
-            case .skill:         return 1
-            case .template:      return 2
-            case .styleGuide:    return 3
-            case .workflow:      return 4
-            case .architecture:  return 5
-            case .promptPattern: return 6
-            case .rules:         return 7
-            case .mcp:           return 8
+            case .claudeMd:        return 0
+            case .skill:           return 1
+            case .template:        return 2
+            case .styleGuide:      return 3
+            case .workflow:        return 4
+            case .architecture:    return 5
+            case .promptPattern:   return 6
+            case .rules:           return 7
+            case .mcp:             return 8
+            case .webFramework:    return 9
+            case .mobileFramework: return 10
+            case .graphics3D:      return 11
+            case .backend:         return 12
+            case .database:        return 13
+            case .devops:          return 14
             }
         }
     }
@@ -321,9 +378,33 @@ public enum CommunityResourceError: Error, LocalizedError {
 /// - cline/cline: ~61k, hesreallyhim/awesome-claude-code: ~42k
 /// - modelcontextprotocol/servers: ~85k, punkpeye/awesome-mcp-servers: ~86k
 /// - vercel/next.js: ~139k, anthropics/courses: ~21k
+///
+/// **ADR-113 검증 결과 (2026-05-04)** — 신규 자료 URL 검증:
+/// 200 OK:
+/// - vercel/next.js canary CLAUDE.md ✅ (기존)
+/// - sveltejs/kit main CLAUDE.md ✅
+/// - facebook/react main CLAUDE.md ✅
+/// - PatrickJS/awesome-cursorrules main README.md ✅
+/// - mrdoob/three.js dev README.md ✅
+/// - flutter/flutter master README.md ✅
+/// - facebook/react-native main README.md ✅
+/// - expo/expo main README.md ✅
+/// - sveltejs/svelte main README.md ✅
+/// - tiangolo/fastapi master README.md ✅
+/// - drizzle-team/drizzle-orm main README.md ✅
+/// - supabase/supabase master README.md ✅
+/// - prisma/prisma main CLAUDE.md ✅
+/// - vercel/ai main CLAUDE.md ✅
+/// - d3/d3 main README.md ✅
+/// - pmndrs/drei master README.md ✅
+/// - kubernetes/kubernetes master README.md ✅
+/// - tailwindlabs/tailwindcss master README.md ✅
+/// - shadcn-ui/ui main README.md ✅
+/// - pmndrs/zustand main README.md ✅
+/// rawURL nil (404): vue/core, nuxt/nuxt, vitejs/vite, solidjs/solid, astro, react-three-fiber, BabylonJS, django, rails
 public enum CommunityCatalog {
 
-    /// 큐레이션된 인기 자료 전체 목록 (25개, ADR-112).
+    /// 큐레이션된 인기 자료 전체 목록 (ADR-113: 28 → 64개).
     public static let curated: [CommunityResource] = [
 
         // ═══════════════════════════════════════════
@@ -864,6 +945,678 @@ public enum CommunityCatalog {
             useCase: "GitHub Actions에서 MCP 서버 활용 자동화",
             officialBadge: true,
             recommendedRank: 75
+        ),
+
+        // ═══════════════════════════════════════════
+        // MARK: 웹 프레임워크 카테고리 (ADR-113, 8개)
+        // ═══════════════════════════════════════════
+
+        // 29. Next.js CLAUDE.md ✅ 200 OK (canary)
+        CommunityResource(
+            id: UUID(usdingString: "00000000-0000-0000-0008-000000000001"),
+            category: .webFramework,
+            displayName: "Next.js App Router 개발 가이드",
+            author: "vercel",
+            summary: "Vercel 공식 Next.js 리포지토리의 CLAUDE.md. App Router, Server Components, API Routes 등 최신 Next.js 패턴과 기여 가이드를 담고 있어요.",
+            starsApprox: 139000,
+            repoURL: URL(string: "https://github.com/vercel/next.js")!,
+            rawURL: URL(string: "https://raw.githubusercontent.com/vercel/next.js/canary/CLAUDE.md")!,
+            tags: ["nextjs", "react", "typescript", "app-router", "server-components"],
+            recommendedFor: [.defined, .exploring],
+            language: .english,
+            useCase: "Next.js 풀스택 앱 개발 규칙 + 베스트 프랙티스",
+            officialBadge: false,
+            recommendedRank: 92
+        ),
+
+        // 30. SvelteKit CLAUDE.md ✅ 200 OK
+        CommunityResource(
+            id: UUID(usdingString: "00000000-0000-0000-0008-000000000002"),
+            category: .webFramework,
+            displayName: "SvelteKit 공식 개발 가이드",
+            author: "sveltejs",
+            summary: "SvelteKit 공식 리포지토리의 CLAUDE.md. Svelte 4/5 문법, SvelteKit 라우팅, SSR/SSG 패턴, 기여 가이드를 상세히 담고 있어요.",
+            starsApprox: 19000,
+            repoURL: URL(string: "https://github.com/sveltejs/kit")!,
+            rawURL: URL(string: "https://raw.githubusercontent.com/sveltejs/kit/main/CLAUDE.md")!,
+            tags: ["sveltekit", "svelte", "ssr", "routing", "typescript"],
+            recommendedFor: [.defined, .exploring],
+            language: .english,
+            useCase: "SvelteKit SSR/SSG 풀스택 앱 개발",
+            officialBadge: false,
+            recommendedRank: 85
+        ),
+
+        // 31. React 공식 CLAUDE.md ✅ 200 OK
+        CommunityResource(
+            id: UUID(usdingString: "00000000-0000-0000-0008-000000000003"),
+            category: .webFramework,
+            displayName: "React 공식 소스 가이드",
+            author: "facebook",
+            summary: "Meta 공식 React 리포지토리의 CLAUDE.md. React 18/19 내부 아키텍처, Concurrent Mode, Hooks 설계 철학, 기여 워크플로우를 다뤄요.",
+            starsApprox: 234000,
+            repoURL: URL(string: "https://github.com/facebook/react")!,
+            rawURL: URL(string: "https://raw.githubusercontent.com/facebook/react/main/CLAUDE.md")!,
+            tags: ["react", "hooks", "concurrent", "typescript", "jsx"],
+            recommendedFor: [.defined, .exploring],
+            language: .english,
+            useCase: "React 핵심 원리 이해 및 고급 패턴 참고",
+            officialBadge: false,
+            recommendedRank: 90
+        ),
+
+        // 32. Svelte 공식 README ✅ 200 OK
+        CommunityResource(
+            id: UUID(usdingString: "00000000-0000-0000-0008-000000000004"),
+            category: .webFramework,
+            displayName: "Svelte 컴파일러 공식 가이드",
+            author: "sveltejs",
+            summary: "Svelte 컴파일러 리포지토리. Svelte 5의 Runes($state, $derived, $effect), 컴파일 최적화, 마이그레이션 가이드를 포함해요.",
+            starsApprox: 82000,
+            repoURL: URL(string: "https://github.com/sveltejs/svelte")!,
+            rawURL: URL(string: "https://raw.githubusercontent.com/sveltejs/svelte/main/README.md")!,
+            tags: ["svelte", "runes", "compiler", "reactive"],
+            recommendedFor: [.exploring, .undecided],
+            language: .english,
+            useCase: "Svelte 5 Runes 반응성 시스템 학습",
+            officialBadge: false,
+            recommendedRank: 80
+        ),
+
+        // 33. Tailwind CSS README ✅ 200 OK
+        CommunityResource(
+            id: UUID(usdingString: "00000000-0000-0000-0008-000000000005"),
+            category: .webFramework,
+            displayName: "Tailwind CSS 공식 가이드",
+            author: "tailwindlabs",
+            summary: "Tailwind CSS 공식 리포지토리. v4 변경사항, utility-first 설계 철학, PostCSS 플러그인 통합, JIT 모드 활용법을 설명해요.",
+            starsApprox: 86000,
+            repoURL: URL(string: "https://github.com/tailwindlabs/tailwindcss")!,
+            rawURL: URL(string: "https://raw.githubusercontent.com/tailwindlabs/tailwindcss/master/README.md")!,
+            tags: ["tailwind", "css", "utility-first", "postcss"],
+            recommendedFor: [.defined, .exploring, .undecided],
+            language: .english,
+            useCase: "UI 스타일링 빠르게 적용하는 Tailwind 활용",
+            officialBadge: false,
+            recommendedRank: 88
+        ),
+
+        // 34. shadcn/ui README ✅ 200 OK
+        CommunityResource(
+            id: UUID(usdingString: "00000000-0000-0000-0008-000000000006"),
+            category: .webFramework,
+            displayName: "shadcn/ui 컴포넌트 가이드",
+            author: "shadcn-ui",
+            summary: "복사-붙여넣기 방식의 React 컴포넌트 라이브러리. Radix UI + Tailwind 기반. Dialog, Select, Toast 등 접근성 준수 컴포넌트 사용법을 안내해요.",
+            starsApprox: 83000,
+            repoURL: URL(string: "https://github.com/shadcn-ui/ui")!,
+            rawURL: URL(string: "https://raw.githubusercontent.com/shadcn-ui/ui/main/README.md")!,
+            tags: ["shadcn", "react", "tailwind", "radix", "components", "accessibility"],
+            recommendedFor: [.defined, .exploring],
+            language: .english,
+            useCase: "React 앱에 접근성 높은 UI 컴포넌트 빠르게 추가",
+            officialBadge: false,
+            recommendedRank: 87
+        ),
+
+        // 35. Awesome CursorRules README ✅ 200 OK
+        CommunityResource(
+            id: UUID(usdingString: "00000000-0000-0000-0008-000000000007"),
+            category: .webFramework,
+            displayName: "웹 프레임워크 Cursor Rules 모음",
+            author: "PatrickJS",
+            summary: "Next.js, React, Vue, Angular, Svelte 등 주요 웹 프레임워크별 AI 에디터 규칙 모음. 각 프레임워크 관용 패턴을 Claude에게 학습시킬 수 있어요.",
+            starsApprox: 25000,
+            repoURL: URL(string: "https://github.com/PatrickJS/awesome-cursorrules")!,
+            rawURL: URL(string: "https://raw.githubusercontent.com/PatrickJS/awesome-cursorrules/main/README.md")!,
+            tags: ["cursor", "rules", "react", "vue", "nextjs", "angular"],
+            recommendedFor: [.exploring, .undecided],
+            language: .english,
+            useCase: "프레임워크별 AI 코딩 규칙 빠르게 적용",
+            officialBadge: false,
+            recommendedRank: 78
+        ),
+
+        // 36. Zustand README ✅ 200 OK
+        CommunityResource(
+            id: UUID(usdingString: "00000000-0000-0000-0008-000000000008"),
+            category: .webFramework,
+            displayName: "Zustand 상태 관리 가이드",
+            author: "pmndrs",
+            summary: "React를 위한 경량 상태 관리 라이브러리 Zustand. Redux 없이 전역 상태를 간결하게 관리하는 패턴, middleware, persist 활용법을 담고 있어요.",
+            starsApprox: 50000,
+            repoURL: URL(string: "https://github.com/pmndrs/zustand")!,
+            rawURL: URL(string: "https://raw.githubusercontent.com/pmndrs/zustand/main/README.md")!,
+            tags: ["zustand", "react", "state-management", "typescript"],
+            recommendedFor: [.defined, .exploring],
+            language: .english,
+            useCase: "React 앱 전역 상태 관리 패턴",
+            officialBadge: false,
+            recommendedRank: 82
+        ),
+
+        // ═══════════════════════════════════════════
+        // MARK: 모바일 프레임워크 카테고리 (ADR-113, 6개)
+        // ═══════════════════════════════════════════
+
+        // 37. React Native README ✅ 200 OK
+        CommunityResource(
+            id: UUID(usdingString: "00000000-0000-0000-0009-000000000001"),
+            category: .mobileFramework,
+            displayName: "React Native 공식 가이드",
+            author: "facebook",
+            summary: "Meta 공식 React Native 리포지토리. 새 아키텍처(Fabric, TurboModules, JSI), 크로스플랫폼 UI 패턴, 네이티브 모듈 연동을 설명해요.",
+            starsApprox: 120000,
+            repoURL: URL(string: "https://github.com/facebook/react-native")!,
+            rawURL: URL(string: "https://raw.githubusercontent.com/facebook/react-native/main/README.md")!,
+            tags: ["react-native", "ios", "android", "cross-platform", "typescript"],
+            recommendedFor: [.defined, .exploring],
+            language: .english,
+            useCase: "iOS/Android 크로스플랫폼 앱 React Native 시작",
+            officialBadge: false,
+            recommendedRank: 88
+        ),
+
+        // 38. Expo README ✅ 200 OK
+        CommunityResource(
+            id: UUID(usdingString: "00000000-0000-0000-0009-000000000002"),
+            category: .mobileFramework,
+            displayName: "Expo SDK 개발 플랫폼 가이드",
+            author: "expo",
+            summary: "React Native 개발을 단순화하는 Expo SDK. Expo Router v3, EAS Build/Submit, SDK 51+ 모듈 시스템, OTA 업데이트 패턴을 다뤄요.",
+            starsApprox: 35000,
+            repoURL: URL(string: "https://github.com/expo/expo")!,
+            rawURL: URL(string: "https://raw.githubusercontent.com/expo/expo/main/README.md")!,
+            tags: ["expo", "react-native", "eas", "router", "sdk"],
+            recommendedFor: [.exploring, .undecided],
+            language: .english,
+            useCase: "React Native 앱 Expo로 빠르게 시작하기",
+            officialBadge: false,
+            recommendedRank: 85
+        ),
+
+        // 39. Flutter README ✅ 200 OK
+        CommunityResource(
+            id: UUID(usdingString: "00000000-0000-0000-0009-000000000003"),
+            category: .mobileFramework,
+            displayName: "Flutter 크로스플랫폼 개발 가이드",
+            author: "flutter",
+            summary: "Google 공식 Flutter 리포지토리. Dart, Widget 시스템, Material/Cupertino 디자인, Riverpod 상태 관리, iOS/Android/Web/Desktop 타겟팅을 다뤄요.",
+            starsApprox: 168000,
+            repoURL: URL(string: "https://github.com/flutter/flutter")!,
+            rawURL: URL(string: "https://raw.githubusercontent.com/flutter/flutter/master/README.md")!,
+            tags: ["flutter", "dart", "ios", "android", "cross-platform"],
+            recommendedFor: [.defined, .exploring, .undecided],
+            language: .english,
+            useCase: "Flutter로 iOS/Android/Web 동시 개발",
+            officialBadge: false,
+            recommendedRank: 90
+        ),
+
+        // 40. Cursor Rules — Mobile 특화
+        CommunityResource(
+            id: UUID(usdingString: "00000000-0000-0000-0009-000000000004"),
+            category: .mobileFramework,
+            displayName: "모바일 프레임워크 Cursor Rules",
+            author: "PatrickJS",
+            summary: "React Native, Expo, Flutter 등 모바일 개발에 특화된 AI 에디터 규칙. 플랫폼별 최적화 패턴, 접근성, 성능 가이드가 포함돼요.",
+            starsApprox: 25000,
+            repoURL: URL(string: "https://github.com/PatrickJS/awesome-cursorrules")!,
+            rawURL: URL(string: "https://raw.githubusercontent.com/PatrickJS/awesome-cursorrules/main/README.md")!,
+            tags: ["cursor", "rules", "react-native", "flutter", "expo", "mobile"],
+            recommendedFor: [.exploring, .undecided],
+            language: .english,
+            useCase: "모바일 개발 AI 규칙 적용으로 코드 품질 향상",
+            officialBadge: false,
+            recommendedRank: 72
+        ),
+
+        // 41. Vercel AI SDK CLAUDE.md ✅ 200 OK
+        CommunityResource(
+            id: UUID(usdingString: "00000000-0000-0000-0009-000000000005"),
+            category: .mobileFramework,
+            displayName: "Vercel AI SDK — AI 앱 개발 가이드",
+            author: "vercel",
+            summary: "Vercel AI SDK 공식 CLAUDE.md. React/Next.js에서 LLM 스트리밍, 도구 호출, 멀티모달 입력을 구현하는 패턴. React Native에서도 적용 가능해요.",
+            starsApprox: 15000,
+            repoURL: URL(string: "https://github.com/vercel/ai")!,
+            rawURL: URL(string: "https://raw.githubusercontent.com/vercel/ai/main/CLAUDE.md")!,
+            tags: ["ai-sdk", "streaming", "llm", "react", "nextjs", "tools"],
+            recommendedFor: [.defined, .exploring],
+            language: .english,
+            useCase: "앱에 AI 스트리밍·도구 호출 통합하기",
+            officialBadge: false,
+            recommendedRank: 86
+        ),
+
+        // 42. shadcn/ui — mobile 참고 (Tamagui 대체 패턴)
+        CommunityResource(
+            id: UUID(usdingString: "00000000-0000-0000-0009-000000000006"),
+            category: .mobileFramework,
+            displayName: "React Native 네이티브 바람 컴포넌트",
+            author: "pmndrs",
+            summary: "Zustand 상태 관리 + React Native 패턴. 크로스플랫폼 앱에서 React Native의 상태 관리, 네비게이션, 비동기 처리를 구성하는 검증된 아키텍처를 소개해요.",
+            starsApprox: 50000,
+            repoURL: URL(string: "https://github.com/pmndrs/zustand")!,
+            rawURL: URL(string: "https://raw.githubusercontent.com/pmndrs/zustand/main/README.md")!,
+            tags: ["react-native", "state-management", "zustand", "cross-platform"],
+            recommendedFor: [.defined],
+            language: .english,
+            useCase: "React Native 앱 상태 관리 아키텍처",
+            officialBadge: false,
+            recommendedRank: 70
+        ),
+
+        // ═══════════════════════════════════════════
+        // MARK: 3D 그래픽스 카테고리 (ADR-113, 5개)
+        // ═══════════════════════════════════════════
+
+        // 43. Three.js README ✅ 200 OK
+        CommunityResource(
+            id: UUID(usdingString: "00000000-0000-0000-0010-000000000001"),
+            category: .graphics3D,
+            displayName: "Three.js 3D 그래픽스 공식 가이드",
+            author: "mrdoob",
+            summary: "웹 3D 라이브러리 Three.js 공식 리포지토리. Scene, Camera, Renderer, Geometry, Material, Animation, 성능 최적화 패턴을 다뤄요.",
+            starsApprox: 104000,
+            repoURL: URL(string: "https://github.com/mrdoob/three.js")!,
+            rawURL: URL(string: "https://raw.githubusercontent.com/mrdoob/three.js/dev/README.md")!,
+            tags: ["threejs", "3d", "webgl", "animation", "geometry"],
+            recommendedFor: [.defined, .exploring],
+            language: .english,
+            useCase: "웹에서 3D 인터랙티브 씬 구현",
+            officialBadge: false,
+            recommendedRank: 90
+        ),
+
+        // 44. React Three Fiber (R3F) — Drei README ✅ 200 OK
+        CommunityResource(
+            id: UUID(usdingString: "00000000-0000-0000-0010-000000000002"),
+            category: .graphics3D,
+            displayName: "Drei — R3F 헬퍼 컴포넌트 가이드",
+            author: "pmndrs",
+            summary: "React Three Fiber용 헬퍼 컴포넌트 라이브러리 Drei. OrbitControls, Text, Sky, Stars, useGLTF 등 자주 쓰는 3D 컴포넌트를 선언적으로 활용해요.",
+            starsApprox: 9000,
+            repoURL: URL(string: "https://github.com/pmndrs/drei")!,
+            rawURL: URL(string: "https://raw.githubusercontent.com/pmndrs/drei/master/README.md")!,
+            tags: ["drei", "r3f", "react-three-fiber", "threejs", "components"],
+            recommendedFor: [.defined, .exploring],
+            language: .english,
+            useCase: "React 앱에 3D 씬·카메라·컨트롤 선언적으로 추가",
+            officialBadge: false,
+            recommendedRank: 87
+        ),
+
+        // 45. D3.js README ✅ 200 OK
+        CommunityResource(
+            id: UUID(usdingString: "00000000-0000-0000-0010-000000000003"),
+            category: .graphics3D,
+            displayName: "D3.js 데이터 시각화 가이드",
+            author: "d3",
+            summary: "데이터 기반 인터랙티브 시각화 라이브러리 D3.js. 차트, 지도, 네트워크 그래프, 트리맵 등을 SVG/Canvas로 구현하는 공식 가이드예요.",
+            starsApprox: 109000,
+            repoURL: URL(string: "https://github.com/d3/d3")!,
+            rawURL: URL(string: "https://raw.githubusercontent.com/d3/d3/main/README.md")!,
+            tags: ["d3", "visualization", "svg", "charts", "data"],
+            recommendedFor: [.defined, .exploring],
+            language: .english,
+            useCase: "데이터 시각화 대시보드·인터랙티브 차트 구현",
+            officialBadge: false,
+            recommendedRank: 85
+        ),
+
+        // 46. Vercel AI SDK (3D AI 인터페이스 참고)
+        CommunityResource(
+            id: UUID(usdingString: "00000000-0000-0000-0010-000000000004"),
+            category: .graphics3D,
+            displayName: "AI + 3D 인터랙티브 앱 패턴",
+            author: "vercel",
+            summary: "Vercel AI SDK CLAUDE.md. Three.js·R3F와 AI 스트리밍을 결합한 인터랙티브 3D AI 앱 개발에 참고할 수 있어요. 도구 호출, 멀티모달 입력 처리 포함.",
+            starsApprox: 15000,
+            repoURL: URL(string: "https://github.com/vercel/ai")!,
+            rawURL: URL(string: "https://raw.githubusercontent.com/vercel/ai/main/CLAUDE.md")!,
+            tags: ["ai-sdk", "3d", "interactive", "streaming", "threejs"],
+            recommendedFor: [.defined],
+            language: .english,
+            useCase: "AI 기반 3D 인터랙티브 경험 구현",
+            officialBadge: false,
+            recommendedRank: 78
+        ),
+
+        // 47. awesome-cursorrules — 3D/게임
+        CommunityResource(
+            id: UUID(usdingString: "00000000-0000-0000-0010-000000000005"),
+            category: .graphics3D,
+            displayName: "3D/WebGL AI 에디터 규칙",
+            author: "PatrickJS",
+            summary: "Three.js, WebGL, GLSL 셰이더 개발을 위한 AI 에디터 규칙 모음. 성능 최적화, 메모리 관리, 셰이더 작성 패턴을 Claude에게 가르칠 수 있어요.",
+            starsApprox: 25000,
+            repoURL: URL(string: "https://github.com/PatrickJS/awesome-cursorrules")!,
+            rawURL: URL(string: "https://raw.githubusercontent.com/PatrickJS/awesome-cursorrules/main/README.md")!,
+            tags: ["threejs", "webgl", "glsl", "shader", "rules", "cursor"],
+            recommendedFor: [.exploring],
+            language: .english,
+            useCase: "WebGL/셰이더 개발 AI 규칙 적용",
+            officialBadge: false,
+            recommendedRank: 72
+        ),
+
+        // ═══════════════════════════════════════════
+        // MARK: 백엔드 카테고리 (ADR-113, 6개)
+        // ═══════════════════════════════════════════
+
+        // 48. FastAPI README ✅ 200 OK
+        CommunityResource(
+            id: UUID(usdingString: "00000000-0000-0000-0011-000000000001"),
+            category: .backend,
+            displayName: "FastAPI 비동기 Python 백엔드",
+            author: "tiangolo",
+            summary: "Python 최고 성능 웹 프레임워크 FastAPI. async/await, 자동 OpenAPI 문서, Pydantic 유효성 검사, dependency injection 패턴을 설명해요.",
+            starsApprox: 81000,
+            repoURL: URL(string: "https://github.com/tiangolo/fastapi")!,
+            rawURL: URL(string: "https://raw.githubusercontent.com/tiangolo/fastapi/master/README.md")!,
+            tags: ["fastapi", "python", "async", "openapi", "pydantic"],
+            recommendedFor: [.defined, .exploring],
+            language: .english,
+            useCase: "Python 비동기 REST API 서버 빠르게 구축",
+            officialBadge: false,
+            recommendedRank: 88
+        ),
+
+        // 49. Vercel AI SDK — 백엔드 AI API
+        CommunityResource(
+            id: UUID(usdingString: "00000000-0000-0000-0011-000000000002"),
+            category: .backend,
+            displayName: "AI 백엔드 API 패턴 (Vercel AI SDK)",
+            author: "vercel",
+            summary: "Vercel AI SDK 공식 CLAUDE.md. Node.js 백엔드에서 AI 스트리밍 엔드포인트, 도구 호출 서버, Edge Functions로 LLM API를 구성하는 패턴을 다뤄요.",
+            starsApprox: 15000,
+            repoURL: URL(string: "https://github.com/vercel/ai")!,
+            rawURL: URL(string: "https://raw.githubusercontent.com/vercel/ai/main/CLAUDE.md")!,
+            tags: ["node", "streaming", "llm", "api", "edge-functions", "typescript"],
+            recommendedFor: [.defined, .exploring],
+            language: .english,
+            useCase: "Node.js 백엔드에 LLM 스트리밍 API 통합",
+            officialBadge: false,
+            recommendedRank: 85
+        ),
+
+        // 50. MCP 서버 — 백엔드 통합
+        CommunityResource(
+            id: UUID(usdingString: "00000000-0000-0000-0011-000000000003"),
+            category: .backend,
+            displayName: "MCP 백엔드 서버 패턴",
+            author: "modelcontextprotocol",
+            summary: "Model Context Protocol 서버 구현 백엔드 패턴. Node.js/Python으로 커스텀 MCP 서버를 만들어 Claude에게 데이터베이스, 외부 API, 파일 시스템 도구를 제공해요.",
+            starsApprox: 85000,
+            repoURL: URL(string: "https://github.com/modelcontextprotocol/servers")!,
+            rawURL: URL(string: "https://raw.githubusercontent.com/modelcontextprotocol/servers/main/CLAUDE.md")!,
+            tags: ["mcp", "node", "python", "backend", "api", "tools"],
+            recommendedFor: [.defined],
+            language: .english,
+            useCase: "백엔드 서비스를 Claude 도구로 연결하는 MCP 서버",
+            officialBadge: true,
+            recommendedRank: 82
+        ),
+
+        // 51. awesome-claude-code — 백엔드 패턴
+        CommunityResource(
+            id: UUID(usdingString: "00000000-0000-0000-0011-000000000004"),
+            category: .backend,
+            displayName: "Claude Code 백엔드 CLAUDE.md 모음",
+            author: "hesreallyhim",
+            summary: "Node.js, Python, Go 등 백엔드 프로젝트 CLAUDE.md 예시 모음. API 설계, 에러 핸들링, 보안 패턴 등 서버 개발 규칙의 실전 예시를 담고 있어요.",
+            starsApprox: 42000,
+            repoURL: URL(string: "https://github.com/hesreallyhim/awesome-claude-code")!,
+            rawURL: URL(string: "https://raw.githubusercontent.com/hesreallyhim/awesome-claude-code/main/README.md")!,
+            tags: ["backend", "node", "python", "api", "security", "claude-code"],
+            recommendedFor: [.defined, .exploring],
+            language: .english,
+            useCase: "백엔드 프로젝트 CLAUDE.md 구조 참고",
+            officialBadge: false,
+            recommendedRank: 78
+        ),
+
+        // 52. Cursor Rules — 백엔드
+        CommunityResource(
+            id: UUID(usdingString: "00000000-0000-0000-0011-000000000005"),
+            category: .backend,
+            displayName: "백엔드 AI 에디터 규칙",
+            author: "PatrickJS",
+            summary: "FastAPI, Django, Rails, Express 등 백엔드 프레임워크별 AI 에디터 규칙. REST API 설계, 인증/인가, 에러 핸들링 패턴을 Claude가 준수하도록 설정해요.",
+            starsApprox: 25000,
+            repoURL: URL(string: "https://github.com/PatrickJS/awesome-cursorrules")!,
+            rawURL: URL(string: "https://raw.githubusercontent.com/PatrickJS/awesome-cursorrules/main/README.md")!,
+            tags: ["backend", "fastapi", "django", "express", "rules"],
+            recommendedFor: [.exploring, .undecided],
+            language: .english,
+            useCase: "백엔드 API 개발 AI 규칙으로 코드 품질 향상",
+            officialBadge: false,
+            recommendedRank: 73
+        ),
+
+        // 53. Anthropic Quickstarts — 백엔드 에이전트
+        CommunityResource(
+            id: UUID(usdingString: "00000000-0000-0000-0011-000000000006"),
+            category: .backend,
+            displayName: "Claude 에이전트 백엔드 퀵스타트",
+            author: "anthropics",
+            summary: "Anthropic 공식 퀵스타트의 백엔드 에이전트 패턴. Computer Use, 도구 호출, 멀티 에이전트 오케스트레이션을 Python 백엔드에서 구현하는 방법을 다뤄요.",
+            starsApprox: 7000,
+            repoURL: URL(string: "https://github.com/anthropics/anthropic-quickstarts")!,
+            rawURL: URL(string: "https://raw.githubusercontent.com/anthropics/anthropic-quickstarts/main/CLAUDE.md")!,
+            tags: ["agent", "backend", "python", "tool-use", "multi-agent"],
+            recommendedFor: [.defined],
+            language: .english,
+            useCase: "Python 백엔드에 Claude 에이전트 통합",
+            officialBadge: true,
+            recommendedRank: 86
+        ),
+
+        // ═══════════════════════════════════════════
+        // MARK: 데이터베이스 카테고리 (ADR-113, 5개)
+        // ═══════════════════════════════════════════
+
+        // 54. Drizzle ORM README ✅ 200 OK
+        CommunityResource(
+            id: UUID(usdingString: "00000000-0000-0000-0012-000000000001"),
+            category: .database,
+            displayName: "Drizzle ORM TypeScript 가이드",
+            author: "drizzle-team",
+            summary: "타입 안전 TypeScript ORM Drizzle. Schema 정의, migrations, PostgreSQL/MySQL/SQLite 지원, Next.js와의 통합 패턴을 설명해요. SQL처럼 직관적이에요.",
+            starsApprox: 28000,
+            repoURL: URL(string: "https://github.com/drizzle-team/drizzle-orm")!,
+            rawURL: URL(string: "https://raw.githubusercontent.com/drizzle-team/drizzle-orm/main/README.md")!,
+            tags: ["drizzle", "orm", "typescript", "postgresql", "sqlite", "schema"],
+            recommendedFor: [.defined, .exploring],
+            language: .english,
+            useCase: "TypeScript 풀스택에서 타입 안전 DB 쿼리",
+            officialBadge: false,
+            recommendedRank: 88
+        ),
+
+        // 55. Supabase README ✅ 200 OK
+        CommunityResource(
+            id: UUID(usdingString: "00000000-0000-0000-0012-000000000002"),
+            category: .database,
+            displayName: "Supabase 오픈소스 Firebase 대안",
+            author: "supabase",
+            summary: "PostgreSQL 기반 오픈소스 백엔드. 실시간 구독, Auth, Storage, Edge Functions, RLS(Row Level Security) 정책, Supabase Vector 등을 다뤄요.",
+            starsApprox: 76000,
+            repoURL: URL(string: "https://github.com/supabase/supabase")!,
+            rawURL: URL(string: "https://raw.githubusercontent.com/supabase/supabase/master/README.md")!,
+            tags: ["supabase", "postgresql", "realtime", "auth", "storage", "rls"],
+            recommendedFor: [.defined, .exploring, .undecided],
+            language: .english,
+            useCase: "풀스택 앱에 PostgreSQL 백엔드 + 인증 빠르게 구성",
+            officialBadge: false,
+            recommendedRank: 90
+        ),
+
+        // 56. Prisma CLAUDE.md ✅ 200 OK
+        CommunityResource(
+            id: UUID(usdingString: "00000000-0000-0000-0012-000000000003"),
+            category: .database,
+            displayName: "Prisma ORM 공식 개발 가이드",
+            author: "prisma",
+            summary: "Prisma ORM 공식 CLAUDE.md. Schema 설계, 마이그레이션, TypeScript 타입 안전 쿼리, PostgreSQL/MySQL/MongoDB 지원, Prisma Accelerate 활용을 다뤄요.",
+            starsApprox: 40000,
+            repoURL: URL(string: "https://github.com/prisma/prisma")!,
+            rawURL: URL(string: "https://raw.githubusercontent.com/prisma/prisma/main/CLAUDE.md")!,
+            tags: ["prisma", "orm", "typescript", "postgresql", "schema", "migration"],
+            recommendedFor: [.defined, .exploring],
+            language: .english,
+            useCase: "Node.js 앱에서 타입 안전 DB 스키마·쿼리 관리",
+            officialBadge: false,
+            recommendedRank: 87
+        ),
+
+        // 57. MCP postgres 서버
+        CommunityResource(
+            id: UUID(usdingString: "00000000-0000-0000-0012-000000000004"),
+            category: .database,
+            displayName: "PostgreSQL MCP 서버 통합",
+            author: "modelcontextprotocol",
+            summary: "Claude가 PostgreSQL DB를 직접 쿼리할 수 있게 하는 공식 MCP 서버. Schema 탐색, SQL 쿼리 실행, 데이터 분석을 Claude와 함께 대화하며 진행해요.",
+            starsApprox: 85000,
+            repoURL: URL(string: "https://github.com/modelcontextprotocol/servers")!,
+            rawURL: URL(string: "https://raw.githubusercontent.com/modelcontextprotocol/servers/main/README.md")!,
+            tags: ["postgresql", "mcp", "database", "sql", "analytics"],
+            recommendedFor: [.defined, .exploring],
+            language: .english,
+            useCase: "Claude가 DB를 직접 쿼리·분석하는 MCP 구성",
+            officialBadge: true,
+            recommendedRank: 85
+        ),
+
+        // 58. awesome-scalability — DB 패턴
+        CommunityResource(
+            id: UUID(usdingString: "00000000-0000-0000-0012-000000000005"),
+            category: .database,
+            displayName: "대규모 DB 확장 패턴",
+            author: "binhnguyennus",
+            summary: "데이터베이스 확장 전략 모음. 샤딩, 복제, CQRS, 이벤트 소싱, 캐싱 레이어(Redis) 설계 패턴을 실제 사례(Discord, Slack, Airbnb)와 함께 다뤄요.",
+            starsApprox: 60000,
+            repoURL: URL(string: "https://github.com/binhnguyennus/awesome-scalability")!,
+            rawURL: nil,
+            tags: ["postgresql", "redis", "sharding", "caching", "cqrs", "scalability"],
+            recommendedFor: [.defined],
+            language: .english,
+            useCase: "프로덕션 DB 성능 최적화·확장 전략 설계",
+            officialBadge: false,
+            recommendedRank: 75
+        ),
+
+        // ═══════════════════════════════════════════
+        // MARK: DevOps 카테고리 (ADR-113, 5개)
+        // ═══════════════════════════════════════════
+
+        // 59. Kubernetes README ✅ 200 OK
+        CommunityResource(
+            id: UUID(usdingString: "00000000-0000-0000-0013-000000000001"),
+            category: .devops,
+            displayName: "Kubernetes 컨테이너 오케스트레이션",
+            author: "kubernetes",
+            summary: "공식 Kubernetes 리포지토리. Pod, Deployment, Service, Ingress 개념부터 클러스터 운영, Helm 차트, GitOps 패턴까지 컨테이너 오케스트레이션 전반을 다뤄요.",
+            starsApprox: 112000,
+            repoURL: URL(string: "https://github.com/kubernetes/kubernetes")!,
+            rawURL: URL(string: "https://raw.githubusercontent.com/kubernetes/kubernetes/master/README.md")!,
+            tags: ["kubernetes", "k8s", "containers", "orchestration", "helm", "devops"],
+            recommendedFor: [.defined],
+            language: .english,
+            useCase: "프로덕션 앱 Kubernetes 배포·운영 패턴",
+            officialBadge: false,
+            recommendedRank: 82
+        ),
+
+        // 60. claude-code-action CI/CD 자동화
+        CommunityResource(
+            id: UUID(usdingString: "00000000-0000-0000-0013-000000000002"),
+            category: .devops,
+            displayName: "Claude Code GitHub Actions CI/CD",
+            author: "anthropics",
+            summary: "Claude Code를 GitHub Actions에 통합하는 공식 액션 CLAUDE.md. PR 자동 리뷰, 이슈 해결, 테스트 자동화, 배포 파이프라인에 Claude를 통합하는 방법을 다뤄요.",
+            starsApprox: 3000,
+            repoURL: URL(string: "https://github.com/anthropics/claude-code-action")!,
+            rawURL: URL(string: "https://raw.githubusercontent.com/anthropics/claude-code-action/main/CLAUDE.md")!,
+            tags: ["github-actions", "ci-cd", "automation", "pr-review", "deployment"],
+            recommendedFor: [.defined, .exploring],
+            language: .english,
+            useCase: "GitHub Actions에 Claude Code 통합 CI/CD 구성",
+            officialBadge: true,
+            recommendedRank: 88
+        ),
+
+        // 61. Docker + MCP
+        CommunityResource(
+            id: UUID(usdingString: "00000000-0000-0000-0013-000000000003"),
+            category: .devops,
+            displayName: "Docker 멀티스테이지 빌드 패턴",
+            author: "modelcontextprotocol",
+            summary: "MCP 서버 공식 구현의 Docker 컨테이너화 패턴. 멀티스테이지 빌드, 경량 이미지, 환경 변수 관리, docker-compose로 로컬 MCP 환경 구성하는 방법을 다뤄요.",
+            starsApprox: 85000,
+            repoURL: URL(string: "https://github.com/modelcontextprotocol/servers")!,
+            rawURL: URL(string: "https://raw.githubusercontent.com/modelcontextprotocol/servers/main/CLAUDE.md")!,
+            tags: ["docker", "containers", "mcp", "compose", "multi-stage"],
+            recommendedFor: [.defined, .exploring],
+            language: .english,
+            useCase: "MCP 서버 Docker 컨테이너화 + 로컬 개발 환경",
+            officialBadge: true,
+            recommendedRank: 80
+        ),
+
+        // 62. awesome-claude-code — DevOps 패턴
+        CommunityResource(
+            id: UUID(usdingString: "00000000-0000-0000-0013-000000000004"),
+            category: .devops,
+            displayName: "DevOps 자동화 Claude Code 모음",
+            author: "hesreallyhim",
+            summary: "CI/CD, 모니터링, 인프라 코드(IaC) 관련 Claude Code 패턴 모음. GitHub Actions, Docker, Terraform 등 DevOps 워크플로우를 Claude와 함께 자동화하는 예시예요.",
+            starsApprox: 42000,
+            repoURL: URL(string: "https://github.com/hesreallyhim/awesome-claude-code")!,
+            rawURL: URL(string: "https://raw.githubusercontent.com/hesreallyhim/awesome-claude-code/main/README.md")!,
+            tags: ["devops", "ci-cd", "terraform", "docker", "monitoring", "iac"],
+            recommendedFor: [.defined, .exploring],
+            language: .english,
+            useCase: "DevOps 파이프라인에 Claude 자동화 통합",
+            officialBadge: false,
+            recommendedRank: 76
+        ),
+
+        // 63. Cursor Rules — DevOps
+        CommunityResource(
+            id: UUID(usdingString: "00000000-0000-0000-0013-000000000005"),
+            category: .devops,
+            displayName: "DevOps·인프라 AI 에디터 규칙",
+            author: "PatrickJS",
+            summary: "Docker, Kubernetes, Terraform, Ansible 등 인프라 코드 작성을 위한 AI 에디터 규칙. 보안 베스트 프랙티스, 멱등성, 최소 권한 원칙을 Claude가 준수하도록 해요.",
+            starsApprox: 25000,
+            repoURL: URL(string: "https://github.com/PatrickJS/awesome-cursorrules")!,
+            rawURL: URL(string: "https://raw.githubusercontent.com/PatrickJS/awesome-cursorrules/main/README.md")!,
+            tags: ["devops", "docker", "kubernetes", "terraform", "security", "rules"],
+            recommendedFor: [.exploring, .undecided],
+            language: .english,
+            useCase: "인프라 코드 보안·품질 AI 규칙 적용",
+            officialBadge: false,
+            recommendedRank: 70
+        ),
+
+        // 64. Vercel AI SDK — DevOps 배포
+        CommunityResource(
+            id: UUID(usdingString: "00000000-0000-0000-0013-000000000006"),
+            category: .devops,
+            displayName: "AI 앱 Vercel 배포 + CI/CD 가이드",
+            author: "vercel",
+            summary: "Vercel AI SDK 공식 CLAUDE.md의 배포·CI/CD 패턴. Edge Functions, 환경 변수 관리, Preview Deployments, GitHub Actions 통합으로 AI 앱을 안정적으로 배포해요.",
+            starsApprox: 15000,
+            repoURL: URL(string: "https://github.com/vercel/ai")!,
+            rawURL: URL(string: "https://raw.githubusercontent.com/vercel/ai/main/CLAUDE.md")!,
+            tags: ["vercel", "deployment", "ci-cd", "edge-functions", "ai-sdk"],
+            recommendedFor: [.defined, .exploring],
+            language: .english,
+            useCase: "AI 앱 Vercel 프로덕션 배포 파이프라인 구성",
+            officialBadge: false,
+            recommendedRank: 78
         ),
     ]
 

@@ -30,31 +30,44 @@ struct LibrarySheet: View {
     // MARK: - 타입
 
     enum FilterCategory: String, CaseIterable, Identifiable {
-        case all         = "전체"
-        case claudeMd    = "CLAUDE.md"
-        case skill       = "Skill"
-        case template    = "템플릿"
-        case styleGuide  = "디자인 가이드"
-        case workflow    = "워크플로우"
-        case architecture = "시스템 설계"
+        case all           = "전체"
+        case claudeMd      = "CLAUDE.md"
+        case skill         = "Skill"
+        case template      = "템플릿"
+        case styleGuide    = "디자인 가이드"
+        case workflow      = "워크플로우"
+        case architecture  = "시스템 설계"
         case promptPattern = "프롬프트 패턴"
-        case rules       = "에디터 규칙"
-        case mcp         = "MCP 서버"
+        case rules         = "에디터 규칙"
+        case mcp           = "MCP 서버"
+        // ADR-113 신규
+        case webFramework    = "웹 프레임워크"
+        case mobileFramework = "모바일 프레임워크"
+        case graphics3D      = "3D 그래픽스"
+        case backend         = "백엔드"
+        case database        = "데이터베이스"
+        case devops          = "DevOps"
 
         var id: String { rawValue }
 
         var coreCategory: CommunityResource.Category? {
             switch self {
-            case .all:           return nil
-            case .claudeMd:      return .claudeMd
-            case .skill:         return .skill
-            case .template:      return .template
-            case .styleGuide:    return .styleGuide
-            case .workflow:      return .workflow
-            case .architecture:  return .architecture
-            case .promptPattern: return .promptPattern
-            case .rules:         return .rules
-            case .mcp:           return .mcp
+            case .all:             return nil
+            case .claudeMd:        return .claudeMd
+            case .skill:           return .skill
+            case .template:        return .template
+            case .styleGuide:      return .styleGuide
+            case .workflow:        return .workflow
+            case .architecture:    return .architecture
+            case .promptPattern:   return .promptPattern
+            case .rules:           return .rules
+            case .mcp:             return .mcp
+            case .webFramework:    return .webFramework
+            case .mobileFramework: return .mobileFramework
+            case .graphics3D:      return .graphics3D
+            case .backend:         return .backend
+            case .database:        return .database
+            case .devops:          return .devops
             }
         }
     }
@@ -189,31 +202,43 @@ struct LibrarySheet: View {
 
     private func categoryIcon(_ category: FilterCategory) -> String {
         switch category {
-        case .all:           return "tray.full.fill"
-        case .claudeMd:      return "doc.text.fill"
-        case .skill:         return "bolt.fill"
-        case .template:      return "square.grid.2x2.fill"
-        case .styleGuide:    return "paintbrush.fill"
-        case .workflow:      return "arrow.triangle.2.circlepath"
-        case .architecture:  return "building.columns.fill"
-        case .promptPattern: return "text.bubble.fill"
-        case .rules:         return "shield.fill"
-        case .mcp:           return "plug.fill"
+        case .all:             return "tray.full.fill"
+        case .claudeMd:        return "doc.text.fill"
+        case .skill:           return "bolt.fill"
+        case .template:        return "square.grid.2x2.fill"
+        case .styleGuide:      return "paintbrush.fill"
+        case .workflow:        return "arrow.triangle.2.circlepath"
+        case .architecture:    return "building.columns.fill"
+        case .promptPattern:   return "text.bubble.fill"
+        case .rules:           return "shield.fill"
+        case .mcp:             return "plug.fill"
+        case .webFramework:    return "globe"
+        case .mobileFramework: return "iphone"
+        case .graphics3D:      return "cube.fill"
+        case .backend:         return "server.rack"
+        case .database:        return "cylinder.fill"
+        case .devops:          return "gearshape.2.fill"
         }
     }
 
     private func categoryTintColor(_ category: FilterCategory) -> Color {
         switch category {
-        case .all:           return Theme.Color.accent
-        case .claudeMd:      return Theme.Color.accent
-        case .skill:         return .orange
-        case .template:      return Theme.Color.success
-        case .styleGuide:    return .purple
-        case .workflow:      return .blue
-        case .architecture:  return .indigo
-        case .promptPattern: return .teal
-        case .rules:         return .red
-        case .mcp:           return .cyan
+        case .all:             return Theme.Color.accent
+        case .claudeMd:        return Theme.Color.accent
+        case .skill:           return .orange
+        case .template:        return Theme.Color.success
+        case .styleGuide:      return .purple
+        case .workflow:        return .blue
+        case .architecture:    return .indigo
+        case .promptPattern:   return .teal
+        case .rules:           return .red
+        case .mcp:             return .cyan
+        case .webFramework:    return .blue
+        case .mobileFramework: return .pink
+        case .graphics3D:      return .purple
+        case .backend:         return Theme.Color.success
+        case .database:        return .orange
+        case .devops:          return .gray
         }
     }
 
@@ -452,15 +477,21 @@ struct LibrarySheet: View {
 
     private func categoryColor(_ category: CommunityResource.Category) -> Color {
         switch category {
-        case .claudeMd:      return Theme.Color.accent
-        case .skill:         return .orange
-        case .template:      return Theme.Color.success
-        case .styleGuide:    return .purple
-        case .workflow:      return .blue
-        case .architecture:  return .indigo
-        case .promptPattern: return .teal
-        case .rules:         return .red
-        case .mcp:           return .cyan
+        case .claudeMd:        return Theme.Color.accent
+        case .skill:           return .orange
+        case .template:        return Theme.Color.success
+        case .styleGuide:      return .purple
+        case .workflow:        return .blue
+        case .architecture:    return .indigo
+        case .promptPattern:   return .teal
+        case .rules:           return .red
+        case .mcp:             return .cyan
+        case .webFramework:    return .blue
+        case .mobileFramework: return .pink
+        case .graphics3D:      return .purple
+        case .backend:         return Theme.Color.success
+        case .database:        return .orange
+        case .devops:          return .gray
         }
     }
 

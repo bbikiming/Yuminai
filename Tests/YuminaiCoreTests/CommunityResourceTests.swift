@@ -246,7 +246,8 @@ struct CommunityResourceTests {
 
     @Test("ADR-112 — Category 9개 케이스 확인")
     func categoryHasNineCases() {
-        #expect(CommunityResource.Category.allCases.count == 9)
+        // ADR-113: 6개 신규 카테고리 추가 → 15개
+        #expect(CommunityResource.Category.allCases.count == 15)
     }
 
     @Test("Category.id == rawValue")
@@ -270,10 +271,10 @@ struct CommunityResourceTests {
         }
     }
 
-    @Test("Category.categoryRank — 모든 카테고리 0-8 범위")
+    @Test("Category.categoryRank — 모든 카테고리 0-14 범위 (ADR-113: 15개)")
     func categoryRankRange() {
         for category in CommunityResource.Category.allCases {
-            #expect(category.categoryRank >= 0 && category.categoryRank <= 8, "rank 범위 초과: \(category.rawValue)")
+            #expect(category.categoryRank >= 0 && category.categoryRank <= 14, "rank 범위 초과: \(category.rawValue)")
         }
     }
 
@@ -620,5 +621,130 @@ struct CommunityResourceTests {
             repoURL: URL(string: "https://github.com/test/repo")!
         )
         #expect(resource.useCase == nil)
+    }
+
+    // MARK: - ADR-113 신규 카테고리 검증
+
+    @Test("ADR-113 — Category.webFramework displayName 정의됨")
+    func webFrameworkDisplayName() {
+        #expect(!CommunityResource.Category.webFramework.displayName.isEmpty)
+        #expect(CommunityResource.Category.webFramework.displayName == "웹 프레임워크")
+    }
+
+    @Test("ADR-113 — Category.mobileFramework displayName 정의됨")
+    func mobileFrameworkDisplayName() {
+        #expect(!CommunityResource.Category.mobileFramework.displayName.isEmpty)
+        #expect(CommunityResource.Category.mobileFramework.displayName == "모바일 프레임워크")
+    }
+
+    @Test("ADR-113 — Category.graphics3D displayName 정의됨")
+    func graphics3DDisplayName() {
+        #expect(!CommunityResource.Category.graphics3D.displayName.isEmpty)
+        #expect(CommunityResource.Category.graphics3D.displayName == "3D 그래픽스")
+    }
+
+    @Test("ADR-113 — Category.backend displayName 정의됨")
+    func backendDisplayName() {
+        #expect(!CommunityResource.Category.backend.displayName.isEmpty)
+        #expect(CommunityResource.Category.backend.displayName == "백엔드")
+    }
+
+    @Test("ADR-113 — Category.database displayName 정의됨")
+    func databaseDisplayName() {
+        #expect(!CommunityResource.Category.database.displayName.isEmpty)
+        #expect(CommunityResource.Category.database.displayName == "데이터베이스")
+    }
+
+    @Test("ADR-113 — Category.devops displayName 정의됨")
+    func devopsDisplayName() {
+        #expect(!CommunityResource.Category.devops.displayName.isEmpty)
+        #expect(CommunityResource.Category.devops.displayName == "DevOps")
+    }
+
+    @Test("ADR-113 — 신규 카테고리 모두 icon 비어있지 않음")
+    func newCategoryIconsDefined() {
+        let newCategories: [CommunityResource.Category] = [
+            .webFramework, .mobileFramework, .graphics3D, .backend, .database, .devops
+        ]
+        for cat in newCategories {
+            #expect(!cat.icon.isEmpty, "icon 없음: \(cat.rawValue)")
+        }
+    }
+
+    @Test("ADR-113 — 신규 카테고리 categoryDescription 비어있지 않음")
+    func newCategoryDescriptionsDefined() {
+        let newCategories: [CommunityResource.Category] = [
+            .webFramework, .mobileFramework, .graphics3D, .backend, .database, .devops
+        ]
+        for cat in newCategories {
+            #expect(!cat.categoryDescription.isEmpty, "description 없음: \(cat.rawValue)")
+        }
+    }
+
+    @Test("ADR-113 — CommunityCatalog.curated 60개 이상")
+    func curatedHasSixtyPlus() {
+        #expect(CommunityCatalog.curated.count >= 60)
+    }
+
+    @Test("ADR-113 — webFramework 카테고리 최소 5개")
+    func webFrameworkResourcesFivePlus() {
+        let items = CommunityCatalog.resources(for: .webFramework)
+        #expect(items.count >= 5)
+    }
+
+    @Test("ADR-113 — mobileFramework 카테고리 최소 3개")
+    func mobileFrameworkResourcesThreePlus() {
+        let items = CommunityCatalog.resources(for: .mobileFramework)
+        #expect(items.count >= 3)
+    }
+
+    @Test("ADR-113 — graphics3D 카테고리 최소 3개")
+    func graphics3DResourcesThreePlus() {
+        let items = CommunityCatalog.resources(for: .graphics3D)
+        #expect(items.count >= 3)
+    }
+
+    @Test("ADR-113 — backend 카테고리 최소 3개")
+    func backendResourcesThreePlus() {
+        let items = CommunityCatalog.resources(for: .backend)
+        #expect(items.count >= 3)
+    }
+
+    @Test("ADR-113 — database 카테고리 최소 3개")
+    func databaseResourcesThreePlus() {
+        let items = CommunityCatalog.resources(for: .database)
+        #expect(items.count >= 3)
+    }
+
+    @Test("ADR-113 — devops 카테고리 최소 3개")
+    func devopsResourcesThreePlus() {
+        let items = CommunityCatalog.resources(for: .devops)
+        #expect(items.count >= 3)
+    }
+
+    @Test("ADR-113 — 신규 카테고리 자료 모두 https repoURL 보유")
+    func newCategoryResourcesHaveHttpsRepoURL() {
+        let newCategories: [CommunityResource.Category] = [
+            .webFramework, .mobileFramework, .graphics3D, .backend, .database, .devops
+        ]
+        for cat in newCategories {
+            for resource in CommunityCatalog.resources(for: cat) {
+                #expect(resource.repoURL.scheme == "https", "id: \(resource.id)")
+            }
+        }
+    }
+
+    @Test("ADR-113 — 신규 카테고리 rawURL은 https이거나 nil")
+    func newCategoryRawURLIsHttpsOrNil() {
+        let newCategories: [CommunityResource.Category] = [
+            .webFramework, .mobileFramework, .graphics3D, .backend, .database, .devops
+        ]
+        for cat in newCategories {
+            for resource in CommunityCatalog.resources(for: cat) {
+                if let rawURL = resource.rawURL {
+                    #expect(rawURL.scheme == "https", "rawURL scheme 오류: \(resource.id)")
+                }
+            }
+        }
     }
 }

@@ -29,30 +29,43 @@ struct CommunityResourcesPanel: View {
     // MARK: - 타입
 
     enum FilterCategory: String, CaseIterable, Identifiable {
-        case all         = "전체"
-        case claudeMd    = "CLAUDE.md"
-        case skill       = "Skill"
-        case template    = "템플릿"
-        case styleGuide  = "디자인 가이드"
-        case workflow    = "워크플로우"
-        case architecture = "시스템 설계"
+        case all           = "전체"
+        case claudeMd      = "CLAUDE.md"
+        case skill         = "Skill"
+        case template      = "템플릿"
+        case styleGuide    = "디자인 가이드"
+        case workflow      = "워크플로우"
+        case architecture  = "시스템 설계"
         case promptPattern = "프롬프트 패턴"
-        case rules       = "에디터 규칙"
-        case mcp         = "MCP 서버"
+        case rules         = "에디터 규칙"
+        case mcp           = "MCP 서버"
+        // ADR-113 신규
+        case webFramework    = "웹 프레임워크"
+        case mobileFramework = "모바일 프레임워크"
+        case graphics3D      = "3D 그래픽스"
+        case backend         = "백엔드"
+        case database        = "데이터베이스"
+        case devops          = "DevOps"
         var id: String { rawValue }
 
         var coreCategory: CommunityResource.Category? {
             switch self {
-            case .all:           return nil
-            case .claudeMd:      return .claudeMd
-            case .skill:         return .skill
-            case .template:      return .template
-            case .styleGuide:    return .styleGuide
-            case .workflow:      return .workflow
-            case .architecture:  return .architecture
-            case .promptPattern: return .promptPattern
-            case .rules:         return .rules
-            case .mcp:           return .mcp
+            case .all:             return nil
+            case .claudeMd:        return .claudeMd
+            case .skill:           return .skill
+            case .template:        return .template
+            case .styleGuide:      return .styleGuide
+            case .workflow:        return .workflow
+            case .architecture:    return .architecture
+            case .promptPattern:   return .promptPattern
+            case .rules:           return .rules
+            case .mcp:             return .mcp
+            case .webFramework:    return .webFramework
+            case .mobileFramework: return .mobileFramework
+            case .graphics3D:      return .graphics3D
+            case .backend:         return .backend
+            case .database:        return .database
+            case .devops:          return .devops
             }
         }
     }
@@ -124,6 +137,24 @@ struct CommunityResourcesPanel: View {
                     .font(.system(size: 16, weight: .semibold))
                     .foregroundStyle(Theme.Color.text)
                 Spacer()
+                // 스택 번들 카탈로그
+                Button {
+                    appModel.showBundleCatalogSheet = true
+                } label: {
+                    HStack(spacing: 4) {
+                        Image(systemName: "rectangle.stack.fill")
+                            .font(.system(size: 11, weight: .semibold))
+                        Text("스택 번들")
+                            .font(Theme.Typography.small.weight(.medium))
+                    }
+                    .foregroundStyle(.white)
+                    .padding(.horizontal, 8)
+                    .padding(.vertical, 4)
+                    .background(Theme.Color.accent)
+                    .clipShape(Capsule())
+                }
+                .buttonStyle(.plain)
+
                 // 카탈로그 전체 보기
                 Button {
                     appModel.showCatalogSheet = true
@@ -134,11 +165,7 @@ struct CommunityResourcesPanel: View {
                         Text("전체 카탈로그")
                             .font(Theme.Typography.small.weight(.medium))
                     }
-                    .foregroundStyle(.white)
-                    .padding(.horizontal, 8)
-                    .padding(.vertical, 4)
-                    .background(Theme.Color.accent)
-                    .clipShape(Capsule())
+                    .foregroundStyle(Theme.Color.accent)
                 }
                 .buttonStyle(.plain)
 
@@ -253,16 +280,22 @@ struct CommunityResourcesPanel: View {
 
     private func chipColor(_ category: FilterCategory) -> Color {
         switch category {
-        case .all:           return Theme.Color.accent
-        case .claudeMd:      return Theme.Color.accent
-        case .skill:         return .orange
-        case .template:      return Theme.Color.success
-        case .styleGuide:    return .purple
-        case .workflow:      return .blue
-        case .architecture:  return .indigo
-        case .promptPattern: return .teal
-        case .rules:         return .red
-        case .mcp:           return .cyan
+        case .all:             return Theme.Color.accent
+        case .claudeMd:        return Theme.Color.accent
+        case .skill:           return .orange
+        case .template:        return Theme.Color.success
+        case .styleGuide:      return .purple
+        case .workflow:        return .blue
+        case .architecture:    return .indigo
+        case .promptPattern:   return .teal
+        case .rules:           return .red
+        case .mcp:             return .cyan
+        case .webFramework:    return .blue
+        case .mobileFramework: return .pink
+        case .graphics3D:      return .purple
+        case .backend:         return Theme.Color.success
+        case .database:        return .orange
+        case .devops:          return .gray
         }
     }
 
@@ -398,15 +431,21 @@ struct CommunityResourcesPanel: View {
 
     private func badgeColor(_ category: CommunityResource.Category) -> Color {
         switch category {
-        case .claudeMd:      return Theme.Color.accent
-        case .skill:         return .orange
-        case .template:      return Theme.Color.success
-        case .styleGuide:    return .purple
-        case .workflow:      return .blue
-        case .architecture:  return .indigo
-        case .promptPattern: return .teal
-        case .rules:         return .red
-        case .mcp:           return .cyan
+        case .claudeMd:        return Theme.Color.accent
+        case .skill:           return .orange
+        case .template:        return Theme.Color.success
+        case .styleGuide:      return .purple
+        case .workflow:        return .blue
+        case .architecture:    return .indigo
+        case .promptPattern:   return .teal
+        case .rules:           return .red
+        case .mcp:             return .cyan
+        case .webFramework:    return .blue
+        case .mobileFramework: return .pink
+        case .graphics3D:      return .purple
+        case .backend:         return Theme.Color.success
+        case .database:        return .orange
+        case .devops:          return .gray
         }
     }
 

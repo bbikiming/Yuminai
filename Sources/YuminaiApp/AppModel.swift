@@ -4638,7 +4638,8 @@ public final class AppModel {
         case .template:
             return .success("GitHub 리포지토리를 직접 클론하거나 다운로드하세요.")
 
-        case .claudeMd, .styleGuide, .workflow, .architecture, .promptPattern, .rules:
+        case .claudeMd, .styleGuide, .workflow, .architecture, .promptPattern, .rules,
+             .webFramework, .mobileFramework, .graphics3D, .backend, .database, .devops:
             guard let rawURL = resource.rawURL else {
                 return .failure(CommunityResourceError.noRawURL)
             }
@@ -4808,6 +4809,37 @@ public final class AppModel {
         return .success(item)
     }
 
+    /// **ADR-113** — 스택 번들의 모든 자료를 라이브러리에 추가.
+    ///
+    /// 번들의 `resourceIds`를 순회하며 `CommunityCatalog.curated`에서 자료를 찾아 다운로드한다.
+    /// rawURL이 없거나 다운로드 실패한 자료는 건너뛰고 로그를 남긴다.
+    /// - Returns: 성공적으로 추가된 항목 배열 (부분 성공 허용).
+    public func addBundleToLibrary(_ bundle: StackBundle) async -> [ResourceLibraryItem] {
+        let all = CommunityCatalog.curated
+        var added: [ResourceLibraryItem] = []
+
+        for resourceId in bundle.resourceIds {
+            guard let resource = all.first(where: { $0.id == resourceId }) else {
+                logger.warning("번들 자료 미발견: \(resourceId) [\(bundle.displayName)]")
+                continue
+            }
+            guard resource.rawURL != nil else {
+                logger.info("번들 자료 rawURL 없음 (건너뜀): \(resource.displayName)")
+                continue
+            }
+            let result = await addToLibraryFromCommunity(resource)
+            switch result {
+            case .success(let item):
+                added.append(item)
+            case .failure(let err):
+                logger.error("번들 자료 추가 실패: \(resource.displayName) — \(err.localizedDescription)")
+            }
+        }
+
+        logger.info("번들 추가 완료: \(bundle.displayName) — \(added.count)/\(bundle.resourceIds.count)개 추가")
+        return added
+    }
+
     /// 사용자 직접 URL → 라이브러리 추가.
     public func addToLibraryFromURL(
         _ url: URL,
@@ -4937,6 +4969,9 @@ public final class AppModel {
 
     /// ADR-112 — 카탈로그 전체 탐색 sheet 표시 여부.
     public var showCatalogSheet: Bool = false
+
+    /// **ADR-113** — 스택 번들 카탈로그 sheet 표시 여부.
+    public var showBundleCatalogSheet: Bool = false
 
     /// ADR-111 — 라이브러리 picker popover 표시 여부 (Composer 안).
     public var showLibraryPickerPopover: Bool = false
