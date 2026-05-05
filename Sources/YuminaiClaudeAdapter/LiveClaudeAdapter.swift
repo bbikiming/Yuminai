@@ -15,17 +15,22 @@ public final actor LiveClaudeAdapter: ClaudeAdapter {
     private let environment: [String: String]
     private let extraArguments: [String]
     private var sessionSettings: SessionSettings
+    /// ADR-108 — 매 spawn 시 호출해 사용자 프로필 system prompt를 얻는 provider.
+    /// nil이면 주입 없음. Sendable closure로 actor 격리 안전.
+    private let userProfileProvider: (@Sendable () -> String?)?
 
     public init(
         claudePath: URL,
         sessionSettings: SessionSettings = .default,
         environment: [String: String] = ProcessEnvironment.augmented(),
-        extraArguments: [String] = []
+        extraArguments: [String] = [],
+        userProfileProvider: (@Sendable () -> String?)? = nil
     ) {
         self.claudePath = claudePath
         self.sessionSettings = sessionSettings
         self.environment = environment
         self.extraArguments = extraArguments
+        self.userProfileProvider = userProfileProvider
     }
 
     public func updateSettings(_ settings: SessionSettings) {
@@ -50,7 +55,16 @@ public final actor LiveClaudeAdapter: ClaudeAdapter {
         // Anthropic prompt caching 활용 — 같은 system context는 cache 적용됨.
         // ADR-055 #1: `systemPromptAppendix()` 사용 — 결정적 ordering으로 cache key 안정화
         // → child process도 같은 형식으로 inject 가능 (LiveChildClaudeProcess와 동일)
+        // ADR-108 — userProfile을 projectProfile 앞에 prepend (cache 친화적 ordering).
+        //            userProfile은 자주 안 바뀌므로 앞에 두면 cache hit 유지.
         var combinedExtraArgs = extraArguments
+
+        // 1) userProfile (짧고 자주 안 바뀜 → 앞에)
+        if let profilePrompt = userProfileProvider?() {
+            combinedExtraArgs.append(contentsOf: ["--append-system-prompt", profilePrompt])
+        }
+
+        // 2) projectProfile (워크스페이스별 — 뒤에)
         if let appendix = workspace.projectProfile.systemPromptAppendix() {
             combinedExtraArgs.append(contentsOf: ["--append-system-prompt", appendix])
         }

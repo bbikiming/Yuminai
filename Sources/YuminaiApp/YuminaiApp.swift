@@ -38,15 +38,25 @@ struct YuminaiAppMain: App {
                 prefs = AppPreferences()
             }
 
+            // ADR-108 — userProfileProvider: AppModel init 전에 closure로 묶어두고,
+            // model 생성 후 weak 참조 주입. bootstrap 동기 제약 내 안전한 패턴.
+            // nonisolated(unsafe) — init() 동기 컨텍스트 내 단순 대입, race 없음.
+            nonisolated(unsafe) var weakModel: AppModel? = nil
+            let profileProvider: @Sendable () -> String? = {
+                weakModel?.preferences.userProfile.renderForSystemPrompt()
+            }
+
             let claudeAdapter = LiveClaudeAdapter(
-                claudePath: URL(fileURLWithPath: prefs.claudeBinaryPath)
+                claudePath: URL(fileURLWithPath: prefs.claudeBinaryPath),
+                userProfileProvider: profileProvider
             )
 
             // codex CLI가 실행 가능하면 어댑터 활성화 (없으면 nil — UI에서 disabled)
             let codexAdapter: (any ClaudeAdapter)?
             if FileManager.default.isExecutableFile(atPath: prefs.codexBinaryPath) {
                 codexAdapter = LiveCodexAdapter(
-                    codexPath: URL(fileURLWithPath: prefs.codexBinaryPath)
+                    codexPath: URL(fileURLWithPath: prefs.codexBinaryPath),
+                    userProfileProvider: profileProvider
                 )
             } else {
                 codexAdapter = nil
@@ -56,7 +66,8 @@ struct YuminaiAppMain: App {
             let childProcess: (any ChildClaudeProcess)? = LiveChildClaudeProcess(
                 claudePath: URL(fileURLWithPath: prefs.claudeBinaryPath),
                 codexPath: URL(fileURLWithPath: prefs.codexBinaryPath),
-                defaultSettings: prefs.defaultSessionSettings
+                defaultSettings: prefs.defaultSessionSettings,
+                userProfileProvider: profileProvider
             )
 
             let model = AppModel(
@@ -69,6 +80,8 @@ struct YuminaiAppMain: App {
                 childProcess: childProcess,
                 preferences: prefs
             )
+            // ADR-108 — model 생성 후 weakModel에 주입 → profileProvider가 올바른 model 참조
+            weakModel = model
             self._appModel = State(wrappedValue: model)
 
             logger.info("Yuminai bootstrap 성공")

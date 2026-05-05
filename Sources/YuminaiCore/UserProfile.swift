@@ -186,6 +186,84 @@ public struct UserProfile: Sendable, Codable, Hashable {
         && profileImagePath == nil
     }
 
+    // MARK: - ADR-108: LLM system prompt 주입용 렌더링
+
+    /// LLM system prompt에 inject할 컴팩트 한 문단 (cache 친화적).
+    /// - 모든 실질 필드가 비어있으면 nil 반환 (주입 불필요).
+    /// - 필드 순서는 결정적 (항상 동일) → Anthropic prompt cache key 안정화.
+    /// - 200자 이내 권장.
+    public func renderForSystemPrompt() -> String? {
+        guard !isEmpty else { return nil }
+
+        var parts: [String] = []
+
+        let name = displayName.trimmingCharacters(in: .whitespacesAndNewlines)
+        if !name.isEmpty && name != "yuminai" {
+            parts.append("이름: \(name)")
+        }
+
+        let job = jobTitle.trimmingCharacters(in: .whitespacesAndNewlines)
+        if !job.isEmpty {
+            parts.append("직업: \(job)")
+        }
+
+        let goal = primaryGoal.trimmingCharacters(in: .whitespacesAndNewlines)
+        if !goal.isEmpty {
+            parts.append("목표: \(goal)")
+        }
+
+        parts.append("상태: \(goalStatus.displayName)")
+
+        let ctx = additionalContext.trimmingCharacters(in: .whitespacesAndNewlines)
+        if !ctx.isEmpty {
+            // 추가 컨텍스트는 앞 60자만 포함 (200자 한도 내)
+            let truncated = ctx.count > 60 ? String(ctx.prefix(60)) + "…" : ctx
+            parts.append("메모: \(truncated)")
+        }
+
+        let joined = "[사용자 프로필] " + parts.joined(separator: " · ")
+        // 200자 초과 시 말줄임 처리
+        if joined.count > 200 {
+            return String(joined.prefix(197)) + "…"
+        }
+        return joined
+    }
+
+    /// CLAUDE.md marker 섹션 내에 들어갈 본문 (## 사용자 프로필 이하).
+    /// CLAUDEMdMerger가 begin/end marker 사이에 이 내용을 삽입한다.
+    public func renderForCLAUDEMd() -> String {
+        let jobLine = jobTitle.trimmingCharacters(in: .whitespacesAndNewlines)
+        let goalLine = primaryGoal.trimmingCharacters(in: .whitespacesAndNewlines)
+        let ctxLine = additionalContext.trimmingCharacters(in: .whitespacesAndNewlines)
+
+        var lines: [String] = [
+            "> 이 섹션은 Yuminai가 자동으로 동기화해요. 직접 편집하면 다음 갱신 시 덮어쓰기됩니다.",
+            "",
+            "## 사용자 프로필",
+            "- 이름: \(displayName)",
+        ]
+
+        if !jobLine.isEmpty {
+            lines.append("- 직업: \(jobLine)")
+        }
+        if !goalLine.isEmpty {
+            lines.append("- 주로 하고 싶은 것: \(goalLine)")
+        }
+        lines.append("- 목표 상태: \(goalStatus.displayName)")
+
+        if !ctxLine.isEmpty {
+            lines.append("")
+            lines.append("## 추가 컨텍스트")
+            lines.append(ctxLine)
+        }
+
+        lines.append("")
+        lines.append("## 응답 가이드")
+        lines.append(goalStatus.llmGuide)
+
+        return lines.joined(separator: "\n")
+    }
+
     // MARK: - 하네스 주입 렌더링
 
     /// .harness/rules/USER_PROFILE.md에 기록할 마크다운 포맷.

@@ -35,17 +35,21 @@ public actor LiveChildClaudeProcess: ChildClaudeProcess {
     private let defaultSettings: SessionSettings
     /// **ADR-055 HIGH 2** — 진행 중인 process pid 추적. cancelAll() 시 모두 SIGTERM/SIGKILL.
     private var activePids: Set<Int32> = []
+    /// ADR-108 — 매 runOnce 시 호출해 사용자 프로필 system prompt를 얻는 provider.
+    private let userProfileProvider: (@Sendable () -> String?)?
 
     public init(
         claudePath: URL,
         codexPath: URL,
         environment: [String: String] = ProcessEnvironment.augmented(),
-        defaultSettings: SessionSettings = .default
+        defaultSettings: SessionSettings = .default,
+        userProfileProvider: (@Sendable () -> String?)? = nil
     ) {
         self.claudePath = claudePath
         self.codexPath = codexPath
         self.environment = environment
         self.defaultSettings = defaultSettings
+        self.userProfileProvider = userProfileProvider
     }
 
     /// **ADR-055 HIGH 2** — 진행 중인 모든 child process kill (사용자 /cancel 응답).
@@ -84,6 +88,8 @@ public actor LiveChildClaudeProcess: ChildClaudeProcess {
         // ADR-055 HIGH 1 + #1 — ProjectProfile을 child process에 inject.
         // `systemPromptAppendix()` 사용 → LiveClaudeAdapter와 정확히 같은 string → cache key 일치 → hit ↑.
         let systemAppendix: String? = workspace.projectProfile.systemPromptAppendix()
+        // ADR-108 — userProfile을 projectProfile 앞에 prepend (cache 친화적 ordering).
+        let userProfilePrompt: String? = userProfileProvider?()
 
         // agent별 binary 선택
         let binaryPath: URL
@@ -94,6 +100,7 @@ public actor LiveChildClaudeProcess: ChildClaudeProcess {
             // Claude Code headless mode — `--print` 단일 호출 + stream-json 파싱
             // ADR-055 HIGH 1 — ProjectProfile을 system prompt appendix로 inject
             //                  → child process도 idiom/framework 인지 (큰 비효율 수정)
+            // ADR-108 — userProfile을 먼저 inject (cache key 안정화 — 자주 안 바뀜)
             var args = [
                 "-p", prompt,
                 "--output-format", "json",
@@ -102,6 +109,9 @@ public actor LiveChildClaudeProcess: ChildClaudeProcess {
                 "--permission-mode", effectiveSettings.permissionMode.rawValue,
                 "--effort", effectiveSettings.effortLevel.rawValue
             ]
+            if let uProfile = userProfilePrompt {
+                args.append(contentsOf: ["--append-system-prompt", uProfile])
+            }
             if let appendix = systemAppendix {
                 args.append(contentsOf: ["--append-system-prompt", appendix])
             }
@@ -148,12 +158,17 @@ public actor LiveChildClaudeProcess: ChildClaudeProcess {
         defer { Task { await self.unregisterPid(pid) } }
 
         // codex는 stdin으로 prompt 전달 (ADR-055 HIGH 1 — system appendix prefix)
+        // ADR-108 — userProfile을 codex stdin prefix에도 포함
         if agent == .codex {
+            var prefixParts: [String] = []
+            if let uProfile = userProfilePrompt { prefixParts.append(uProfile) }
+            if let appendix = systemAppendix    { prefixParts.append("[프로젝트 컨텍스트]\n\(appendix)") }
+
             let codexPrompt: String
-            if let appendix = systemAppendix {
-                codexPrompt = "[프로젝트 컨텍스트]\n\(appendix)\n\n[작업]\n\(prompt)"
-            } else {
+            if prefixParts.isEmpty {
                 codexPrompt = prompt
+            } else {
+                codexPrompt = prefixParts.joined(separator: "\n\n") + "\n\n[작업]\n\(prompt)"
             }
             try? stdinPipe.fileHandleForWriting.write(contentsOf: Data(codexPrompt.utf8))
             try? stdinPipe.fileHandleForWriting.close()

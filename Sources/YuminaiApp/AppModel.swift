@@ -4514,13 +4514,19 @@ public final class AppModel {
 
     // MARK: - ADR-106 — 사용자 프로필
 
-    /// 프로필 갱신 + 모든 워크스페이스의 .harness/rules/USER_PROFILE.md 자동 동기화.
+    /// 프로필 갱신 + 모든 워크스페이스의 .harness/rules/USER_PROFILE.md + CLAUDE.md 자동 동기화.
+    /// ADR-108: 3-pronged 주입 전략
+    ///   1) system prompt — adapter의 userProfileProvider가 다음 spawn 시 자동 반영
+    ///   2) .harness/rules/USER_PROFILE.md — 기존 방식 유지
+    ///   3) <workspace>/CLAUDE.md marker 동기화 — Claude Code 자동 읽기
     public func updateUserProfile(_ profile: UserProfile) async {
         preferences.userProfile = profile
         await savePreferences()
         // 모든 워크스페이스에 프로필 파일 동기화
         for workspace in workspaces {
-            await syncUserProfileTo(workspaceURL: URL(fileURLWithPath: workspace.directoryPath))
+            let wsURL = URL(fileURLWithPath: workspace.directoryPath)
+            await syncUserProfileTo(workspaceURL: wsURL)
+            await syncUserProfileToCLAUDEMd(workspaceURL: wsURL)
         }
     }
 
@@ -4570,6 +4576,34 @@ public final class AppModel {
             try content.write(to: fileURL, atomically: true, encoding: .utf8)
         } catch {
             logger.error("USER_PROFILE.md 동기화 실패 (\(workspaceURL.lastPathComponent)): \(error.localizedDescription)")
+        }
+    }
+
+    /// ADR-108 — 단일 워크스페이스의 CLAUDE.md에 Yuminai 프로필 섹션을 동기화.
+    /// Claude Code는 <workspace>/CLAUDE.md를 자동으로 읽으므로 (Anthropic 공식),
+    /// begin/end marker 사이만 갱신해 사용자 자체 내용은 보존한다.
+    /// 워크스페이스 디렉토리가 없으면 skip.
+    private func syncUserProfileToCLAUDEMd(workspaceURL: URL) async {
+        let fm = FileManager.default
+        guard fm.fileExists(atPath: workspaceURL.path) else { return }
+
+        let mdURL = workspaceURL.appendingPathComponent("CLAUDE.md")
+        let existing = try? String(contentsOf: mdURL, encoding: .utf8)
+
+        let profileSection: String
+        if preferences.userProfile.isEmpty {
+            // 프로필 비어있으면 marker 블록 제거
+            profileSection = ""
+        } else {
+            profileSection = preferences.userProfile.renderForCLAUDEMd()
+        }
+
+        let merged = CLAUDEMdMerger.merge(existing: existing, profileSection: profileSection)
+
+        do {
+            try merged.write(to: mdURL, atomically: true, encoding: .utf8)
+        } catch {
+            logger.error("CLAUDE.md 동기화 실패 (\(workspaceURL.lastPathComponent)): \(error.localizedDescription)")
         }
     }
 

@@ -18,17 +18,21 @@ public final actor LiveCodexAdapter: ClaudeAdapter {
     private let environment: [String: String]
     private let extraArguments: [String]
     private var sessionSettings: SessionSettings
+    /// ADR-108 — 매 spawn 시 호출해 사용자 프로필 system prompt를 얻는 provider.
+    private let userProfileProvider: (@Sendable () -> String?)?
 
     public init(
         codexPath: URL,
         sessionSettings: SessionSettings = .default,
         environment: [String: String] = ProcessEnvironment.augmented(),
-        extraArguments: [String] = []
+        extraArguments: [String] = [],
+        userProfileProvider: (@Sendable () -> String?)? = nil
     ) {
         self.codexPath = codexPath
         self.sessionSettings = sessionSettings
         self.environment = environment
         self.extraArguments = extraArguments
+        self.userProfileProvider = userProfileProvider
     }
 
     public func updateSettings(_ settings: SessionSettings) {
@@ -50,9 +54,21 @@ public final actor LiveCodexAdapter: ClaudeAdapter {
         }
 
         // ADR-050 — Codex는 --append-system-prompt 없음. 첫 turn prompt에 prefix 주입 (session resume이 컨텍스트 유지)
+        // ADR-108 — userProfile을 projectProfile 앞에 prepend.
         let profileSummary = workspace.projectProfile.systemContextSummary()
-        let firstTurnPrefix: String? = profileSummary == "(프로필 미설정)" ? nil :
-            "[프로젝트 컨텍스트]\n\(profileSummary)\n적절한 idiom과 framework convention을 따라주세요.\n\n[사용자 요청]\n"
+        let projectPart: String? = profileSummary == "(프로필 미설정)" ? nil :
+            "[프로젝트 컨텍스트]\n\(profileSummary)\n적절한 idiom과 framework convention을 따라주세요."
+        let userPart: String? = userProfileProvider?()
+
+        let firstTurnPrefix: String?
+        if userPart == nil && projectPart == nil {
+            firstTurnPrefix = nil
+        } else {
+            var prefixParts: [String] = []
+            if let u = userPart    { prefixParts.append(u) }
+            if let p = projectPart { prefixParts.append(p) }
+            firstTurnPrefix = prefixParts.joined(separator: "\n\n") + "\n\n[사용자 요청]\n"
+        }
 
         return LiveCodexStreamSession(
             codexPath: codexPath,
