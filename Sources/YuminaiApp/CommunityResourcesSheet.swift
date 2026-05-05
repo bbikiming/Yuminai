@@ -85,13 +85,16 @@ struct CommunityResourcesSheet: View {
             }
 
             // 패널 본체 — headerSection은 ADR-120에서 숨김 처리됨 (showHeader: false)
+            // ADR-121: ScrollView를 panel 안에서만. yuminaiSheetFrame의 외부 wrap 비활성화로
+            // SheetHeader가 sticky하게 유지됨.
             ScrollView {
                 CommunityResourcesPanel(showHeader: false)
                     .environment(appModel)
                     .padding(Theme.Spacing.lg)
             }
         }
-        .yuminaiSheetFrame(width: 860, height: 640)
+        // ADR-121 — wrapInScrollView=false로 외부 ScrollView 제거 → 헤더 sticky
+        .yuminaiSheetFrame(width: 860, height: 640, wrapInScrollView: false)
         .background(Theme.Color.bg)
     }
 }
