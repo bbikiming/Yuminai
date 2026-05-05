@@ -1,0 +1,138 @@
+name: Release
+
+# **ADR-123** — GitHub Releases 자동화.
+#
+# 트리거: `v*.*.*` 형식 태그 push (예: `git tag v1.0.0 && git push origin v1.0.0`)
+# 동작:
+# 1. macOS-latest runner에서 swift build (release)
+# 2. arm64 + x86_64 universal binary 시도 (Metal toolchain 있으면 성공)
+# 3. 실패 시 native arch만 (arm64 fallback)
+# 4. .app 번들 + DMG 생성 (build_app_bundle.sh 사용)
+# 5. GitHub Release 자동 생성 + DMG 업로드
+# 6. tag 메시지를 release notes로 사용
+
+on:
+  push:
+    tags:
+      - 'v*.*.*'
+  workflow_dispatch:
+    inputs:
+      version:
+        description: '버전 (예: 1.0.0)'
+        required: true
+        default: '1.0.0'
+
+jobs:
+  build-and-release:
+    runs-on: macos-latest
+
+    permissions:
+      contents: write   # release 생성 + asset upload
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Setup Swift
+        uses: swift-actions/setup-swift@v2
+        with:
+          swift-version: "6.0"
+
+      - name: Cache SPM dependencies
+        uses: actions/cache@v4
+        with:
+          path: |
+            .build
+            ~/Library/Caches/org.swift.swiftpm
+          key: ${{ runner.os }}-spm-${{ hashFiles('**/Package.resolved') }}
+          restore-keys: |
+            ${{ runner.os }}-spm-
+
+      - name: Build (universal)
+        id: build_universal
+        continue-on-error: true
+        run: |
+          swift build -c release --product YuminaiApp --arch arm64 --arch x86_64
+
+      - name: Build (arm64 fallback)
+        if: steps.build_universal.outcome == 'failure'
+        run: |
+          swift build -c release --product YuminaiApp
+
+      - name: Run tests
+        run: |
+          swift test --parallel
+
+      - name: Extract version from tag
+        id: version
+        run: |
+          if [ -n "${{ github.event.inputs.version }}" ]; then
+            VERSION="${{ github.event.inputs.version }}"
+          else
+            VERSION="${GITHUB_REF#refs/tags/v}"
+          fi
+          echo "version=$VERSION" >> $GITHUB_OUTPUT
+          echo "📦 Version: $VERSION"
+
+      - name: Update version in build script
+        run: |
+          sed -i.bak "s/^APP_VERSION=.*/APP_VERSION=\"${{ steps.version.outputs.version }}\"/" App/build_app_bundle.sh
+          rm -f App/build_app_bundle.sh.bak
+
+      - name: Build app bundle + DMG
+        run: |
+          chmod +x App/build_app_bundle.sh
+          # universal 시도 → 실패 시 native fallback
+          ./App/build_app_bundle.sh --universal --dmg 2>&1 || \
+          ./App/build_app_bundle.sh --dmg
+
+      - name: Verify DMG
+        run: |
+          ls -lah dist/
+          if [ ! -f "dist/Yuminai-${{ steps.version.outputs.version }}.dmg" ]; then
+            echo "❌ DMG not found"
+            exit 1
+          fi
+          echo "✅ DMG ready: dist/Yuminai-${{ steps.version.outputs.version }}.dmg"
+
+      - name: Generate release notes
+        id: notes
+        run: |
+          # tag 메시지에서 release notes 추출 (annotated tag면 메시지 사용)
+          TAG_MSG=$(git tag -l --format='%(contents)' "${{ github.ref_name }}")
+          if [ -z "$TAG_MSG" ]; then
+            # 마지막 5개 커밋을 자동 생성
+            TAG_MSG=$(git log -5 --pretty=format:"- %s")
+          fi
+          # multi-line output으로 GITHUB_OUTPUT에 저장
+          {
+            echo 'notes<<EOF'
+            echo "$TAG_MSG"
+            echo ""
+            echo "## 설치 방법"
+            echo ""
+            echo "1. **Yuminai-${{ steps.version.outputs.version }}.dmg** 다운로드"
+            echo "2. DMG 더블클릭 → Yuminai.app을 Applications 폴더로 드래그"
+            echo "3. 첫 실행 시 우클릭 → 열기 → 열기 (확인되지 않은 개발자 우회)"
+            echo "   또는 시스템 설정 → 개인 정보 보호 및 보안 → \"Yuminai 차단됨...\" → 그래도 열기"
+            echo "4. 첫 실행 시 Setup Wizard가 Claude Code / Codex CLI 설치를 안내합니다"
+            echo ""
+            echo "## 의존 도구"
+            echo "- Claude Code (필수): \`curl -fsSL https://claude.ai/install.sh | bash\`"
+            echo "- Codex CLI (선택): \`npm i -g @openai/codex\`"
+            echo "- cokacdir (선택): 텔레그램 봇 빠른 시작"
+            echo "EOF"
+          } >> $GITHUB_OUTPUT
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ github.ref_name }}
+          name: Yuminai ${{ steps.version.outputs.version }}
+          body: ${{ steps.notes.outputs.notes }}
+          draft: false
+          prerelease: false
+          files: |
+            dist/Yuminai-${{ steps.version.outputs.version }}.dmg
