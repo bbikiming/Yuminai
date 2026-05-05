@@ -82,15 +82,19 @@ struct UserProfileSheet: View {
     }
 
     var body: some View {
-        YuminaiSheet(width: 780, height: 580) {
+        // ADR-110 — wrapInScrollView=false: 자체 ScrollView가 contentColumn에 있어
+        // 외부 wrap 시 nested scroll → sidebar 흔들림 발생. 좌우 split sheet는 wrap 비활성화.
+        YuminaiSheet(width: 780, height: 580, wrapInScrollView: false) {
             HStack(spacing: 0) {
                 sidebarColumn
-                    .frame(width: 200, alignment: .leading)  // ADR-109: 고정 폭 — 흔들림 방지
+                    .frame(width: 200, alignment: .leading)        // 가로 폭 고정
+                    .frame(maxHeight: .infinity, alignment: .top)  // ADR-110 — 세로 sheet 전체 채움
                     .background(Theme.Color.bgSidebar)
                 Divider()
                 contentColumn
                     .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
             }
+            .frame(maxHeight: .infinity)  // ADR-110 — HStack도 sheet 전체 높이
         } footer: {
             footerRow
         }

@@ -186,17 +186,20 @@ public extension View {
 public struct YuminaiSheet<Content: View, Footer: View>: View {
     let idealWidth: CGFloat
     let idealHeight: CGFloat
+    let wrapInScrollView: Bool
     let content: Content
     let footer: Footer
 
     public init(
         width: CGFloat,
         height: CGFloat,
+        wrapInScrollView: Bool = true,
         @ViewBuilder content: () -> Content,
         @ViewBuilder footer: () -> Footer
     ) {
         self.idealWidth = width
         self.idealHeight = height
+        self.wrapInScrollView = wrapInScrollView
         self.content = content()
         self.footer = footer()
     }
@@ -215,13 +218,19 @@ public struct YuminaiSheet<Content: View, Footer: View>: View {
             let resolvedHeight = min(idealHeight, availableHeight)
 
             VStack(spacing: 0) {
-                // ADR-074 Phase 3 — 컨텐츠가 fit되면 스크롤 indicator 안 보이고
-                // 컨텐츠가 더 크면 스크롤로 처리. footer는 분리되어 있어 절대 잘리지 않음.
-                ScrollView(.vertical, showsIndicators: true) {
+                // ADR-074 Phase 3 — wrapInScrollView=true: 컨텐츠를 ScrollView로 감쌈 (대부분 sheet)
+                // ADR-110 — wrapInScrollView=false: 자체 layout 가진 sheet (예: 좌우 split UserProfileSheet).
+                //   내부에 자체 ScrollView가 있는 경우 외부 wrap 시 nested scroll → sidebar 흔들림 발생.
+                if wrapInScrollView {
+                    ScrollView(.vertical, showsIndicators: true) {
+                        content
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                    }
+                    .scrollContentBackground(.hidden)
+                } else {
                     content
-                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
                 }
-                .scrollContentBackground(.hidden)
 
                 // ADR-074 Phase 4 — footer 고정 (ScrollView 밖)
                 Divider()
