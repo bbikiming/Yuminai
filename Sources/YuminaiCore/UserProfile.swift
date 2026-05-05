@@ -1,6 +1,7 @@
 import Foundation
 
 /// **ADR-106** — 사용자 프로필. 이름·직업·목표 등을 저장하고, .harness/rules/USER_PROFILE.md에 자동 주입한다.
+/// **ADR-107** — GoalContext 추가: 목표 상태별 세부 컨텍스트를 수집해 하네스에 더 풍부한 가이드를 주입.
 public struct UserProfile: Sendable, Codable, Hashable {
 
     // MARK: - GoalStatus
@@ -49,6 +50,64 @@ public struct UserProfile: Sendable, Codable, Hashable {
         }
     }
 
+    // MARK: - GoalContext (ADR-107)
+
+    /// 목표 상태별 추가 컨텍스트. 상태마다 다른 필드를 활성화해 LLM 가이드를 강화한다.
+    public struct GoalContext: Sendable, Codable, Hashable {
+        // defined 전용
+        /// 마감/목표 시점 (자유 입력). 예: "2026년 6월", "3개월 안에"
+        public var targetDeadline: String
+        /// 가장 큰 장애물. 예: "시간 부족", "기술 학습 필요"
+        public var biggestObstacle: String
+
+        // exploring 전용
+        /// 탐색 중인 옵션들 (한 줄에 하나)
+        public var exploringOptions: String
+        /// 비교 기준. 예: "학습 곡선, 시장 수요, 재미"
+        public var explorationCriteria: String
+
+        // undecided 전용
+        /// 강점/잘하는 것. 예: "분석, 디자인 감각, 글쓰기"
+        public var strengths: String
+        /// 관심사/즐거운 것. 예: "영화, 운동, 새로운 기술"
+        public var interests: String
+        /// 이전 경험 (간단한 자기소개)
+        public var pastExperience: String
+
+        // 공통 (모든 status)
+        /// 관심 키워드 (콤마 구분). 예: "SwiftUI, AI, 마케팅"
+        public var interestKeywords: String
+
+        public init(
+            targetDeadline: String = "",
+            biggestObstacle: String = "",
+            exploringOptions: String = "",
+            explorationCriteria: String = "",
+            strengths: String = "",
+            interests: String = "",
+            pastExperience: String = "",
+            interestKeywords: String = ""
+        ) {
+            self.targetDeadline = targetDeadline
+            self.biggestObstacle = biggestObstacle
+            self.exploringOptions = exploringOptions
+            self.explorationCriteria = explorationCriteria
+            self.strengths = strengths
+            self.interests = interests
+            self.pastExperience = pastExperience
+            self.interestKeywords = interestKeywords
+        }
+
+        public static let `default` = GoalContext()
+
+        /// 입력된 필드가 하나라도 있으면 true.
+        public var hasContent: Bool {
+            [targetDeadline, biggestObstacle, exploringOptions, explorationCriteria,
+             strengths, interests, pastExperience, interestKeywords]
+                .contains { !$0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
+        }
+    }
+
     // MARK: - 프로퍼티
 
     /// 표시 이름 (default: "yuminai")
@@ -59,6 +118,8 @@ public struct UserProfile: Sendable, Codable, Hashable {
     public var primaryGoal: String
     /// 목표 상태 (정해짐 / 탐색 중 / 미정)
     public var goalStatus: GoalStatus
+    /// 목표 상태별 추가 컨텍스트 (ADR-107)
+    public var goalContext: GoalContext
     /// 선호 에이전트 (nil = 자동)
     public var preferredAgent: AgentKind?
     /// 자유 메모 (LLM에 추가 컨텍스트)
@@ -75,6 +136,7 @@ public struct UserProfile: Sendable, Codable, Hashable {
         jobTitle: String = "",
         primaryGoal: String = "",
         goalStatus: GoalStatus = .undecided,
+        goalContext: GoalContext = .default,
         preferredAgent: AgentKind? = nil,
         additionalContext: String = "",
         profileImagePath: String? = nil,
@@ -84,10 +146,31 @@ public struct UserProfile: Sendable, Codable, Hashable {
         self.jobTitle = jobTitle
         self.primaryGoal = primaryGoal
         self.goalStatus = goalStatus
+        self.goalContext = goalContext
         self.preferredAgent = preferredAgent
         self.additionalContext = additionalContext
         self.profileImagePath = profileImagePath
         self.updatedAt = updatedAt
+    }
+
+    // MARK: - Codable (backward-compat)
+
+    private enum CodingKeys: String, CodingKey {
+        case displayName, jobTitle, primaryGoal, goalStatus, goalContext
+        case preferredAgent, additionalContext, profileImagePath, updatedAt
+    }
+
+    public init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        displayName = try c.decodeIfPresent(String.self, forKey: .displayName) ?? "yuminai"
+        jobTitle = try c.decodeIfPresent(String.self, forKey: .jobTitle) ?? ""
+        primaryGoal = try c.decodeIfPresent(String.self, forKey: .primaryGoal) ?? ""
+        goalStatus = try c.decodeIfPresent(GoalStatus.self, forKey: .goalStatus) ?? .undecided
+        goalContext = try c.decodeIfPresent(GoalContext.self, forKey: .goalContext) ?? .default
+        preferredAgent = try c.decodeIfPresent(AgentKind.self, forKey: .preferredAgent)
+        additionalContext = try c.decodeIfPresent(String.self, forKey: .additionalContext) ?? ""
+        profileImagePath = try c.decodeIfPresent(String.self, forKey: .profileImagePath)
+        updatedAt = try c.decodeIfPresent(Date.self, forKey: .updatedAt) ?? Date()
     }
 
     /// 기본값 (프로필을 한 번도 입력하지 않은 상태).
@@ -106,6 +189,7 @@ public struct UserProfile: Sendable, Codable, Hashable {
     // MARK: - 하네스 주입 렌더링
 
     /// .harness/rules/USER_PROFILE.md에 기록할 마크다운 포맷.
+    /// ADR-107: goalContext 필드를 목표 상태별로 다르게 출력한다 (빈 필드 제외).
     public func renderHarnessRules() -> String {
         let formatter = ISO8601DateFormatter()
         formatter.formatOptions = [.withInternetDateTime]
@@ -117,7 +201,9 @@ public struct UserProfile: Sendable, Codable, Hashable {
             ? "(없음)"
             : additionalContext.trimmingCharacters(in: .whitespacesAndNewlines)
 
-        return """
+        var parts: [String] = []
+
+        parts.append("""
         # 사용자 프로필
 
         > 이 파일은 Yuminai가 사용자 정보를 자동으로 동기화한 것입니다.
@@ -130,15 +216,97 @@ public struct UserProfile: Sendable, Codable, Hashable {
         ## 목표
         - **주로 하고 싶은 것**: \(goalLine)
         - **목표 상태**: \(goalStatus.displayName) — \(goalStatus.subtitle)
+        """)
 
+        // 목표 상태별 추가 컨텍스트 섹션
+        let goalContextSection = renderGoalContextSection()
+        if !goalContextSection.isEmpty {
+            parts.append(goalContextSection)
+        }
+
+        // 공통: 관심 키워드
+        let keywords = goalContext.interestKeywords.trimmingCharacters(in: .whitespacesAndNewlines)
+        if !keywords.isEmpty {
+            parts.append("## 관심 키워드\n\(keywords)")
+        }
+
+        parts.append("""
         ## 응답 가이드 (LLM에게)
         \(goalStatus.llmGuide)
+        \(renderLLMContextGuide())
 
         ## 추가 컨텍스트
         \(contextSection)
 
         ---
         *Last updated: \(updatedStr)*
-        """
+        """)
+
+        return parts.joined(separator: "\n\n")
+    }
+
+    /// 목표 상태별 추가 컨텍스트 섹션 (빈 필드 제외).
+    private func renderGoalContextSection() -> String {
+        var lines: [String] = []
+
+        switch goalStatus {
+        case .defined:
+            let deadline = goalContext.targetDeadline.trimmingCharacters(in: .whitespacesAndNewlines)
+            let obstacle = goalContext.biggestObstacle.trimmingCharacters(in: .whitespacesAndNewlines)
+            if !deadline.isEmpty { lines.append("- **목표 시점**: \(deadline)") }
+            if !obstacle.isEmpty { lines.append("- **현재 가장 큰 장애물**: \(obstacle)") }
+
+        case .exploring:
+            let options = goalContext.exploringOptions.trimmingCharacters(in: .whitespacesAndNewlines)
+            let criteria = goalContext.explorationCriteria.trimmingCharacters(in: .whitespacesAndNewlines)
+            if !options.isEmpty { lines.append("- **탐색 중인 옵션들**:\n\(options)") }
+            if !criteria.isEmpty { lines.append("- **비교 기준**: \(criteria)") }
+
+        case .undecided:
+            let strengths = goalContext.strengths.trimmingCharacters(in: .whitespacesAndNewlines)
+            let interests = goalContext.interests.trimmingCharacters(in: .whitespacesAndNewlines)
+            let experience = goalContext.pastExperience.trimmingCharacters(in: .whitespacesAndNewlines)
+            if !strengths.isEmpty { lines.append("- **강점/잘하는 것**: \(strengths)") }
+            if !interests.isEmpty { lines.append("- **관심사**: \(interests)") }
+            if !experience.isEmpty { lines.append("- **이전 경험**:\n\(experience)") }
+        }
+
+        guard !lines.isEmpty else { return "" }
+        return "## 목표 상세\n" + lines.joined(separator: "\n")
+    }
+
+    /// 목표 상태 + GoalContext를 반영한 LLM 응답 가이드 추가 텍스트.
+    private func renderLLMContextGuide() -> String {
+        var hints: [String] = []
+
+        switch goalStatus {
+        case .defined:
+            let deadline = goalContext.targetDeadline.trimmingCharacters(in: .whitespacesAndNewlines)
+            let obstacle = goalContext.biggestObstacle.trimmingCharacters(in: .whitespacesAndNewlines)
+            if !deadline.isEmpty {
+                hints.append("- 마감일(\(deadline))을 역산해서 우선순위를 제안하세요.")
+            }
+            if !obstacle.isEmpty {
+                hints.append("- '\(obstacle)'이 가장 큰 장애물입니다. 이를 해소하는 실전 팁을 우선 제공하세요.")
+            }
+
+        case .exploring:
+            let criteria = goalContext.explorationCriteria.trimmingCharacters(in: .whitespacesAndNewlines)
+            if !criteria.isEmpty {
+                hints.append("- 비교 기준('\(criteria)')에 맞춰 각 옵션의 트레이드오프를 정리해 주세요.")
+            }
+            hints.append("- 여러 선택지를 표나 비교 목록으로 정리하면 좋아요.")
+
+        case .undecided:
+            let strengths = goalContext.strengths.trimmingCharacters(in: .whitespacesAndNewlines)
+            let interests = goalContext.interests.trimmingCharacters(in: .whitespacesAndNewlines)
+            if !strengths.isEmpty || !interests.isEmpty {
+                hints.append("- 강점(\(strengths.isEmpty ? "미입력" : strengths))과 관심사(\(interests.isEmpty ? "미입력" : interests))를 토대로 작은 첫 시도를 제안하세요.")
+            }
+            hints.append("- 큰 결정보다 '오늘 당장 해볼 수 있는 것'을 먼저 제시하세요.")
+        }
+
+        guard !hints.isEmpty else { return "" }
+        return hints.joined(separator: "\n")
     }
 }
