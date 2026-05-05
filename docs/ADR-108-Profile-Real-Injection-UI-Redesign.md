@@ -163,12 +163,91 @@ swift test   → 1047 tests passed (baseline 1019 + 신규 28, 0 failed)
 
 ---
 
+## 5. UI 재디자인 (ADR-108-B)
+
+### 5-1. 좌우 split (sidebar + content) 결정 근거
+
+**문제**: 기존 4장 카드가 세로로 쌓이는 구조 → 작은 화면에서 잘림 + 답답한 UX.
+
+**결정**: macOS Settings.app 스타일 좌우 분할 레이아웃.
+
+```
+┌──────────────────┬─────────────────────────────────┐
+│ 프로필           │  (선택된 섹션 컨텐츠)            │
+│ ────────────     │                                 │
+│ ◐ 기본 정보  ✓  │  [큰 입력 영역 with breathing]   │
+│ 💼 직업/목표 ✓  │                                 │
+│ 🎯 목표 상태 ✓  │                                 │
+│ ⚙ 선호 설정    │                                 │
+│                  │                                 │
+│ 미입력 N개       │                                 │
+└──────────────────┴─────────────────────────────────┘
+                          [취소]   [저장]
+```
+
+**근거**:
+- 가로 wide (760×540) → 세로 스크롤 없이 한 화면에 전부 표시 가능
+- macOS 플랫폼 패턴 — 사용자 기대에 일치 (System Preferences, Xcode Settings)
+- HStack + sidebar/content 구조가 NavigationSplitView보다 modal sheet 안에서 안정적
+  (NavigationSplitView는 별도 wrapping 윈도우 필요 — sheet 안에서 불안정)
+
+**구현**: `HStack { sidebarColumn; Divider(); contentColumn }` — 가장 단순하고 안정적인 패턴.
+
+### 5-2. 완성도 ✓ visual feedback 패턴
+
+각 섹션이 "입력됐는지" 체크하여 sidebar 아이템 우측에 녹색 ✓ 표시.
+
+**완성도 로직** (`UserProfileCompletionHelper` — `YuminaiCore` 분리):
+- **기본 정보**: `displayName` 비공백 입력
+- **직업/목표**: `jobTitle` 또는 `primaryGoal` 중 하나 입력
+- **목표 상태**: `GoalContext.hasContent == true` (한 필드라도 입력)
+- **선호 설정**: `additionalContext` 입력 또는 `preferredAgent != nil`
+
+**분리 이유**: UI와 무관한 순수 함수 → `YuminaiCoreTests`에서 단위 테스트 가능.
+
+### 5-3. 깜박임 방지 (transition: opacity only)
+
+기존 `.move(edge:).combined(with: .opacity)` → layout shift + 깜박임 발생.
+
+**결정**: 모든 섹션 전환에 `.opacity` 전환만 사용.
+
+```swift
+Group { ... }
+    .transition(.opacity)
+    .animation(.easeOut(duration: 0.15), value: selectedSection)
+```
+
+GoalContext 동적 필드 전환도 동일하게 `.opacity` 적용 → 위치 shift 없음.
+
+### 5-4. ImageCropSheet 컨트롤 패널 설계
+
+**문제**: 320px 작은 미리보기 + manual gesture만으로 정밀 조작 어려움.
+
+**결정**: 좌우 분할 — 큰 미리보기(360×360) + 컨트롤 패널(280px).
+
+컨트롤 패널 구성:
+1. **확대/축소 Slider** (0.5×~3.0×) + 현재 배율 라벨 — 드래그 보조
+2. **출력 크기 Picker** (segmented): 작게(128px) / 보통(256px) / 크게(512px)
+3. **빠른 조작 버튼**: "위치/크기 초기화", "이미지 정중앙"
+4. **결과 미리보기 thumbnail** — 원형으로 실제 표시 방식 미리보기
+
+**레이아웃 shift 방지**: 미리보기 frame 고정 (360×360), 컨트롤 width 고정 (280px).
+
+드래그/줌 gesture는 유지 (큰 미리보기 영역에서 부드러움) — 슬라이더는 보조 역할.
+
+### 5-5. 후속 개선 (ADR-108-B 미포함)
+
+- 다크모드 컬러 contrast 조정 (sidebar bgSidebar와 bg 경계 미묘)
+- 접근성: VoiceOver 레이블 완성 (각 sidebar 섹션 + 완성도 상태 설명)
+- 키보드 탐색: Tab 순서 최적화 (sidebar → content → footer)
+
+---
+
 ## 6. 후속 옵션 (이번 미포함)
 
 - **글로벌 CLAUDE.md** (`~/.claude/CLAUDE.md`) 동기화 — Claude Code 전역 적용
-- **UI 탭뷰 재디자인** — UserProfileSheet TabView 전환 (세로 공간 절약)
 - **프로필 변경 감지** — adapter에 `setUserProfile()` 메서드로 명시적 갱신
 
 ---
 
-*결정: 3-pronged 주입으로 userProfile이 실제로 LLM에 도달함을 보장한다. CLAUDE.md merger는 사용자 자체 내용을 완전 보존한다.*
+*결정: 3-pronged 주입으로 userProfile이 실제로 LLM에 도달함을 보장한다. CLAUDE.md merger는 사용자 자체 내용을 완전 보존한다. ADR-108-B에서 macOS Settings 스타일 split UI로 UX 품질 문제를 해결한다.*
