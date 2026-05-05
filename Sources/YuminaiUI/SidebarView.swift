@@ -70,7 +70,10 @@ public struct SidebarView: View {
     public let onEditTag: (WorkspaceTag) -> Void
     /// Tag 삭제 (모든 워크스페이스에서 제거).
     public let onDeleteTag: (WorkspaceTag) -> Void
-    public let userName: String
+    /// **ADR-106** — 사용자 프로필 (BottomUserCard 표시용).
+    public let profile: UserProfile
+    /// **ADR-106** — 프로필 편집 sheet 열기.
+    public let onEditProfile: () -> Void
     public let updateAvailable: Bool
     /// **ADR-086 Phase 1** — 텔레그램 health snapshot (사이드바 하단 pill 표시용).
     public let telegramHealth: TelegramHealthSnapshot
@@ -140,7 +143,8 @@ public struct SidebarView: View {
         onCreateTag: @escaping () -> Void = {},
         onEditTag: @escaping (WorkspaceTag) -> Void = { _ in },
         onDeleteTag: @escaping (WorkspaceTag) -> Void = { _ in },
-        userName: String = "yuminai",
+        profile: UserProfile = .default,
+        onEditProfile: @escaping () -> Void = {},
         updateAvailable: Bool = false,
         telegramHealth: TelegramHealthSnapshot = TelegramHealthSnapshot(),
         onOpenTelegramErrorLog: @escaping () -> Void = {},
@@ -194,7 +198,8 @@ public struct SidebarView: View {
         self.onCreateTag = onCreateTag
         self.onEditTag = onEditTag
         self.onDeleteTag = onDeleteTag
-        self.userName = userName
+        self.profile = profile
+        self.onEditProfile = onEditProfile
         self.updateAvailable = updateAvailable
         self.telegramHealth = telegramHealth
         self.onOpenTelegramErrorLog = onOpenTelegramErrorLog
@@ -256,7 +261,11 @@ public struct SidebarView: View {
                 .padding(.horizontal, Theme.Layout.sidebarPadding)
                 .padding(.bottom, Theme.Spacing.xs)
             }
-            BottomUserCard(name: userName, onSettings: onOpenSettings)
+            BottomUserCard(
+                profile: profile,
+                onEditProfile: onEditProfile,
+                onSettings: onOpenSettings
+            )
         }
         .frame(width: Theme.Layout.sidebarWidth)
         .background(Theme.Color.bgSidebar)
@@ -1709,35 +1718,75 @@ public struct UpdateCard: View {
 }
 
 public struct BottomUserCard: View {
-    public let name: String
+    public let profile: UserProfile
+    public let onEditProfile: () -> Void
     public let onSettings: () -> Void
 
-    public init(name: String, onSettings: @escaping () -> Void) {
-        self.name = name
+    public init(
+        profile: UserProfile,
+        onEditProfile: @escaping () -> Void,
+        onSettings: @escaping () -> Void
+    ) {
+        self.profile = profile
+        self.onEditProfile = onEditProfile
         self.onSettings = onSettings
     }
 
     public var body: some View {
-        HStack(spacing: Theme.Spacing.md) {
-            Circle()
-                .fill(Theme.Color.surfaceHi)
-                .overlay(
-                    Image(systemName: "person.fill")
-                        .font(.system(size: 11, weight: .medium))
-                        .foregroundStyle(Theme.Color.textSecondary)
-                )
-                .frame(width: 22, height: 22)
-            Text(name)
-                .font(Theme.Typography.label)
-                .foregroundStyle(Theme.Color.text)
-            Spacer()
-            IconButton("gearshape", size: 14, help: "설정 (⌘,)", action: onSettings)
+        Button(action: onEditProfile) {
+            HStack(spacing: Theme.Spacing.md) {
+                profileAvatar
+                VStack(alignment: .leading, spacing: 1) {
+                    Text(profile.displayName)
+                        .font(Theme.Typography.label)
+                        .foregroundStyle(Theme.Color.text)
+                        .lineLimit(1)
+                    if !profile.jobTitle.isEmpty {
+                        Text(profile.jobTitle)
+                            .font(Theme.Typography.micro)
+                            .foregroundStyle(Theme.Color.textTertiary)
+                            .lineLimit(1)
+                    }
+                }
+                Spacer()
+                IconButton("gearshape", size: 14, help: "설정 (⌘,)", action: onSettings)
+            }
+            .padding(.horizontal, Theme.Spacing.md)
+            .padding(.vertical, Theme.Spacing.sm + 2)
+            .frame(height: 48)
         }
-        .padding(.horizontal, Theme.Spacing.md)
-        .padding(.vertical, Theme.Spacing.sm + 2)
-        .frame(height: 48)
+        .buttonStyle(.plain)
         .overlay(alignment: .top) {
             FlatHDivider()
+        }
+        .help("프로필 편집")
+    }
+
+    @ViewBuilder
+    private var profileAvatar: some View {
+        if let path = profile.profileImagePath,
+           let nsImage = NSImage(contentsOfFile: path) {
+            Image(nsImage: nsImage)
+                .resizable()
+                .scaledToFill()
+                .frame(width: 22, height: 22)
+                .clipShape(Circle())
+        } else {
+            let initial = profile.displayName.trimmingCharacters(in: .whitespaces).first.map(String.init) ?? ""
+            Circle()
+                .fill(Theme.Color.surfaceHi)
+                .overlay {
+                    if initial.isEmpty {
+                        Image(systemName: "person.fill")
+                            .font(.system(size: 11, weight: .medium))
+                            .foregroundStyle(Theme.Color.textSecondary)
+                    } else {
+                        Text(initial.uppercased())
+                            .font(.system(size: 10, weight: .semibold))
+                            .foregroundStyle(Theme.Color.textSecondary)
+                    }
+                }
+                .frame(width: 22, height: 22)
         }
     }
 }

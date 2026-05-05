@@ -464,6 +464,11 @@ struct RootView: View {
             HITLApprovalSheet()
                 .environment(appModel)
         }
+        // ADR-106 — 사용자 프로필 편집 sheet
+        .sheet(isPresented: $bindable.showUserProfileSheet) {
+            UserProfileSheet()
+                .environment(appModel)
+        }
         // ADR-097 — Telegram Artifact Viewer (diff / log deep link)
         .sheet(isPresented: $bindable.showTelegramArtifactSheet) {
             if let id = appModel.artifactSheetId {
@@ -771,7 +776,8 @@ struct RootView: View {
             onDeleteTag: { tag in
                 Task { await appModel.deleteTag(id: tag.id) }
             },
-            userName: "yuminai",
+            profile: appModel.preferences.userProfile,
+            onEditProfile: { appModel.showUserProfileSheet = true },
             updateAvailable: false,
             // ADR-086 Phase 1 — Telegram health
             telegramHealth: appModel.telegramHealth,

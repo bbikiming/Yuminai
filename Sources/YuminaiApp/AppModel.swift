@@ -8,6 +8,7 @@ import YuminaiPersistence
 import YuminaiTelegram
 import YuminaiObsidian
 import YuminaiUI
+import YuminaiHarness
 
 /// 앱 전역 상태 + DI 컨테이너. SwiftUI Environment로 주입된다.
 @MainActor
@@ -53,6 +54,8 @@ public final class AppModel {
     public var cokacdirImportMode: CokacdirImportMode = .legacy
 
     public var showCreateWorkspaceSheet: Bool = false
+    /// **ADR-106** — 사용자 프로필 편집 sheet.
+    public var showUserProfileSheet: Bool = false
     /// **ADR-089** — 새 ad-hoc 대화 세션 생성 sheet.
     public var showNewChatSessionSheet: Bool = false
     public var showUsageDashboard: Bool = false
@@ -962,6 +965,8 @@ public final class AppModel {
             selectedWorkspaceId = workspace.id
             await selectWorkspace(workspace.id)
             showCreateWorkspaceSheet = false
+            // ADR-106 — 새 워크스페이스에 USER_PROFILE.md 즉시 주입
+            await syncUserProfileTo(workspaceURL: URL(fileURLWithPath: workspace.directoryPath))
         } catch {
             self.error = error.localizedDescription
         }
@@ -4505,6 +4510,67 @@ public final class AppModel {
         }
         await activateTelegramIfReady()
         await setupObsidianVault()
+    }
+
+    // MARK: - ADR-106 — 사용자 프로필
+
+    /// 프로필 갱신 + 모든 워크스페이스의 .harness/rules/USER_PROFILE.md 자동 동기화.
+    public func updateUserProfile(_ profile: UserProfile) async {
+        preferences.userProfile = profile
+        await savePreferences()
+        // 모든 워크스페이스에 프로필 파일 동기화
+        for workspace in workspaces {
+            await syncUserProfileTo(workspaceURL: URL(fileURLWithPath: workspace.directoryPath))
+        }
+    }
+
+    /// 프로필 이미지 선택 (NSOpenPanel). 선택된 파일을 앱 지원 디렉토리에 복사 후 경로 반환.
+    @MainActor
+    public func selectUserProfileImage() async -> String? {
+        let panel = NSOpenPanel()
+        panel.canChooseFiles = true
+        panel.canChooseDirectories = false
+        panel.allowsMultipleSelection = false
+        panel.message = "프로필 사진을 선택하세요"
+        panel.allowedContentTypes = [.image]
+        guard panel.runModal() == .OK, let url = panel.url else { return nil }
+
+        do {
+            let fm = FileManager.default
+            let supportDir = try fm.url(
+                for: .applicationSupportDirectory,
+                in: .userDomainMask,
+                appropriateFor: nil,
+                create: true
+            ).appendingPathComponent("Yuminai", isDirectory: true)
+            try fm.createDirectory(at: supportDir, withIntermediateDirectories: true)
+            let ext = url.pathExtension
+            let destURL = supportDir.appendingPathComponent("profile-image.\(ext)")
+            if fm.fileExists(atPath: destURL.path) {
+                try fm.removeItem(at: destURL)
+            }
+            try fm.copyItem(at: url, to: destURL)
+            return destURL.path
+        } catch {
+            self.error = "프로필 사진 복사 실패: \(error.localizedDescription)"
+            return nil
+        }
+    }
+
+    /// 단일 워크스페이스에 USER_PROFILE.md 작성/갱신.
+    /// .harness 디렉토리가 없으면 skip (해당 워크스페이스는 하네스 미사용).
+    private func syncUserProfileTo(workspaceURL: URL) async {
+        let layout = HarnessLayout(workspaceURL: workspaceURL)
+        let fm = FileManager.default
+        guard fm.fileExists(atPath: layout.harnessURL.path) else { return }
+        let fileURL = layout.rulesURL.appendingPathComponent("USER_PROFILE.md")
+        do {
+            try fm.createDirectory(at: layout.rulesURL, withIntermediateDirectories: true)
+            let content = preferences.userProfile.renderHarnessRules()
+            try content.write(to: fileURL, atomically: true, encoding: .utf8)
+        } catch {
+            logger.error("USER_PROFILE.md 동기화 실패 (\(workspaceURL.lastPathComponent)): \(error.localizedDescription)")
+        }
     }
 
     public func selectClaudeBinary() {
