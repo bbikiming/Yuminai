@@ -161,6 +161,55 @@ public struct CommunityResource: Sendable, Codable, Identifiable {
         }
     }
 
+    // MARK: - LibraryFilterCategory
+
+    /// **ADR-126** — LibrarySheet / CommunityResourcesPanel / LibraryPickerPopover 공유 필터 enum.
+    ///
+    /// 기존 3개 파일에 100% 복제되어 있던 로컬 `FilterCategory`를 하나로 통합한다.
+    /// `coreCategory == nil` → "전체 보기", 나머지 → 해당 카테고리만 표시.
+    public enum LibraryFilterCategory: String, Sendable, CaseIterable, Identifiable {
+        case all           = "전체"
+        case claudeMd      = "CLAUDE.md"
+        case skill         = "Skill"
+        case template      = "템플릿"
+        case styleGuide    = "디자인 가이드"
+        case workflow      = "워크플로우"
+        case architecture  = "시스템 설계"
+        case promptPattern = "프롬프트 패턴"
+        case rules         = "에디터 규칙"
+        case mcp           = "MCP 서버"
+        case webFramework    = "웹 프레임워크"
+        case mobileFramework = "모바일 프레임워크"
+        case graphics3D      = "3D 그래픽스"
+        case backend         = "백엔드"
+        case database        = "데이터베이스"
+        case devops          = "DevOps"
+
+        public var id: String { rawValue }
+
+        /// 필터에 대응하는 `Category` (nil = 전체)
+        public var coreCategory: CommunityResource.Category? {
+            switch self {
+            case .all:             return nil
+            case .claudeMd:        return .claudeMd
+            case .skill:           return .skill
+            case .template:        return .template
+            case .styleGuide:      return .styleGuide
+            case .workflow:        return .workflow
+            case .architecture:    return .architecture
+            case .promptPattern:   return .promptPattern
+            case .rules:           return .rules
+            case .mcp:             return .mcp
+            case .webFramework:    return .webFramework
+            case .mobileFramework: return .mobileFramework
+            case .graphics3D:      return .graphics3D
+            case .backend:         return .backend
+            case .database:        return .database
+            case .devops:          return .devops
+            }
+        }
+    }
+
     // MARK: - Language
 
     /// 자료의 주요 언어

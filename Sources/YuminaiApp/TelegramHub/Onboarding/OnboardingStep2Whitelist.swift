@@ -32,18 +32,18 @@ struct OnboardingStep2Whitelist: View {
             HeaderHero(
                 icon: "person.2.shield.fill",
                 iconTint: Theme.Color.accent,
-                title: "사용자 허용 목록",
-                subtitle: "이 봇에 접근을 허용할 텔레그램 사용자 ID를 지정하세요. 나중에 봇 설정에서 언제든 수정할 수 있어요."
+                title: TelegramHubFriendlyText.Whitelist.title,
+                subtitle: TelegramHubFriendlyText.Whitelist.subtitle
             )
 
             // 경고 (비어있을 때)
             if isEmpty {
                 InfoCallout(tone: .warning) {
                     VStack(alignment: .leading, spacing: 4) {
-                        Text("모든 사용자 허용 (위험)")
+                        Text(TelegramHubFriendlyText.Whitelist.emptyWarningTitle)
                             .font(Theme.Typography.small.weight(.semibold))
                             .foregroundStyle(Theme.Color.text)
-                        Text("허용 목록이 비어있으면 누구나 이 봇에 메시지를 보낼 수 있어요. 개인용이라면 본인 ID를 꼭 추가하세요.")
+                        Text(TelegramHubFriendlyText.Whitelist.emptyHint)
                             .font(Theme.Typography.small)
                             .foregroundStyle(Theme.Color.textSecondary)
                             .fixedSize(horizontal: false, vertical: true)
@@ -58,7 +58,7 @@ struct OnboardingStep2Whitelist: View {
                     SectionHeaderRow(
                         icon: "person.fill.checkmark",
                         iconColor: Theme.Color.accent,
-                        title: "허용된 User IDs",
+                        title: TelegramHubFriendlyText.Whitelist.userIdsTitle,
                         caption: isEmpty ? "비어있음 = 전체 허용" : "\(parsedIds.count)명"
                     )
                     TextEditor(text: $allowedUserIdsText)

@@ -164,6 +164,22 @@ public enum TelegramHubFriendlyText {
     public static let duplicateBotBadge   = "이미 등록됨"
     public static let duplicateBotCallout = "이 봇은 이미 Telegram Hub에 등록되어 있어요. 등록된 봇을 보려면 봇 목록 탭을 확인하세요."
 
+    // MARK: - Whitelist (ADR-101 친화 언어 / ADR-126)
+
+    /// **ADR-126** — OnboardingStep2Whitelist에서 raw "허용 목록" 대신 사용하는 친화 언어 모음.
+    public enum Whitelist {
+        /// 화면 상단 헤더 타이틀
+        public static let title    = "사용 가능한 사람 목록"
+        /// User IDs 입력 카드 제목
+        public static let userIdsTitle = "사용 가능한 사람 (텔레그램 사용자 번호)"
+        /// 목록이 비어있을 때 경고 첫 줄
+        public static let emptyWarningTitle = "모든 사용자 허용 (위험)"
+        /// 목록이 비어있을 때 경고 본문
+        public static let emptyHint = "비워두면 누구나 이 봇을 사용할 수 있어요. 보안을 위해 직접 추가를 권장해요."
+        /// 헤더 서브타이틀
+        public static let subtitle  = "이 봇에 접근을 허용할 텔레그램 사용자 ID를 지정하세요. 나중에 봇 설정에서 언제든 수정할 수 있어요."
+    }
+
     // MARK: - 섹션 헤더 / 안내
 
     public static let hubFooterBots     = "봇"

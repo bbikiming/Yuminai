@@ -31,24 +31,10 @@ public struct LibraryPickerPopover: View {
     }
 
     @State private var query: String = ""
-    @State private var selectedCategory: FilterCategory = .all
+    @State private var selectedCategory: CommunityResource.LibraryFilterCategory = .all
 
-    enum FilterCategory: String, CaseIterable, Identifiable {
-        case all      = "전체"
-        case claudeMd = "CLAUDE.md"
-        case skill    = "Skill"
-        case template = "템플릿"
-        var id: String { rawValue }
-
-        var coreCategory: CommunityResource.Category? {
-            switch self {
-            case .all: return nil
-            case .claudeMd: return .claudeMd
-            case .skill: return .skill
-            case .template: return .template
-            }
-        }
-    }
+    /// **ADR-126** — 로컬 4-case FilterCategory 제거. 15-case 공유 타입 사용.
+    typealias FilterCategory = CommunityResource.LibraryFilterCategory
 
     private var filteredItems: [YuminaiCore.ResourceLibraryItem] {
         items.filter { item in
@@ -239,22 +225,6 @@ public struct LibraryPickerPopover: View {
     }
 
     private func categoryColor(_ category: CommunityResource.Category) -> Color {
-        switch category {
-        case .claudeMd:        return Theme.Color.accent
-        case .skill:           return .orange
-        case .template:        return Theme.Color.success
-        case .styleGuide:      return .purple
-        case .workflow:        return .blue
-        case .architecture:    return .indigo
-        case .promptPattern:   return .teal
-        case .rules:           return .red
-        case .mcp:             return .cyan
-        case .webFramework:    return .blue
-        case .mobileFramework: return .pink
-        case .graphics3D:      return .purple
-        case .backend:         return Theme.Color.success
-        case .database:        return .orange
-        case .devops:          return .gray
-        }
+        category.swiftUIColor
     }
 }

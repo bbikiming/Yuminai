@@ -309,7 +309,7 @@ struct GitHubSearchSheet: View {
                     .background(Theme.Color.surfaceHi)
                     .clipShape(RoundedRectangle(cornerRadius: Theme.Radius.md))
 
-                    // 히스토리 dropdown
+                    // 히스토리 dropdown (ADR-126: 전체 삭제 버튼 추가)
                     if showHistoryDropdown && !appModel.preferences.githubSearchHistory.isEmpty {
                         VStack(alignment: .leading, spacing: 0) {
                             Divider()
@@ -341,6 +341,25 @@ struct GitHubSearchSheet: View {
                                     Divider()
                                 }
                             }
+                            Divider()
+                            Button {
+                                appModel.clearSearchHistory()
+                                showHistoryDropdown = false
+                            } label: {
+                                HStack(spacing: Theme.Spacing.sm) {
+                                    Image(systemName: "trash")
+                                        .font(.system(size: 10))
+                                        .foregroundStyle(Theme.Color.danger)
+                                    Text("전체 삭제")
+                                        .font(Theme.Typography.small.weight(.medium))
+                                        .foregroundStyle(Theme.Color.danger)
+                                    Spacer()
+                                }
+                                .padding(.horizontal, Theme.Spacing.md)
+                                .padding(.vertical, 6)
+                            }
+                            .buttonStyle(.plain)
+                            .background(Theme.Color.surface)
                         }
                         .background(Theme.Color.surface)
                         .clipShape(RoundedRectangle(cornerRadius: Theme.Radius.sm))
@@ -421,7 +440,7 @@ struct GitHubSearchSheet: View {
         !query.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
     }
 
-    // MARK: - 정렬/필터 바 (ADR-118)
+    // MARK: - 정렬/필터 바 (ADR-118 / ADR-126)
 
     private var filterSortBar: some View {
         HStack(spacing: Theme.Spacing.sm) {
@@ -442,6 +461,42 @@ struct GitHubSearchSheet: View {
             }
 
             Spacer()
+
+            // ADR-126 — 현재 검색어 즐겨찾기 토글
+            let isFavorited = appModel.preferences.githubSearchFavorites
+                .contains { $0.query == query.trimmingCharacters(in: .whitespacesAndNewlines)
+                    && $0.mode == (mode == .repository ? .repositories : .code) }
+
+            Button {
+                let q = query.trimmingCharacters(in: .whitespacesAndNewlines)
+                if isFavorited {
+                    if let fav = appModel.preferences.githubSearchFavorites.first(where: {
+                        $0.query == q && $0.mode == (mode == .repository ? .repositories : .code)
+                    }) {
+                        appModel.removeSearchFavorite(fav)
+                    }
+                } else {
+                    appModel.saveSearchAsFavorite(
+                        query: q,
+                        mode: mode == .repository ? .repositories : .code,
+                        label: q
+                    )
+                }
+            } label: {
+                HStack(spacing: 3) {
+                    Image(systemName: isFavorited ? "star.fill" : "star")
+                        .font(.system(size: 11, weight: .semibold))
+                    Text(isFavorited ? "즐겨찾기 해제" : "즐겨찾기")
+                        .font(Theme.Typography.micro.weight(.medium))
+                }
+                .foregroundStyle(isFavorited ? .yellow : Theme.Color.textSecondary)
+                .padding(.horizontal, 7)
+                .padding(.vertical, 3)
+                .background(isFavorited ? Color.yellow.opacity(0.12) : Theme.Color.surfaceHi)
+                .clipShape(Capsule())
+            }
+            .buttonStyle(.plain)
+            .help(isFavorited ? "즐겨찾기에서 제거" : "이 검색어를 즐겨찾기에 추가")
 
             if !availableLanguages.isEmpty {
                 Picker("언어", selection: $languageFilter) {
@@ -1000,10 +1055,17 @@ struct GitHubSearchSheet: View {
         .shadow(color: .black.opacity(0.04), radius: 3, x: 0, y: 1)
     }
 
-    // MARK: - 즐겨찾기 Sheet
+    // MARK: - 즐겨찾기 Sheet (ADR-122 / ADR-126)
 
     private var favoritesSheet: some View {
-        VStack(spacing: 0) {
+        let currentQuery = query.trimmingCharacters(in: .whitespacesAndNewlines)
+        let currentMode: GitHubSearchHistoryEntry.Mode = mode == .repository ? .repositories : .code
+        let canAddCurrent = !currentQuery.isEmpty
+            && !appModel.preferences.githubSearchFavorites.contains(where: {
+                $0.query == currentQuery && $0.mode == currentMode
+            })
+
+        return VStack(spacing: 0) {
             HStack {
                 Image(systemName: "star.fill")
                     .font(.system(size: 14, weight: .semibold))
@@ -1012,6 +1074,32 @@ struct GitHubSearchSheet: View {
                     .font(.system(size: 15, weight: .semibold))
                     .foregroundStyle(Theme.Color.text)
                 Spacer()
+
+                // ADR-126 — 현재 검색어 즐겨찾기에 추가
+                if canAddCurrent {
+                    Button {
+                        appModel.saveSearchAsFavorite(
+                            query: currentQuery,
+                            mode: currentMode,
+                            label: currentQuery
+                        )
+                    } label: {
+                        HStack(spacing: 3) {
+                            Image(systemName: "plus.circle.fill")
+                                .font(.system(size: 11))
+                            Text("현재 검색어 추가")
+                                .font(Theme.Typography.micro.weight(.medium))
+                        }
+                        .foregroundStyle(Theme.Color.accent)
+                        .padding(.horizontal, 7)
+                        .padding(.vertical, 3)
+                        .background(Theme.Color.accentMuted.opacity(0.12))
+                        .clipShape(Capsule())
+                    }
+                    .buttonStyle(.plain)
+                    .help("'\(currentQuery)' 검색어를 즐겨찾기에 추가")
+                }
+
                 Button {
                     showFavoritesSheet = false
                 } label: {
@@ -1035,6 +1123,28 @@ struct GitHubSearchSheet: View {
                     Text("즐겨찾기가 없어요")
                         .font(Theme.Typography.small)
                         .foregroundStyle(Theme.Color.textTertiary)
+                    if !currentQuery.isEmpty {
+                        Button {
+                            appModel.saveSearchAsFavorite(
+                                query: currentQuery,
+                                mode: currentMode,
+                                label: currentQuery
+                            )
+                        } label: {
+                            HStack(spacing: 4) {
+                                Image(systemName: "star.fill")
+                                    .font(.system(size: 11))
+                                Text("'\(currentQuery)' 추가하기")
+                                    .font(Theme.Typography.small.weight(.medium))
+                            }
+                            .foregroundStyle(.yellow)
+                            .padding(.horizontal, Theme.Spacing.md)
+                            .padding(.vertical, 6)
+                            .background(Color.yellow.opacity(0.10))
+                            .clipShape(Capsule())
+                        }
+                        .buttonStyle(.plain)
+                    }
                     Spacer()
                 }
                 .frame(maxWidth: .infinity)

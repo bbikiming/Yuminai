@@ -523,22 +523,6 @@ struct CatalogSheet: View {
     }
 
     private func categoryColor(_ category: CommunityResource.Category) -> Color {
-        switch category {
-        case .claudeMd:        return Theme.Color.accent
-        case .skill:           return .orange
-        case .template:        return Theme.Color.success
-        case .styleGuide:      return .purple
-        case .workflow:        return .blue
-        case .architecture:    return .indigo
-        case .promptPattern:   return .teal
-        case .rules:           return .red
-        case .mcp:             return .cyan
-        case .webFramework:    return .blue
-        case .mobileFramework: return .pink
-        case .graphics3D:      return .purple
-        case .backend:         return Theme.Color.success
-        case .database:        return .orange
-        case .devops:          return .gray
-        }
+        category.swiftUIColor
     }
 }
