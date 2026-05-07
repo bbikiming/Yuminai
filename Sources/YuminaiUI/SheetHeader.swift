@@ -16,7 +16,7 @@ import SwiftUI
 ///
 /// ## 사용 예
 /// ```swift
-/// SheetHeader(icon: "cube.box.fill", title: "커뮤니티 자료", onClose: { dismiss() }) {
+/// SheetHeader(icon: "archivebox.fill", title: "커뮤니티 자료", onClose: { dismiss() }) {
 ///     Button("스택 번들") { ... }
 /// }
 /// ```

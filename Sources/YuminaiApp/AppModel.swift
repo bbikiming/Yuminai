@@ -839,7 +839,7 @@ public final class AppModel {
             category: "Harness",
             title: preferences.harnessInlineModeEnabled ? "Inline mode 끄기 (multi-pane으로)" : "Inline mode 켜기 (단일 timeline)",
             subtitle: "메인 chat area를 Harness 통합 view로 교체",
-            icon: "sparkles.rectangle.stack",
+            icon: "sparkles",
             shortcut: nil,
             perform: { [weak self] in
                 Task { @MainActor in

@@ -20,7 +20,7 @@ struct CommunityResourcesSheet: View {
     var body: some View {
         VStack(spacing: 0) {
             SheetHeader(
-                icon: "cube.box.fill",
+                icon: "archivebox.fill",
                 title: "커뮤니티 자료",
                 onClose: { dismiss() }
             ) {

@@ -241,7 +241,7 @@ struct GitHubSearchSheet: View {
 
     private func rateLimitBanner(_ rl: GitHubSearchClient.GitHubRateLimit) -> some View {
         HStack(spacing: Theme.Spacing.sm) {
-            Image(systemName: rl.isLimited ? "exclamationmark.octagon.fill" : "speedometer")
+            Image(systemName: rl.isLimited ? "exclamationmark.triangle.fill" : "gauge")
                 .font(.system(size: 12))
                 .foregroundStyle(rl.isLimited ? Theme.Color.danger : Theme.Color.textTertiary)
             Text(rl.displayText)

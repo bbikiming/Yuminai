@@ -72,7 +72,7 @@ struct WalkthroughSheet: View {
         let (icon, color, label): (String, Color, String) = {
             switch task.status {
             case .pending: return ("circle.dotted", .gray, "대기")
-            case .running: return ("circle.dotted.circle", .green, "진행 중")
+            case .running: return ("circle.dashed", .green, "진행 중")
             case .completed: return ("checkmark.circle.fill", .green, "완료")
             case .failed: return ("xmark.circle.fill", .red, "실패")
             }

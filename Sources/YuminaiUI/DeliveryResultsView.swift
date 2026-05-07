@@ -229,7 +229,7 @@ private struct ResultRow: View {
     }
 
     private var statusIcon: String {
-        if result.timedOut { return "clock.badge.xmark" }
+        if result.timedOut { return "clock.arrow.circlepath" }
         return result.success ? "checkmark.circle.fill" : "xmark.circle.fill"
     }
 
@@ -251,7 +251,7 @@ private struct ResultRow: View {
             if result.timedOut {
                 InlineHint(
                     "타임아웃 — 워크스페이스 Delivery 설정에서 timeout 시간을 늘려보세요.",
-                    icon: "clock.badge.xmark",
+                    icon: "clock.arrow.circlepath",
                     kind: .warning
                 )
             }

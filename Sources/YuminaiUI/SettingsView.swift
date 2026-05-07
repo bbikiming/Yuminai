@@ -509,7 +509,7 @@ public struct SettingsView: View {
                 if !preferences.beginnerMode {
                     Section {
                         HStack(spacing: 8) {
-                            Image(systemName: "square.and.arrow.down.on.square")
+                            Image(systemName: "arrow.down.square.fill")
                                 .foregroundStyle(Color.accentColor)
                                 .accessibilityHidden(true)
                             VStack(alignment: .leading, spacing: 2) {

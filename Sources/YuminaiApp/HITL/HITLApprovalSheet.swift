@@ -69,7 +69,7 @@ struct HITLApprovalSheet: View {
                 .foregroundStyle(.orange)
 
             VStack(alignment: .leading, spacing: 2) {
-                Text("HITL Approval Needed")
+                Text("확인이 필요해요")
                     .font(Theme.Typography.title)
                     .foregroundStyle(Theme.Color.text)
                 if count > 0 {
@@ -157,7 +157,7 @@ struct HITLApprovalSheet: View {
 
     private func actionBox(_ action: String) -> some View {
         VStack(alignment: .leading, spacing: Theme.Spacing.xs) {
-            Text("Action")
+            Text("실행할 명령")
                 .font(Theme.Typography.micro)
                 .foregroundStyle(Theme.Color.textTertiary)
             Text(action)
@@ -176,7 +176,7 @@ struct HITLApprovalSheet: View {
 
     private func diffPreviewBox(_ diff: String) -> some View {
         VStack(alignment: .leading, spacing: Theme.Spacing.xs) {
-            Text("Diff Preview")
+            Text("변경사항 미리보기")
                 .font(Theme.Typography.micro)
                 .foregroundStyle(Theme.Color.textTertiary)
             ScrollView(.vertical) {
@@ -231,10 +231,10 @@ struct HITLApprovalSheet: View {
     private func actionBar(request: TelegramHITLCoordinator.Request) -> some View {
         HStack {
             Spacer()
-            FlatButton("Reject", icon: "xmark.circle.fill", variant: .secondary) {
+            FlatButton("거절", icon: "xmark.circle.fill", variant: .secondary) {
                 respond(to: request, response: .rejected(by: "desktop"))
             }
-            FlatButton("Approve", icon: "checkmark.circle.fill", variant: .primary) {
+            FlatButton("승인", icon: "checkmark.circle.fill", variant: .primary) {
                 respond(to: request, response: .approved(by: "desktop"))
             }
         }

@@ -53,7 +53,7 @@ struct TelegramArtifactViewerSheet: View {
 
     private var expiredView: some View {
         AnimatedEmptyState(
-            icon: "clock.badge.xmark",
+            icon: "clock.arrow.circlepath",
             iconTint: Theme.Color.textTertiary,
             title: "Artifact 없음",
             message: "이 artifact는 만료되었거나 존재하지 않습니다.\n(ID: \(artifactId.uuidString.lowercased()))"
@@ -92,7 +92,7 @@ struct TelegramArtifactViewerSheet: View {
                 .foregroundStyle(Theme.Color.accent)
                 .font(.system(size: 16, weight: .medium))
             VStack(alignment: .leading, spacing: 2) {
-                Text("Diff Viewer")
+                Text("변경사항 보기")
                     .font(Theme.Typography.body.weight(.semibold))
                     .foregroundStyle(Theme.Color.text)
                 Text("\(files) file\(files == 1 ? "" : "s")  +\(added) / -\(removed)")

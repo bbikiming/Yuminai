@@ -64,7 +64,7 @@ public struct ResourceLibraryItem: Sendable, Codable, Hashable, Identifiable {
         /// 출처 아이콘 이름 (SF Symbols).
         public var iconName: String {
             switch self {
-            case .community: return "cube.box.fill"
+            case .community: return "archivebox.fill"
             case .userImport: return "link"
             case .userText: return "keyboard"
             }

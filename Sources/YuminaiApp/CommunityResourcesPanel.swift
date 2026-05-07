@@ -97,7 +97,7 @@ struct CommunityResourcesPanel: View {
     private var headerSection: some View {
         VStack(alignment: .leading, spacing: Theme.Spacing.xs) {
             HStack(spacing: Theme.Spacing.sm) {
-                Image(systemName: "cube.box.fill")
+                Image(systemName: "archivebox.fill")
                     .font(.system(size: 15, weight: .semibold))
                     .foregroundStyle(Theme.Color.accent)
                 Text("커뮤니티 자료")

@@ -122,7 +122,7 @@ struct TelegramOnboardingWizard: View {
                         : nil
                     )
                     .animation(.spring(response: 0.4, dampingFraction: 0.85), value: currentStep)
-                    .accessibilityLabel("Step \(step)\(isCompleted ? " (완료)" : isActive ? " (현재)" : "")")
+                    .accessibilityLabel("단계 \(step)\(isCompleted ? " (완료)" : isActive ? " (현재)" : "")")
             }
             Spacer()
             Text("\(currentStep) / \(totalSteps)")

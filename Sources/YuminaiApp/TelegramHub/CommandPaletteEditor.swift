@@ -65,7 +65,7 @@ struct CommandPaletteEditor: View {
 
     private var toolbar: some View {
         HStack {
-            Text("Commands")
+            Text("명령어")
                 .font(Theme.Typography.title)
                 .foregroundStyle(Theme.Color.text)
             Spacer()

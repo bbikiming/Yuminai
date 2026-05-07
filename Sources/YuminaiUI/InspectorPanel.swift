@@ -766,7 +766,7 @@ public enum InspectorTab: String, CaseIterable, Sendable, Equatable {
         case .notes: return "doc.text"
         case .files: return "folder"
         case .changes: return "arrow.triangle.2.circlepath"
-        case .harness: return "sparkles.rectangle.stack"
+        case .harness: return "sparkles"
         }
     }
 }

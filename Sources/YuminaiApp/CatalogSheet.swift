@@ -51,7 +51,7 @@ struct CatalogSheet: View {
             switch self {
             case .all:              return "square.grid.2x2.fill"
             case .official:         return "checkmark.seal.fill"
-            case .korean:           return "character.ko"
+            case .korean:           return "globe"
             case .category(let c):  return c.icon
             }
         }
@@ -139,7 +139,7 @@ struct CatalogSheet: View {
         VStack(alignment: .leading, spacing: 0) {
             // 헤더
             HStack(spacing: Theme.Spacing.sm) {
-                Image(systemName: "cube.box.fill")
+                Image(systemName: "archivebox.fill")
                     .font(.system(size: 14, weight: .semibold))
                     .foregroundStyle(Theme.Color.accent)
                 Text("자료 카탈로그")

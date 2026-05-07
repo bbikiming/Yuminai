@@ -72,7 +72,7 @@ public struct BotStatusDockView: View {
                         .foregroundStyle(Theme.Color.textTertiary)
                 }
                 if additionalBotCount > 0 {
-                    Text("+\(additionalBotCount) more")
+                    Text("+\(additionalBotCount)개 더")
                         .font(Theme.Typography.micro)
                         .foregroundStyle(Theme.Color.textTertiary)
                 }
@@ -123,7 +123,7 @@ public struct BotStatusDockView: View {
 
     private var queueBadge: some View {
         HStack(spacing: 2) {
-            Text("queue:")
+            Text("대기:")
                 .font(Theme.Typography.micro)
                 .foregroundStyle(Theme.Color.textTertiary)
             Text("\(queueDepth)")
@@ -266,11 +266,7 @@ public struct BotStatusDockView: View {
     // MARK: - Helpers
 
     private func relativeTime(_ date: Date) -> String {
-        let interval = Date().timeIntervalSince(date)
-        if interval < 60 { return "방금" }
-        if interval < 3600 { return "\(Int(interval / 60))m ago" }
-        if interval < 86400 { return "\(Int(interval / 3600))h ago" }
-        return "\(Int(interval / 86400))d ago"
+        RelativeTime.format(date)
     }
 
     private func errorColor(_ category: TelegramErrorEntry.Category) -> Color {

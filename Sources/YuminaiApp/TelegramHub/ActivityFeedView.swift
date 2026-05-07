@@ -202,11 +202,7 @@ struct ActivityFeedView: View {
     // MARK: - Helpers
 
     private func relativeTime(_ date: Date) -> String {
-        let interval = Date().timeIntervalSince(date)
-        if interval < 60 { return "방금" }
-        if interval < 3600 { return "\(Int(interval / 60))분 전" }
-        if interval < 86400 { return "\(Int(interval / 3600))시간 전" }
-        return "\(Int(interval / 86400))일 전"
+        RelativeTime.format(date)
     }
 }
 
@@ -244,7 +240,7 @@ struct ActivityEvent: Identifiable, Sendable {
     var iconName: String {
         switch category {
         case .auth: return "lock.slash.fill"
-        case .rateLimit: return "speedometer"
+        case .rateLimit: return "gauge"
         case .network: return "wifi.exclamationmark"
         case .server: return "server.rack"
         case .parsing: return "doc.text.magnifyingglass"

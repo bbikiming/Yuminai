@@ -50,7 +50,7 @@ struct UserProfileSheet: View {
             case .job:         return "briefcase.fill"
             case .goalStatus:  return "scope"
             case .preferences: return "gearshape.2.fill"
-            case .community:   return "cube.box.fill"
+            case .community:   return "archivebox.fill"
             }
         }
 

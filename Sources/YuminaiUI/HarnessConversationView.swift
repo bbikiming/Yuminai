@@ -54,7 +54,7 @@ public struct HarnessConversationView: View {
     private var header: some View {
         VStack(spacing: 0) {
             HStack(spacing: 8) {
-                Image(systemName: "sparkles.rectangle.stack")
+                Image(systemName: "sparkles")
                     .font(.system(size: 11))
                     .foregroundStyle(Theme.Color.accent)
                 Text("Harness 통합 대화")

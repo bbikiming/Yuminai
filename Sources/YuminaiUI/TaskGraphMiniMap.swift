@@ -349,7 +349,7 @@ private struct TaskRow: View {
                 .foregroundStyle(isReady ? Theme.Color.accent : Theme.Color.textTertiary)
                 .help(isReady ? "실행 가능 (의존성 모두 완료)" : "대기 중 (의존성 미완료)")
         case .running:
-            Image(systemName: "circle.dotted.circle")
+            Image(systemName: "circle.dashed")
                 .font(.system(size: 12))
                 .foregroundStyle(Color.green)
                 .help("진행 중")
