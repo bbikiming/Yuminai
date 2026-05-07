@@ -285,16 +285,7 @@ struct CatalogSheet: View {
             .font(Theme.Typography.small)
             .frame(maxWidth: 100)
 
-            // 닫기
-            Button {
-                dismiss()
-            } label: {
-                Image(systemName: "xmark.circle.fill")
-                    .font(.system(size: 16))
-                    .foregroundStyle(Theme.Color.textSecondary)
-            }
-            .buttonStyle(.plain)
-            .help("닫기")
+            SheetCloseButton(style: .inline) { dismiss() }
         }
         .padding(.horizontal, Theme.Spacing.lg)
         .padding(.vertical, Theme.Spacing.md)

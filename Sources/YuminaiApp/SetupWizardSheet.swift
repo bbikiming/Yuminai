@@ -79,6 +79,9 @@ struct SetupWizardSheet: View {
                 isRefreshing = false
             }
         }
+        .overlay(alignment: .topTrailing) {
+            SheetCloseButton { appModel.dismissSetupWizard(markCompleted: true) }
+        }
     }
 
     // MARK: - Subviews

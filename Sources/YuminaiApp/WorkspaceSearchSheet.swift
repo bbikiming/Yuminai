@@ -47,6 +47,9 @@ struct WorkspaceSearchSheet: View {
             onCancel()
             return .handled
         }
+        .overlay(alignment: .topTrailing) {
+            SheetCloseButton(action: onCancel)
+        }
     }
 
     private func moveSelection(by delta: Int) {

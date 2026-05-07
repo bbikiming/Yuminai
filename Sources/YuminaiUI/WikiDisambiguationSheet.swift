@@ -50,6 +50,9 @@ public struct WikiDisambiguationSheet: View {
         // ADR-073 — 너비만 반응형 (높이는 컨텐츠 기반).
         .yuminaiSheetFrame(width: 480)
         .background(Theme.Color.bg)
+        .overlay(alignment: .topTrailing) {
+            SheetCloseButton(action: onCancel)
+        }
     }
 }
 

@@ -22,6 +22,9 @@ public struct ChatBindingAuditLogSheet: View {
         // ADR-073 — 반응형. 내부 ScrollView 있어 wrap=false.
         .yuminaiSheetFrame(width: 720, height: 540, wrapInScrollView: false)
         .background(Theme.Color.bg)
+        .overlay(alignment: .topTrailing) {
+            SheetCloseButton(action: onClose)
+        }
     }
 
     private var header: some View {

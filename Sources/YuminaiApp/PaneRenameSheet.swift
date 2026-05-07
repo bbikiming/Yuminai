@@ -50,6 +50,9 @@ struct PaneRenameSheet: View {
         // ADR-073 — 너비만 반응형.
         .yuminaiSheetFrame(width: 420)
         .background(Theme.Color.bg)
+        .overlay(alignment: .topTrailing) {
+            SheetCloseButton(action: onCancel)
+        }
     }
 
     private func apply() {

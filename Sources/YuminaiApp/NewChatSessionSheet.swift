@@ -68,6 +68,9 @@ struct NewChatSessionSheet: View {
                 .disabled(!canStart)
             }
         }
+        .overlay(alignment: .topTrailing) {
+            SheetCloseButton { appModel.showNewChatSessionSheet = false }
+        }
     }
 
     // MARK: - 1) Source mode (3-radio)

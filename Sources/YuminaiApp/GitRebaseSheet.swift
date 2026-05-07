@@ -57,6 +57,9 @@ struct GitRebaseSheet: View {
         .onChange(of: commitCount) { _, _ in
             Task { await reload() }
         }
+        .overlay(alignment: .topTrailing) {
+            SheetCloseButton { appModel.showGitRebaseSheet = false }
+        }
     }
 
     private var header: some View {

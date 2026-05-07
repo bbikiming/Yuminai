@@ -50,6 +50,9 @@ struct TelegramErrorLogSheet: View {
             }
         }
         .task { await reload() }
+        .overlay(alignment: .topTrailing) {
+            SheetCloseButton { appModel.showTelegramErrorLogSheet = false }
+        }
     }
 
     private var header: some View {

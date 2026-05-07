@@ -71,6 +71,9 @@ public struct RehearsalSheet: View {
             Color.yellow.opacity(0.04)
                 .allowsHitTesting(false)
         )
+        .overlay(alignment: .topTrailing) {
+            SheetCloseButton(action: onClose)
+        }
     }
 
     // MARK: - Banner

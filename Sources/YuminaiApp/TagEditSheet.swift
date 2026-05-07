@@ -44,6 +44,9 @@ struct TagEditSheet: View {
             }
             inputFocused = true
         }
+        .overlay(alignment: .topTrailing) {
+            SheetCloseButton(action: onCancel)
+        }
     }
 
     private var header: some View {

@@ -34,6 +34,9 @@ struct CommandPaletteSheet: View {
         .yuminaiSheetFrame(width: 560, height: 460, wrapInScrollView: false)
         .background(Theme.Color.bg)
         .onAppear { inputFocused = true }
+        .overlay(alignment: .topTrailing) {
+            SheetCloseButton(action: onCancel)
+        }
     }
 
     private var searchHeader: some View {

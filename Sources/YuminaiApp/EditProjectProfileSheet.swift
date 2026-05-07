@@ -53,6 +53,9 @@ struct EditProjectProfileSheet: View {
         } footer: {
             footer
         }
+        .overlay(alignment: .topTrailing) {
+            SheetCloseButton(action: onCancel)
+        }
     }
 
     private var header: some View {

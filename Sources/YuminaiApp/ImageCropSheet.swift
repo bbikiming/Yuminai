@@ -84,6 +84,9 @@ struct ImageCropSheet: View {
         } footer: {
             footerRow
         }
+        .overlay(alignment: .topTrailing) {
+            SheetCloseButton(action: onCancel)
+        }
     }
 
     // MARK: - 좌측: 미리보기 컬럼

@@ -53,15 +53,7 @@ struct GitHubPATSheet: View {
                 .font(.system(size: 15, weight: .semibold))
                 .foregroundStyle(Theme.Color.text)
             Spacer()
-            Button {
-                dismiss()
-            } label: {
-                Image(systemName: "xmark.circle.fill")
-                    .font(.system(size: 16))
-                    .foregroundStyle(Theme.Color.textSecondary)
-            }
-            .buttonStyle(.plain)
-            .help("닫기")
+            SheetCloseButton(style: .inline) { dismiss() }
         }
         .padding(.horizontal, Theme.Spacing.lg)
         .padding(.vertical, Theme.Spacing.md)

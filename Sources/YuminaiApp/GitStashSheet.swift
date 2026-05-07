@@ -39,6 +39,9 @@ struct GitStashSheet: View {
             }
         }
         .task { await reload() }
+        .overlay(alignment: .topTrailing) {
+            SheetCloseButton { appModel.showGitStashSheet = false }
+        }
     }
 
     private var header: some View {

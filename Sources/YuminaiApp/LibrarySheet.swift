@@ -281,16 +281,7 @@ struct LibrarySheet: View {
             }
             .buttonStyle(.plain)
 
-            // 닫기
-            Button {
-                dismiss()
-            } label: {
-                Image(systemName: "xmark.circle.fill")
-                    .font(.system(size: 16))
-                    .foregroundStyle(Theme.Color.textSecondary)
-            }
-            .buttonStyle(.plain)
-            .help("닫기")
+            SheetCloseButton(style: .inline) { dismiss() }
         }
         .padding(.horizontal, Theme.Spacing.lg)
         .padding(.vertical, Theme.Spacing.md)
@@ -686,6 +677,9 @@ struct AddLibraryTextSheet: View {
         }
         .yuminaiSheetFrame(width: 580, height: 620, wrapInScrollView: false)
         .background(Theme.Color.bg)
+        .overlay(alignment: .topTrailing) {
+            SheetCloseButton { dismiss() }
+        }
     }
 
     // MARK: - 직접 입력 모드
@@ -963,6 +957,9 @@ struct AddLibraryURLSheet: View {
         }
         .yuminaiSheetFrame(width: 480, height: 400, wrapInScrollView: false)
         .background(Theme.Color.bg)
+        .overlay(alignment: .topTrailing) {
+            SheetCloseButton { dismiss() }
+        }
     }
 }
 
@@ -1003,6 +1000,9 @@ struct LibraryItemContentSheet: View {
         }
         .yuminaiSheetFrame(width: 600, height: 500, wrapInScrollView: false)
         .background(Theme.Color.bg)
+        .overlay(alignment: .topTrailing) {
+            SheetCloseButton { dismiss() }
+        }
     }
 }
 
@@ -1100,5 +1100,8 @@ struct EditLibraryItemSheet: View {
         }
         .yuminaiSheetFrame(width: 440, height: 340, wrapInScrollView: false)
         .background(Theme.Color.bg)
+        .overlay(alignment: .topTrailing) {
+            SheetCloseButton { dismiss() }
+        }
     }
 }

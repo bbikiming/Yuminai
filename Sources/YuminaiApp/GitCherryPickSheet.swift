@@ -56,6 +56,9 @@ struct GitCherryPickSheet: View {
         .onChange(of: selectedSourceBranch) { _, _ in
             Task { await reloadCommits() }
         }
+        .overlay(alignment: .topTrailing) {
+            SheetCloseButton { appModel.showGitCherryPickSheet = false }
+        }
     }
 
     private var header: some View {

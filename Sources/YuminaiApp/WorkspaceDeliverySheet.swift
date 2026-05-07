@@ -29,6 +29,9 @@ struct WorkspaceDeliverySheet: View {
         // ADR-073 — 반응형. 내부 ScrollView 있어 wrap=false.
         .yuminaiSheetFrame(width: 580, height: 540, wrapInScrollView: false)
         .background(Theme.Color.bg)
+        .overlay(alignment: .topTrailing) {
+            SheetCloseButton(action: onCancel)
+        }
     }
 
     private var header: some View {

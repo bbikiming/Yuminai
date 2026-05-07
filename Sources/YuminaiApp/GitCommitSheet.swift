@@ -61,6 +61,9 @@ struct GitCommitSheet: View {
             message = AutoCommitMessageGenerator.generate(stats: stats)
             inputFocused = true
         }
+        .overlay(alignment: .topTrailing) {
+            SheetCloseButton(action: onCancel)
+        }
     }
 
     private var header: some View {

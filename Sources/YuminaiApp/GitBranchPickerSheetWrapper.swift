@@ -32,6 +32,9 @@ struct GitBranchPickerSheetWrapper: View {
             branches = await appModel.gitBranches()
             loading = false
         }
+        .overlay(alignment: .topTrailing) {
+            SheetCloseButton { appModel.showGitBranchPicker = false }
+        }
     }
 
     // MARK: - Main content

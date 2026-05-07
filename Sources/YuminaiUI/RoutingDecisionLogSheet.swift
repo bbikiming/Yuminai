@@ -99,6 +99,9 @@ public struct RoutingDecisionLogSheet: View {
                 selectedRecord = decisions.first
             }
         }
+        .overlay(alignment: .topTrailing) {
+            SheetCloseButton(action: onClose)
+        }
     }
 
     private var tabPicker: some View {

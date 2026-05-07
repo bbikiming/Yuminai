@@ -52,6 +52,9 @@ public struct ChatDetailSheet: View {
         } footer: {
             footer
         }
+        .overlay(alignment: .topTrailing) {
+            SheetCloseButton(action: onClose)
+        }
     }
 
     private var header: some View {

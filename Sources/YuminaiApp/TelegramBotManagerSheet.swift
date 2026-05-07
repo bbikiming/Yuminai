@@ -52,6 +52,9 @@ struct TelegramBotManagerSheet: View {
                 .keyboardShortcut(.escape, modifiers: [])
             }
         }
+        .overlay(alignment: .topTrailing) {
+            SheetCloseButton { appModel.showTelegramBotManagerSheet = false }
+        }
     }
 
     private var header: some View {

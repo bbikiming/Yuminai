@@ -46,6 +46,9 @@ struct WalkthroughSheet: View {
         }
         .yuminaiSheetFrame(width: 720, height: 540, wrapInScrollView: false)
         .background(Theme.Color.bg)
+        .overlay(alignment: .topTrailing) {
+            SheetCloseButton(action: onClose)
+        }
     }
 
     private var header: some View {
@@ -265,6 +268,9 @@ struct HarnessHelpSheet: View {
         }
         .yuminaiSheetFrame(width: 640, height: 600, wrapInScrollView: false)
         .background(Theme.Color.bg)
+        .overlay(alignment: .topTrailing) {
+            SheetCloseButton(action: onClose)
+        }
     }
 
     private var header: some View {

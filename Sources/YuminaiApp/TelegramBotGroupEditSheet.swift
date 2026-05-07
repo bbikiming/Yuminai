@@ -67,6 +67,9 @@ struct TelegramBotGroupEditSheet: View {
                 .disabled(!isFormValid)
             }
         }
+        .overlay(alignment: .topTrailing) {
+            SheetCloseButton(action: onCancel)
+        }
     }
 
     // MARK: - Subviews

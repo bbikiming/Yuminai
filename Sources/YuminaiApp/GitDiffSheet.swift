@@ -61,6 +61,9 @@ struct GitDiffSheet: View {
         .onChange(of: selectedPath) { _, newValue in
             Task { await loadDiff(for: newValue) }
         }
+        .overlay(alignment: .topTrailing) {
+            SheetCloseButton { appModel.showGitDiffSheet = false }
+        }
     }
 
     // MARK: - File list (left)

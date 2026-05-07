@@ -50,6 +50,9 @@ struct GitConflictSheet: View {
         .onChange(of: selectedFile) { _, newValue in
             Task { await loadBlocks(for: newValue) }
         }
+        .overlay(alignment: .topTrailing) {
+            SheetCloseButton { appModel.showGitConflictSheet = false }
+        }
     }
 
     // MARK: - File list

@@ -76,6 +76,9 @@ struct GitHubPRSheet: View {
             }
         }
         .task { await reload() }
+        .overlay(alignment: .topTrailing) {
+            SheetCloseButton { appModel.showGitHubPRSheet = false }
+        }
     }
 
     @ViewBuilder

@@ -56,6 +56,12 @@ struct TelegramAdvancedSheet: View {
                 .keyboardShortcut(.escape, modifiers: [])
             }
         }
+        .overlay(alignment: .topTrailing) {
+            SheetCloseButton {
+                appModel.showTelegramAdvancedSheet = false
+                Task { await appModel.savePreferences() }
+            }
+        }
     }
 
     private var header: some View {

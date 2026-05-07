@@ -59,6 +59,9 @@ struct TerminalRenameSheet: View {
             label = session.label
             inputFocused = true
         }
+        .overlay(alignment: .topTrailing) {
+            SheetCloseButton(action: onCancel)
+        }
     }
 
     private var isValid: Bool {

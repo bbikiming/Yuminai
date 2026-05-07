@@ -25,6 +25,9 @@ struct FileNameSheet: View {
         // ADR-073 — 짧은 sheet (220px). 작은 화면에서도 잘 표시됨.
         .yuminaiSheetFrame(width: 440, height: 220, wrapInScrollView: false)
         .background(Theme.Color.bg)
+        .overlay(alignment: .topTrailing) {
+            SheetCloseButton(action: onCancel)
+        }
         .onAppear {
             name = intent.initialName
             inputFocused = true

@@ -90,6 +90,9 @@ public struct AboutSheet: View {
         // ADR-073 — 반응형. About은 ScrollView 없어 wrap=true.
         .yuminaiSheetFrame(width: 480, height: 620, wrapInScrollView: true)
         .background(Theme.Color.bg)
+        .overlay(alignment: .topTrailing) {
+            SheetCloseButton(action: onClose)
+        }
     }
 
     private func statBlock(value: String, label: String, color: Color) -> some View {

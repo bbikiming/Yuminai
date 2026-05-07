@@ -99,6 +99,9 @@ struct UserProfileSheet: View {
             footerRow
         }
         .onAppear(perform: loadCurrentProfile)
+        .overlay(alignment: .topTrailing) {
+            SheetCloseButton { appModel.showUserProfileSheet = false }
+        }
         .sheet(isPresented: Binding(
             get: { pendingCropImage != nil },
             set: { if !$0 { pendingCropImage = nil } }
