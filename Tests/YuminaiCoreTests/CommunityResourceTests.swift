@@ -246,8 +246,8 @@ struct CommunityResourceTests {
 
     @Test("ADR-112 — Category 9개 케이스 확인")
     func categoryHasNineCases() {
-        // ADR-113: 6개 신규 카테고리 추가 → 15개
-        #expect(CommunityResource.Category.allCases.count == 15)
+        // ADR-113: 6개 신규 카테고리 추가 → 15개, ADR-133: 4개 추가 → 19개
+        #expect(CommunityResource.Category.allCases.count == 19)
     }
 
     @Test("Category.id == rawValue")
@@ -271,10 +271,10 @@ struct CommunityResourceTests {
         }
     }
 
-    @Test("Category.categoryRank — 모든 카테고리 0-14 범위 (ADR-113: 15개)")
+    @Test("Category.categoryRank — 모든 카테고리 0-18 범위 (ADR-133: 19개)")
     func categoryRankRange() {
         for category in CommunityResource.Category.allCases {
-            #expect(category.categoryRank >= 0 && category.categoryRank <= 14, "rank 범위 초과: \(category.rawValue)")
+            #expect(category.categoryRank >= 0 && category.categoryRank <= 18, "rank 범위 초과: \(category.rawValue)")
         }
     }
 

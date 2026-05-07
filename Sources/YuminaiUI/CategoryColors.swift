@@ -34,6 +34,10 @@ public extension CommunityResource.Category {
         case .backend:         return Theme.Color.success
         case .database:        return .orange
         case .devops:          return .gray
+        case .githubAction:    return .green
+        case .gitlabCI:        return .orange
+        case .prTemplate:      return .mint
+        case .issueTemplate:   return .cyan
         }
     }
 }

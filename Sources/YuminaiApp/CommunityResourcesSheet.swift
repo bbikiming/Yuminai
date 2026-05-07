@@ -56,6 +56,20 @@ struct CommunityResourcesSheet: View {
                     }
                     .buttonStyle(.plain)
 
+                    // ADR-133 — GitLab 검색 버튼
+                    Button {
+                        appModel.showGitLabSearchSheet = true
+                    } label: {
+                        HStack(spacing: 4) {
+                            Image(systemName: "magnifyingglass.circle")
+                                .font(.system(size: 11, weight: .semibold))
+                            Text("GitLab 검색")
+                                .font(Theme.Typography.small.weight(.medium))
+                        }
+                        .foregroundStyle(Color.orange)
+                    }
+                    .buttonStyle(.plain)
+
                     Button {
                         appModel.showCatalogSheet = true
                     } label: {

@@ -11,6 +11,10 @@ public enum SetupTool: String, CaseIterable, Identifiable, Sendable {
     case codexCLI
     /// 텔레그램 봇 빠른 시작 도구.
     case cokacdir
+    /// **ADR-133** — GitHub CLI (`gh`) — PR/Issue/Release/Actions 자동화.
+    case githubCLI
+    /// **ADR-133** — GitLab CLI (`glab`) — MR/Issue/Pipeline 자동화.
+    case gitlabCLI
 
     public var id: String { rawValue }
 
@@ -20,6 +24,8 @@ public enum SetupTool: String, CaseIterable, Identifiable, Sendable {
         case .claudeCode: return "Claude Code"
         case .codexCLI: return "Codex CLI"
         case .cokacdir: return "cokacdir"
+        case .githubCLI: return "GitHub CLI (gh)"
+        case .gitlabCLI: return "GitLab CLI (glab)"
         }
     }
 
@@ -32,6 +38,10 @@ public enum SetupTool: String, CaseIterable, Identifiable, Sendable {
             return "OpenAI의 공식 코딩 에이전트. Codex 모델을 쓰려면 설치하세요. 선택 사항."
         case .cokacdir:
             return "텔레그램 봇을 빠르게 시작할 수 있는 도구. 텔레그램으로 원격 작업하려면 권장."
+        case .githubCLI:
+            return "GitHub 공식 CLI. PR 생성·리뷰, Issue 관리, Actions 실행 등 GitHub 작업을 터미널에서 바로 할 수 있어요. 자동 실행 모드(AutoRun)에서 gh 명령 위임에 필요해요."
+        case .gitlabCLI:
+            return "GitLab 공식 CLI. MR 생성·리뷰, Issue 관리, Pipeline 확인 등 GitLab 작업을 터미널에서 바로 할 수 있어요. 자동 실행 모드에서 glab 명령 위임에 필요해요."
         }
     }
 
@@ -41,6 +51,8 @@ public enum SetupTool: String, CaseIterable, Identifiable, Sendable {
         case .claudeCode: return true
         case .codexCLI: return false
         case .cokacdir: return false
+        case .githubCLI: return false
+        case .gitlabCLI: return false
         }
     }
 
@@ -53,6 +65,10 @@ public enum SetupTool: String, CaseIterable, Identifiable, Sendable {
             return "npm i -g @openai/codex"
         case .cokacdir:
             return "curl -fsSL https://cokacdir.cokac.com/manage.sh | bash && cokacctl"
+        case .githubCLI:
+            return "brew install gh"
+        case .gitlabCLI:
+            return "brew install glab"
         }
     }
 
@@ -65,6 +81,10 @@ public enum SetupTool: String, CaseIterable, Identifiable, Sendable {
             return URL(string: "https://github.com/openai/codex")!
         case .cokacdir:
             return URL(string: "https://cokacdir.cokac.com")!
+        case .githubCLI:
+            return URL(string: "https://cli.github.com")!
+        case .gitlabCLI:
+            return URL(string: "https://gitlab.com/gitlab-org/cli")!
         }
     }
 
@@ -75,6 +95,8 @@ public enum SetupTool: String, CaseIterable, Identifiable, Sendable {
         case .claudeCode: return "claude"
         case .codexCLI: return "codex"
         case .cokacdir: return "cokacctl"
+        case .githubCLI: return "gh"
+        case .gitlabCLI: return "glab"
         }
     }
 
@@ -111,6 +133,24 @@ public enum SetupTool: String, CaseIterable, Identifiable, Sendable {
                 "$HOME/.local/bin/cokacctl",
                 "$HOME/bin/cokacctl"
             ]
+        case .githubCLI:
+            return [
+                "/opt/homebrew/bin/gh",
+                "/usr/local/bin/gh",
+                "/usr/bin/gh",
+                "$HOME/.local/bin/gh",
+                "$HOME/bin/gh",
+                "/snap/bin/gh"
+            ]
+        case .gitlabCLI:
+            return [
+                "/opt/homebrew/bin/glab",
+                "/usr/local/bin/glab",
+                "/usr/bin/glab",
+                "$HOME/.local/bin/glab",
+                "$HOME/bin/glab",
+                "/snap/bin/glab"
+            ]
         }
     }
 
@@ -120,6 +160,8 @@ public enum SetupTool: String, CaseIterable, Identifiable, Sendable {
         case .claudeCode: return "sparkles"
         case .codexCLI: return "terminal"
         case .cokacdir: return "paperplane"
+        case .githubCLI: return "arrow.triangle.pull"
+        case .gitlabCLI: return "arrow.2.circlepath"
         }
     }
 
@@ -129,6 +171,8 @@ public enum SetupTool: String, CaseIterable, Identifiable, Sendable {
         case .claudeCode: return "필수"
         case .codexCLI: return "선택"
         case .cokacdir: return "권장"
+        case .githubCLI: return "권장"
+        case .gitlabCLI: return "선택"
         }
     }
 }

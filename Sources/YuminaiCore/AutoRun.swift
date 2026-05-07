@@ -45,6 +45,12 @@ public struct AutoRunConfig: Sendable, Codable, Hashable {
     /// 권한 요청 자동 승인 (HITL bypass — destructive 제외).
     public var autoApprovePermissions: Bool
 
+    // MARK: - 명령 정책 (ADR-133)
+
+    /// 실행 명령 정책 매트릭스 (per-run override).
+    /// nil이면 AppPreferences.commandPolicy (글로벌 설정) 사용.
+    public var commandPolicy: CommandPolicyMatrix?
+
     // MARK: - Harness 통합
 
     /// `.harness/rules/*.md` 자동 로드 + LLM system prompt 주입.
@@ -96,6 +102,7 @@ public struct AutoRunConfig: Sendable, Codable, Hashable {
         errorThreshold: Int = 3,
         stopKeywords: [String] = ["작업 완료", "DONE", "✅ 완료", "ALL DONE"],
         autoApprovePermissions: Bool = true,
+        commandPolicy: CommandPolicyMatrix? = nil,
         autoLoadHarnessRules: Bool = true,
         autoLoadHarnessSkills: Bool = false,
         notifyOnComplete: Bool = true,
@@ -110,6 +117,7 @@ public struct AutoRunConfig: Sendable, Codable, Hashable {
         self.errorThreshold = errorThreshold
         self.stopKeywords = stopKeywords
         self.autoApprovePermissions = autoApprovePermissions
+        self.commandPolicy = commandPolicy
         self.autoLoadHarnessRules = autoLoadHarnessRules
         self.autoLoadHarnessSkills = autoLoadHarnessSkills
         self.notifyOnComplete = notifyOnComplete
@@ -133,6 +141,7 @@ public struct AutoRunConfig: Sendable, Codable, Hashable {
         self.errorThreshold = try c.decodeIfPresent(Int.self, forKey: .errorThreshold) ?? 3
         self.stopKeywords = try c.decodeIfPresent([String].self, forKey: .stopKeywords) ?? ["작업 완료", "DONE", "✅ 완료", "ALL DONE"]
         self.autoApprovePermissions = try c.decodeIfPresent(Bool.self, forKey: .autoApprovePermissions) ?? true
+        self.commandPolicy = try c.decodeIfPresent(CommandPolicyMatrix.self, forKey: .commandPolicy)
         self.autoLoadHarnessRules = try c.decodeIfPresent(Bool.self, forKey: .autoLoadHarnessRules) ?? true
         self.autoLoadHarnessSkills = try c.decodeIfPresent(Bool.self, forKey: .autoLoadHarnessSkills) ?? false
         self.notifyOnComplete = try c.decodeIfPresent(Bool.self, forKey: .notifyOnComplete) ?? true

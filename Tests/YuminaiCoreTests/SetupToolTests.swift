@@ -50,7 +50,8 @@ struct SetupToolTests {
 
     @Test("CaseIterable — 3개 케이스")
     func caseCount() {
-        #expect(SetupTool.allCases.count == 3)
+        // ADR-133: githubCLI + gitlabCLI 추가 → 5개
+        #expect(SetupTool.allCases.count == 5)
     }
 
     @Test("id는 rawValue와 동일")

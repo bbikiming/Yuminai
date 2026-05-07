@@ -109,4 +109,8 @@ public enum KeychainKey {
     public static let obsidianVaultPath = "obsidian_vault_path"
     /// **ADR-119** — GitHub Personal Access Token (코드 검색 API 인증용).
     public static let githubPersonalAccessToken = "yuminai.github.pat"
+    /// **ADR-133** — GitLab Personal Access Token (GitLab Search API 인증용).
+    public static let gitlabPersonalAccessToken = "yuminai.gitlab.pat"
+    /// **ADR-133** — GitHub App Installation Token (향후 GitHub App OAuth 용도).
+    public static let githubInstallationToken = "yuminai.github.installation"
 }

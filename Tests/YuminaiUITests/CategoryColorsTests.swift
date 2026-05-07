@@ -92,8 +92,8 @@ struct CategoryColorsTests {
 
     @Test("allCases 16개 — default fallback 없이 모두 색상 정의됨")
     func allCasesCovered() {
-        // CommunityResource.Category.allCases 가 16개인지 검증
-        #expect(CommunityResource.Category.allCases.count == 15)
+        // CommunityResource.Category.allCases — ADR-133에서 4 케이스 추가 (19개)
+        #expect(CommunityResource.Category.allCases.count == 19)
         // 각 케이스에 swiftUIColor 접근이 컴파일 오류 없이 성공해야 함
         for category in CommunityResource.Category.allCases {
             // swiftUIColor 접근만으로 컴파일러가 exhaustive switch를 강제 — 반환 값 사용
@@ -105,8 +105,8 @@ struct CategoryColorsTests {
 
     @Test("LibraryFilterCategory.allCases — all 포함 총 16 케이스")
     func filterCategoryAllCases() {
-        // all (1) + 15 core categories = 16
-        #expect(CommunityResource.LibraryFilterCategory.allCases.count == 16)
+        // all (1) + 19 core categories = 20 (ADR-133: 4 신규 케이스 추가)
+        #expect(CommunityResource.LibraryFilterCategory.allCases.count == 20)
     }
 
     @Test("LibraryFilterCategory.all → coreCategory nil")

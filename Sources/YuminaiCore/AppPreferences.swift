@@ -171,6 +171,15 @@ public struct AppPreferences: Sendable, Codable, Hashable {
     /// **ADR-132** — 자동 실행 설정.
     /// 기존 사용자는 default (disabled)로 시작.
     public var autoRunConfig: AutoRunConfig
+    /// **ADR-133** — 명령 정책 매트릭스 (gh/glab/git 자동 승인 정책).
+    /// 기존 사용자는 보수적 default로 시작.
+    public var commandPolicy: CommandPolicyMatrix
+    /// **ADR-133** — GitLab PAT가 Keychain에 저장됐는지 (UI 표시용 메타).
+    /// 실제 토큰은 Keychain에만 저장. 기존 사용자는 false로 시작.
+    public var hasGitLabPAT: Bool
+    /// **ADR-133** — GitLab 호스트 URL (self-hosted 지원).
+    /// 기본값은 https://gitlab.com. self-hosted 사용자만 변경.
+    public var gitlabHostURL: String
 
     public init(
         claudeBinaryPath: String = AppPreferences.detectClaudeBinaryPath(),
@@ -238,7 +247,10 @@ public struct AppPreferences: Sendable, Codable, Hashable {
         hasGitHubPAT: Bool = false,  // ADR-119
         githubSearchHistory: [GitHubSearchHistoryEntry] = [],  // ADR-122
         githubSearchFavorites: [GitHubSearchFavorite] = [],  // ADR-122
-        autoRunConfig: AutoRunConfig = .default  // ADR-132
+        autoRunConfig: AutoRunConfig = .default,  // ADR-132
+        commandPolicy: CommandPolicyMatrix = .default,  // ADR-133
+        hasGitLabPAT: Bool = false,  // ADR-133
+        gitlabHostURL: String = "https://gitlab.com"  // ADR-133
     ) {
         self.claudeBinaryPath = claudeBinaryPath
         self.codexBinaryPath = codexBinaryPath
@@ -306,6 +318,9 @@ public struct AppPreferences: Sendable, Codable, Hashable {
         self.githubSearchHistory = githubSearchHistory
         self.githubSearchFavorites = githubSearchFavorites
         self.autoRunConfig = autoRunConfig
+        self.commandPolicy = commandPolicy
+        self.hasGitLabPAT = hasGitLabPAT
+        self.gitlabHostURL = gitlabHostURL
     }
 
     // ADR-046 — 신규 필드 backward-compat: 기존 JSON에 없으면 default 적용
@@ -396,6 +411,10 @@ public struct AppPreferences: Sendable, Codable, Hashable {
         self.githubSearchFavorites = try c.decodeIfPresent([GitHubSearchFavorite].self, forKey: .githubSearchFavorites) ?? []
         // ADR-132 — 기존 사용자는 disabled default로 시작
         self.autoRunConfig = try c.decodeIfPresent(AutoRunConfig.self, forKey: .autoRunConfig) ?? .default
+        // ADR-133 — 기존 사용자는 보수적 default로 시작
+        self.commandPolicy = try c.decodeIfPresent(CommandPolicyMatrix.self, forKey: .commandPolicy) ?? .default
+        self.hasGitLabPAT = try c.decodeIfPresent(Bool.self, forKey: .hasGitLabPAT) ?? false
+        self.gitlabHostURL = try c.decodeIfPresent(String.self, forKey: .gitlabHostURL) ?? "https://gitlab.com"
     }
 
     /// `claude` CLI의 가능성 높은 위치들을 순서대로 시도해 첫 번째 존재하는 경로 반환.

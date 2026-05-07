@@ -178,6 +178,10 @@ struct LibrarySheet: View {
         case .backend:         return "server.rack"
         case .database:        return "cylinder.fill"
         case .devops:          return "gearshape.2.fill"
+        case .githubAction:    return "play.circle.fill"
+        case .gitlabCI:        return "arrow.2.circlepath.circle.fill"
+        case .prTemplate:      return "arrow.left.arrow.right.circle.fill"
+        case .issueTemplate:   return "exclamationmark.circle.fill"
         }
     }
 
@@ -199,6 +203,10 @@ struct LibrarySheet: View {
         case .backend:         return Theme.Color.success
         case .database:        return .orange
         case .devops:          return .gray
+        case .githubAction:    return .green
+        case .gitlabCI:        return .orange
+        case .prTemplate:      return .mint
+        case .issueTemplate:   return .cyan
         }
     }
 

@@ -87,7 +87,8 @@ extension AppModel {
             return .success("GitHub 리포지토리를 직접 클론하거나 다운로드하세요.")
 
         case .claudeMd, .styleGuide, .workflow, .architecture, .promptPattern, .rules,
-             .webFramework, .mobileFramework, .graphics3D, .backend, .database, .devops:
+             .webFramework, .mobileFramework, .graphics3D, .backend, .database, .devops,
+             .githubAction, .gitlabCI, .prTemplate, .issueTemplate:
             guard let rawURL = resource.rawURL else {
                 return .failure(CommunityResourceError.noRawURL)
             }

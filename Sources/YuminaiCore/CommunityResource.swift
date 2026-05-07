@@ -41,6 +41,14 @@ public struct CommunityResource: Sendable, Codable, Identifiable {
         case database = "database"
         /// **ADR-113** — DevOps / 인프라 (Docker, K8s, GitHub Actions)
         case devops = "devops"
+        /// **ADR-133** — GitHub Actions workflow 파일 (.github/workflows/*.yml)
+        case githubAction = "githubAction"
+        /// **ADR-133** — GitLab CI/CD 파일 (.gitlab-ci.yml)
+        case gitlabCI = "gitlabCI"
+        /// **ADR-133** — PR / MR 템플릿 (.github/PULL_REQUEST_TEMPLATE.md 등)
+        case prTemplate = "prTemplate"
+        /// **ADR-133** — Issue 템플릿 (.github/ISSUE_TEMPLATE/ 등)
+        case issueTemplate = "issueTemplate"
 
         public var id: String { rawValue }
 
@@ -61,6 +69,10 @@ public struct CommunityResource: Sendable, Codable, Identifiable {
             case .backend:         return "백엔드"
             case .database:        return "데이터베이스"
             case .devops:          return "DevOps"
+            case .githubAction:    return "GitHub Actions"
+            case .gitlabCI:        return "GitLab CI/CD"
+            case .prTemplate:      return "PR 템플릿"
+            case .issueTemplate:   return "Issue 템플릿"
             }
         }
 
@@ -81,6 +93,10 @@ public struct CommunityResource: Sendable, Codable, Identifiable {
             case .backend:         return "server.rack"
             case .database:        return "cylinder.fill"
             case .devops:          return "gearshape.2.fill"
+            case .githubAction:    return "play.circle.fill"
+            case .gitlabCI:        return "arrow.2.circlepath.circle.fill"
+            case .prTemplate:      return "arrow.left.arrow.right.circle.fill"
+            case .issueTemplate:   return "exclamationmark.circle.fill"
             }
         }
 
@@ -101,6 +117,10 @@ public struct CommunityResource: Sendable, Codable, Identifiable {
             case .backend:         return "green"
             case .database:        return "orange"
             case .devops:          return "gray"
+            case .githubAction:    return "green"
+            case .gitlabCI:        return "orange"
+            case .prTemplate:      return "blue"
+            case .issueTemplate:   return "red"
             }
         }
 
@@ -136,6 +156,14 @@ public struct CommunityResource: Sendable, Codable, Identifiable {
                 return "PostgreSQL, Supabase, Drizzle ORM, Prisma, Redis 등 데이터베이스·ORM 베스트 프랙티스."
             case .devops:
                 return "Docker, Kubernetes, GitHub Actions 등 컨테이너·오케스트레이션·CI/CD 파이프라인 가이드."
+            case .githubAction:
+                return "GitHub Actions workflow 파일 (.github/workflows/*.yml). CI/CD, 릴리즈 자동화, 코드 분석 등 자동화 템플릿."
+            case .gitlabCI:
+                return "GitLab CI/CD 파이프라인 설정 (.gitlab-ci.yml). 빌드·테스트·배포 자동화 템플릿."
+            case .prTemplate:
+                return "Pull Request / Merge Request 설명 템플릿. 리뷰어가 변경사항을 빠르게 이해할 수 있도록 구조화해줘요."
+            case .issueTemplate:
+                return "GitHub / GitLab Issue 등록 템플릿. 버그 리포트·기능 요청을 일관된 형식으로 받아요."
             }
         }
 
@@ -157,6 +185,10 @@ public struct CommunityResource: Sendable, Codable, Identifiable {
             case .backend:         return 12
             case .database:        return 13
             case .devops:          return 14
+            case .githubAction:    return 15
+            case .gitlabCI:        return 16
+            case .prTemplate:      return 17
+            case .issueTemplate:   return 18
             }
         }
     }
@@ -184,6 +216,10 @@ public struct CommunityResource: Sendable, Codable, Identifiable {
         case backend         = "백엔드"
         case database        = "데이터베이스"
         case devops          = "DevOps"
+        case githubAction    = "GitHub Actions"
+        case gitlabCI        = "GitLab CI/CD"
+        case prTemplate      = "PR 템플릿"
+        case issueTemplate   = "Issue 템플릿"
 
         public var id: String { rawValue }
 
@@ -206,6 +242,10 @@ public struct CommunityResource: Sendable, Codable, Identifiable {
             case .backend:         return .backend
             case .database:        return .database
             case .devops:          return .devops
+            case .githubAction:    return .githubAction
+            case .gitlabCI:        return .gitlabCI
+            case .prTemplate:      return .prTemplate
+            case .issueTemplate:   return .issueTemplate
             }
         }
     }
@@ -1666,6 +1706,104 @@ public enum CommunityCatalog {
             useCase: "AI 앱 Vercel 프로덕션 배포 파이프라인 구성",
             officialBadge: false,
             recommendedRank: 78
+        ),
+
+        // ═══════════════════════════════════════════
+        // MARK: GitHub Actions 카테고리 (ADR-133, 3개)
+        // ═══════════════════════════════════════════
+
+        // 65. Anthropic Claude Code GitHub Action (공식)
+        CommunityResource(
+            id: UUID(usdingString: "00000000-0000-0000-0014-000000000001"),
+            category: .githubAction,
+            displayName: "Claude Code GitHub Action (공식)",
+            author: "anthropics",
+            summary: "PR에 Claude Code를 자동으로 연결하는 Anthropic 공식 GitHub Action. 코드 리뷰, 이슈 답변, 자동 PR 생성 등 Claude를 CI/CD 파이프라인에 통합해요.",
+            starsApprox: 3000,
+            repoURL: URL(string: "https://github.com/anthropics/claude-code-action")!,
+            rawURL: nil,
+            tags: ["official", "github-actions", "claude", "automation", "pr-review"],
+            recommendedFor: [.defined, .exploring],
+            language: .english,
+            useCase: "PR 자동 리뷰·이슈 답변에 Claude 통합",
+            officialBadge: true,
+            recommendedRank: 98
+        ),
+
+        // 66. Swift 표준 Release workflow
+        CommunityResource(
+            id: UUID(usdingString: "00000000-0000-0000-0014-000000000002"),
+            category: .githubAction,
+            displayName: "Swift 패키지 Release CI 템플릿",
+            author: "apple",
+            summary: "Swift 패키지 및 macOS 앱 자동 빌드·테스트·릴리즈 GitHub Actions 워크플로우. swift build + swift test + GitHub Release 자동 생성 패턴을 담고 있어요.",
+            starsApprox: 8000,
+            repoURL: URL(string: "https://github.com/apple/swift-package-manager")!,
+            rawURL: nil,
+            tags: ["swift", "github-actions", "ci-cd", "release", "macos"],
+            recommendedFor: [.defined, .exploring],
+            language: .english,
+            useCase: "Swift 패키지 자동 빌드·테스트·릴리즈 설정",
+            officialBadge: false,
+            recommendedRank: 85
+        ),
+
+        // 67. semantic-release 자동 버저닝 workflow
+        CommunityResource(
+            id: UUID(usdingString: "00000000-0000-0000-0014-000000000003"),
+            category: .githubAction,
+            displayName: "semantic-release 자동 버저닝 + CHANGELOG",
+            author: "semantic-release",
+            summary: "Conventional Commits를 분석해 자동으로 버전을 올리고 CHANGELOG를 생성하는 GitHub Actions 워크플로우. npm publish, GitHub Release 자동화도 포함돼요.",
+            starsApprox: 21000,
+            repoURL: URL(string: "https://github.com/semantic-release/semantic-release")!,
+            rawURL: nil,
+            tags: ["semantic-release", "github-actions", "versioning", "changelog", "automation"],
+            recommendedFor: [.defined, .exploring],
+            language: .english,
+            useCase: "Conventional Commits 기반 자동 버저닝 + 릴리즈",
+            officialBadge: false,
+            recommendedRank: 80
+        ),
+
+        // ═══════════════════════════════════════════
+        // MARK: GitLab CI 카테고리 (ADR-133, 2개)
+        // ═══════════════════════════════════════════
+
+        // 68. GitLab CI Swift 파이프라인 템플릿
+        CommunityResource(
+            id: UUID(usdingString: "00000000-0000-0000-0015-000000000001"),
+            category: .gitlabCI,
+            displayName: "GitLab CI Swift 빌드·테스트 파이프라인",
+            author: "gitlab-org",
+            summary: "Swift/macOS 프로젝트를 위한 표준 .gitlab-ci.yml 템플릿. swift build + swift test + 아티팩트 보관 + 캐시 최적화 패턴을 포함해요. Self-hosted 러너에서도 동작해요.",
+            starsApprox: 5000,
+            repoURL: URL(string: "https://gitlab.com/gitlab-org/gitlab-foss")!,
+            rawURL: nil,
+            tags: ["gitlab-ci", "swift", "macos", "pipeline", "testing"],
+            recommendedFor: [.defined, .exploring],
+            language: .english,
+            useCase: "GitLab에서 Swift 프로젝트 CI 파이프라인 설정",
+            officialBadge: false,
+            recommendedRank: 82
+        ),
+
+        // 69. pre-commit GitLab CI 통합
+        CommunityResource(
+            id: UUID(usdingString: "00000000-0000-0000-0015-000000000002"),
+            category: .gitlabCI,
+            displayName: "pre-commit + GitLab CI 코드 품질 게이트",
+            author: "pre-commit",
+            summary: "pre-commit 훅을 GitLab CI 파이프라인에 통합하는 패턴. Linting, 포매팅, 시크릿 감지를 MR 머지 전에 자동 검증해요. 코드 품질 게이트 역할을 해요.",
+            starsApprox: 12000,
+            repoURL: URL(string: "https://github.com/pre-commit/pre-commit")!,
+            rawURL: nil,
+            tags: ["pre-commit", "gitlab-ci", "linting", "code-quality", "security"],
+            recommendedFor: [.defined],
+            language: .english,
+            useCase: "MR 자동 코드 품질 게이트 (pre-commit + GitLab CI)",
+            officialBadge: false,
+            recommendedRank: 75
         ),
     ]
 

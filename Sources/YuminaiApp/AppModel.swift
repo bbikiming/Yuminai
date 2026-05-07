@@ -484,6 +484,14 @@ public final class AppModel {
     public var showBundleCatalogSheet: Bool = false
     /// **ADR-116** — GitHub 검색 sheet 표시 여부.
     public var showGitHubSearchSheet: Bool = false
+    /// **ADR-133** — GitLab 검색 sheet 표시 여부.
+    public var showGitLabSearchSheet: Bool = false
+    /// **ADR-133** — GitLab PAT 입력 sheet 표시 여부.
+    public var showGitLabPATSheet: Bool = false
+    /// **ADR-133** — 명령 정책 편집 sheet 표시 여부.
+    public var showCommandPolicySettingsSheet: Bool = false
+    /// **ADR-133** — GitLab PAT Keychain 저장 상태.
+    public var gitlabPATStatus: SecretStatus = .notSet
     /// **ADR-117** — 커뮤니티 자료 sheet 표시 여부 (사이드바 직접 진입).
     public var showCommunityResourcesSheet: Bool = false
     /// ADR-111 — 라이브러리 picker popover 표시 여부 (Composer 안).

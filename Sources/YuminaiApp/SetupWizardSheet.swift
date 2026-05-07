@@ -325,6 +325,8 @@ private struct SetupToolCard: View {
         case .claudeCode: return Theme.Color.accent
         case .codexCLI: return .green
         case .cokacdir: return .blue
+        case .githubCLI: return .black
+        case .gitlabCLI: return .orange
         }
     }
 
@@ -335,6 +337,8 @@ private struct SetupToolCard: View {
             case .claudeCode: return (Theme.Color.danger, Theme.Color.danger.opacity(0.10))
             case .codexCLI: return (Theme.Color.textTertiary, Theme.Color.surfaceHi)
             case .cokacdir: return (.blue, Color.blue.opacity(0.10))
+            case .githubCLI: return (Theme.Color.textTertiary, Theme.Color.surfaceHi)
+            case .gitlabCLI: return (.orange, Color.orange.opacity(0.10))
             }
         }()
 
