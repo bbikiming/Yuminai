@@ -168,6 +168,9 @@ public struct AppPreferences: Sendable, Codable, Hashable {
     /// **ADR-122 Phase 3** — GitHub 즐겨찾기 검색어.
     /// 기존 사용자는 빈 배열로 시작.
     public var githubSearchFavorites: [GitHubSearchFavorite]
+    /// **ADR-132** — 자동 실행 설정.
+    /// 기존 사용자는 default (disabled)로 시작.
+    public var autoRunConfig: AutoRunConfig
 
     public init(
         claudeBinaryPath: String = AppPreferences.detectClaudeBinaryPath(),
@@ -234,7 +237,8 @@ public struct AppPreferences: Sendable, Codable, Hashable {
         libraryItems: [ResourceLibraryItem] = [],  // ADR-111
         hasGitHubPAT: Bool = false,  // ADR-119
         githubSearchHistory: [GitHubSearchHistoryEntry] = [],  // ADR-122
-        githubSearchFavorites: [GitHubSearchFavorite] = []  // ADR-122
+        githubSearchFavorites: [GitHubSearchFavorite] = [],  // ADR-122
+        autoRunConfig: AutoRunConfig = .default  // ADR-132
     ) {
         self.claudeBinaryPath = claudeBinaryPath
         self.codexBinaryPath = codexBinaryPath
@@ -301,6 +305,7 @@ public struct AppPreferences: Sendable, Codable, Hashable {
         self.hasGitHubPAT = hasGitHubPAT
         self.githubSearchHistory = githubSearchHistory
         self.githubSearchFavorites = githubSearchFavorites
+        self.autoRunConfig = autoRunConfig
     }
 
     // ADR-046 — 신규 필드 backward-compat: 기존 JSON에 없으면 default 적용
@@ -389,6 +394,8 @@ public struct AppPreferences: Sendable, Codable, Hashable {
         // ADR-122 Phase 3 — 기존 사용자는 빈 배열로 시작
         self.githubSearchHistory = try c.decodeIfPresent([GitHubSearchHistoryEntry].self, forKey: .githubSearchHistory) ?? []
         self.githubSearchFavorites = try c.decodeIfPresent([GitHubSearchFavorite].self, forKey: .githubSearchFavorites) ?? []
+        // ADR-132 — 기존 사용자는 disabled default로 시작
+        self.autoRunConfig = try c.decodeIfPresent(AutoRunConfig.self, forKey: .autoRunConfig) ?? .default
     }
 
     /// `claude` CLI의 가능성 높은 위치들을 순서대로 시도해 첫 번째 존재하는 경로 반환.

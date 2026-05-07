@@ -53,6 +53,13 @@ public struct Composer: View {
     /// `@` 입력 시 자동완성 후보 (ADR-032). 빈 배열이면 picker 비활성.
     public let mentionSuggestions: [MentionSuggestion]
 
+    /// **ADR-132** — 자동 실행 상태 (nil이면 자동 실행 버튼 비활성).
+    public let autoRunState: AutoRunCoordinator.State?
+    /// **ADR-132** — 자동 실행 최대 turn 수 (토글 레이블용).
+    public let autoRunMaxTurns: Int
+    /// **ADR-132** — 자동 실행 버튼 클릭 콜백 (현재 text를 initialPrompt로 전달).
+    public let onAutoRun: ((String) -> Void)?
+
     /// **ADR-072 Phase 1** — 반응형 padding 결정용.
     public let layoutMode: LayoutMode
 
@@ -84,7 +91,10 @@ public struct Composer: View {
         codexAvailable: Bool = false,
         mentionSuggestions: [MentionSuggestion] = [],
         agentChainEnabled: Bool = false,
-        layoutMode: LayoutMode = .regular
+        layoutMode: LayoutMode = .regular,
+        autoRunState: AutoRunCoordinator.State? = nil,
+        autoRunMaxTurns: Int = 30,
+        onAutoRun: ((String) -> Void)? = nil
     ) {
         self._text = text
         self._model = model
@@ -114,6 +124,9 @@ public struct Composer: View {
         self.mentionSuggestions = mentionSuggestions
         self.agentChainEnabled = agentChainEnabled
         self.layoutMode = layoutMode
+        self.autoRunState = autoRunState
+        self.autoRunMaxTurns = autoRunMaxTurns
+        self.onAutoRun = onAutoRun
     }
 
     @FocusState private var inputFocused: Bool
@@ -411,6 +424,13 @@ public struct Composer: View {
                     Text("응답 중")
                         .font(Theme.Typography.micro)
                         .foregroundStyle(Theme.Color.liveDot)
+                }
+            }
+
+            // ADR-132 — 자동 실행 토글 버튼 (onAutoRun이 있을 때만)
+            if let onAutoRun, let state = autoRunState, !hidesSecondaryFooterItems {
+                AutoRunToggle(state: state, maxTurns: autoRunMaxTurns) {
+                    onAutoRun(text)
                 }
             }
 

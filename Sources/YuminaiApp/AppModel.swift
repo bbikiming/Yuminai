@@ -489,6 +489,19 @@ public final class AppModel {
     /// ADR-111 — 라이브러리 picker popover 표시 여부 (Composer 안).
     public var showLibraryPickerPopover: Bool = false
 
+    // MARK: - ADR-132 — 자동 실행 (AppModel+AutoRun.swift 참조)
+
+    /// **ADR-132** — AutoRunCoordinator (lazy — 첫 사용 시 생성).
+    public let autoRunCoordinator: AutoRunCoordinator = AutoRunCoordinator()
+    /// **ADR-132** — 현재 자동 실행 상태 (UI binding용).
+    public var autoRunState: AutoRunCoordinator.State = .idle
+    /// **ADR-132** — 자동 실행 설정 sheet 표시 여부.
+    public var showAutoRunSettings: Bool = false
+    /// **ADR-132** — 현재 실행 중인 turn 로그 (UI 실시간 표시용).
+    public var autoRunLogs: [AutoRunTurnLog] = []
+    /// **ADR-132** — AutoRunControlSheet 표시 여부.
+    public var showAutoRunControlSheet: Bool = false
+
     // MARK: - ADR-094 Phase 3 — HITL (AppModel+HITL.swift 참조)
 
     /// **ADR-094 Phase 3** — HITL pending requests (UI 표시용).

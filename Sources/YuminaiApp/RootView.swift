@@ -459,6 +459,11 @@ struct RootView: View {
                     .padding()
             }
         }
+        // ADR-132 — 자동 실행 제어 패널 sheet
+        .sheet(isPresented: $bindable.showAutoRunControlSheet) {
+            AutoRunControlSheet()
+                .environment(appModel)
+        }
         // ADR-094 Phase 3 — HITL 승인 sheet
         .sheet(isPresented: $bindable.showHITLSheet) {
             HITLApprovalSheet()
@@ -1311,7 +1316,18 @@ struct ChatPane: View {
                     codexAvailable: appModel.codexAvailable,
                     mentionSuggestions: mentionSuggestions,
                     agentChainEnabled: appModel.preferences.agentChainEnabled,
-                    layoutMode: layoutMode  // ADR-072 Phase 1
+                    layoutMode: layoutMode,  // ADR-072 Phase 1
+                    // ADR-132 — 자동 실행 통합
+                    autoRunState: appModel.autoRunState,
+                    autoRunMaxTurns: appModel.preferences.autoRunConfig.maxTurns,
+                    onAutoRun: { initialPrompt in
+                        // 이미 실행 중이면 control sheet 열기
+                        if appModel.autoRunState.isActive {
+                            appModel.showAutoRunControlSheet = true
+                        } else {
+                            Task { await appModel.startAutoRun(initialPrompt: initialPrompt) }
+                        }
+                    }
                 )
                 .popover(isPresented: $bindable.showNotePicker, arrowEdge: .top) {
                     NotePickerPopover(
