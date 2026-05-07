@@ -531,40 +531,45 @@ public struct SidebarView: View {
                 icon: "plus",
                 action: onCreate
             )
+            // ADR-128 — 메뉴별 tint 색상 차별화 (Apple Settings.app + Linear 패턴).
+            // 사이드바 가독성 + 시각 hierarchy 향상. 모든 SF Symbol은 macOS 11+ 안전.
             SidebarMenuRow(
                 label: "Telegram Hub",
-                icon: "paperplane.circle.fill",
+                icon: "paperplane.fill",
+                iconTint: Color(red: 0.0, green: 0.55, blue: 0.96),  // Telegram blue
                 action: onOpenTelegramHub
             )
-            // ADR-114 P0-2 — 라이브러리 + 번들 직접 진입 (UserProfileSheet 5단 깊이 제거)
-            // ADR-116 — 컬러 이모지 제거, SF Symbol 단색으로 통일
-            // ADR-117 — 커뮤니티 자료 직접 진입 추가
-            // ADR-125 P1-8 — ADR-118 정책 폐기 (macOS 26 minimum이라 macOS 14+ symbol 가능)
-            //   archivebox.circle.fill → cube.box.circle.fill 원복 (디자인 의도 회복)
+            // ADR-128 — cube.box.circle.fill 사용자 환경 미렌더링 → archivebox.fill 복원
+            // (ADR-118 폐기에도 불구 사용자 시스템 호환성 우선).
             SidebarMenuRow(
                 label: "커뮤니티 자료",
-                icon: "cube.box.circle.fill",
+                icon: "globe.americas.fill",
+                iconTint: .green,
                 action: onOpenCommunityResources
             )
             SidebarMenuRow(
                 label: "라이브러리",
-                icon: "books.vertical.circle.fill",
+                icon: "books.vertical.fill",
+                iconTint: .purple,
                 action: onOpenLibrary
             )
             SidebarMenuRow(
                 label: "스택 번들",
-                icon: "shippingbox.circle.fill",
+                icon: "shippingbox.fill",
+                iconTint: .orange,
                 action: onOpenBundles
             )
             SidebarMenuRow(
                 label: "사용자 가이드",
                 icon: "questionmark.circle.fill",
+                iconTint: Theme.Color.accent,
                 isExternalLink: true,
                 action: { NSWorkspace.shared.open(AppLinks.userGuide) }
             )
             SidebarMenuRow(
                 label: "설정",
-                icon: "gear",
+                icon: "gearshape.fill",
+                iconTint: Color(white: 0.55),  // 중립 회색
                 action: onOpenSettings
             )
         }
@@ -1390,6 +1395,7 @@ struct SidebarPrimaryRow: View {
 struct SidebarMenuRow: View {
     let label: String
     let icon: String
+    let iconTint: Color?
     let action: () -> Void
     /// trailing 외부 링크 인디케이터 (`arrow.up.forward.square`). 클릭 시 외부 URL/브라우저로 이동함을 암시.
     let isExternalLink: Bool
@@ -1399,25 +1405,46 @@ struct SidebarMenuRow: View {
     init(
         label: String,
         icon: String,
+        iconTint: Color? = nil,
         isExternalLink: Bool = false,
         action: @escaping () -> Void
     ) {
         self.label = label
         self.icon = icon
+        self.iconTint = iconTint
         self.isExternalLink = isExternalLink
         self.action = action
+    }
+
+    /// **ADR-128** — 아이콘 컬러 우선순위:
+    /// 1. iconTint 명시되면 항상 사용 (호버 시 동일 색 유지 — Apple 시스템 사이드바 패턴)
+    /// 2. 미명시 시 textSecondary → hover 시 accent로 강조
+    private var resolvedIconColor: Color {
+        if let iconTint {
+            return iconTint
+        }
+        return hovering ? Theme.Color.accent : Theme.Color.textSecondary
     }
 
     var body: some View {
         Button(action: action) {
             HStack(spacing: Theme.Spacing.sm + 2) {
-                Image(systemName: icon)
-                    .font(.system(size: Theme.Layout.sidebarIconSize, weight: .regular))
-                    .foregroundStyle(Theme.Color.textSecondary)
-                    .frame(width: 16)
+                // ADR-128 — 아이콘 박스 (작은 tint 배경 + symbol)
+                ZStack {
+                    if iconTint != nil {
+                        RoundedRectangle(cornerRadius: 5)
+                            .fill(resolvedIconColor.opacity(hovering ? 0.18 : 0.12))
+                            .frame(width: 22, height: 22)
+                    }
+                    Image(systemName: icon)
+                        .font(.system(size: Theme.Layout.sidebarIconSize, weight: iconTint == nil ? .regular : .semibold))
+                        .foregroundStyle(resolvedIconColor)
+                }
+                .frame(width: 22)
+
                 Text(label)
-                    .font(Theme.Typography.label)
-                    .foregroundStyle(Theme.Color.textSecondary)
+                    .font(Theme.Typography.label.weight(hovering ? .medium : .regular))
+                    .foregroundStyle(hovering ? Theme.Color.text : Theme.Color.textSecondary)
                 Spacer()
                 if isExternalLink {
                     Image(systemName: "arrow.up.forward.square")
