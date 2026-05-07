@@ -539,10 +539,11 @@ public struct SidebarView: View {
             // ADR-114 P0-2 — 라이브러리 + 번들 직접 진입 (UserProfileSheet 5단 깊이 제거)
             // ADR-116 — 컬러 이모지 제거, SF Symbol 단색으로 통일
             // ADR-117 — 커뮤니티 자료 직접 진입 추가
-            // ADR-118 — cube.box.circle.fill(iOS 17+/macOS 14+)에서 archivebox.circle.fill(macOS 11+)으로 교체
+            // ADR-125 P1-8 — ADR-118 정책 폐기 (macOS 26 minimum이라 macOS 14+ symbol 가능)
+            //   archivebox.circle.fill → cube.box.circle.fill 원복 (디자인 의도 회복)
             SidebarMenuRow(
                 label: "커뮤니티 자료",
-                icon: "archivebox.circle.fill",
+                icon: "cube.box.circle.fill",
                 action: onOpenCommunityResources
             )
             SidebarMenuRow(

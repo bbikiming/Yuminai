@@ -249,9 +249,9 @@ private struct CommandRow: View {
                         .stroke(Theme.Color.border, lineWidth: 0.5)
                 )
 
-            // HITL badge
+            // 위험 명령 badge (ADR-125 P1-7 — "HITL" raw text 친화화)
             if command.requiresHITL {
-                Text("HITL")
+                Text("위험 명령")
                     .font(Theme.Typography.micro)
                     .foregroundStyle(.orange)
                     .padding(.horizontal, 6)

@@ -1170,8 +1170,15 @@ struct GitHubSearchSheet: View {
                     currentPage = nextPage
                     rateLimit = await client.currentRateLimit()
                 }
+            } catch GitHubSearchClient.SearchError.cancelled {
+                // 취소됨 — 조용히 처리 (기존 결과 유지)
+            } catch GitHubSearchClient.SearchError.unauthorized {
+                // ADR-125 P0-3 — 2페이지+ 401도 사용자에게 알림 (1페이지와 동일 처리)
+                searchError = "토큰이 만료됐거나 권한이 없어요. 위 배너에서 PAT를 재설정해 주세요."
+                await appModel.removeGitHubPAT()
             } catch {
-                // 추가 로드 실패는 조용히 처리 (기존 결과 유지)
+                // 추가 로드 실패 — searchError에 표시 (기존 결과는 유지)
+                searchError = error.localizedDescription
             }
             isLoadingMore = false
         }
@@ -1251,14 +1258,28 @@ struct GitHubSearchSheet: View {
             if result.files.isEmpty {
                 crawlErrors[itemId] = "수집할 파일이 없어요."
             } else {
+                // ADR-125 P0-4 — 성공/실패 집계 후 부분 실패 UX 표시
+                var successCount = 0
+                var failCount = 0
                 for file in result.files {
-                    _ = await appModel.addToLibraryFromURL(
+                    let addResult = await appModel.addToLibraryFromURL(
                         file.downloadURL,
                         displayName: "\(repo.fullName) — \(file.path)",
                         category: file.category
                     )
+                    if case .success = addResult {
+                        successCount += 1
+                    } else {
+                        failCount += 1
+                    }
                 }
-                addedIds.insert(itemId)
+                if successCount > 0 {
+                    addedIds.insert(itemId)
+                }
+                if failCount > 0 {
+                    let total = successCount + failCount
+                    crawlErrors[itemId] = "\(successCount)/\(total) 추가, \(failCount)개 다운로드 실패"
+                }
             }
         } catch {
             crawlErrors[itemId] = "크롤링 실패: \(error.localizedDescription)"
@@ -1275,15 +1296,9 @@ struct GitHubSearchSheet: View {
         return "\(stars)"
     }
 
+    // ADR-125 P0-2 — RelativeTime helper로 대체 (dead branch 수정).
     private func relativeDate(_ date: Date) -> String {
-        let diff = Date().timeIntervalSince(date)
-        if diff < 60 { return "방금 전" }
-        if diff < 3600 { return "\(Int(diff / 60))분 전" }
-        if diff < 86400 { return "\(Int(diff / 3600))시간 전" }
-        if diff < 86400 * 7 { return "\(Int(diff / 86400))일 전" }
-        if diff < 86400 * 30 { return "\(Int(diff / 86400))일 전" }
-        if diff < 86400 * 365 { return "\(Int(diff / (86400 * 30)))개월 전" }
-        return "\(Int(diff / (86400 * 365)))년 전"
+        RelativeTime.format(date)
     }
 
     private func absoluteDate(_ date: Date) -> String {

@@ -4301,6 +4301,12 @@ public final class AppModel {
         showNewChatSessionSheet = false
         // ADR-104
         showSetupWizard = false
+        // ADR-111 ~ ADR-117 (ADR-125 P0-1 — 누락 sheet 추가)
+        showLibrarySheet = false
+        showCatalogSheet = false
+        showBundleCatalogSheet = false
+        showGitHubSearchSheet = false
+        showCommunityResourcesSheet = false
     }
 
     /// 새 sheet/alert을 열기 전에 다른 sheet 모두 닫고 setter 실행.
@@ -5092,9 +5098,6 @@ public final class AppModel {
 
     /// **ADR-116** — GitHub 검색 sheet 표시 여부.
     public var showGitHubSearchSheet: Bool = false
-
-    /// **ADR-119** — GitHub PAT 입력 sheet 표시 여부.
-    public var showGitHubPATSheet: Bool = false
 
     /// **ADR-117** — 커뮤니티 자료 sheet 표시 여부 (사이드바 직접 진입).
     public var showCommunityResourcesSheet: Bool = false

@@ -596,13 +596,9 @@ struct LibrarySheet: View {
         }
     }
 
+    // ADR-125 P0-2 — RelativeTime helper로 대체 (dead branch 수정 + 개월/년 구간 추가).
     private func relativeDate(_ date: Date) -> String {
-        let diff = Date().timeIntervalSince(date)
-        if diff < 60 { return "방금 전" }
-        if diff < 3600 { return "\(Int(diff / 60))분 전" }
-        if diff < 86400 { return "\(Int(diff / 3600))시간 전" }
-        if diff < 86400 * 7 { return "\(Int(diff / 86400))일 전" }
-        return "\(Int(diff / 86400))일 전"
+        RelativeTime.format(date)
     }
 
     private func absoluteDate(_ date: Date) -> String {
