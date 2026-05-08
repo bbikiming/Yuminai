@@ -2,7 +2,10 @@ import Foundation
 import Testing
 @testable import YuminaiUI
 
+// ADR-148 — Swift 6.1: YuminaiSheetFrameModifier의 정적 속성/initializer가
+// main actor isolated. 테스트 전체를 @MainActor로 표시.
 @Suite("YuminaiSheetFrame (ADR-073)")
+@MainActor
 struct SheetFrameTests {
     @Test("absoluteMinWidth — 작은 모니터(960×640) 기준")
     func absoluteMinWidth() {
