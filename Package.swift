@@ -18,7 +18,10 @@ let strict: [SwiftSetting] = [
 let package = Package(
     name: "Yuminai",
     platforms: [
-        .macOS(.v26)
+        // ADR-148 — .v26 (Swift 6.2 전용) → .v14 다운그레이드
+        // Info.plist LSMinimumSystemVersion=14.0과 일치 + macos-latest CI runner 호환.
+        // 사용자 시스템 macOS 26에서도 backward compat — macOS 14+ 모두 지원.
+        .macOS(.v14)
     ],
     products: [
         .library(name: "YuminaiCore", targets: ["YuminaiCore"]),
