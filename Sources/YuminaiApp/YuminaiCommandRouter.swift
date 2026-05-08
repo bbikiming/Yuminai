@@ -170,6 +170,9 @@ public final class YuminaiCommandRouter: TelegramCommandRouter, @unchecked Senda
         case "/rehearse":
             // ADR-056 Phase 6 — 다른 모델로 리허설 launch
             return await rehearseCommand(arg)
+        case "/auto":
+            // ADR-142 — 자동 실행 제어
+            return await autoCommand(arg)
         default:
             return "알 수 없는 명령: \(cmd)\n/help로 사용 가능한 명령을 확인해요."
         }
@@ -818,6 +821,84 @@ public final class YuminaiCommandRouter: TelegramCommandRouter, @unchecked Senda
         case ready(UUID, needsSwitch: Bool)
     }
 
+    // MARK: - ADR-142 — /auto 명령
+
+    /// `/auto <prompt>` — 자동 실행 시작.
+    /// `/auto status` — 현재 진행 상황 반환.
+    /// `/auto stop` / `/auto pause` / `/auto resume` — 제어.
+    private func autoCommand(_ arg: String) async -> String? {
+        guard let model = appModel else { return "Yuminai 연결 안 됨" }
+
+        let subCmd = arg.split(separator: " ", maxSplits: 1, omittingEmptySubsequences: true).map(String.init)
+        let firstWord = subCmd.first?.lowercased() ?? ""
+
+        switch firstWord {
+        case "status":
+            let state = await model.autoRunCoordinator.current()
+            return await autoStatusText(state: state, model: model)
+
+        case "stop":
+            await model.stopAutoRun()
+            return "⏹ 자동 실행을 중단했습니다."
+
+        case "pause":
+            await model.pauseAutoRun()
+            return "⏸ 자동 실행을 일시정지했습니다.\n재개하려면 /auto resume"
+
+        case "resume":
+            await model.resumeAutoRun()
+            return "▶ 자동 실행을 재개합니다."
+
+        case "", "help":
+            return """
+            /auto <프롬프트> — 자동 실행 시작 (예: /auto 코드 리뷰 후 PR 생성해)
+            /auto status    — 현재 진행 상황 + 비용
+            /auto stop      — 자동 실행 즉시 중단
+            /auto pause     — 일시정지
+            /auto resume    — 재개
+            """
+
+        default:
+            // arg 전체가 프롬프트
+            let prompt = arg.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !prompt.isEmpty else {
+                return "프롬프트를 입력해주세요. 예: /auto 코드 리뷰 시작해"
+            }
+            let isActive = await model.autoRunCoordinator.current().isActive
+            if isActive {
+                return "⚠️ 이미 자동 실행 중입니다.\n/auto status로 상황 확인 또는 /auto stop으로 중단."
+            }
+            Task { await model.startAutoRun(initialPrompt: prompt) }
+            return "🚀 자동 실행 시작: \"\(String(prompt.prefix(60)))\"\n진행 상황: /auto status\n중단: /auto stop"
+        }
+    }
+
+    private func autoStatusText(state: AutoRunCoordinator.State, model: AppModel) async -> String {
+        switch state {
+        case .idle:
+            return "자동 실행: 대기 중\n시작하려면: /auto <프롬프트>"
+        case .running(let runId, let turn, let startedAt):
+            let logs = await model.autoRunCoordinator.currentLogs()
+            let cost = await model.autoRunCoordinator.currentTotalCost()
+            let elapsed = Int(Date().timeIntervalSince(startedAt))
+            let config = await MainActor.run { model.preferences.autoRunConfig }
+            return """
+            🔄 자동 실행 중 (Run \(runId.uuidString.prefix(8)))
+            진행: \(turn)/\(config.maxTurns) 회
+            비용: $\(String(format: "%.4f", cost)) / $\(String(format: "%.2f", config.maxBudgetUSD))
+            경과: \(elapsed / 60)분 \(elapsed % 60)초
+            로그: 최근 응답 \(logs.count)개 기록됨
+            중단: /auto stop  |  일시정지: /auto pause
+            """
+        case .paused(let runId, let reason):
+            return "⏸ 자동 실행 일시정지 (Run \(runId.uuidString.prefix(8)))\n이유: \(reason)\n재개: /auto resume  |  중단: /auto stop"
+        case .completed(let runId, let reason, let summary, let cost):
+            return "✅ 자동 실행 완료 (Run \(runId.uuidString.prefix(8)))\n\(summary)\n총 비용: $\(String(format: "%.4f", cost))"
+        case .stopped(let runId, let reason):
+            return "⏹ 자동 실행 중단됨 (Run \(runId.uuidString.prefix(8)))\n이유: \(reason)"
+        }
+    }
+
     // MARK: - Help
 
     static let helpText = """
@@ -849,6 +930,13 @@ public final class YuminaiCommandRouter: TelegramCommandRouter, @unchecked Senda
     /tasks         — TaskGraph 조회 (번호 포함)
     /walkthrough <번호> — 완료 task의 진행 회고 (text 응답)
     /rehearse <번호> <claude|codex> — 다른 모델로 리허설 launch
+
+    🤖 자동 실행 (ADR-142):
+    /auto <프롬프트>  — 자동 실행 시작 (최대 30회, $3 예산)
+    /auto status    — 현재 진행 상황 + 비용
+    /auto stop      — 즉시 중단
+    /auto pause     — 일시정지
+    /auto resume    — 재개
 
     /start        — 처음 사용자용 안내
     /help         — 이 도움말
