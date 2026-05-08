@@ -113,13 +113,13 @@ struct TelegramHubSettingsTab: View {
     private var permissionStatusIcon: some View {
         switch appModel.macOSNotificationStatus {
         case .authorized:
-            Image(systemName: "checkmark.circle.fill").foregroundStyle(Color.green)
+            Image(systemName: "checkmark.circle.fill").foregroundStyle(Theme.Color.success)
         case .denied:
-            Image(systemName: "xmark.circle.fill").foregroundStyle(Color.red)
+            Image(systemName: "xmark.circle.fill").foregroundStyle(Theme.Color.danger)
         case .notDetermined:
             Image(systemName: "questionmark.circle").foregroundStyle(Theme.Color.textTertiary)
         case .provisional, .ephemeral:
-            Image(systemName: "bell.badge").foregroundStyle(Color.orange)
+            Image(systemName: "bell.badge").foregroundStyle(Theme.Color.warningStrong)
         case .unavailable:
             Image(systemName: "minus.circle").foregroundStyle(Theme.Color.textTertiary)
         }

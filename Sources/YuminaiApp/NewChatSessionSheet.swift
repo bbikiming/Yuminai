@@ -615,11 +615,11 @@ struct NewChatSessionSheet: View {
             if appModel.workspaces.isEmpty {
                 Label("워크스페이스가 없으니 다른 모드를 선택하세요", systemImage: "exclamationmark.triangle.fill")
                     .font(Theme.Typography.micro)
-                    .foregroundStyle(.orange)
+                    .foregroundStyle(Theme.Color.warningStrong)
             } else if selectedWorkspaceId == nil {
                 Label("워크스페이스 1개를 선택하세요", systemImage: "exclamationmark.triangle.fill")
                     .font(Theme.Typography.micro)
-                    .foregroundStyle(.orange)
+                    .foregroundStyle(Theme.Color.warningStrong)
             } else {
                 summaryLabel
             }
@@ -627,7 +627,7 @@ struct NewChatSessionSheet: View {
             if !canStartNewWorkspace {
                 Label("이름과 경로를 입력하세요", systemImage: "exclamationmark.triangle.fill")
                     .font(Theme.Typography.micro)
-                    .foregroundStyle(.orange)
+                    .foregroundStyle(Theme.Color.warningStrong)
             } else {
                 summaryLabel
             }

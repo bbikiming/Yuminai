@@ -118,7 +118,7 @@ struct CokacdirImportSheet: View {
     private func errorBox(_ message: String) -> some View {
         HStack(alignment: .top, spacing: 8) {
             Image(systemName: "exclamationmark.triangle.fill")
-                .foregroundStyle(.orange)
+                .foregroundStyle(Theme.Color.warningStrong)
             VStack(alignment: .leading, spacing: 2) {
                 Text("가져올 수 없어요")
                     .font(.callout.weight(.medium))

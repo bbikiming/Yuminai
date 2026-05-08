@@ -142,10 +142,10 @@ struct ChatContextCard: View {
             HStack(spacing: 3) {
                 Image(systemName: "exclamationmark.triangle.fill")
                     .font(.system(size: 9))
-                    .foregroundStyle(.orange)
+                    .foregroundStyle(Theme.Color.warningStrong)
                 Text("전체 허용 (주의)")
                     .font(Theme.Typography.small)
-                    .foregroundStyle(.orange)
+                    .foregroundStyle(Theme.Color.warningStrong)
             }
         } else {
             HStack(spacing: 3) {

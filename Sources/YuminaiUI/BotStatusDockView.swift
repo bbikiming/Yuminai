@@ -131,7 +131,7 @@ public struct BotStatusDockView: View {
                 .foregroundStyle(.white)
                 .padding(.horizontal, 4)
                 .padding(.vertical, 1)
-                .background(Color.orange)
+                .background(Theme.Color.warningStrong)
                 .clipShape(Capsule())
         }
     }
@@ -220,6 +220,10 @@ public struct BotStatusDockView: View {
                 .buttonStyle(.plain)
                 .font(Theme.Typography.micro)
                 .foregroundStyle(Theme.Color.accent)
+                // ADR-141 — 접근성: 44×44 hit target + 명확한 label
+                .frame(minWidth: 44, minHeight: 44)
+                .contentShape(Rectangle())
+                .accessibilityLabel("봇 에러 로그 열기")
             }
         }
         .padding(Theme.Spacing.md)

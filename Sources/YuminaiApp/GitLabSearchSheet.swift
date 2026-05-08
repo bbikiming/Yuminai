@@ -60,7 +60,7 @@ struct GitLabSearchSheet: View {
             Divider()
             resultList
         }
-        .frame(minWidth: 720, minHeight: 520)
+        .yuminaiSheetFrame(width: 720, height: 520, wrapInScrollView: false)
         .background(Theme.Color.bg)
         .sheet(isPresented: $showPATSheet) {
             GitLabPATSheet()
@@ -74,7 +74,7 @@ struct GitLabSearchSheet: View {
         HStack(spacing: Theme.Spacing.sm) {
             Image(systemName: "magnifyingglass.circle.fill")
                 .font(.system(size: 16, weight: .semibold))
-                .foregroundStyle(Color.orange)
+                .foregroundStyle(Theme.Color.gitlab)
             VStack(alignment: .leading, spacing: 1) {
                 Text("GitLab 검색")
                     .font(.system(size: 15, weight: .semibold))
@@ -93,7 +93,7 @@ struct GitLabSearchSheet: View {
                     Text(appModel.preferences.hasGitLabPAT ? "PAT 설정됨" : "PAT 설정")
                         .font(Theme.Typography.small.weight(.medium))
                 }
-                .foregroundStyle(appModel.preferences.hasGitLabPAT ? Theme.Color.success : Color.orange)
+                .foregroundStyle(appModel.preferences.hasGitLabPAT ? Theme.Color.success : Theme.Color.gitlab)
             }
             .buttonStyle(.plain)
 
@@ -164,7 +164,7 @@ struct GitLabSearchSheet: View {
         HStack(spacing: Theme.Spacing.sm) {
             Image(systemName: "exclamationmark.triangle.fill")
                 .font(.system(size: 12))
-                .foregroundStyle(Color.orange)
+                .foregroundStyle(Theme.Color.gitlab)
             Text("GitLab PAT를 설정하면 더 많은 결과와 높은 rate limit을 사용할 수 있어요.")
                 .font(Theme.Typography.small)
                 .foregroundStyle(Theme.Color.textSecondary)
@@ -174,11 +174,11 @@ struct GitLabSearchSheet: View {
             }
             .buttonStyle(.plain)
             .font(Theme.Typography.small.weight(.semibold))
-            .foregroundStyle(Color.orange)
+            .foregroundStyle(Theme.Color.gitlab)
         }
         .padding(.horizontal, Theme.Spacing.lg)
         .padding(.vertical, Theme.Spacing.xs)
-        .background(Color.orange.opacity(0.07))
+        .background(Theme.Color.gitlab.opacity(0.07))
     }
 
     // MARK: - 결과 목록
@@ -245,9 +245,9 @@ struct GitLabSearchSheet: View {
         HStack(alignment: .top, spacing: Theme.Spacing.md) {
             Image(systemName: "folder.fill")
                 .font(.system(size: 20))
-                .foregroundStyle(Color.orange.opacity(0.8))
+                .foregroundStyle(Theme.Color.gitlab.opacity(0.8))
                 .frame(width: 36, height: 36)
-                .background(Color.orange.opacity(0.10))
+                .background(Theme.Color.gitlab.opacity(0.10))
                 .clipShape(RoundedRectangle(cornerRadius: Theme.Radius.sm))
 
             VStack(alignment: .leading, spacing: 4) {
@@ -297,9 +297,9 @@ struct GitLabSearchSheet: View {
         HStack(alignment: .top, spacing: Theme.Spacing.md) {
             Image(systemName: "doc.text.fill")
                 .font(.system(size: 20))
-                .foregroundStyle(Color.orange.opacity(0.8))
+                .foregroundStyle(Theme.Color.gitlab.opacity(0.8))
                 .frame(width: 36, height: 36)
-                .background(Color.orange.opacity(0.10))
+                .background(Theme.Color.gitlab.opacity(0.10))
                 .clipShape(RoundedRectangle(cornerRadius: Theme.Radius.sm))
 
             VStack(alignment: .leading, spacing: 4) {

@@ -199,7 +199,7 @@ public struct TelegramUsageDashboard: View {
         HStack(spacing: 8) {
             Image(systemName: "paperplane.circle.fill")
                 .font(.system(size: 16))
-                .foregroundStyle(Color.blue)
+                .foregroundStyle(Theme.Color.infoBlue)
             VStack(alignment: .leading, spacing: 2) {
                 Text("Telegram 사용 통계")
                     .font(Theme.Typography.title)
@@ -291,7 +291,7 @@ public struct TelegramUsageDashboard: View {
                 } else {
                     Chart(filteredHourly) { bucket in
                         BarMark(x: .value("Time", bucket.timestamp), y: .value("Turns", bucket.turnCount))
-                            .foregroundStyle(Color.blue.opacity(0.7))
+                            .foregroundStyle(Theme.Color.infoBlue.opacity(0.7))
                     }
                     .frame(height: 160)
                 }
@@ -301,7 +301,7 @@ public struct TelegramUsageDashboard: View {
                 } else {
                     Chart(filteredDaily) { bucket in
                         BarMark(x: .value("Date", bucket.date), y: .value("Turns", bucket.turnCount))
-                            .foregroundStyle(Color.blue.opacity(0.7))
+                            .foregroundStyle(Theme.Color.infoBlue.opacity(0.7))
                     }
                     .frame(height: 160)
                 }
@@ -323,10 +323,10 @@ public struct TelegramUsageDashboard: View {
                 Chart {
                     ForEach(Array(buckets.enumerated()), id: \.offset) { _, b in
                         LineMark(x: .value("Time", b.date), y: .value("Cost", b.cost))
-                            .foregroundStyle(Color.green)
+                            .foregroundStyle(Theme.Color.gitAdded)
                             .interpolationMethod(.catmullRom)
                         AreaMark(x: .value("Time", b.date), y: .value("Cost", b.cost))
-                            .foregroundStyle(LinearGradient(colors: [Color.green.opacity(0.3), Color.green.opacity(0)], startPoint: .top, endPoint: .bottom))
+                            .foregroundStyle(LinearGradient(colors: [Theme.Color.gitAdded.opacity(0.3), Theme.Color.gitAdded.opacity(0)], startPoint: .top, endPoint: .bottom))
                             .interpolationMethod(.catmullRom)
                     }
                 }
@@ -359,7 +359,7 @@ public struct TelegramUsageDashboard: View {
                             x: .value("Turns", chat.turnCount),
                             y: .value("Chat", label)
                         )
-                        .foregroundStyle(Color.blue.opacity(0.7))
+                        .foregroundStyle(Theme.Color.infoBlue.opacity(0.7))
                         .annotation(position: .trailing) {
                             Text("\(chat.turnCount) turn · $\(String(format: "%.4f", chat.totalCostUSD))")
                                 .font(.caption2)
@@ -394,7 +394,7 @@ public struct TelegramUsageDashboard: View {
                             x: .value("Command", item.key),
                             y: .value("Count", item.value)
                         )
-                        .foregroundStyle(Color.orange.opacity(0.7))
+                        .foregroundStyle(Theme.Color.warningStrong.opacity(0.7))
                         .annotation(position: .top) {
                             Text("\(item.value)")
                                 .font(.caption2)
@@ -420,13 +420,13 @@ public struct TelegramUsageDashboard: View {
                             x: .value("Time", bucket.timestamp),
                             y: .value("Input", bucket.inputTokens)
                         )
-                        .foregroundStyle(Color.blue.opacity(0.7))
+                        .foregroundStyle(Theme.Color.infoBlue.opacity(0.7))
                         .position(by: .value("Type", "Input"))
                         BarMark(
                             x: .value("Time", bucket.timestamp),
                             y: .value("Output", bucket.outputTokens)
                         )
-                        .foregroundStyle(Color.orange.opacity(0.7))
+                        .foregroundStyle(Theme.Color.warningStrong.opacity(0.7))
                         .position(by: .value("Type", "Output"))
                     }
                 }
@@ -478,7 +478,7 @@ public struct TelegramUsageDashboard: View {
                             x: .value("Sample", idx),
                             y: .value("Smoothed", value)
                         )
-                        .foregroundStyle(Color.purple)
+                        .foregroundStyle(Theme.Color.accent)
                         .interpolationMethod(.catmullRom)
                     }
                     ForEach(Array(costs.enumerated()), id: \.offset) { idx, value in
@@ -494,7 +494,7 @@ public struct TelegramUsageDashboard: View {
                         x: .value("Sample", costs.count),
                         y: .value("Forecast", next)
                     )
-                    .foregroundStyle(Color.red)
+                    .foregroundStyle(Theme.Color.danger)
                     .symbolSize(80)
                 }
                 .frame(height: 140)

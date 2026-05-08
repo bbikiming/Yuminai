@@ -130,7 +130,7 @@ struct CatalogSheet: View {
             Divider()
             contentArea
         }
-        .frame(minWidth: 900, minHeight: 600)
+        .yuminaiSheetFrame(width: 900, height: 600, wrapInScrollView: false)
     }
 
     // MARK: - 사이드바

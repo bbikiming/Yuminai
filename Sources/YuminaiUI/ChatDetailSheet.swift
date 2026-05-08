@@ -61,7 +61,7 @@ public struct ChatDetailSheet: View {
         HStack(spacing: 8) {
             Image(systemName: "person.2.circle.fill")
                 .font(.system(size: 16))
-                .foregroundStyle(Color.blue)
+                .foregroundStyle(Theme.Color.infoBlue)
             VStack(alignment: .leading, spacing: 2) {
                 Text("Chat \(chatStats.chatId)")
                     .font(Theme.Typography.title)
@@ -192,7 +192,7 @@ public struct ChatDetailSheet: View {
                             x: .value("Sample", idx),
                             y: .value("Cost", value)
                         )
-                        .foregroundStyle(Color.blue)
+                        .foregroundStyle(Theme.Color.infoBlue)
                     }
                     if let ci {
                         // ADR-066 Phase 5 — confidence interval as RuleMark
@@ -200,14 +200,14 @@ public struct ChatDetailSheet: View {
                             x: .value("Sample", costs.count),
                             y: .value("Forecast", ci.forecast)
                         )
-                        .foregroundStyle(Color.red)
+                        .foregroundStyle(Theme.Color.danger)
                         .symbolSize(80)
                         RuleMark(
                             x: .value("Sample", costs.count),
                             yStart: .value("Lower", ci.lowerBound),
                             yEnd: .value("Upper", ci.upperBound)
                         )
-                        .foregroundStyle(Color.red.opacity(0.4))
+                        .foregroundStyle(Theme.Color.danger.opacity(0.4))
                         .lineStyle(StrokeStyle(lineWidth: 8))
                     }
                 }

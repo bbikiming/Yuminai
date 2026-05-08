@@ -100,7 +100,7 @@ public struct RoutingLearningPanel: View {
         }
         .padding(.horizontal, 6)
         .padding(.vertical, 3)
-        .background(Color.orange.opacity(0.12))
+        .background(Theme.Color.warningStrong.opacity(0.12))
         .clipShape(RoundedRectangle(cornerRadius: 4))
     }
 
@@ -161,11 +161,11 @@ public struct RoutingLearningPanel: View {
                             RoundedRectangle(cornerRadius: 2)
                                 .fill(Theme.Color.surface)
                             RoundedRectangle(cornerRadius: 2)
-                                .fill(r >= RoutingLearningStore.muteRatioThreshold ? Color.orange : Color.blue.opacity(0.6))
+                                .fill(r >= RoutingLearningStore.muteRatioThreshold ? Theme.Color.warningStrong : Theme.Color.infoBlue.opacity(0.6))
                                 .frame(width: geo.size.width * r)
                             // muteRatioThreshold 위치 표시 (점선)
                             Rectangle()
-                                .fill(Color.red.opacity(0.4))
+                                .fill(Theme.Color.gitRemoved.opacity(0.4))
                                 .frame(width: 1)
                                 .offset(x: geo.size.width * RoutingLearningStore.muteRatioThreshold)
                         }
@@ -173,7 +173,7 @@ public struct RoutingLearningPanel: View {
                     .frame(height: 4)
                     Text("\(Int(r * 100))% (\(cancelCount)/\(useCount))")
                         .font(Theme.Typography.micro)
-                        .foregroundStyle(r >= RoutingLearningStore.muteRatioThreshold ? Color.orange : Theme.Color.textTertiary)
+                        .foregroundStyle(r >= RoutingLearningStore.muteRatioThreshold ? Theme.Color.warningStrong : Theme.Color.textTertiary)
                         .frame(width: 80, alignment: .trailing)
                 }
             } else if useCount > 0 {

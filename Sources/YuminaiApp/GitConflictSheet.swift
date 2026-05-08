@@ -62,7 +62,7 @@ struct GitConflictSheet: View {
         VStack(alignment: .leading, spacing: 0) {
             HStack {
                 Image(systemName: "exclamationmark.triangle.fill")
-                    .foregroundStyle(.orange)
+                    .foregroundStyle(Theme.Color.warningStrong)
                     .accessibilityHidden(true)
                 Text("충돌 파일")
                     .font(Theme.Typography.body.weight(.semibold))
@@ -112,7 +112,7 @@ struct GitConflictSheet: View {
             HStack(spacing: 6) {
                 Image(systemName: "doc.text.fill")
                     .font(.system(size: 11))
-                    .foregroundStyle(.orange)
+                    .foregroundStyle(Theme.Color.warningStrong)
                 Text(file.split(separator: "/").last.map(String.init) ?? file)
                     .font(Theme.Typography.monoSmall)
                     .foregroundStyle(Theme.Color.text)

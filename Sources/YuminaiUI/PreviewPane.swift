@@ -152,7 +152,7 @@ private struct SuggestionChip: View {
             }
             .padding(.horizontal, 8)
             .padding(.vertical, 3)
-            .background(hovering ? Theme.Color.surfaceHi : (suggestion.isAlive == true ? SwiftUI.Color.green.opacity(0.10) : Theme.Color.surface))
+            .background(hovering ? Theme.Color.surfaceHi : (suggestion.isAlive == true ? Theme.Color.gitAdded.opacity(0.10) : Theme.Color.surface))
             .overlay(
                 RoundedRectangle(cornerRadius: 4)
                     .stroke(suggestion.isAlive == true ? .green : Theme.Color.borderSubtle, lineWidth: 1)
@@ -170,7 +170,7 @@ private struct SuggestionChip: View {
     private var liveDot: some View {
         if let alive = suggestion.isAlive {
             Circle()
-                .fill(alive ? SwiftUI.Color.green : SwiftUI.Color.red.opacity(0.5))
+                .fill(alive ? Theme.Color.gitAdded : Theme.Color.gitRemoved.opacity(0.5))
                 .frame(width: 5, height: 5)
         }
     }

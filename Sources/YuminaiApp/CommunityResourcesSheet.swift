@@ -66,7 +66,7 @@ struct CommunityResourcesSheet: View {
                             Text("GitLab 검색")
                                 .font(Theme.Typography.small.weight(.medium))
                         }
-                        .foregroundStyle(Color.orange)
+                        .foregroundStyle(Theme.Color.warningStrong)
                     }
                     .buttonStyle(.plain)
 

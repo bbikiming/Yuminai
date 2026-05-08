@@ -317,10 +317,10 @@ public struct RoutingDecisionLogSheet: View {
         return HStack(spacing: 12) {
             Label("\(appliedCount)", systemImage: "checkmark.circle.fill")
                 .font(Theme.Typography.small)
-                .foregroundStyle(Color.green)
+                .foregroundStyle(Theme.Color.gitAdded)
             Label("\(cancelledCount)", systemImage: "xmark.circle.fill")
                 .font(Theme.Typography.small)
-                .foregroundStyle(Color.orange)
+                .foregroundStyle(Theme.Color.warningStrong)
             Label("\(decisions.count)", systemImage: "list.bullet")
                 .font(Theme.Typography.small)
                 .foregroundStyle(Theme.Color.textSecondary)

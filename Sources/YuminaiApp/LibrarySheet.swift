@@ -65,7 +65,7 @@ struct LibrarySheet: View {
             Divider()
             contentArea
         }
-        .frame(minWidth: 760, minHeight: 540)
+        .yuminaiSheetFrame(width: 760, height: 540, wrapInScrollView: false)
         .sheet(isPresented: $showAddTextSheet) { AddLibraryTextSheet() }
         .sheet(isPresented: $showAddURLSheet) { AddLibraryURLSheet() }
         .sheet(item: $editingItem) { item in EditLibraryItemSheet(item: item) }
@@ -217,7 +217,9 @@ struct LibrarySheet: View {
             toolbar
             Divider()
             if filteredItems.isEmpty {
+                // ADR-141 — 접근성: 빈 상태 컨테이너 children 포함
                 emptyState
+                    .accessibilityElement(children: .contain)
             } else {
                 itemList
             }
@@ -296,29 +298,22 @@ struct LibrarySheet: View {
         .background(Theme.Color.surface)
     }
 
+    // ADR-140 — AnimatedEmptyState 통일
     private var emptyState: some View {
-        VStack(spacing: Theme.Spacing.md) {
-            Image(systemName: "books.vertical")
-                .font(.system(size: 48, weight: .ultraLight))
-                .foregroundStyle(Theme.Color.textTertiary)
-            Text(searchQuery.isEmpty ? "라이브러리가 비어있어요" : "검색 결과가 없어요")
-                .font(.system(size: 15, weight: .medium))
-                .foregroundStyle(Theme.Color.textSecondary)
-            if searchQuery.isEmpty {
-                if selectedCategory == .all {
-                    Text("커뮤니티 자료 패널에서 자료를 추가하거나,\n위 버튼으로 URL이나 텍스트를 직접 추가하세요.")
-                        .font(Theme.Typography.small)
-                        .foregroundStyle(Theme.Color.textTertiary)
-                        .multilineTextAlignment(.center)
-                } else {
-                    Text("'\(selectedCategory.rawValue)' 카테고리에 자료가 없어요.\n커뮤니티 자료 패널에서 이 카테고리 자료를 추가해 보세요.")
-                        .font(Theme.Typography.small)
-                        .foregroundStyle(Theme.Color.textTertiary)
-                        .multilineTextAlignment(.center)
-                }
+        let title = searchQuery.isEmpty ? "라이브러리가 비어있어요" : "검색 결과가 없어요"
+        let message: String = {
+            if !searchQuery.isEmpty { return "'\(searchQuery)' 검색 결과가 없어요." }
+            if selectedCategory == .all {
+                return "커뮤니티 자료 패널에서 자료를 추가하거나,\n위 버튼으로 URL이나 텍스트를 직접 추가하세요."
             }
-        }
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
+            return "'\(selectedCategory.rawValue)' 카테고리에 자료가 없어요.\n커뮤니티 자료 패널에서 이 카테고리 자료를 추가해 보세요."
+        }()
+        return AnimatedEmptyState(
+            icon: "books.vertical",
+            iconTint: Theme.Color.textTertiary,
+            title: title,
+            message: message
+        )
     }
 
     private var itemList: some View {

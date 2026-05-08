@@ -76,11 +76,11 @@ public struct AutoRunToggle: View {
                 .foregroundStyle(Theme.Color.textTertiary)
         case .running:
             Circle()
-                .fill(Color.green)
+                .fill(Theme.Color.autoRunActive)
                 .frame(width: 7, height: 7)
         case .paused:
             Image(systemName: "pause.fill")
-                .foregroundStyle(Color.yellow)
+                .foregroundStyle(Theme.Color.autoRunPaused)
         case .completed:
             Image(systemName: "checkmark")
                 .foregroundStyle(Theme.Color.textTertiary)
@@ -113,8 +113,8 @@ public struct AutoRunToggle: View {
     private var labelColor: Color {
         switch state {
         case .idle: return Theme.Color.textSecondary
-        case .running: return Color.green
-        case .paused: return Color.yellow
+        case .running: return Theme.Color.autoRunActive
+        case .paused: return Theme.Color.autoRunPaused
         case .completed, .stopped: return Theme.Color.textTertiary
         }
     }
@@ -122,8 +122,8 @@ public struct AutoRunToggle: View {
     private var backgroundColor: Color {
         switch state {
         case .idle: return Theme.Color.surfaceHi.opacity(0.4)
-        case .running: return Color.green.opacity(0.08)
-        case .paused: return Color.yellow.opacity(0.10)
+        case .running: return Theme.Color.autoRunActive.opacity(0.08)
+        case .paused: return Theme.Color.autoRunPaused.opacity(0.10)
         case .completed, .stopped: return Theme.Color.surfaceHi.opacity(0.3)
         }
     }
@@ -131,8 +131,8 @@ public struct AutoRunToggle: View {
     private var borderColor: Color {
         switch state {
         case .idle: return Theme.Color.borderSubtle
-        case .running: return Color.green.opacity(0.3)
-        case .paused: return Color.yellow.opacity(0.3)
+        case .running: return Theme.Color.autoRunActive.opacity(0.3)
+        case .paused: return Theme.Color.autoRunPaused.opacity(0.3)
         case .completed, .stopped: return Theme.Color.borderSubtle
         }
     }

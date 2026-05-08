@@ -159,7 +159,7 @@ public struct Composer: View {
             }
             .padding(.horizontal, Theme.Spacing.md)
             .padding(.vertical, 4)
-            .background(agentChainEnabled ? Theme.Color.accentMuted.opacity(0.4) : SwiftUI.Color.orange.opacity(0.08))
+            .background(agentChainEnabled ? Theme.Color.accentMuted.opacity(0.4) : Theme.Color.warningStrong.opacity(0.08))
         }
     }
 

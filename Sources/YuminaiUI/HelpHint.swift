@@ -127,8 +127,8 @@ public struct InlineHint: View {
         var background: SwiftUI.Color {
             switch self {
             case .info, .tip: return Theme.Color.accentMuted
-            case .success: return SwiftUI.Color.green.opacity(0.10)
-            case .warning: return SwiftUI.Color.orange.opacity(0.10)
+            case .success: return Theme.Color.gitAdded.opacity(0.10)
+            case .warning: return Theme.Color.warningStrong.opacity(0.10)
             }
         }
     }

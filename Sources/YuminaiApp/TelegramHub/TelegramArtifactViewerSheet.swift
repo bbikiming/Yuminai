@@ -110,7 +110,7 @@ struct TelegramArtifactViewerSheet: View {
     private func logHeader(title: String, elapsed: TimeInterval, success: Bool) -> some View {
         HStack(spacing: Theme.Spacing.sm) {
             Image(systemName: success ? "checkmark.circle.fill" : "xmark.circle.fill")
-                .foregroundStyle(success ? Color.green : Color.red)
+                .foregroundStyle(success ? Theme.Color.gitAdded : Theme.Color.gitRemoved)
                 .font(.system(size: 16, weight: .medium))
             VStack(alignment: .leading, spacing: 2) {
                 Text(title)
@@ -146,15 +146,15 @@ struct TelegramArtifactViewerSheet: View {
     }
 
     private func diffLineColor(_ line: String) -> Color {
-        if line.hasPrefix("+") && !line.hasPrefix("+++") { return Color.green }
-        if line.hasPrefix("-") && !line.hasPrefix("---") { return Color.red }
+        if line.hasPrefix("+") && !line.hasPrefix("+++") { return Theme.Color.gitAdded }
+        if line.hasPrefix("-") && !line.hasPrefix("---") { return Theme.Color.gitRemoved }
         if line.hasPrefix("@@") { return Color.cyan }
         return Theme.Color.text
     }
 
     private func diffLineBg(_ line: String) -> Color {
-        if line.hasPrefix("+") && !line.hasPrefix("+++") { return Color.green.opacity(0.07) }
-        if line.hasPrefix("-") && !line.hasPrefix("---") { return Color.red.opacity(0.07) }
+        if line.hasPrefix("+") && !line.hasPrefix("+++") { return Theme.Color.gitAdded.opacity(0.07) }
+        if line.hasPrefix("-") && !line.hasPrefix("---") { return Theme.Color.gitRemoved.opacity(0.07) }
         return Color.clear
     }
 

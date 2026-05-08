@@ -66,7 +66,7 @@ struct HITLApprovalSheet: View {
         HStack(spacing: Theme.Spacing.md) {
             Image(systemName: "exclamationmark.triangle.fill")
                 .font(.system(size: 24))
-                .foregroundStyle(.orange)
+                .foregroundStyle(Theme.Color.warningStrong)
 
             VStack(alignment: .leading, spacing: 2) {
                 Text("확인이 필요해요")
@@ -107,6 +107,9 @@ struct HITLApprovalSheet: View {
                             .clipShape(RoundedRectangle(cornerRadius: Theme.Radius.sm))
                     }
                     .buttonStyle(.plain)
+                    // ADR-141 — 접근성: 전체 action명 label + 탭 선택 상태
+                    .accessibilityLabel("요청 \(index + 1): \(req.action)")
+                    .accessibilityAddTraits(index == selectedIndex ? [.isSelected] : [])
                 }
             }
         }
@@ -208,7 +211,7 @@ struct HITLApprovalSheet: View {
                     .foregroundStyle(Theme.Color.textTertiary)
                 Text("Timeout: \(remaining)s 남음")
                     .font(Theme.Typography.micro)
-                    .foregroundStyle(remaining < 15 ? .red : Theme.Color.textSecondary)
+                    .foregroundStyle(remaining < 15 ? Theme.Color.danger : Theme.Color.textSecondary)
                     .animation(.linear(duration: 1), value: remaining)
             }
             GeometryReader { geo in
@@ -217,7 +220,7 @@ struct HITLApprovalSheet: View {
                         .fill(Theme.Color.border)
                         .frame(height: 6)
                     RoundedRectangle(cornerRadius: 3)
-                        .fill(remaining < 15 ? Color.red : Theme.Color.accent)
+                        .fill(remaining < 15 ? Theme.Color.danger : Theme.Color.accent)
                         .frame(width: geo.size.width * fraction, height: 6)
                         .animation(.linear(duration: 1), value: fraction)
                 }
@@ -240,22 +243,15 @@ struct HITLApprovalSheet: View {
         }
     }
 
-    // MARK: - Empty state
+    // MARK: - Empty state (ADR-140 — AnimatedEmptyState 통일)
 
     private var emptyState: some View {
-        HStack {
-            Spacer()
-            VStack(spacing: Theme.Spacing.sm) {
-                Image(systemName: "checkmark.circle.fill")
-                    .font(.system(size: 32))
-                    .foregroundStyle(Theme.Color.accent)
-                Text("대기 중인 HITL 요청 없음")
-                    .font(Theme.Typography.small)
-                    .foregroundStyle(Theme.Color.textSecondary)
-            }
-            .padding(.vertical, Theme.Spacing.xl)
-            Spacer()
-        }
+        AnimatedEmptyState(
+            icon: "checkmark.circle",
+            iconTint: Theme.Color.accent,
+            title: "대기 중인 요청 없음",
+            message: "Claude가 승인을 기다리는 HITL 요청이 없습니다."
+        )
     }
 
     // MARK: - Helpers

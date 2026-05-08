@@ -368,11 +368,11 @@ public struct SidebarView: View {
         HStack(spacing: 6) {
             ZStack {
                 Circle()
-                    .fill(Color.orange.opacity(0.15))
+                    .fill(Theme.Color.warningStrong.opacity(0.15))
                     .frame(width: 16, height: 16)
                 Image(systemName: "bubble.left.and.text.bubble.right.fill")
                     .font(.system(size: 8, weight: .semibold))
-                    .foregroundStyle(.orange)
+                    .foregroundStyle(Theme.Color.warningStrong)
             }
             .accessibilityHidden(true)
             Text("대화 세션")
@@ -443,11 +443,11 @@ public struct SidebarView: View {
         VStack(spacing: 6) {
             ZStack {
                 Circle()
-                    .fill(Color.orange.opacity(0.10))
+                    .fill(Theme.Color.warningStrong.opacity(0.10))
                     .frame(width: 36, height: 36)
                 Image(systemName: "bubble.left.and.text.bubble.right")
                     .font(.system(size: 14, weight: .light))
-                    .foregroundStyle(.orange)
+                    .foregroundStyle(Theme.Color.warningStrong)
             }
             Text("아직 대화 세션이 없어요")
                 .font(Theme.Typography.small.weight(.medium))

@@ -249,7 +249,7 @@ public struct ChartsDashboard: View {
                         x: .value("Time", sample.timestamp),
                         y: .value("Hit Ratio", sample.hitRatio)
                     )
-                    .foregroundStyle(Color.green)
+                    .foregroundStyle(Theme.Color.gitAdded)
                     .interpolationMethod(.catmullRom)
 
                     AreaMark(
@@ -257,7 +257,7 @@ public struct ChartsDashboard: View {
                         y: .value("Hit Ratio", sample.hitRatio)
                     )
                     .foregroundStyle(LinearGradient(
-                        colors: [Color.green.opacity(0.3), Color.green.opacity(0.0)],
+                        colors: [Theme.Color.gitAdded.opacity(0.3), Theme.Color.gitAdded.opacity(0.0)],
                         startPoint: .top, endPoint: .bottom
                     ))
                     .interpolationMethod(.catmullRom)
@@ -322,13 +322,13 @@ public struct ChartsDashboard: View {
                             x: .value("Time", sample.timestamp),
                             y: .value("Read (cached)", sample.readTokens)
                         )
-                        .foregroundStyle(Color.green.opacity(0.7))
+                        .foregroundStyle(Theme.Color.gitAdded.opacity(0.7))
                         .position(by: .value("Type", "Read"))
                         BarMark(
                             x: .value("Time", sample.timestamp),
                             y: .value("Uncached", sample.uncachedInputTokens)
                         )
-                        .foregroundStyle(Color.orange.opacity(0.7))
+                        .foregroundStyle(Theme.Color.warningStrong.opacity(0.7))
                         .position(by: .value("Type", "Uncached"))
                     }
                 }
@@ -366,7 +366,7 @@ public struct ChartsDashboard: View {
                             x: .value("Ratio", item.ratio),
                             y: .value("Workspace", item.name)
                         )
-                        .foregroundStyle(item.ratio > 0.5 ? Color.green : (item.ratio > 0.2 ? Color.yellow : Color.orange))
+                        .foregroundStyle(item.ratio > 0.5 ? Theme.Color.gitAdded : (item.ratio > 0.2 ? Theme.Color.favoriteStar : Theme.Color.warningStrong))
                         .annotation(position: .trailing) {
                             Text("\(Int(item.ratio * 100))% (\(item.totalRead.formattedShort) tok)")
                                 .font(.caption2)
@@ -480,14 +480,14 @@ public struct ChartsDashboard: View {
                             y: .value("Cumulative", point.applied),
                             series: .value("Type", "Applied")
                         )
-                        .foregroundStyle(Color.green)
+                        .foregroundStyle(Theme.Color.gitAdded)
                         .interpolationMethod(.stepEnd)
                         LineMark(
                             x: .value("Time", point.time),
                             y: .value("Cumulative", point.cancelled),
                             series: .value("Type", "Cancelled")
                         )
-                        .foregroundStyle(Color.orange)
+                        .foregroundStyle(Theme.Color.warningStrong)
                         .interpolationMethod(.stepEnd)
                     }
                 }
@@ -511,7 +511,7 @@ public struct ChartsDashboard: View {
                             x: .value("Cost", ws.costUSD),
                             y: .value("Workspace", ws.workspaceName)
                         )
-                        .foregroundStyle(Color.blue.opacity(0.7))
+                        .foregroundStyle(Theme.Color.infoBlue.opacity(0.7))
                         .annotation(position: .trailing) {
                             Text("$\(String(format: "%.4f", ws.costUSD))")
                                 .font(.caption2)
@@ -576,14 +576,14 @@ public struct ChartsDashboard: View {
                             x: .value("Time", item.timestamp),
                             y: .value("Saved", item.savedUSD)
                         )
-                        .foregroundStyle(Color.green)
+                        .foregroundStyle(Theme.Color.gitAdded)
                         .interpolationMethod(.catmullRom)
                         AreaMark(
                             x: .value("Time", item.timestamp),
                             y: .value("Saved", item.savedUSD)
                         )
                         .foregroundStyle(LinearGradient(
-                            colors: [Color.green.opacity(0.3), Color.green.opacity(0.0)],
+                            colors: [Theme.Color.gitAdded.opacity(0.3), Theme.Color.gitAdded.opacity(0.0)],
                             startPoint: .top, endPoint: .bottom
                         ))
                         .interpolationMethod(.catmullRom)
@@ -602,7 +602,7 @@ public struct ChartsDashboard: View {
                 .frame(height: 160)
                 Text("총 절약 추정: $\(String(format: "%.4f", totalSaved))")
                     .font(Theme.Typography.small.weight(.medium))
-                    .foregroundStyle(Color.green)
+                    .foregroundStyle(Theme.Color.gitAdded)
                     .padding(.top, 4)
             }
         }

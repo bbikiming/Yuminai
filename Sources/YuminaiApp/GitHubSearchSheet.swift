@@ -132,7 +132,7 @@ struct GitHubSearchSheet: View {
             }
             resultArea
         }
-        .frame(minWidth: 720, minHeight: 580)
+        .yuminaiSheetFrame(width: 720, height: 580, wrapInScrollView: false)
         .background(Theme.Color.bg)
         .sheet(isPresented: $showPATSheet) {
             GitHubPATSheet()
@@ -167,7 +167,7 @@ struct GitHubSearchSheet: View {
                 .foregroundStyle(.yellow)
                 .padding(.horizontal, Theme.Spacing.sm)
                 .padding(.vertical, 4)
-                .background(Color.yellow.opacity(0.12))
+                .background(Theme.Color.favoriteStar.opacity(0.12))
                 .clipShape(Capsule())
             }
             .buttonStyle(.plain)
@@ -226,7 +226,7 @@ struct GitHubSearchSheet: View {
         }
         .padding(.horizontal, Theme.Spacing.lg)
         .padding(.vertical, Theme.Spacing.sm)
-        .background(hasPAT ? Theme.Color.success.opacity(0.08) : Color.orange.opacity(0.08))
+        .background(hasPAT ? Theme.Color.success.opacity(0.08) : Theme.Color.warningStrong.opacity(0.08))
     }
 
     // MARK: - ADR-122 Rate Limit 배너
@@ -484,7 +484,7 @@ struct GitHubSearchSheet: View {
                 .foregroundStyle(isFavorited ? .yellow : Theme.Color.textSecondary)
                 .padding(.horizontal, 7)
                 .padding(.vertical, 3)
-                .background(isFavorited ? Color.yellow.opacity(0.12) : Theme.Color.surfaceHi)
+                .background(isFavorited ? Theme.Color.favoriteStar.opacity(0.12) : Theme.Color.surfaceHi)
                 .clipShape(Capsule())
             }
             .buttonStyle(.plain)
@@ -1132,7 +1132,7 @@ struct GitHubSearchSheet: View {
                             .foregroundStyle(.yellow)
                             .padding(.horizontal, Theme.Spacing.md)
                             .padding(.vertical, 6)
-                            .background(Color.yellow.opacity(0.10))
+                            .background(Theme.Color.favoriteStar.opacity(0.10))
                             .clipShape(Capsule())
                         }
                         .buttonStyle(.plain)
@@ -1178,7 +1178,7 @@ struct GitHubSearchSheet: View {
                 }
             }
         }
-        .frame(minWidth: 380, minHeight: 300)
+        .yuminaiSheetFrame(width: 380, height: 300, wrapInScrollView: false)
         .background(Theme.Color.bg)
     }
 

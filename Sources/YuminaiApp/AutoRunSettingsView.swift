@@ -220,12 +220,12 @@ public struct AutoRunSettingsView: View {
             .padding(Theme.Spacing.sm)
             .background(
                 RoundedRectangle(cornerRadius: Theme.Radius.sm)
-                    .fill(config.stopOnDestructive ? Color.green.opacity(0.06) : Theme.Color.danger.opacity(0.06))
+                    .fill(config.stopOnDestructive ? Theme.Color.gitAdded.opacity(0.06) : Theme.Color.danger.opacity(0.06))
             )
             .overlay(
                 RoundedRectangle(cornerRadius: Theme.Radius.sm)
                     .stroke(
-                        config.stopOnDestructive ? Color.green.opacity(0.2) : Theme.Color.danger.opacity(0.3),
+                        config.stopOnDestructive ? Theme.Color.gitAdded.opacity(0.2) : Theme.Color.danger.opacity(0.3),
                         lineWidth: 0.5
                     )
             )

@@ -79,7 +79,7 @@ struct BundleCatalogSheet: View {
             Divider()
             contentArea
         }
-        .frame(minWidth: 900, minHeight: 620)
+        .yuminaiSheetFrame(width: 900, height: 620, wrapInScrollView: false)
     }
 
     // MARK: - 사이드바
@@ -403,10 +403,10 @@ struct BundleCatalogSheet: View {
                 HStack(spacing: 3) {
                     Image(systemName: "checkmark.circle.fill")
                         .font(.system(size: 10))
-                        .foregroundStyle(.orange)
+                        .foregroundStyle(Theme.Color.warningStrong)
                     Text("\(added)/\(total)개 추가됨")
                         .font(Theme.Typography.micro)
-                        .foregroundStyle(.orange)
+                        .foregroundStyle(Theme.Color.warningStrong)
                 }
             }
         } else {

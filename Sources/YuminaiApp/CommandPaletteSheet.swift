@@ -249,7 +249,7 @@ private struct CommandRow: View {
                     Button(action: onTogglePin) {
                         Image(systemName: isPinned ? "star.fill" : "star")
                             .font(.system(size: 11))
-                            .foregroundStyle(isPinned ? Color.yellow : Theme.Color.textTertiary)
+                            .foregroundStyle(isPinned ? Theme.Color.favoriteStar : Theme.Color.textTertiary)
                     }
                     .buttonStyle(.plain)
                     .help(isPinned ? "핀 해제" : "★ 핀 — 항상 상단 표시")

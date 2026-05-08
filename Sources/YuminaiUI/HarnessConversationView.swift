@@ -110,19 +110,19 @@ public struct HarnessConversationView: View {
             HStack(spacing: 4) {
                 Text("\(Int(contextUsageRatio * 100))%")
                     .font(Theme.Typography.micro.weight(contextWarning ? .medium : .regular))
-                    .foregroundStyle(contextWarning ? Color.orange : Theme.Color.textTertiary)
+                    .foregroundStyle(contextWarning ? Theme.Color.warningStrong : Theme.Color.textTertiary)
                 ZStack(alignment: .leading) {
                     RoundedRectangle(cornerRadius: 2)
                         .fill(Theme.Color.borderSubtle)
                         .frame(width: 40, height: 4)
                     RoundedRectangle(cornerRadius: 2)
-                        .fill(contextWarning ? Color.orange : Theme.Color.accent)
+                        .fill(contextWarning ? Theme.Color.warningStrong : Theme.Color.accent)
                         .frame(width: 40 * contextUsageRatio, height: 4)
                 }
                 if contextWarning {
                     Image(systemName: "exclamationmark.triangle.fill")
                         .font(.system(size: 9))
-                        .foregroundStyle(Color.orange)
+                        .foregroundStyle(Theme.Color.warningStrong)
                         .help("컨텍스트 70% 초과 — 새 세션 권장")
                 }
             }

@@ -89,10 +89,10 @@ public struct ChatTypeBadge: View {
             Text(chatId < 0 ? "그룹 채팅" : "1:1 대화")
                 .font(Theme.Typography.micro)
         }
-        .foregroundStyle(chatId < 0 ? Color.orange : Theme.Color.accent)
+        .foregroundStyle(chatId < 0 ? Theme.Color.warningStrong : Theme.Color.accent)
         .padding(.horizontal, 5)
         .padding(.vertical, 1)
-        .background((chatId < 0 ? Color.orange : Theme.Color.accent).opacity(0.10))
+        .background((chatId < 0 ? Theme.Color.warningStrong : Theme.Color.accent).opacity(0.10))
         .clipShape(Capsule())
         .accessibilityLabel(chatId < 0 ? "그룹 채팅" : "1:1 대화")
     }

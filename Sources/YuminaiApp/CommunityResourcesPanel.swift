@@ -438,7 +438,7 @@ struct CommunityResourcesPanel: View {
         .foregroundStyle(.white)
         .padding(.horizontal, 6)
         .padding(.vertical, 2)
-        .background(Color.blue.opacity(0.85))
+        .background(Theme.Color.infoBlue.opacity(0.85))
         .clipShape(Capsule())
     }
 

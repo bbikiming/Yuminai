@@ -370,7 +370,7 @@ private struct CommandBlockView: View {
         .background(Theme.Color.surface.opacity(0.7))
         .overlay(
             RoundedRectangle(cornerRadius: Theme.Radius.sm)
-                .stroke(block.success ? Theme.Color.borderSubtle : SwiftUI.Color.red.opacity(0.4), lineWidth: 1)
+                .stroke(block.success ? Theme.Color.borderSubtle : Theme.Color.gitRemoved.opacity(0.4), lineWidth: 1)
         )
         .clipShape(RoundedRectangle(cornerRadius: Theme.Radius.sm))
         .onHover { hovering = $0 }

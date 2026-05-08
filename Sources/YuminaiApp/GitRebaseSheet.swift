@@ -159,7 +159,7 @@ struct GitRebaseSheet: View {
         if hasDrop || hasSquash {
             HStack(spacing: 6) {
                 Image(systemName: "exclamationmark.triangle.fill")
-                    .foregroundStyle(.orange)
+                    .foregroundStyle(Theme.Color.warningStrong)
                     .accessibilityHidden(true)
                 Text(hasDrop
                      ? "삭제 액션이 있어요. history가 영구적으로 변경됩니다."
@@ -169,7 +169,7 @@ struct GitRebaseSheet: View {
                 Spacer()
             }
             .padding(Theme.Spacing.sm)
-            .background(Color.orange.opacity(0.10))
+            .background(Theme.Color.warningStrong.opacity(0.10))
             .clipShape(RoundedRectangle(cornerRadius: Theme.Radius.sm))
         }
     }

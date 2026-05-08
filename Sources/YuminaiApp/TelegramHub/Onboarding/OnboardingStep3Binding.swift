@@ -51,10 +51,10 @@ struct OnboardingStep3Binding: View {
                         HStack(spacing: 4) {
                             Image(systemName: chatId < 0 ? "person.3.fill" : "person.crop.circle.fill")
                                 .font(.system(size: 10))
-                                .foregroundStyle(chatId < 0 ? Color.orange : Theme.Color.accent)
+                                .foregroundStyle(chatId < 0 ? Theme.Color.warningStrong : Theme.Color.accent)
                             Text(chatId < 0 ? "그룹 채팅" : "1:1 대화")
                                 .font(Theme.Typography.micro)
-                                .foregroundStyle(chatId < 0 ? Color.orange : Theme.Color.accent)
+                                .foregroundStyle(chatId < 0 ? Theme.Color.warningStrong : Theme.Color.accent)
                         }
                         .transition(.opacity)
                     }

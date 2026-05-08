@@ -45,7 +45,7 @@ struct GitLabPATSheet: View {
                 .padding(Theme.Spacing.lg)
             }
         }
-        .frame(minWidth: 520, minHeight: 480)
+        .yuminaiSheetFrame(width: 520, height: 480)
         .background(Theme.Color.bg)
         .onAppear {
             hostURLInput = appModel.preferences.gitlabHostURL
@@ -58,7 +58,7 @@ struct GitLabPATSheet: View {
         HStack(spacing: Theme.Spacing.sm) {
             Image(systemName: "key.fill")
                 .font(.system(size: 16, weight: .semibold))
-                .foregroundStyle(Color.orange)
+                .foregroundStyle(Theme.Color.gitlab)
             Text("GitLab Personal Access Token")
                 .font(.system(size: 15, weight: .semibold))
                 .foregroundStyle(Theme.Color.text)
@@ -78,7 +78,7 @@ struct GitLabPATSheet: View {
                 HStack(spacing: Theme.Spacing.sm) {
                     Image(systemName: "info.circle.fill")
                         .font(.system(size: 14, weight: .semibold))
-                        .foregroundStyle(Color.orange)
+                        .foregroundStyle(Theme.Color.gitlab)
                     Text("GitLab 검색·자동화에 인증이 필요해요")
                         .font(Theme.Typography.body.weight(.semibold))
                         .foregroundStyle(Theme.Color.text)
@@ -89,7 +89,7 @@ struct GitLabPATSheet: View {
                     .fixedSize(horizontal: false, vertical: true)
             }
             .padding(Theme.Spacing.md)
-            .background(Color.orange.opacity(0.08))
+            .background(Theme.Color.gitlab.opacity(0.08))
             .clipShape(RoundedRectangle(cornerRadius: Theme.Radius.md))
 
             // 토큰 발급 방법 안내
@@ -113,14 +113,14 @@ struct GitLabPATSheet: View {
                         Text("GitLab 토큰 페이지 열기")
                             .font(Theme.Typography.small.weight(.medium))
                     }
-                    .foregroundStyle(Color.orange)
+                    .foregroundStyle(Theme.Color.gitlab)
                     .padding(.horizontal, Theme.Spacing.md)
                     .padding(.vertical, 7)
-                    .background(Color.orange.opacity(0.10))
+                    .background(Theme.Color.gitlab.opacity(0.10))
                     .clipShape(RoundedRectangle(cornerRadius: Theme.Radius.sm))
                     .overlay(
                         RoundedRectangle(cornerRadius: Theme.Radius.sm)
-                            .stroke(Color.orange.opacity(0.25), lineWidth: 0.5)
+                            .stroke(Theme.Color.gitlab.opacity(0.25), lineWidth: 0.5)
                     )
                 }
                 .buttonStyle(.plain)
@@ -135,7 +135,7 @@ struct GitLabPATSheet: View {
                 .font(Theme.Typography.micro.weight(.semibold).monospacedDigit())
                 .foregroundStyle(.white)
                 .frame(width: 16, height: 16)
-                .background(Color.orange)
+                .background(Theme.Color.gitlab)
                 .clipShape(Circle())
             Text(text)
                 .font(Theme.Typography.small)
@@ -226,7 +226,7 @@ struct GitLabPATSheet: View {
                     .foregroundStyle(.white)
                     .padding(.horizontal, Theme.Spacing.lg)
                     .padding(.vertical, 8)
-                    .background(canSave && !isSaving && !isValidating ? Color.orange : Theme.Color.surfaceHi)
+                    .background(canSave && !isSaving && !isValidating ? Theme.Color.gitlab : Theme.Color.surfaceHi)
                     .clipShape(RoundedRectangle(cornerRadius: Theme.Radius.md))
                 }
                 .buttonStyle(.plain)

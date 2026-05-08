@@ -396,7 +396,7 @@ public struct ChatToolbar: View {
                 if let stats, !stats.isEmpty {
                     // dirty 마커 (작은 점)
                     Circle()
-                        .fill(Color.orange)
+                        .fill(Theme.Color.warningStrong)
                         .frame(width: 5, height: 5)
                 }
             }

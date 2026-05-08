@@ -227,11 +227,11 @@ public struct DiffReviewView: View {
         let fg: SwiftUI.Color
         switch kind {
         case .added:
-            bg = SwiftUI.Color.green.opacity(0.12)
-            fg = SwiftUI.Color.green
+            bg = Theme.Color.gitAdded.opacity(0.12)
+            fg = Theme.Color.gitAdded
         case .removed:
-            bg = SwiftUI.Color.red.opacity(0.12)
-            fg = SwiftUI.Color.red
+            bg = Theme.Color.gitRemoved.opacity(0.12)
+            fg = Theme.Color.gitRemoved
         case .hunkHeader:
             bg = Theme.Color.surfaceHi
             fg = Theme.Color.textSecondary

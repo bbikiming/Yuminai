@@ -68,7 +68,7 @@ public struct RehearsalSheet: View {
         .background(Theme.Color.bg)
         // Yellow tint background overlay (Xcode debug pattern)
         .overlay(
-            Color.yellow.opacity(0.04)
+            Theme.Color.warningStrong.opacity(0.04)
                 .allowsHitTesting(false)
         )
         .overlay(alignment: .topTrailing) {
@@ -92,7 +92,7 @@ public struct RehearsalSheet: View {
         }
         .padding(.horizontal, Theme.Spacing.lg)
         .padding(.vertical, 8)
-        .background(Color.orange)
+        .background(Theme.Color.warningStrong)
     }
 
     // MARK: - Header
@@ -286,7 +286,7 @@ public struct RehearsalSheet: View {
                     .font(Theme.Typography.monoSmall)
                     .padding(.horizontal, 6)
                     .padding(.vertical, 2)
-                    .background(Color.orange.opacity(0.15))
+                    .background(Theme.Color.warningStrong.opacity(0.15))
                     .clipShape(RoundedRectangle(cornerRadius: 4))
                 statusBadge(run.status)
             }
@@ -296,7 +296,7 @@ public struct RehearsalSheet: View {
                     .foregroundStyle(Theme.Color.text)
                     .padding(8)
                     .frame(maxWidth: .infinity, alignment: .leading)
-                    .background(Color.yellow.opacity(0.08))
+                    .background(Theme.Color.warningStrong.opacity(0.08))
                     .clipShape(RoundedRectangle(cornerRadius: Theme.Radius.sm))
                     .textSelection(.enabled)
             } else if let err = run.errorMessage {
@@ -446,8 +446,8 @@ private struct DiffLineRow: View {
     private var backgroundColor: Color {
         switch line.kind {
         case .same: return Color.clear
-        case .added: return Color.green.opacity(0.08)
-        case .removed: return Color.red.opacity(0.08)
+        case .added: return Theme.Color.gitAdded.opacity(0.08)
+        case .removed: return Theme.Color.gitRemoved.opacity(0.08)
         }
     }
 }

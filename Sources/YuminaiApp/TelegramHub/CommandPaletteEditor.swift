@@ -63,15 +63,19 @@ struct CommandPaletteEditor: View {
 
     // MARK: - Toolbar
 
+    // ADR-141 — 접근성: 헤더에 accessibilityLabel 추가
     private var toolbar: some View {
         HStack {
             Text("명령어")
                 .font(Theme.Typography.title)
                 .foregroundStyle(Theme.Color.text)
+                .accessibilityAddTraits(.isHeader)
+                .accessibilityLabel("텔레그램 명령어 목록")
             Spacer()
             FlatButton("새 커맨드", icon: "plus", variant: .secondary) {
                 showAddSheet = true
             }
+            .accessibilityLabel("새 명령어 추가")
         }
     }
 
@@ -97,7 +101,7 @@ struct CommandPaletteEditor: View {
         .background(
             state.isSuccess
             ? Theme.Color.accent.opacity(0.08)
-            : Color.red.opacity(0.08)
+            : Theme.Color.gitRemoved.opacity(0.08)
         )
         .clipShape(RoundedRectangle(cornerRadius: Theme.Radius.sm))
         .transition(.opacity.combined(with: .move(edge: .top)))
@@ -155,20 +159,14 @@ struct CommandPaletteEditor: View {
         )
     }
 
+    // ADR-140 — AnimatedEmptyState 통일
     private var emptyState: some View {
-        HStack {
-            Spacer()
-            VStack(spacing: Theme.Spacing.sm) {
-                Image(systemName: "terminal.fill")
-                    .font(.system(size: 24))
-                    .foregroundStyle(Theme.Color.textTertiary)
-                Text("커맨드 없음. [새 커맨드]로 추가하세요.")
-                    .font(Theme.Typography.small)
-                    .foregroundStyle(Theme.Color.textTertiary)
-            }
-            .padding(.vertical, Theme.Spacing.xl)
-            Spacer()
-        }
+        AnimatedEmptyState(
+            icon: "terminal",
+            iconTint: Theme.Color.textTertiary,
+            title: "커맨드 없음",
+            message: "[새 커맨드] 버튼으로 추가하세요."
+        )
     }
 
     private var syncButton: some View {
@@ -253,10 +251,10 @@ private struct CommandRow: View {
             if command.requiresHITL {
                 Text("위험 명령")
                     .font(Theme.Typography.micro)
-                    .foregroundStyle(.orange)
+                    .foregroundStyle(Theme.Color.warningStrong)
                     .padding(.horizontal, 6)
                     .padding(.vertical, 2)
-                    .background(Color.orange.opacity(0.12))
+                    .background(Theme.Color.warningStrong.opacity(0.12))
                     .clipShape(RoundedRectangle(cornerRadius: 4))
             }
 

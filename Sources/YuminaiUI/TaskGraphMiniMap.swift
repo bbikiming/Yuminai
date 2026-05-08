@@ -296,7 +296,7 @@ private struct TaskRow: View {
                             Button(action: onShowRehearsal) {
                                 Image(systemName: "arrow.triangle.2.circlepath")
                                     .font(.system(size: 10))
-                                    .foregroundStyle(Color.orange)
+                                    .foregroundStyle(Theme.Color.warningStrong)
                             }
                             .buttonStyle(.plain)
                             .help("이 task를 다른 모델로 리허설 (ADR-052)")
@@ -351,17 +351,17 @@ private struct TaskRow: View {
         case .running:
             Image(systemName: "circle.dashed")
                 .font(.system(size: 12))
-                .foregroundStyle(Color.green)
+                .foregroundStyle(Theme.Color.gitAdded)
                 .help("진행 중")
         case .completed:
             Image(systemName: "checkmark.circle.fill")
                 .font(.system(size: 12))
-                .foregroundStyle(Color.green)
+                .foregroundStyle(Theme.Color.gitAdded)
                 .help("완료")
         case .failed:
             Image(systemName: "xmark.circle.fill")
                 .font(.system(size: 12))
-                .foregroundStyle(Color.red)
+                .foregroundStyle(Theme.Color.gitRemoved)
                 .help("실패")
         }
     }

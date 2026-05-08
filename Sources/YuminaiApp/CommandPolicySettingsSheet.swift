@@ -52,7 +52,7 @@ struct CommandPolicySettingsSheet: View {
             }
             .background(Theme.Color.surface)
         }
-        .frame(minWidth: 580, minHeight: 500)
+        .yuminaiSheetFrame(width: 580, height: 500)
         .background(Theme.Color.bg)
     }
 }

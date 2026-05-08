@@ -38,7 +38,7 @@ struct GitHubPATSheet: View {
                 .padding(Theme.Spacing.lg)
             }
         }
-        .frame(minWidth: 520, minHeight: 420)
+        .yuminaiSheetFrame(width: 520, height: 420)
         .background(Theme.Color.bg)
     }
 
@@ -164,10 +164,10 @@ struct GitHubPATSheet: View {
                     HStack(spacing: 4) {
                         Image(systemName: "exclamationmark.triangle.fill")
                             .font(.system(size: 10))
-                            .foregroundStyle(.orange)
+                            .foregroundStyle(Theme.Color.warningStrong)
                         Text("토큰은 `ghp_` 또는 `github_pat_`로 시작해야 해요.")
                             .font(Theme.Typography.micro)
-                            .foregroundStyle(.orange)
+                            .foregroundStyle(Theme.Color.warningStrong)
                     }
                 }
             }
@@ -232,7 +232,7 @@ struct GitHubPATSheet: View {
 
     private var validationBorderColor: Color {
         if tokenInput.isEmpty { return Theme.Color.borderSubtle }
-        return isValidPATFormat ? Theme.Color.success.opacity(0.6) : Color.orange.opacity(0.6)
+        return isValidPATFormat ? Theme.Color.success.opacity(0.6) : Theme.Color.warningStrong.opacity(0.6)
     }
 
     private func openGitHubTokenPage() {

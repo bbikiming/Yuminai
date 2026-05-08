@@ -86,6 +86,32 @@ public enum Theme {
         public static let agentClaudeMuted = SwiftUI.Color.adaptive(light: SwiftUI.Color(rgb: 0xFEF3C7), dark: SwiftUI.Color(rgb: 0x4A2D08))
         public static let agentCodexMuted = SwiftUI.Color.adaptive(light: SwiftUI.Color(rgb: 0xD1FAE5), dark: SwiftUI.Color(rgb: 0x064237))
 
+        // MARK: — ADR-137 의미 토큰 (Color literal 30+ 위치 통합)
+
+        /// 경고 강조 (orange tone) — git 오래된 파일, 경고 배지, routing 임계치 초과.
+        public static let warningStrong = SwiftUI.Color(rgb: 0xF59E0B)
+
+        /// Git diff 추가 (green) — 파일 추가, 라인 추가.
+        public static let gitAdded = SwiftUI.Color(rgb: 0x4ADE80)
+
+        /// Git diff 삭제 (red) — 파일 삭제, 라인 삭제.
+        public static let gitRemoved = SwiftUI.Color(rgb: 0xF87171)
+
+        /// 즐겨찾기 별 (yellow/gold).
+        public static let favoriteStar = SwiftUI.Color(rgb: 0xFBBF24)
+
+        /// 정보 강조 (blue) — 링크, 정보 배지, 가이드 라인.
+        public static let infoBlue = SwiftUI.Color(rgb: 0x60A5FA)
+
+        /// GitLab 브랜드 (orange) — GitLab 관련 UI 요소.
+        public static let gitlab = SwiftUI.Color(rgb: 0xFC6D26)
+
+        /// AutoRun 실행 중 상태 (green) — 진행 바, 실행 dot.
+        public static let autoRunActive = SwiftUI.Color(rgb: 0x4ADE80)
+
+        /// AutoRun 일시정지 상태 (yellow).
+        public static let autoRunPaused = SwiftUI.Color(rgb: 0xFBBF24)
+
         // Helper: dark/light hex
         private static func hex(dark: UInt32, light: UInt32) -> SwiftUI.Color {
             SwiftUI.Color.adaptive(

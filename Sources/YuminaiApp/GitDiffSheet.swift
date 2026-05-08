@@ -240,8 +240,8 @@ struct GitDiffSheet: View {
     private func diffLineBackground(_ line: String) -> Color {
         if line.hasPrefix("+++") || line.hasPrefix("---") { return Color.clear }
         if line.hasPrefix("@@") { return Theme.Color.accentMuted.opacity(0.5) }
-        if line.hasPrefix("+") { return Color.green.opacity(0.10) }
-        if line.hasPrefix("-") { return Color.red.opacity(0.10) }
+        if line.hasPrefix("+") { return Theme.Color.gitAdded.opacity(0.10) }
+        if line.hasPrefix("-") { return Theme.Color.gitRemoved.opacity(0.10) }
         return Color.clear
     }
 

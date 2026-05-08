@@ -277,7 +277,7 @@ struct HarnessHelpSheet: View {
         HStack(spacing: 8) {
             Image(systemName: "lightbulb.fill")
                 .font(.system(size: 14))
-                .foregroundStyle(Color.yellow)
+                .foregroundStyle(Theme.Color.favoriteStar)
             Text("Harness 도움말")
                 .font(Theme.Typography.title)
                 .foregroundStyle(Theme.Color.text)

@@ -291,32 +291,15 @@ private struct SetupToolCard: View {
     }
 
     @ViewBuilder
+    // ADR-139 — StatusBadge 공유 컴포넌트 사용
     private var statusBadge: some View {
         switch status {
         case .installed:
-            Label("설치됨", systemImage: "checkmark.circle.fill")
-                .font(Theme.Typography.micro)
-                .foregroundStyle(Theme.Color.success)
-                .padding(.horizontal, 7)
-                .padding(.vertical, 3)
-                .background(Theme.Color.success.opacity(0.10))
-                .clipShape(Capsule())
+            StatusBadge(.success, label: "설치됨", systemImage: "checkmark.circle.fill")
         case .notInstalled:
-            Label("미설치", systemImage: "exclamationmark.circle.fill")
-                .font(Theme.Typography.micro)
-                .foregroundStyle(.orange)
-                .padding(.horizontal, 7)
-                .padding(.vertical, 3)
-                .background(Color.orange.opacity(0.10))
-                .clipShape(Capsule())
+            StatusBadge(.warning, label: "미설치", systemImage: "exclamationmark.circle.fill")
         case .unknown:
-            Label("확인 중", systemImage: "ellipsis.circle.fill")
-                .font(Theme.Typography.micro)
-                .foregroundStyle(Theme.Color.textTertiary)
-                .padding(.horizontal, 7)
-                .padding(.vertical, 3)
-                .background(Theme.Color.surfaceHi)
-                .clipShape(Capsule())
+            StatusBadge(.neutral, label: "확인 중", systemImage: "ellipsis.circle.fill")
         }
     }
 
@@ -336,9 +319,9 @@ private struct SetupToolCard: View {
             switch tool {
             case .claudeCode: return (Theme.Color.danger, Theme.Color.danger.opacity(0.10))
             case .codexCLI: return (Theme.Color.textTertiary, Theme.Color.surfaceHi)
-            case .cokacdir: return (.blue, Color.blue.opacity(0.10))
+            case .cokacdir: return (.blue, Theme.Color.infoBlue.opacity(0.10))
             case .githubCLI: return (Theme.Color.textTertiary, Theme.Color.surfaceHi)
-            case .gitlabCLI: return (.orange, Color.orange.opacity(0.10))
+            case .gitlabCLI: return (.orange, Theme.Color.gitlab.opacity(0.10))
             }
         }()
 

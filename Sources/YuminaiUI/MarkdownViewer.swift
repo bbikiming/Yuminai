@@ -144,7 +144,7 @@ extension Theme {
             .codeBlock { configuration in
                 ScrollView(.horizontal, showsIndicators: false) {
                     configuration.label
-                        .padding(12)
+                        .padding(Theme.Spacing.sm)
                         .markdownTextStyle {
                             FontFamilyVariant(.monospaced)
                             FontSize(12.5)
