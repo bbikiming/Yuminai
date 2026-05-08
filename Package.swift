@@ -1,8 +1,12 @@
-// swift-tools-version: 6.2
+// swift-tools-version: 6.1
 // Yuminai SPM workspace.
 //
 // MVP-0에서는 SPM executable로 SwiftUI App을 빌드/실행한다 (`swift run YuminaiApp`).
 // 정식 .app 번들/Xcode 프로젝트는 후속 — App/README.md 가이드 참조.
+//
+// **ADR-148** — swift-tools-version 6.2 → 6.1 다운그레이드 (CI 호환성).
+// 실제 사용 기능 (StrictConcurrency, ExistentialAny upcoming features)은 모두 6.1+ 지원.
+// macos-latest runner의 Xcode 16+ 시스템 toolchain (Swift 6.1)에서 빌드 가능.
 
 import PackageDescription
 
