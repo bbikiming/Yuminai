@@ -66,6 +66,9 @@ let package = Package(
             name: "YuminaiUI",
             dependencies: [
                 "YuminaiCore",
+                // ADR-148 — YuminaiUI/InspectorPanel.swift, MarkdownViewer.swift 등이
+                // import YuminaiObsidian 사용. 로컬은 cache로 우회됐지만 CI fresh 빌드 실패.
+                "YuminaiObsidian",
                 .product(name: "MarkdownUI", package: "swift-markdown-ui"),
                 .product(name: "SwiftTerm", package: "SwiftTerm"),
                 .product(name: "Highlightr", package: "Highlightr")
