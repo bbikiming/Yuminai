@@ -169,13 +169,36 @@ tell application "Finder"
 end tell
 EOF
             sync
-            sleep 1
+            sleep 2
             hdiutil detach "$MOUNT_DIR" -force 2>/dev/null || true
+            sleep 2
         fi
 
-        # Convert RW → UDZO compressed
-        hdiutil convert "$DMG_RW" -format UDZO -o "$DMG_PATH"
-        rm -f "$DMG_RW"
+        # ADR-149 — convert "Resource temporarily unavailable" 방지:
+        # 1. 추가로 모든 mount 강제 해제 (volume name 기준)
+        # 2. retry 3회 with backoff
+        # 3. 최후엔 RW DMG 그대로 사용 (사용자 정상 작동)
+        for vol in /Volumes/"$APP_NAME "*; do
+            [ -d "$vol" ] && hdiutil detach "$vol" -force 2>/dev/null || true
+        done
+        sleep 2
+
+        CONVERT_OK=false
+        for attempt in 1 2 3; do
+            if hdiutil convert "$DMG_RW" -format UDZO -o "$DMG_PATH" 2>&1; then
+                CONVERT_OK=true
+                break
+            fi
+            echo "   ⏳ convert 재시도 $attempt/3 (5초 대기)..."
+            sleep 5
+        done
+
+        if [ "$CONVERT_OK" = true ]; then
+            rm -f "$DMG_RW"
+        else
+            echo "   ⚠ UDZO 압축 실패 — RW DMG를 release용으로 rename"
+            mv "$DMG_RW" "$DMG_PATH"
+        fi
     else
         # Standard UDZO compressed DMG
         hdiutil create -volname "$APP_NAME $APP_VERSION" \
