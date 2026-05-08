@@ -20,21 +20,26 @@ extension AppModel {
     public func setupDeviceStateMonitor() {
         resetIdleTimer()
 
-        // macOS 수면 알림 구독
+        // ADR-148 — Swift 6.1 strict concurrency: NotificationCenter closure는 Sendable.
+        // main actor isolated property는 Task { @MainActor }로 hop 후 접근.
         NotificationCenter.default.addObserver(
             forName: NSWorkspace.willSleepNotification,
             object: nil,
             queue: .main
         ) { [weak self] _ in
-            self?.deviceState = .desktopIdle
+            Task { @MainActor in
+                self?.deviceState = .desktopIdle
+            }
         }
         NotificationCenter.default.addObserver(
             forName: NSWorkspace.didWakeNotification,
             object: nil,
             queue: .main
         ) { [weak self] _ in
-            self?.deviceState = .desktopActive
-            self?.resetIdleTimer()
+            Task { @MainActor in
+                self?.deviceState = .desktopActive
+                self?.resetIdleTimer()
+            }
         }
     }
 

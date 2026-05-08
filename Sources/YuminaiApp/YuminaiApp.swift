@@ -41,9 +41,14 @@ struct YuminaiAppMain: App {
             // ADR-108 — userProfileProvider: AppModel init 전에 closure로 묶어두고,
             // model 생성 후 weak 참조 주입. bootstrap 동기 제약 내 안전한 패턴.
             // nonisolated(unsafe) — init() 동기 컨텍스트 내 단순 대입, race 없음.
+            // ADR-148 — preferences는 main actor isolated. Sendable closure에서 직접
+            // 접근 불가. MainActor.assumeIsolated로 안전하게 동기 접근 (closure 호출 시점에
+            // 항상 main thread 보장 — adapter는 MainActor에서만 spawn 호출).
             nonisolated(unsafe) var weakModel: AppModel? = nil
             let profileProvider: @Sendable () -> String? = {
-                weakModel?.preferences.userProfile.renderForSystemPrompt()
+                MainActor.assumeIsolated {
+                    weakModel?.preferences.userProfile.renderForSystemPrompt()
+                }
             }
 
             let claudeAdapter = LiveClaudeAdapter(
