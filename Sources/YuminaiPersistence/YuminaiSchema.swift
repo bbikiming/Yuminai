@@ -3,7 +3,9 @@ import SwiftData
 
 /// Yuminai의 첫 번째 schema 버전. 이후 변경은 새 `VersionedSchema` 추가 + `MigrationStage`.
 public enum YuminaiSchemaV1: VersionedSchema {
-    public static let versionIdentifier = Schema.Version(1, 0, 0)
+    // ADR-148 — Schema.Version (SwiftData)이 Sendable 미준수.
+    // 실제로는 immutable static let이라 thread-safe → nonisolated(unsafe) 명시.
+    nonisolated(unsafe) public static let versionIdentifier = Schema.Version(1, 0, 0)
 
     public static var models: [any PersistentModel.Type] {
         [WorkspaceModel.self, SessionModel.self, MessageModel.self]

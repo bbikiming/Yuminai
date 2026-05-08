@@ -118,7 +118,9 @@ public final actor LiveTelegramBot: TelegramClient {
     /// - 429 → Retry-After 존중
     /// - 5xx / network → exponential backoff retry
     /// - 그 외 → 즉시 throw
-    private func withRetry<T>(
+    // ADR-148 — Swift 6.1 strict concurrency: generic T를 Sendable로 제약.
+    // 모든 호출처는 Telegram API response struct (이미 Sendable) 사용.
+    private func withRetry<T: Sendable>(
         operation: String,
         chatId: Int64? = nil,
         block: () async throws -> T
