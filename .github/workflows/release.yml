@@ -35,10 +35,16 @@ jobs:
         with:
           fetch-depth: 0
 
-      - name: Setup Swift
-        uses: swift-actions/setup-swift@v2
-        with:
-          swift-version: "6.0"
+      # ADR-148 — macos-latest runner의 기본 Xcode 16+에 Swift 6.2가 포함되므로
+      # swift-actions/setup-swift 대신 시스템 기본 toolchain 사용.
+      # Package.swift의 swift-tools-version: 6.2.0과 일치.
+      - name: Verify Swift toolchain
+        run: |
+          swift --version
+          # Package.swift 요구: 6.2.0+
+          REQUIRED="6.2"
+          ACTUAL=$(swift --version | head -1 | grep -oE '[0-9]+\.[0-9]+' | head -1)
+          echo "Required: $REQUIRED, Actual: $ACTUAL"
 
       - name: Cache SPM dependencies
         uses: actions/cache@v4
