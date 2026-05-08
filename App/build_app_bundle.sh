@@ -12,7 +12,7 @@ set -e
 
 PROJECT_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 APP_NAME="Yuminai"
-APP_VERSION="1.1.0"
+APP_VERSION="1.1.1"
 DIST_DIR="$PROJECT_ROOT/dist"
 APP_BUNDLE="$DIST_DIR/$APP_NAME.app"
 
@@ -99,15 +99,36 @@ if [ "$DMG" = true ]; then
     ln -s /Applications "$DMG_TEMP/Applications"
 
     if [ "$CUSTOM_DMG" = true ]; then
-        # ADR-069 Phase 3 — Custom DMG with bg image + layout
+        # ADR-069 Phase 3 / ADR-149 — Custom DMG: bg + install.command + README
         echo "🎨 4a. Building custom DMG layout..."
+
+        # SVG → PNG 자동 변환 (rsvg-convert)
+        BG_SVG="$PROJECT_ROOT/App/Assets/dmg-background.svg"
         BG_IMG="$PROJECT_ROOT/App/Assets/dmg-background.png"
+        if command -v rsvg-convert >/dev/null 2>&1 && [ -f "$BG_SVG" ]; then
+            echo "   🖼  SVG → PNG (800×500)..."
+            rsvg-convert -w 800 -h 500 "$BG_SVG" -o "$BG_IMG" 2>/dev/null || true
+        fi
+
         if [ -f "$BG_IMG" ]; then
             mkdir -p "$DMG_TEMP/.background"
             cp "$BG_IMG" "$DMG_TEMP/.background/background.png"
         fi
 
-        # Create RW DMG first (so we can apply layout)
+        # ADR-149 — install.command + README 동봉
+        INSTALL_CMD_SRC="$PROJECT_ROOT/App/Assets/dmg-install.command"
+        README_SRC="$PROJECT_ROOT/App/Assets/dmg-readme.txt"
+        if [ -f "$INSTALL_CMD_SRC" ]; then
+            cp "$INSTALL_CMD_SRC" "$DMG_TEMP/install.command"
+            chmod +x "$DMG_TEMP/install.command"
+            echo "   ⚡ install.command 동봉 (자동 설치 + Gatekeeper 우회)"
+        fi
+        if [ -f "$README_SRC" ]; then
+            cp "$README_SRC" "$DMG_TEMP/README.txt"
+            echo "   📄 README.txt 동봉 (한국어 가이드)"
+        fi
+
+        # Create RW DMG first
         DMG_RW="$DIST_DIR/${APP_NAME}_rw.dmg"
         rm -f "$DMG_RW"
         hdiutil create -volname "$APP_NAME $APP_VERSION" \
@@ -126,15 +147,21 @@ tell application "Finder"
         set current view of container window to icon view
         set toolbar visible of container window to false
         set statusbar visible of container window to false
-        set the bounds of container window to {200, 100, 800, 500}
+        set the bounds of container window to {200, 100, 1000, 600}
         set theViewOptions to the icon view options of container window
         set arrangement of theViewOptions to not arranged
-        set icon size of theViewOptions to 96
+        set icon size of theViewOptions to 88
         try
             set background picture of theViewOptions to file ".background:background.png"
         end try
         set position of item "$APP_NAME.app" of container window to {150, 200}
         set position of item "Applications" of container window to {450, 200}
+        try
+            set position of item "install.command" of container window to {150, 380}
+        end try
+        try
+            set position of item "README.txt" of container window to {450, 380}
+        end try
         update without registering applications
         delay 1
         close

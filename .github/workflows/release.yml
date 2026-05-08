@@ -89,11 +89,15 @@ jobs:
           sed -i.bak "s/^APP_VERSION=.*/APP_VERSION=\"${{ steps.version.outputs.version }}\"/" App/build_app_bundle.sh
           rm -f App/build_app_bundle.sh.bak
 
-      - name: Build app bundle + DMG
+      - name: Install rsvg-convert (for DMG background)
+        run: brew install librsvg
+
+      - name: Build app bundle + Custom DMG
         run: |
           chmod +x App/build_app_bundle.sh
-          # ADR-148 — arm64 only (universal 시도 제거)
-          ./App/build_app_bundle.sh --dmg
+          chmod +x App/Assets/dmg-install.command
+          # ADR-148/149 — arm64 only + custom DMG (background + install.command + README)
+          ./App/build_app_bundle.sh --dmg --custom-dmg
 
       - name: Verify DMG
         run: |
