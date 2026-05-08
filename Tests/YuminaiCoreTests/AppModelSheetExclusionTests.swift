@@ -16,16 +16,20 @@ struct AppModelSheetExclusionTests {
     // MARK: - 헬퍼
 
     /// Package root를 찾는다 — `Package.swift`가 있는 디렉터리를 기준으로 상위 탐색.
-    private func packageRoot() throws -> URL {
-        // Swift Testing은 #file을 컴파일 시 소스 경로로 embed한다.
-        // 런타임 CWD가 다를 수 있으므로 고정 경로를 사용한다.
-        let knownPath = "/Users/bbikiming/Documents/vibe_coding/Yuminai"
-        let rootURL = URL(fileURLWithPath: knownPath)
-        let packageSwift = rootURL.appendingPathComponent("Package.swift")
-        guard FileManager.default.fileExists(atPath: packageSwift.path) else {
-            throw TestFailure("Package.swift를 \(knownPath)에서 찾을 수 없음")
+    /// **ADR-148** — `#filePath`(소스 컴파일 경로)에서 Package.swift 자동 탐색.
+    /// 절대 경로 hardcode 제거 (CI 환경 호환: /Users/runner/work/Yuminai/Yuminai 등).
+    private func packageRoot(file: StaticString = #filePath) throws -> URL {
+        let fileURL = URL(fileURLWithPath: "\(file)")
+        var dir = fileURL.deletingLastPathComponent()
+        let fm = FileManager.default
+        // 최대 5단계 위로 올라가며 Package.swift 탐색 (Tests/<Suite>Tests/<File>.swift → root)
+        for _ in 0..<5 {
+            if fm.fileExists(atPath: dir.appendingPathComponent("Package.swift").path) {
+                return dir
+            }
+            dir = dir.deletingLastPathComponent()
         }
-        return rootURL
+        throw TestFailure("Package.swift를 #filePath 기준 상위 5단계에서 찾을 수 없음 (시작: \(file))")
     }
 
     /// `AppModel.swift`에서 `dismissAllSheets()` 함수 바디 문자열을 추출한다.
