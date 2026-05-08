@@ -61,14 +61,11 @@ jobs:
           chmod +x scripts/lint-theme.sh
           bash scripts/lint-theme.sh --warn
 
-      - name: Build (universal)
-        id: build_universal
-        continue-on-error: true
-        run: |
-          swift build -c release --product YuminaiApp --arch arm64 --arch x86_64
-
-      - name: Build (arm64 fallback)
-        if: steps.build_universal.outcome == 'failure'
+      # ADR-148 — Universal binary 시도 제거.
+      # SwiftTerm + Metal toolchain의 GitHub Actions runner 호환성 문제로
+      # universal 빌드가 항상 실패. partial cache가 fallback과 충돌하여 false
+      # "no such module" 에러 유발. arm64 only로 단순화 (Apple Silicon 90%+ 시장).
+      - name: Build (arm64 release)
         run: |
           swift build -c release --product YuminaiApp
 
@@ -95,8 +92,7 @@ jobs:
       - name: Build app bundle + DMG
         run: |
           chmod +x App/build_app_bundle.sh
-          # universal 시도 → 실패 시 native fallback
-          ./App/build_app_bundle.sh --universal --dmg 2>&1 || \
+          # ADR-148 — arm64 only (universal 시도 제거)
           ./App/build_app_bundle.sh --dmg
 
       - name: Verify DMG
