@@ -8,6 +8,7 @@ import SwiftUI
 ///
 /// 16 케이스 모두 색상이 정의되어 있고 `default` fallback이 없음을 보장.
 /// TDD: 새 카테고리를 `CommunityResource.Category`에 추가하면 이 스위트가 자동으로 실패 → 색상 추가를 강제.
+@MainActor
 @Suite("CategoryColors (ADR-126)")
 struct CategoryColorsTests {
 

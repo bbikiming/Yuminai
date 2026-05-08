@@ -2,6 +2,7 @@ import Foundation
 import Testing
 @testable import YuminaiUI
 
+@MainActor
 @Suite("LayoutMode breakpoints")
 struct LayoutModeTests {
     @Test("breakpoint 경계에서 정확히 분기한다 (ADR-070: tiny 추가)")
@@ -102,6 +103,7 @@ struct LayoutModeTests {
     }
 }
 
+@MainActor
 @Suite("Settings sheet sizing (ADR-070)")
 struct SettingsSheetTests {
     @Test("보조 모니터 (960×640)에서도 표시 가능한 minimum 크기")
@@ -122,6 +124,7 @@ struct SettingsSheetTests {
     }
 }
 
+@MainActor
 @Suite("ToolbarHoverInfo (ADR-070 Phase 5)")
 struct ToolbarHoverInfoTests {
     @Test("기본 init은 title + body 필수, shortcut은 옵션")
@@ -148,6 +151,7 @@ struct ToolbarHoverInfoTests {
     }
 }
 
+@MainActor
 @Suite("Theme tokens")
 struct ThemeTests {
     @Test("Spacing 토큰은 단조 증가한다")

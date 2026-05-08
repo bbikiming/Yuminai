@@ -2,6 +2,7 @@ import Foundation
 import Testing
 @testable import YuminaiUI
 
+@MainActor
 @Suite("CodeViewer.languageHint — 확장자 → Highlight.js id")
 struct CodeViewerLanguageHintTests {
     @Test("주요 언어 확장자 매핑")

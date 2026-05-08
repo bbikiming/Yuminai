@@ -2,6 +2,7 @@ import Foundation
 import Testing
 @testable import YuminaiUI
 
+@MainActor
 @Suite("UsageDashboard view modes (ADR-075)")
 struct UsageDashboardModeTests {
 
@@ -21,6 +22,7 @@ struct UsageDashboardModeTests {
     }
 }
 
+@MainActor
 @Suite("Usage filters (ADR-075 Phase 3)")
 struct UsageFiltersTests {
 

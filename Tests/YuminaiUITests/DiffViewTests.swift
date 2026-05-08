@@ -2,6 +2,7 @@ import Foundation
 import Testing
 @testable import YuminaiUI
 
+@MainActor
 @Suite("DiffReviewView — line kind")
 struct DiffLineKindTests {
     @Test("+로 시작하면 added")
@@ -38,6 +39,7 @@ struct DiffLineKindTests {
     }
 }
 
+@MainActor
 @Suite("DiffReviewView — extractHunks")
 struct DiffExtractHunksTests {
     @Test("단일 파일 diff 추출")

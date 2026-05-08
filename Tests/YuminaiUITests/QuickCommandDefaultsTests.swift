@@ -3,6 +3,7 @@ import Testing
 @testable import YuminaiCore
 @testable import YuminaiUI
 
+@MainActor
 @Suite("QuickCommand.defaults — custom + sanitize")
 struct QuickCommandDefaultsTests {
     @Test("custom 모두 제공 시 sparkles icon으로 default와 git 사이에 들어감")
