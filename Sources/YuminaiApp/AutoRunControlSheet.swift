@@ -56,6 +56,16 @@ public struct AutoRunControlSheet: View {
                 }
                 .buttonStyle(.plain)
 
+                // ADR-135 — 로그 이력 뷰어
+                Button {
+                    model.showAutoRunLogViewerSheet = true
+                } label: {
+                    Label("로그 이력", systemImage: "clock.badge.checkmark")
+                        .font(Theme.Typography.small)
+                        .foregroundStyle(Theme.Color.textSecondary)
+                }
+                .buttonStyle(.plain)
+
                 Spacer()
 
                 // 일시정지 / 재개
@@ -99,21 +109,21 @@ public struct AutoRunControlSheet: View {
                     .background(Capsule().fill(Theme.Color.surfaceHi))
             case .running:
                 HStack(spacing: 4) {
-                    PulseDot(color: .green, size: 6)
+                    PulseDot(color: Theme.Color.autoRunActive, size: 6)
                     Text("실행 중")
                         .font(Theme.Typography.micro)
-                        .foregroundStyle(.green)
+                        .foregroundStyle(Theme.Color.autoRunActive)
                 }
                 .padding(.horizontal, 8)
                 .padding(.vertical, 3)
-                .background(Capsule().fill(Color.green.opacity(0.1)))
+                .background(Capsule().fill(Theme.Color.autoRunActive.opacity(0.1)))
             case .paused:
                 Text("일시정지")
                     .font(Theme.Typography.micro)
-                    .foregroundStyle(Color.yellow)
+                    .foregroundStyle(Theme.Color.autoRunPaused)
                     .padding(.horizontal, 8)
                     .padding(.vertical, 3)
-                    .background(Capsule().fill(Color.yellow.opacity(0.1)))
+                    .background(Capsule().fill(Theme.Color.autoRunPaused.opacity(0.1)))
             case .completed:
                 Text("완료")
                     .font(Theme.Typography.micro)
@@ -199,7 +209,7 @@ public struct AutoRunControlSheet: View {
                             .fill(Theme.Color.surfaceHi)
                             .frame(height: 4)
                         Capsule()
-                            .fill(Color.green)
+                            .fill(Theme.Color.autoRunActive)
                             .frame(
                                 width: geo.size.width * min(1.0, Double(turnCount) / Double(config.maxTurns)),
                                 height: 4
@@ -294,7 +304,7 @@ private struct AutoRunLogRow: View {
                     if !log.warnings.isEmpty {
                         Text("⚠")
                             .font(Theme.Typography.micro)
-                            .foregroundStyle(Color.yellow)
+                            .foregroundStyle(Theme.Color.warningStrong)
                     }
                 }
             }

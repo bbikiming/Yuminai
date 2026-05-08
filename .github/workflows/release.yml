@@ -50,6 +50,11 @@ jobs:
           restore-keys: |
             ${{ runner.os }}-spm-
 
+      - name: Theme lint (ADR-147)
+        run: |
+          chmod +x scripts/lint-theme.sh
+          bash scripts/lint-theme.sh --warn
+
       - name: Build (universal)
         id: build_universal
         continue-on-error: true

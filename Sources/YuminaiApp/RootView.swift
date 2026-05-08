@@ -464,6 +464,11 @@ struct RootView: View {
             AutoRunControlSheet()
                 .environment(appModel)
         }
+        // ADR-135 — AutoRun 로그 뷰어 sheet
+        .sheet(isPresented: $bindable.showAutoRunLogViewerSheet) {
+            AutoRunLogViewerSheet()
+                .environment(appModel)
+        }
         // ADR-094 Phase 3 — HITL 승인 sheet
         .sheet(isPresented: $bindable.showHITLSheet) {
             HITLApprovalSheet()
@@ -1747,7 +1752,7 @@ struct ChatPane: View {
         HStack(spacing: 8) {
             Image(systemName: "arrow.left.arrow.right.circle.fill")
                 .font(.system(size: 13))
-                .foregroundStyle(Color.orange)
+                .foregroundStyle(Theme.Color.warningStrong)
             VStack(alignment: .leading, spacing: 2) {
                 Text("자동 routing 예정 — \(pending.from.shortLabel) → \(pending.to.shortLabel)")
                     .font(Theme.Typography.small.weight(.medium))
@@ -1766,14 +1771,14 @@ struct ChatPane: View {
             .background(Theme.Color.surface)
             .overlay(
                 RoundedRectangle(cornerRadius: Theme.Radius.sm)
-                    .stroke(Color.orange, lineWidth: 1)
+                    .stroke(Theme.Color.warningStrong, lineWidth: 1)
             )
             .clipShape(RoundedRectangle(cornerRadius: Theme.Radius.sm))
             .keyboardShortcut(.escape, modifiers: [])
         }
         .padding(.horizontal, Theme.Spacing.md)
         .padding(.vertical, Theme.Spacing.xs)
-        .background(Color.orange.opacity(0.12))
+        .background(Theme.Color.warningStrong.opacity(0.12))
         .overlay(alignment: .bottom) { FlatHDivider() }
         .transition(.move(edge: .top).combined(with: .opacity))
     }
@@ -1811,7 +1816,7 @@ private struct TerminalSessionTabButton: View {
                 if session.hasUnreadOutput && !isActive {
                     // ADR-043 R4 — 5pt → 7pt + white border (가시성 ↑, 주변 시야 인지 강화)
                     Circle()
-                        .fill(Color.orange)
+                        .fill(Theme.Color.warningStrong)
                         .frame(width: 7, height: 7)
                         .overlay(Circle().stroke(Color.white.opacity(0.4), lineWidth: 1))
                         .help("새 출력이 있어요 — 클릭해서 확인")
@@ -1869,7 +1874,7 @@ private struct TerminalSessionTabButton: View {
             ZStack {
                 if shouldPulse {
                     Circle()
-                        .fill(Color.green.opacity(0.25))
+                        .fill(Theme.Color.gitAdded.opacity(0.25))
                         .frame(width: 12, height: 12)
                         .scaleEffect(pulse ? 1.4 : 0.8)
                         .opacity(pulse ? 0 : 0.8)
@@ -1879,7 +1884,7 @@ private struct TerminalSessionTabButton: View {
                         )
                 }
                 Circle()
-                    .fill(Color.green)
+                    .fill(Theme.Color.gitAdded)
                     .frame(width: 6, height: 6)
             }
             .frame(width: 12, height: 12)

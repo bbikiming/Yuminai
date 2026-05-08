@@ -76,16 +76,49 @@ extension AppModel {
             let lastResponse = await MainActor.run { self.messages.last?.content ?? "" }
             let costDelta = await MainActor.run { self.lastCostDelta }
 
+            // ADR-134 — CommandPolicy wire-up:
+            // 응답에서 감지된 tool_use / 명령 패턴을 CommandPolicyMatrix로 평가.
+            // 현재는 응답 텍스트에서 코드 블록 내 명령을 추출해 평가한다.
+            var warnings: [String] = []
+            let detectedCommands = AutoRunCommandExtractor.extract(from: lastResponse)
+            let effectivePolicy: CommandPolicyMatrix
+            if let runPolicy = config.commandPolicy {
+                effectivePolicy = runPolicy
+            } else {
+                effectivePolicy = await MainActor.run { self.preferences.commandPolicy }
+            }
+            var blockedCommands: [String] = []
+            for cmd in detectedCommands {
+                let decision = effectivePolicy.policy(for: cmd)
+                switch decision {
+                case .deny:
+                    blockedCommands.append(cmd)
+                    warnings.append("차단된 명령 감지: \(cmd)")
+                case .requireConfirmation:
+                    warnings.append("확인 필요 명령: \(cmd)")
+                case .allow:
+                    break
+                }
+            }
+            // .deny 명령이 있으면 경고를 로그에 남기고 AutoRunCoordinator가 Destructive로 인식하도록
+            // 응답에 차단 마커를 주입 (AutoRunCoordinator.checkDestructive 패턴 활용)
+            let effectiveResponse: String
+            if !blockedCommands.isEmpty {
+                effectiveResponse = lastResponse + "\n[COMMAND_POLICY_BLOCKED: \(blockedCommands.joined(separator: ", "))]"
+            } else {
+                effectiveResponse = lastResponse
+            }
+
             let log = AutoRunTurnLog(
                 runId: runId,
                 turn: turn,
                 timestamp: .now,
                 userPrompt: turn == 1 ? prompt : nil,
-                agentResponse: lastResponse,
-                toolCalls: [],
+                agentResponse: effectiveResponse,
+                toolCalls: detectedCommands,
                 costUSD: costDelta,
                 durationSeconds: elapsed,
-                warnings: []
+                warnings: warnings
             )
 
             // 로그 영구 보관

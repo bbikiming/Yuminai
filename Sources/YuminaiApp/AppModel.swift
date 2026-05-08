@@ -509,6 +509,8 @@ public final class AppModel {
     public var autoRunLogs: [AutoRunTurnLog] = []
     /// **ADR-132** — AutoRunControlSheet 표시 여부.
     public var showAutoRunControlSheet: Bool = false
+    /// **ADR-135** — AutoRunLogViewerSheet 표시 여부.
+    public var showAutoRunLogViewerSheet: Bool = false
 
     // MARK: - ADR-094 Phase 3 — HITL (AppModel+HITL.swift 참조)
 
