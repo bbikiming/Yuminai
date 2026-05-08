@@ -13,6 +13,17 @@ struct RootView: View {
     @AppStorage("yuminai.sidebar.userVisible") private var sidebarUserVisible: Bool = true
     @AppStorage("yuminai.inspector.userVisible") private var inspectorUserVisible: Bool = false
 
+    /// **ADR-150** — 사용자가 drag로 조절한 사이드바 폭 (영속).
+    /// min 200 (너무 좁으면 라벨 truncate), max 480 (너무 넓으면 메인 영역 압박).
+    @AppStorage("yuminai.sidebar.width") private var sidebarWidth: Double = 280
+    /// 드래그 중 임시 폭 (drag 종료 시 sidebarWidth로 commit).
+    @State private var sidebarDragOffset: CGFloat = 0
+    @State private var sidebarHovering: Bool = false
+
+    /// 사이드바 폭 한계 (Apple HIG 권장 + Yuminai 사이드바 컨텐츠 기준).
+    private let sidebarMinWidth: CGFloat = 200
+    private let sidebarMaxWidth: CGFloat = 480
+
     /// compact 모드에서 overlay popup 표시 여부 (영속 X).
     @State private var sidebarOverlayShown: Bool = false
 
@@ -550,8 +561,14 @@ struct RootView: View {
 
         return HStack(spacing: 0) {
             if sidebarInlineVisible {
+                // ADR-150 — drag-resizable 사이드바 (200~480px, 영속)
+                let resolvedWidth = max(sidebarMinWidth,
+                                       min(sidebarMaxWidth,
+                                           CGFloat(sidebarWidth) + sidebarDragOffset))
                 sidebar
+                    .frame(width: resolvedWidth)
                     .transition(.move(edge: .leading).combined(with: .opacity))
+                sidebarResizeHandle
             }
 
             ChatPane(
@@ -722,6 +739,59 @@ struct RootView: View {
             result[kind] = appModel.workspaceIds(in: kind)
         }
         return result
+    }
+
+    /// **ADR-150** — 사이드바 우측 가장자리 drag handle.
+    /// - 6pt 너비 hit area (hover 시 12pt + accent border)
+    /// - DragGesture로 폭 조절 (200~480 clamped)
+    /// - 더블클릭으로 default(280) 리셋
+    /// - macOS 표준 .resizeLeftRight 커서
+    private var sidebarResizeHandle: some View {
+        ZStack {
+            // hit area (transparent — drag 가능 영역만)
+            Rectangle()
+                .fill(Color.clear)
+                .frame(width: 8)
+                .contentShape(Rectangle())
+            // 시각 indicator (hover 시만 표시)
+            if sidebarHovering || sidebarDragOffset != 0 {
+                Rectangle()
+                    .fill(Theme.Color.accent.opacity(sidebarDragOffset != 0 ? 0.6 : 0.3))
+                    .frame(width: 2)
+            }
+        }
+        .frame(maxHeight: .infinity)
+        .onHover { hovering in
+            sidebarHovering = hovering
+            if hovering {
+                NSCursor.resizeLeftRight.push()
+            } else {
+                NSCursor.pop()
+            }
+        }
+        .gesture(
+            DragGesture(minimumDistance: 0)
+                .onChanged { value in
+                    sidebarDragOffset = value.translation.width
+                }
+                .onEnded { value in
+                    let newWidth = max(sidebarMinWidth,
+                                      min(sidebarMaxWidth,
+                                          CGFloat(sidebarWidth) + value.translation.width))
+                    sidebarWidth = Double(newWidth)
+                    sidebarDragOffset = 0
+                }
+        )
+        .onTapGesture(count: 2) {
+            // 더블클릭 = default 리셋
+            withAnimation(.spring(response: 0.35, dampingFraction: 0.85)) {
+                sidebarWidth = 280
+                sidebarDragOffset = 0
+            }
+        }
+        .help("드래그하여 사이드바 폭 조절 · 더블클릭으로 기본값 (280pt)")
+        .accessibilityLabel("사이드바 폭 조절")
+        .accessibilityHint("좌우로 드래그하여 사이드바 폭을 조절합니다. 더블클릭으로 기본값으로 되돌립니다.")
     }
 
     private var sidebar: some View {
