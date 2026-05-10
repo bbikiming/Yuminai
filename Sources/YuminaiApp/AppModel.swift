@@ -108,6 +108,10 @@ public final class AppModel {
     public var showTelegramHubSheet: Bool = false
     /// **ADR-093 Phase 2** — Offline queue depth (5초 주기 폴링, BotStatusDock 표시용).
     public var telegramQueueDepth: Int = 0
+    /// **ADR-151** — 텔레그램 핸드오프 sheet 표시 여부.
+    public var showTelegramHandoffSheet: Bool = false
+    /// **ADR-151** — 마지막 성공한 핸드오프 요청 (sheet에서 결과 표시용).
+    public var lastHandoffRequest: TelegramHandoffRequest? = nil
 
     // MARK: - ADR-097 — Telegram Artifact Viewer
 
@@ -3022,6 +3026,8 @@ public final class AppModel {
         showTelegramBotManagerSheet = false
         // ADR-092
         showTelegramHubSheet = false
+        // ADR-151
+        showTelegramHandoffSheet = false
         // ADR-089
         showNewChatSessionSheet = false
         // ADR-104

@@ -111,6 +111,10 @@ public struct SidebarView: View {
     public let onDeactivateChatSession: () -> Void
     /// **ADR-091** — 자유 대화에 워크스페이스 attach (또는 nil로 detach).
     public let onAttachChatSessionToWorkspace: (UUID, UUID?) -> Void
+    /// **ADR-151** — chat session을 텔레그램으로 핸드오프. nil이면 context menu 항목 숨김.
+    public let onTelegramHandoffChatSession: ((UUID) -> Void)?
+    /// **ADR-151** — 핸드오프 가능 여부 (봇 활성화 + binding 있을 때 true).
+    public let telegramHandoffAvailable: Bool
 
     public init(
         workspaces: [Workspace],
@@ -169,7 +173,9 @@ public struct SidebarView: View {
         onSelectChatSession: @escaping (UUID) -> Void = { _ in },
         onDeleteChatSession: @escaping (UUID) -> Void = { _ in },
         onDeactivateChatSession: @escaping () -> Void = {},
-        onAttachChatSessionToWorkspace: @escaping (UUID, UUID?) -> Void = { _, _ in }
+        onAttachChatSessionToWorkspace: @escaping (UUID, UUID?) -> Void = { _, _ in },
+        onTelegramHandoffChatSession: ((UUID) -> Void)? = nil,
+        telegramHandoffAvailable: Bool = false
     ) {
         self.workspaces = workspaces
         self._selectedId = selectedId
@@ -228,6 +234,8 @@ public struct SidebarView: View {
         self.onDeleteChatSession = onDeleteChatSession
         self.onDeactivateChatSession = onDeactivateChatSession
         self.onAttachChatSessionToWorkspace = onAttachChatSessionToWorkspace
+        self.onTelegramHandoffChatSession = onTelegramHandoffChatSession
+        self.telegramHandoffAvailable = telegramHandoffAvailable
     }
 
     public var body: some View {
@@ -355,7 +363,9 @@ public struct SidebarView: View {
                             willSwitchWorkspace: session.workspaceId != nil && session.workspaceId != selectedId,
                             onSelect: { onSelectChatSession(session.id) },
                             onDelete: { onDeleteChatSession(session.id) },
-                            onAttach: { wsId in onAttachChatSessionToWorkspace(session.id, wsId) }
+                            onAttach: { wsId in onAttachChatSessionToWorkspace(session.id, wsId) },
+                            onTelegramHandoff: onTelegramHandoffChatSession.map { cb in { cb(session.id) } },
+                            telegramHandoffAvailable: telegramHandoffAvailable
                         )
                     }
                 }
@@ -1099,6 +1109,10 @@ private struct ChatSessionRow: View {
     let onSelect: () -> Void
     let onDelete: () -> Void
     let onAttach: (UUID?) -> Void  // ADR-091 — nil이면 detach
+    /// **ADR-151** — 텔레그램 핸드오프 콜백 (nil이면 context menu 항목 숨김).
+    let onTelegramHandoff: (() -> Void)?
+    /// **ADR-151** — 봇 활성 + binding 있을 때 true (context menu 항목 enabled 제어).
+    let telegramHandoffAvailable: Bool
     @State private var isHovering = false
 
     var body: some View {
@@ -1206,6 +1220,16 @@ private struct ChatSessionRow: View {
                         }
                     }
                 }
+            }
+            // ADR-151 — 텔레그램 핸드오프
+            if let onTelegramHandoff {
+                Divider()
+                Button {
+                    onTelegramHandoff()
+                } label: {
+                    Label("텔레그램으로 이어서", systemImage: "iphone.radiowaves.left.and.right")
+                }
+                .disabled(!telegramHandoffAvailable)
             }
             Divider()
             Button("삭제", systemImage: "trash", role: .destructive, action: onDelete)

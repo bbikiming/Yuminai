@@ -482,6 +482,81 @@ extension AppModel {
         }
     }
 
+    // MARK: - ADR-151 — 텔레그램 핸드오프
+
+    /// 활성 chat session(또는 현재 워크스페이스)을 binding된 텔레그램 chat으로 핸드오프.
+    ///
+    /// - 적합한 binding 자동 선택: 활성 session의 workspaceId 매칭 → 없으면 첫 번째 binding
+    /// - binding 없으면 `.noBinding` 오류 반환
+    /// - 전송 성공 시 `lastHandoffRequest` 갱신 + bridge의 activeSessionId 보존
+    /// - Returns: 성공 시 `.success(TelegramHandoffRequest)`, 실패 시 `.failure(TelegramHandoffError)`
+    @discardableResult
+    public func handoffActiveSessionToTelegram() async -> Result<TelegramHandoffRequest, any Error> {
+        guard let bot = telegramBot else {
+            return .failure(TelegramHandoffError.botNotActive)
+        }
+
+        // binding 조회: 활성 session의 workspaceId 매칭 우선, 없으면 첫 번째 binding
+        let bindings = preferences.telegramBotChatBindings
+        guard !bindings.isEmpty else {
+            return .failure(TelegramHandoffError.noBinding)
+        }
+
+        // 활성 workspaceId와 매칭되는 binding 찾기
+        let targetBinding: BotChatBinding
+        let activeWsId = selectedWorkspaceId
+        if let wsId = activeWsId,
+           let matched = bindings.first(where: { $0.activeWorkspaceId == wsId }) {
+            targetBinding = matched
+        } else if let first = bindings.first {
+            targetBinding = first
+        } else {
+            return .failure(TelegramHandoffError.noBinding)
+        }
+
+        // 컨텍스트 준비
+        let session = activeChatSession
+        let sessionId = session?.id ?? preferences.activeChatSessionId
+        let workspaceId = session?.workspaceId ?? activeWsId
+        let workspaceName = workspaceId.flatMap { wsId in
+            workspaces.first { $0.id == wsId }?.name
+        }
+
+        // 마지막 user prompt 추출 (messages에서 마지막 user 역할 메시지)
+        let lastUserPrompt: String? = messages.last(where: { $0.role == .user })?.content
+
+        // 핸드오프 메시지 생성
+        let handoffText = TelegramHandoffFormatter.format(
+            workspaceName: workspaceName,
+            lastUserPrompt: lastUserPrompt,
+            sessionTitle: session?.title
+        )
+
+        // 전송
+        do {
+            _ = try await bot.send(handoffText, to: targetBinding.chatId)
+        } catch {
+            return .failure(TelegramHandoffError.sendFailed(underlying: error))
+        }
+
+        // 핸드오프 요청 기록
+        let request = TelegramHandoffRequest(
+            sessionId: sessionId,
+            workspaceId: workspaceId,
+            botId: targetBinding.botId,
+            chatId: targetBinding.chatId,
+            summary: handoffText,
+            lastUserPrompt: lastUserPrompt
+        )
+        self.lastHandoffRequest = request
+
+        // bridge에 requestChatId 설정 → 후속 텔레그램 메시지가 같은 session으로 routing
+        await sessionBridge?.setRequestChatId(targetBinding.chatId)
+
+        logger.info("텔레그램 핸드오프 완료: chatId=\(targetBinding.chatId)")
+        return .success(request)
+    }
+
     func deactivateTelegram() async {
         if let pump = commandPump {
             await pump.stop()

@@ -196,6 +196,11 @@ struct RootView: View {
             TelegramHubView()
                 .environment(appModel)
         }
+        // ADR-151 — 텔레그램 핸드오프 확인 sheet
+        .sheet(isPresented: $bindable.showTelegramHandoffSheet) {
+            TelegramHandoffSheet()
+                .environment(appModel)
+        }
         // ADR-079 Phase 4 — Git branch picker (별도 popover로 가능하나 sheet로 통일)
         .sheet(isPresented: $bindable.showGitBranchPicker) {
             GitBranchPickerSheetWrapper()
@@ -944,7 +949,14 @@ struct RootView: View {
             // ADR-091 — 자유 대화 ↔ 워크스페이스 attach/detach
             onAttachChatSessionToWorkspace: { sessionId, wsId in
                 Task { await appModel.attachChatSessionToWorkspace(sessionId, workspaceId: wsId) }
-            }
+            },
+            // ADR-151 — 텔레그램 핸드오프 (ChatSessionRow context menu)
+            onTelegramHandoffChatSession: appModel.preferences.telegramEnabled
+                ? { _ in appModel.presentExclusiveSheet { $0.showTelegramHandoffSheet = true } }
+                : nil,
+            telegramHandoffAvailable: appModel.preferences.telegramEnabled
+                && appModel.telegramBot != nil
+                && !appModel.preferences.telegramBotChatBindings.isEmpty
         )
     }
 
@@ -1291,7 +1303,14 @@ struct ChatPane: View {
                 onCreateWorkspace: { appModel.showCreateWorkspaceSheet = true },
                 onSelectAgent: { kind in
                     Task { await appModel.setActiveAgentKind(kind) }
-                }
+                },
+                // ADR-151 — 텔레그램 핸드오프
+                onTelegramHandoff: appModel.preferences.telegramEnabled
+                    ? { appModel.presentExclusiveSheet { $0.showTelegramHandoffSheet = true } }
+                    : nil,
+                telegramHandoffAvailable: appModel.preferences.telegramEnabled
+                    && appModel.telegramBot != nil
+                    && !appModel.preferences.telegramBotChatBindings.isEmpty
             )
 
             if appModel.selectedWorkspaceId == nil {
@@ -1417,7 +1436,14 @@ struct ChatPane: View {
                         } else {
                             Task { await appModel.startAutoRun(initialPrompt: initialPrompt) }
                         }
-                    }
+                    },
+                    // ADR-151 — 텔레그램 핸드오프 버튼
+                    onTelegramHandoff: appModel.preferences.telegramEnabled
+                        ? { appModel.presentExclusiveSheet { $0.showTelegramHandoffSheet = true } }
+                        : nil,
+                    telegramHandoffAvailable: appModel.preferences.telegramEnabled
+                        && appModel.telegramBot != nil
+                        && !appModel.preferences.telegramBotChatBindings.isEmpty
                 )
                 .popover(isPresented: $bindable.showNotePicker, arrowEdge: .top) {
                     NotePickerPopover(

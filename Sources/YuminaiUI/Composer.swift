@@ -60,6 +60,11 @@ public struct Composer: View {
     /// **ADR-132** — 자동 실행 버튼 클릭 콜백 (현재 text를 initialPrompt로 전달).
     public let onAutoRun: ((String) -> Void)?
 
+    /// **ADR-151** — 텔레그램 핸드오프 버튼 클릭 콜백 (nil이면 버튼 숨김).
+    public let onTelegramHandoff: (() -> Void)?
+    /// **ADR-151** — 텔레그램 핸드오프 가능 여부 (봇 활성화 + binding 있을 때 true).
+    public let telegramHandoffAvailable: Bool
+
     /// **ADR-072 Phase 1** — 반응형 padding 결정용.
     public let layoutMode: LayoutMode
 
@@ -94,7 +99,9 @@ public struct Composer: View {
         layoutMode: LayoutMode = .regular,
         autoRunState: AutoRunCoordinator.State? = nil,
         autoRunMaxTurns: Int = 30,
-        onAutoRun: ((String) -> Void)? = nil
+        onAutoRun: ((String) -> Void)? = nil,
+        onTelegramHandoff: (() -> Void)? = nil,
+        telegramHandoffAvailable: Bool = false
     ) {
         self._text = text
         self._model = model
@@ -127,6 +134,8 @@ public struct Composer: View {
         self.autoRunState = autoRunState
         self.autoRunMaxTurns = autoRunMaxTurns
         self.onAutoRun = onAutoRun
+        self.onTelegramHandoff = onTelegramHandoff
+        self.telegramHandoffAvailable = telegramHandoffAvailable
     }
 
     @FocusState private var inputFocused: Bool
@@ -432,6 +441,14 @@ public struct Composer: View {
                 AutoRunToggle(state: state, maxTurns: autoRunMaxTurns) {
                     onAutoRun(text)
                 }
+            }
+
+            // ADR-151 — 텔레그램 핸드오프 버튼 (onTelegramHandoff 주입 + secondary 아님, 항상 표시)
+            if let onTelegramHandoff, !hidesSecondaryFooterItems {
+                TelegramHandoffButton(
+                    isAvailable: telegramHandoffAvailable,
+                    onTap: onTelegramHandoff
+                )
             }
 
             // SendButton은 항상 보장 (가장 중요)

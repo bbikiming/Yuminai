@@ -38,6 +38,10 @@ public struct ChatToolbar: View {
     public let onSelectWorkspace: (UUID) -> Void
     public let onCreateWorkspace: () -> Void
     public let onSelectAgent: (AgentKind) -> Void
+    /// **ADR-151** — 텔레그램 핸드오프 버튼 콜백 (nil이면 버튼 숨김).
+    public let onTelegramHandoff: (() -> Void)?
+    /// **ADR-151** — 핸드오프 가능 여부 (봇 활성화 + binding 있을 때 true).
+    public let telegramHandoffAvailable: Bool
 
     public init(
         workspaceName: String,
@@ -67,7 +71,9 @@ public struct ChatToolbar: View {
         onShowShortcutHelp: @escaping () -> Void = {},
         onSelectWorkspace: @escaping (UUID) -> Void = { _ in },
         onCreateWorkspace: @escaping () -> Void = {},
-        onSelectAgent: @escaping (AgentKind) -> Void = { _ in }
+        onSelectAgent: @escaping (AgentKind) -> Void = { _ in },
+        onTelegramHandoff: (() -> Void)? = nil,
+        telegramHandoffAvailable: Bool = false
     ) {
         self.workspaceName = workspaceName
         self.workspacePath = workspacePath
@@ -97,6 +103,8 @@ public struct ChatToolbar: View {
         self.onSelectWorkspace = onSelectWorkspace
         self.onCreateWorkspace = onCreateWorkspace
         self.onSelectAgent = onSelectAgent
+        self.onTelegramHandoff = onTelegramHandoff
+        self.telegramHandoffAvailable = telegramHandoffAvailable
     }
 
     public var body: some View {
@@ -145,6 +153,15 @@ public struct ChatToolbar: View {
                     gitCommitButton(stats: stats)
                         .padding(.leading, 4)
                 }
+            }
+
+            // ADR-151 — 텔레그램 핸드오프 버튼 (toolbar 우측 prominent 진입점)
+            if let onTelegramHandoff, !layoutMode.hidesNonEssentialToolbarItems {
+                TelegramHandoffButton(
+                    isAvailable: telegramHandoffAvailable,
+                    onTap: onTelegramHandoff
+                )
+                .padding(.leading, Theme.Spacing.sm)
             }
 
             Spacer()
