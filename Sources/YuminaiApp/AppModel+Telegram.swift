@@ -80,11 +80,18 @@ extension AppModel {
             logger.error("Telegram pump 시작 실패: \(error.localizedDescription)")
         }
         // ADR-086 Phase 1 — health snapshot observer (사이드바 pill 실시간 업데이트)
+        // ADR-153 P0-2 — healthy 전환 시 offline queue 자동 flush.
         Task { [weak self] in
+            var previousState: TelegramConnectionState? = nil
             for await snapshot in await bot.healthMonitor.snapshots() {
                 await MainActor.run {
                     self?.telegramHealth = snapshot
                 }
+                // healthy 전환 감지 → offline queue flush
+                if snapshot.isHealthy, previousState != .healthy {
+                    await bot.flushOfflineQueueIfPossible()
+                }
+                previousState = snapshot.state
             }
         }
         // ADR-093 Phase 2 — offline queue depth 5초 주기 폴링 (BotStatusDock 표시용)
@@ -93,12 +100,11 @@ extension AppModel {
         setupTelegramHITLCoordinator()
         // ADR-095 Phase 4 + ADR-098 P0-3 — deliveryChannelProvider 주입
         // (NotificationPolicyMatrix + quiet hours + deviceState 정책이 실제 alarmRouting에 반영됨)
-        // 클로저는 @Sendable nonisolated이므로 MainActor.assumeIsolated로 main actor 상태에 접근.
-        // TelegramAlertDispatcher.dispatch()는 항상 async context에서 호출되며,
-        // dispatch 시점에 main actor 접근을 보장하는 형태로 future refactor 가능.
+        // ADR-153 P0-1 — MainActor.assumeIsolated 패턴 제거.
+        // TelegramAlertDispatcher.dispatch()가 async이므로 async provider 클로저로 변경.
         if let dispatcher = alertDispatcher {
             await dispatcher.updateDeliveryChannelProvider { [weak self] kind in
-                MainActor.assumeIsolated {
+                await MainActor.run {
                     self?.currentDeliveryChannel(for: kind) ?? .telegramOnly
                 }
             }
@@ -351,6 +357,8 @@ extension AppModel {
             _ = await self?.cancelBoundTurn()
         }
         await bridge.setOnHITLCancelRequired(cancelCallback)
+        // ADR-153 P1-3 — CommandPolicyMatrix 주입: bridge가 tool_use 감지 시 정책 평가.
+        await bridge.setCommandPolicyMatrix(preferences.commandPolicy)
         return bridge
     }
 
@@ -484,9 +492,35 @@ extension AppModel {
 
     // MARK: - ADR-151 — 텔레그램 핸드오프
 
+    /// **ADR-153 P1-6** — 활성 workspaceId와 매칭되는 binding 반환.
+    ///
+    /// 우선순위:
+    /// 1. 활성 session의 workspaceId와 `activeWorkspaceId`가 매칭되는 binding
+    /// 2. `preferences.telegramBoundWorkspaceId`와 매칭되는 binding
+    /// 3. 첫 번째 binding (fallback)
+    /// 4. nil (binding 없음)
+    public func resolveHandoffBinding() -> BotChatBinding? {
+        let bindings = preferences.telegramBotChatBindings
+        guard !bindings.isEmpty else { return nil }
+
+        // 1) 활성 session / workspace ID 매칭
+        let activeWsId = activeChatSession?.workspaceId ?? selectedWorkspaceId
+        if let wsId = activeWsId,
+           let matched = bindings.first(where: { $0.activeWorkspaceId == wsId }) {
+            return matched
+        }
+        // 2) telegramBoundWorkspaceId 매칭
+        if let boundId = preferences.telegramBoundWorkspaceId,
+           let matched = bindings.first(where: { $0.activeWorkspaceId == boundId }) {
+            return matched
+        }
+        // 3) fallback: 첫 번째
+        return bindings.first
+    }
+
     /// 활성 chat session(또는 현재 워크스페이스)을 binding된 텔레그램 chat으로 핸드오프.
     ///
-    /// - 적합한 binding 자동 선택: 활성 session의 workspaceId 매칭 → 없으면 첫 번째 binding
+    /// - 적합한 binding 자동 선택: `resolveHandoffBinding()` 사용
     /// - binding 없으면 `.noBinding` 오류 반환
     /// - 전송 성공 시 `lastHandoffRequest` 갱신 + bridge의 activeSessionId 보존
     /// - Returns: 성공 시 `.success(TelegramHandoffRequest)`, 실패 시 `.failure(TelegramHandoffError)`
@@ -496,23 +530,12 @@ extension AppModel {
             return .failure(TelegramHandoffError.botNotActive)
         }
 
-        // binding 조회: 활성 session의 workspaceId 매칭 우선, 없으면 첫 번째 binding
-        let bindings = preferences.telegramBotChatBindings
-        guard !bindings.isEmpty else {
+        guard let targetBinding = resolveHandoffBinding() else {
             return .failure(TelegramHandoffError.noBinding)
         }
 
-        // 활성 workspaceId와 매칭되는 binding 찾기
-        let targetBinding: BotChatBinding
-        let activeWsId = selectedWorkspaceId
-        if let wsId = activeWsId,
-           let matched = bindings.first(where: { $0.activeWorkspaceId == wsId }) {
-            targetBinding = matched
-        } else if let first = bindings.first {
-            targetBinding = first
-        } else {
-            return .failure(TelegramHandoffError.noBinding)
-        }
+        // 활성 workspaceId (resolveHandoffBinding과 동일 로직으로 파생)
+        let activeWsId = activeChatSession?.workspaceId ?? selectedWorkspaceId
 
         // 컨텍스트 준비
         let session = activeChatSession
@@ -605,6 +628,7 @@ extension AppModel {
     }
 
     /// ADR-046 — 외부 turn 시작 시 plan-mode 강제 (preferences.telegramRemoteRequiresPlan=true 시).
+    /// **ADR-153 P1-1** — `TelegramResponseMode.promptInstruction`을 system prompt에 inject.
     /// 반환: 복원할 원래 설정 (nil이면 강제 안 함). caller가 turn 종료 후 scheduleSettingsRestore 호출.
     public func applyRemotePlanModeIfNeeded() -> SessionSettings? {
         guard preferences.telegramRemoteRequiresPlan else { return nil }
@@ -620,6 +644,25 @@ extension AppModel {
             await bridgeRef?.sendNotice("🛡 외부 turn — Plan 모드로 실행됩니다. 결과 확인 후 '진행해 줘'로 승인하세요.\n(설정에서 `telegramRemoteRequiresPlan` 끄면 비활성화)")
         }
         return original
+    }
+
+    /// **ADR-153 P1-1** — 외부 turn(텔레그램 메시지)에서
+    /// `TelegramResponseMode.promptInstruction`을 system prompt에 inject할 string 반환.
+    /// `externalTurnSystemPromptExtra` 와 합산해 spawn에 전달.
+    ///
+    /// - Returns: 응답 모드 instruction (nil이면 inject 안 함).
+    public func telegramResponseModeInstruction() -> String? {
+        let instruction = preferences.telegramResponseMode.promptInstruction
+        return instruction.isEmpty ? nil : instruction
+    }
+
+    /// **ADR-153 P1-1** — 외부 turn spawn 시 userProfilePrompt에 responseMode instruction을 합산.
+    /// `spawn(in:userProfilePrompt:)` 호출 시 이 값을 전달한다.
+    public var externalTurnUserProfilePrompt: String? {
+        let profile = preferences.userProfile.renderForSystemPrompt() ?? ""
+        let modeInstruction = telegramResponseModeInstruction() ?? ""
+        let combined = [profile, modeInstruction].filter { !$0.isEmpty }.joined(separator: "\n\n")
+        return combined.isEmpty ? nil : combined
     }
 
     /// 외부 turn 종료 후 settings 복원 (turn 1개 후).

@@ -99,8 +99,20 @@ extension AppModel {
                         self?.showHITLSheet = true
                     }
                 }
-                // Telegram inline button 메시지 전송 + ADR-099 P1-4: messageId 저장
-                if let self, let chatId = self.preferences.telegramChatId {
+                // **ADR-153 P1-7** — NotificationPolicyMatrix로 Telegram 전달 채널 결정.
+                // .hitlApprovalRequest 가 telegramOnly / both / macOSAndTelegram → Telegram 전송.
+                // suppressed / macOSOnly → 전송 생략 (macOS UserNotification만 발송됨).
+                let deliveryChannel = await MainActor.run { self?.currentDeliveryChannel(for: .hitlApprovalRequest) }
+                let sendViaTelegram: Bool
+                switch deliveryChannel {
+                case .telegramOnly, .both:
+                    sendViaTelegram = true
+                default:
+                    sendViaTelegram = false
+                }
+
+                if sendViaTelegram, let self, let chatId = self.preferences.telegramChatId {
+                    // Telegram inline button 메시지 전송 + ADR-099 P1-4: messageId 저장
                     let approveData = TelegramHITLCallbackHandler.HITLAction.approve.callbackData(for: request.id)
                     let rejectData = TelegramHITLCallbackHandler.HITLAction.reject.callbackData(for: request.id)
                     let buttons = [[

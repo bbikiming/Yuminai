@@ -25,18 +25,44 @@ public protocol ChildClaudeProcess: Sendable {
     /// caller는 반환된 `ChildProcessOutput`을 main conversation에 적절히 import (또는 무시).
     /// **ADR-057 Critical Fix 1** — `overrideSettings`로 caller가 명시적 settings 전달 가능
     /// (외부 turn plan-mode 등 보안 적용용).
+    /// **ADR-153 P0-1** — `userProfilePrompt`: caller(@MainActor)가 runOnce 직전 추출한
+    /// 사용자 프로필 string. `MainActor.assumeIsolated` crash 위험 제거.
     func runOnce(
         prompt: String,
         in workspace: Workspace,
         agent: AgentKind,
         purpose: ChildProcessPurpose,
         timeoutSeconds: Int,
-        overrideSettings: SessionSettings?
+        overrideSettings: SessionSettings?,
+        userProfilePrompt: String?
     ) async throws -> ChildProcessOutput
 
     /// **ADR-055 HIGH 2** — 진행 중인 모든 child process kill (사용자 /cancel 응답).
     /// 호출 후 진행 중이던 runOnce는 throw됨 (cancellation error).
     func cancelAll() async
+}
+
+/// **ADR-153 P0-1** — 편의 기본값: `userProfilePrompt: nil`로 호출하는 기본 구현.
+/// 기존 runOnce 호출자(6-param)가 수정 없이 컴파일되도록 한다.
+public extension ChildClaudeProcess {
+    func runOnce(
+        prompt: String,
+        in workspace: Workspace,
+        agent: AgentKind,
+        purpose: ChildProcessPurpose,
+        timeoutSeconds: Int = 60,
+        overrideSettings: SessionSettings? = nil
+    ) async throws -> ChildProcessOutput {
+        try await runOnce(
+            prompt: prompt,
+            in: workspace,
+            agent: agent,
+            purpose: purpose,
+            timeoutSeconds: timeoutSeconds,
+            overrideSettings: overrideSettings,
+            userProfilePrompt: nil
+        )
+    }
 }
 
 /// purpose enum — observability 및 cost bucket 라우팅용.
@@ -169,13 +195,15 @@ public actor MockChildClaudeProcess: ChildClaudeProcess {
         simulatedOutputTokens = outputTokens
     }
 
+    /// **ADR-153 P0-1** — 프로토콜 준수. `userProfilePrompt`는 Mock에서 무시.
     public func runOnce(
         prompt: String,
         in workspace: Workspace,
         agent: AgentKind,
         purpose: ChildProcessPurpose,
         timeoutSeconds: Int = 60,
-        overrideSettings: SessionSettings? = nil
+        overrideSettings: SessionSettings? = nil,
+        userProfilePrompt: String? = nil
     ) async throws -> ChildProcessOutput {
         let canned = responses[purpose] ?? "[mock \(purpose.rawValue) for \(agent.shortLabel)] echo: \(prompt.prefix(60))…"
         return ChildProcessOutput(

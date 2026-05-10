@@ -65,14 +65,31 @@ public final actor LiveTelegramBot: TelegramClient {
         // ADR-085 — Rate limiter 적용 (per-chat token bucket)
         await rateLimiter.acquire(chatId: chatId)
         // ADR-085 — Retry policy 적용 (exponential backoff + jitter)
-        return try await withRetry(operation: "send", chatId: chatId) {
-            // ADR-045 R1.M2 — Markdown escape 누락으로 응답 누락 방지
-            do {
-                return try await self.sendInternal(text: text, to: chatId, parseMode: "MarkdownV2", escape: true)
-            } catch let nsError as NSError where nsError.domain == "TelegramBot" && nsError.code == 400 {
-                // 400 Bad Request — Markdown 파싱 실패 → plain text 재시도 (이건 retry policy 외)
-                return try await self.sendInternal(text: text, to: chatId, parseMode: nil, escape: false)
+        // ADR-153 P0-2 — 모든 retry 소진 후 transient 오류는 offline queue에 자동 enqueue.
+        //                auth/bad-request 오류는 enqueue 안 함 (retrying은 무의미).
+        do {
+            return try await withRetry(operation: "send", chatId: chatId) {
+                // ADR-045 R1.M2 — Markdown escape 누락으로 응답 누락 방지
+                do {
+                    return try await self.sendInternal(text: text, to: chatId, parseMode: "MarkdownV2", escape: true)
+                } catch let nsError as NSError where nsError.domain == "TelegramBot" && nsError.code == 400 {
+                    // 400 Bad Request — Markdown 파싱 실패 → plain text 재시도 (이건 retry policy 외)
+                    return try await self.sendInternal(text: text, to: chatId, parseMode: nil, escape: false)
+                }
             }
+        } catch let nsError as NSError {
+            // auth/bad-request는 재시도 무의미 → 즉시 rethrow
+            if nsError.domain == "TelegramBot",
+               [401, 403, 404, 400].contains(nsError.code) {
+                throw nsError
+            }
+            // transient 오류 (network / timeout / 5xx) — offline queue에 enqueue + warning log
+            let pending = PendingTelegramMessage(botId: UUID(), chatId: chatId, text: text)
+            await offlineQueue.enqueue(pending)
+            // SentTelegramMessage(messageId: 0)로 반환하면 caller가 무시. 하지만 send는 throws.
+            // 대신 enqueue 후 SentTelegramMessage placeholder를 반환해 caller 흐름 유지.
+            // messageId: -1 = "queued, not sent" sentinel.
+            return SentTelegramMessage(messageId: -1, chatId: chatId)
         }
     }
 

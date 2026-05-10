@@ -1,6 +1,7 @@
 import Foundation
 import AppKit
 import YuminaiCore
+import YuminaiTelegram
 
 // ADR-127 — AppModel.swift 분할: Notification 도메인 (알림 정책 + Quiet Hours + macOS 권한)
 extension AppModel {
@@ -17,6 +18,7 @@ extension AppModel {
     }
 
     /// **ADR-095 Phase 4** — 5분 무입력 타이머 시작.
+    /// **ADR-153 P0-3** — sleep/wake 시 polling 자동 중단/재개.
     public func setupDeviceStateMonitor() {
         resetIdleTimer()
 
@@ -29,6 +31,7 @@ extension AppModel {
         ) { [weak self] _ in
             Task { @MainActor in
                 self?.deviceState = .desktopIdle
+                await self?.pauseTelegramPollingForSleep()
             }
         }
         NotificationCenter.default.addObserver(
@@ -38,8 +41,33 @@ extension AppModel {
         ) { [weak self] _ in
             Task { @MainActor in
                 self?.deviceState = .desktopActive
+                await self?.resumeTelegramPollingAfterWake()
                 self?.resetIdleTimer()
             }
+        }
+    }
+
+    /// **ADR-153 P0-3** — sleep 진입 시 polling 중단.
+    /// 현재 활성 봇이 polling 중이면 stopPolling() 호출.
+    func pauseTelegramPollingForSleep() async {
+        guard let bot = telegramBot else { return }
+        await bot.stopPolling()
+        logger.info("sleep 감지 — Telegram polling 중단")
+    }
+
+    /// **ADR-153 P0-3** — wake 후 polling 재개.
+    /// Telegram이 활성화된 상태면 startPolling() 호출.
+    func resumeTelegramPollingAfterWake() async {
+        guard let bot = telegramBot, preferences.telegramEnabled else { return }
+        do {
+            try await bot.startPolling()
+            // wake 후 offline queue flush (sleep 중 쌓인 메시지 재전송)
+            if let liveBot = bot as? LiveTelegramBot {
+                await liveBot.flushOfflineQueueIfPossible()
+            }
+            logger.info("wake 감지 — Telegram polling 재개")
+        } catch {
+            logger.error("wake 후 polling 재시작 실패: \(error.localizedDescription)")
         }
     }
 

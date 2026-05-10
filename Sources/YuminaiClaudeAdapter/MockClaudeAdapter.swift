@@ -19,7 +19,8 @@ public final actor MockClaudeAdapter: ClaudeAdapter {
         self.settings = settings
     }
 
-    public func spawn(in workspace: Workspace) async throws -> any ClaudeStreamSession {
+    /// **ADR-153 P0-1** — 프로토콜 준수. `userProfilePrompt`는 Mock에서 무시.
+    public func spawn(in workspace: Workspace, userProfilePrompt: String?) async throws -> any ClaudeStreamSession {
         ScriptedSession(events: scriptedEvents, delayPerEvent: delayPerEvent)
     }
 

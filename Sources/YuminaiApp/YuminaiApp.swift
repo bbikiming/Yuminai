@@ -38,30 +38,18 @@ struct YuminaiAppMain: App {
                 prefs = AppPreferences()
             }
 
-            // ADR-108 — userProfileProvider: AppModel init 전에 closure로 묶어두고,
-            // model 생성 후 weak 참조 주입. bootstrap 동기 제약 내 안전한 패턴.
-            // nonisolated(unsafe) — init() 동기 컨텍스트 내 단순 대입, race 없음.
-            // ADR-148 — preferences는 main actor isolated. Sendable closure에서 직접
-            // 접근 불가. MainActor.assumeIsolated로 안전하게 동기 접근 (closure 호출 시점에
-            // 항상 main thread 보장 — adapter는 MainActor에서만 spawn 호출).
-            nonisolated(unsafe) var weakModel: AppModel? = nil
-            let profileProvider: @Sendable () -> String? = {
-                MainActor.assumeIsolated {
-                    weakModel?.preferences.userProfile.renderForSystemPrompt()
-                }
-            }
-
+            // ADR-153 P0-1 — userProfileProvider 클로저 + MainActor.assumeIsolated 패턴 제거.
+            // userProfile string은 spawn / runOnce 호출 시점에 @MainActor 컨텍스트에서
+            // AppModel.userProfilePrompt 프로퍼티로 추출해 전달한다.
             let claudeAdapter = LiveClaudeAdapter(
-                claudePath: URL(fileURLWithPath: prefs.claudeBinaryPath),
-                userProfileProvider: profileProvider
+                claudePath: URL(fileURLWithPath: prefs.claudeBinaryPath)
             )
 
             // codex CLI가 실행 가능하면 어댑터 활성화 (없으면 nil — UI에서 disabled)
             let codexAdapter: (any ClaudeAdapter)?
             if FileManager.default.isExecutableFile(atPath: prefs.codexBinaryPath) {
                 codexAdapter = LiveCodexAdapter(
-                    codexPath: URL(fileURLWithPath: prefs.codexBinaryPath),
-                    userProfileProvider: profileProvider
+                    codexPath: URL(fileURLWithPath: prefs.codexBinaryPath)
                 )
             } else {
                 codexAdapter = nil
@@ -71,8 +59,7 @@ struct YuminaiAppMain: App {
             let childProcess: (any ChildClaudeProcess)? = LiveChildClaudeProcess(
                 claudePath: URL(fileURLWithPath: prefs.claudeBinaryPath),
                 codexPath: URL(fileURLWithPath: prefs.codexBinaryPath),
-                defaultSettings: prefs.defaultSessionSettings,
-                userProfileProvider: profileProvider
+                defaultSettings: prefs.defaultSessionSettings
             )
 
             let model = AppModel(
@@ -85,8 +72,6 @@ struct YuminaiAppMain: App {
                 childProcess: childProcess,
                 preferences: prefs
             )
-            // ADR-108 — model 생성 후 weakModel에 주입 → profileProvider가 올바른 model 참조
-            weakModel = model
             self._appModel = State(wrappedValue: model)
 
             logger.info("Yuminai bootstrap 성공")

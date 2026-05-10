@@ -35,21 +35,17 @@ public actor LiveChildClaudeProcess: ChildClaudeProcess {
     private let defaultSettings: SessionSettings
     /// **ADR-055 HIGH 2** — 진행 중인 process pid 추적. cancelAll() 시 모두 SIGTERM/SIGKILL.
     private var activePids: Set<Int32> = []
-    /// ADR-108 — 매 runOnce 시 호출해 사용자 프로필 system prompt를 얻는 provider.
-    private let userProfileProvider: (@Sendable () -> String?)?
 
     public init(
         claudePath: URL,
         codexPath: URL,
         environment: [String: String] = ProcessEnvironment.augmented(),
-        defaultSettings: SessionSettings = .default,
-        userProfileProvider: (@Sendable () -> String?)? = nil
+        defaultSettings: SessionSettings = .default
     ) {
         self.claudePath = claudePath
         self.codexPath = codexPath
         self.environment = environment
         self.defaultSettings = defaultSettings
-        self.userProfileProvider = userProfileProvider
     }
 
     /// **ADR-055 HIGH 2** — 진행 중인 모든 child process kill (사용자 /cancel 응답).
@@ -76,20 +72,20 @@ public actor LiveChildClaudeProcess: ChildClaudeProcess {
     /// **ADR-057 Critical Fix 1** — caller가 명시적으로 settings override 가능.
     /// 외부 turn 시 plan-mode 적용된 settings를 전달해야 안전 (보안 hole 방지).
     /// nil이면 actor defaultSettings 사용.
+    /// **ADR-153 P0-1** — `userProfilePrompt`: caller(@MainActor)가 runOnce 직전 추출한 프로필 string.
     public func runOnce(
         prompt: String,
         in workspace: Workspace,
         agent: AgentKind,
         purpose: ChildProcessPurpose,
         timeoutSeconds: Int = 60,
-        overrideSettings: SessionSettings? = nil
+        overrideSettings: SessionSettings? = nil,
+        userProfilePrompt: String? = nil
     ) async throws -> ChildProcessOutput {
         let effectiveSettings = overrideSettings ?? defaultSettings
         // ADR-055 HIGH 1 + #1 — ProjectProfile을 child process에 inject.
         // `systemPromptAppendix()` 사용 → LiveClaudeAdapter와 정확히 같은 string → cache key 일치 → hit ↑.
         let systemAppendix: String? = workspace.projectProfile.systemPromptAppendix()
-        // ADR-108 — userProfile을 projectProfile 앞에 prepend (cache 친화적 ordering).
-        let userProfilePrompt: String? = userProfileProvider?()
 
         // agent별 binary 선택
         let binaryPath: URL
@@ -162,7 +158,7 @@ public actor LiveChildClaudeProcess: ChildClaudeProcess {
         if agent == .codex {
             var prefixParts: [String] = []
             if let uProfile = userProfilePrompt { prefixParts.append(uProfile) }
-            if let appendix = systemAppendix    { prefixParts.append("[프로젝트 컨텍스트]\n\(appendix)") }
+            if let appendix = systemAppendix    { prefixParts.append(appendix) }
 
             let codexPrompt: String
             if prefixParts.isEmpty {

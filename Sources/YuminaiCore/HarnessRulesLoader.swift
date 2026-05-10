@@ -19,9 +19,14 @@ public enum HarnessRulesLoader {
 
     /// `.harness/rules/` 디렉토리에서 `.md` 파일을 모두 로드해 하나의 문자열로 반환.
     ///
-    /// - Parameter workspaceURL: 워크스페이스 루트 URL.
+    /// **ADR-153 P1-2** — `excludeFiles` 파라미터로 특정 파일명(확장자 제외)을 로드에서 제외.
+    /// AutoRun이 `USER_PROFILE.md`를 제외해 3중 주입 방지에 사용한다.
+    ///
+    /// - Parameters:
+    ///   - workspaceURL: 워크스페이스 루트 URL.
+    ///   - excludeFiles: 로드에서 제외할 파일명 목록 (확장자 없이). 예: `["USER_PROFILE"]`.
     /// - Returns: 합쳐진 규칙 문자열. 파일이 없거나 디렉토리 없으면 빈 문자열.
-    public static func loadAll(workspaceURL: URL) async -> String {
+    public static func loadAll(workspaceURL: URL, excludeFiles: [String] = []) async -> String {
         let rulesURL = workspaceURL
             .appendingPathComponent(".harness")
             .appendingPathComponent("rules")
@@ -32,7 +37,11 @@ public enum HarnessRulesLoader {
             return ""
         }
 
-        let files = markdownFiles(in: rulesURL)
+        let allFiles = markdownFiles(in: rulesURL)
+        let files = allFiles.filter { url in
+            let name = url.deletingPathExtension().lastPathComponent
+            return !excludeFiles.contains(name)
+        }
         guard !files.isEmpty else {
             logger.debug(".harness/rules/*.md 파일 없음 — skip")
             return ""
@@ -55,7 +64,7 @@ public enum HarnessRulesLoader {
 
         \(sections.joined(separator: "\n\n---\n\n"))
         """
-        logger.info(".harness/rules 로드 완료 — \(files.count)개 파일")
+        logger.info(".harness/rules 로드 완료 — \(files.count)개 파일 (제외: \(excludeFiles))")
         return combined
     }
 

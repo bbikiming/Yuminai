@@ -5,7 +5,11 @@ import Foundation
 /// 구현체는 `YuminaiClaudeAdapter` 모듈에 있다(`LiveClaudeAdapter`, `MockClaudeAdapter`).
 public protocol ClaudeAdapter: Sendable {
     /// 워크스페이스 디렉토리에서 Claude CLI를 실행하고 입출력 세션을 반환한다.
-    func spawn(in workspace: Workspace) async throws -> any ClaudeStreamSession
+    ///
+    /// **ADR-153 P0-1** — `userProfilePrompt`: caller(@MainActor)가 spawn 직전 추출한
+    /// 사용자 프로필 string. 이 방식으로 `MainActor.assumeIsolated` crash 위험 제거.
+    /// nil이면 프로필 주입 없음 (MockClaudeAdapter 포함 기존 호출자 호환).
+    func spawn(in workspace: Workspace, userProfilePrompt: String?) async throws -> any ClaudeStreamSession
 
     /// 진행 중인 세션을 graceful 종료(SIGTERM → 0.5s → SIGKILL)한다.
     func terminate(_ session: any ClaudeStreamSession) async
@@ -15,6 +19,14 @@ public protocol ClaudeAdapter: Sendable {
 
     /// 현재 활성 세션 설정.
     func currentSettings() async -> SessionSettings
+}
+
+/// **ADR-153 P0-1** — 편의 기본값: `userProfilePrompt: nil`로 호출하는 기본 구현.
+/// 기존 `spawn(in:)` 호출자가 수정 없이 컴파일되도록 한다.
+public extension ClaudeAdapter {
+    func spawn(in workspace: Workspace) async throws -> any ClaudeStreamSession {
+        try await spawn(in: workspace, userProfilePrompt: nil)
+    }
 }
 
 /// Claude CLI와의 단일 stream 세션.

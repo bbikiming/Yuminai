@@ -484,7 +484,8 @@ extension AppModel {
             currentSessionUsage = .zero
 
             let agentAdapter = adapter(for: workspace)
-            let claudeSession = try await agentAdapter.spawn(in: workspace)
+            let profilePrompt = userProfilePrompt
+            let claudeSession = try await agentAdapter.spawn(in: workspace, userProfilePrompt: profilePrompt)
             currentClaudeSession = claudeSession
 
             let captured = claudeSession

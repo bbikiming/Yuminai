@@ -18,21 +18,16 @@ public final actor LiveCodexAdapter: ClaudeAdapter {
     private let environment: [String: String]
     private let extraArguments: [String]
     private var sessionSettings: SessionSettings
-    /// ADR-108 — 매 spawn 시 호출해 사용자 프로필 system prompt를 얻는 provider.
-    private let userProfileProvider: (@Sendable () -> String?)?
-
     public init(
         codexPath: URL,
         sessionSettings: SessionSettings = .default,
         environment: [String: String] = ProcessEnvironment.augmented(),
-        extraArguments: [String] = [],
-        userProfileProvider: (@Sendable () -> String?)? = nil
+        extraArguments: [String] = []
     ) {
         self.codexPath = codexPath
         self.sessionSettings = sessionSettings
         self.environment = environment
         self.extraArguments = extraArguments
-        self.userProfileProvider = userProfileProvider
     }
 
     public func updateSettings(_ settings: SessionSettings) {
@@ -43,7 +38,8 @@ public final actor LiveCodexAdapter: ClaudeAdapter {
         sessionSettings
     }
 
-    public func spawn(in workspace: Workspace) async throws -> any ClaudeStreamSession {
+    /// **ADR-153 P0-1** — `userProfilePrompt`를 spawn 호출 시점에 caller(MainActor)가 직접 전달.
+    public func spawn(in workspace: Workspace, userProfilePrompt: String? = nil) async throws -> any ClaudeStreamSession {
         let fileManager = FileManager.default
         guard fileManager.isExecutableFile(atPath: codexPath.path) else {
             throw YuminaiError.claudeSpawnFailed(reason: "codex CLI 미설치 또는 실행 불가: \(codexPath.path)")
@@ -54,11 +50,11 @@ public final actor LiveCodexAdapter: ClaudeAdapter {
         }
 
         // ADR-050 — Codex는 --append-system-prompt 없음. 첫 turn prompt에 prefix 주입 (session resume이 컨텍스트 유지)
-        // ADR-108 — userProfile을 projectProfile 앞에 prepend.
+        // ADR-153 P0-1 — userPart는 caller가 MainActor에서 추출해 전달 (assumeIsolated 제거).
         let profileSummary = workspace.projectProfile.systemContextSummary()
         let projectPart: String? = profileSummary == "(프로필 미설정)" ? nil :
             "[프로젝트 컨텍스트]\n\(profileSummary)\n적절한 idiom과 framework convention을 따라주세요."
-        let userPart: String? = userProfileProvider?()
+        let userPart: String? = userProfilePrompt
 
         let firstTurnPrefix: String?
         if userPart == nil && projectPart == nil {

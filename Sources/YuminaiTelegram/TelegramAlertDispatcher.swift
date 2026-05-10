@@ -13,16 +13,17 @@ public final actor TelegramAlertDispatcher {
     private let client: any TelegramClient
     private var policy: TelegramAlertPolicy
     private let chatId: Int64
-    /// **ADR-095 Phase 4** — 현재 전달 채널 결정 provider.
-    /// AppModel의 `currentDeliveryChannel(for:)` 클로저를 주입받는다.
+    /// **ADR-095 Phase 4 / ADR-153 P0-1** — 현재 전달 채널 결정 async provider.
+    /// AppModel의 `currentDeliveryChannel(for:)` async 클로저를 주입받는다.
     /// nil이면 기존 동작 유지 (policy만 체크, Telegram으로 전송).
-    private var deliveryChannelProvider: (@Sendable (NotificationKind) -> DeliveryChannel)?
+    /// ADR-153: sync provider → async provider로 변경 (MainActor.assumeIsolated 제거).
+    private var deliveryChannelProvider: (@Sendable (NotificationKind) async -> DeliveryChannel)?
 
     public init(
         client: any TelegramClient,
         policy: TelegramAlertPolicy,
         chatId: Int64,
-        deliveryChannelProvider: (@Sendable (NotificationKind) -> DeliveryChannel)? = nil
+        deliveryChannelProvider: (@Sendable (NotificationKind) async -> DeliveryChannel)? = nil
     ) {
         self.client = client
         self.policy = policy
@@ -34,8 +35,8 @@ public final actor TelegramAlertDispatcher {
         self.policy = policy
     }
 
-    /// **ADR-095 Phase 4** — delivery channel provider 업데이트.
-    public func updateDeliveryChannelProvider(_ provider: @escaping @Sendable (NotificationKind) -> DeliveryChannel) {
+    /// **ADR-095 Phase 4 / ADR-153 P0-1** — async delivery channel provider 업데이트.
+    public func updateDeliveryChannelProvider(_ provider: @escaping @Sendable (NotificationKind) async -> DeliveryChannel) {
         self.deliveryChannelProvider = provider
     }
 
@@ -43,7 +44,12 @@ public final actor TelegramAlertDispatcher {
         guard shouldSend(category) else { return }
 
         let kind = notificationKind(for: category)
-        let channel = deliveryChannelProvider?(kind) ?? .telegramOnly
+        let channel: DeliveryChannel
+        if let provider = deliveryChannelProvider {
+            channel = await provider(kind)
+        } else {
+            channel = .telegramOnly
+        }
 
         switch channel {
         case .telegramOnly:

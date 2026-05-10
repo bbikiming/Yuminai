@@ -515,6 +515,10 @@ public final class AppModel {
     public var showAutoRunControlSheet: Bool = false
     /// **ADR-135** — AutoRunLogViewerSheet 표시 여부.
     public var showAutoRunLogViewerSheet: Bool = false
+    /// **ADR-153 P1-8** — AutoRun 실행 중에만 유효한 harness rules system prompt 추가분.
+    /// `userProfilePrompt`에 합산되어 spawn 시 `--append-system-prompt`로 주입됨.
+    /// AutoRun 시작 시 설정, 종료 시 nil로 클리어.
+    public var autoRunSystemPromptExtra: String? = nil
 
     // MARK: - ADR-094 Phase 3 — HITL (AppModel+HITL.swift 참조)
 
@@ -674,7 +678,8 @@ public final class AppModel {
 
         do {
             let newAdapter = adapter(for: updated)
-            let newSession = try await newAdapter.spawn(in: updated)
+            let profilePrompt = userProfilePrompt
+            let newSession = try await newAdapter.spawn(in: updated, userProfilePrompt: profilePrompt)
             currentClaudeSession = newSession
             let captured = newSession
             streamConsumeTask = Task { [weak self] in
@@ -1501,7 +1506,8 @@ public final class AppModel {
             let paneWorkspace = workspace.with(agentKind: target.agentKind)
             do {
                 let agentAd = adapter(for: paneWorkspace)
-                let session = try await agentAd.spawn(in: workspace)
+                let profilePrompt = userProfilePrompt
+                let session = try await agentAd.spawn(in: workspace, userProfilePrompt: profilePrompt)
                 paneSessions[paneId] = session
                 currentClaudeSession = session
                 let captured = session
@@ -1722,7 +1728,8 @@ public final class AppModel {
         isStreaming = false
 
         do {
-            let claudeSession = try await activeAd.spawn(in: workspaceWithPerAgent)
+            let profilePrompt = userProfilePrompt
+            let claudeSession = try await activeAd.spawn(in: workspaceWithPerAgent, userProfilePrompt: profilePrompt)
             currentClaudeSession = claudeSession
             let captured = claudeSession
             streamConsumeTask = Task { [weak self] in
@@ -3187,6 +3194,17 @@ public final class AppModel {
     public var currentWorkspace: Workspace? {
         guard let id = selectedWorkspaceId else { return nil }
         return workspaces.first { $0.id == id }
+    }
+
+    /// **ADR-153 P0-1** — spawn/runOnce 직전에 @MainActor에서 추출하는 사용자 프로필 string.
+    /// adapter의 userProfileProvider 클로저 + MainActor.assumeIsolated 패턴 대신 사용.
+    /// **ADR-153 P1-8** — AutoRun 중에는 `autoRunSystemPromptExtra`도 합산해 반환.
+    /// harness rules가 system prompt 경로로 주입되어 Anthropic prompt cache 적중률 향상.
+    public var userProfilePrompt: String? {
+        let profile = preferences.userProfile.renderForSystemPrompt() ?? ""
+        let extra = autoRunSystemPromptExtra ?? ""
+        let combined = [profile, extra].filter { !$0.isEmpty }.joined(separator: "\n\n")
+        return combined.isEmpty ? nil : combined
     }
 
     // MARK: - 첨부

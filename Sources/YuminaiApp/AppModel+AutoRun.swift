@@ -13,19 +13,57 @@ extension AppModel {
     ///
     /// 1. 설정 로드
     /// 2. `.harness/rules` 주입 (config에 따라)
+    ///    **ADR-153 P1-8** — harness rules를 turn-1 user prompt prepend 대신
+    ///    `autoRunSystemPromptExtra`를 통해 `--append-system-prompt`로 주입.
+    ///    시스템 프롬프트가 turn 간에 고정되어 Anthropic prompt cache 적중률 향상.
     /// 3. AutoRunCoordinator.start() — 매 turn LLM spawn + 응답 분석
     /// 4. State 변경 → UI 알림
     /// 5. 완료/중단 시 macOS 알림
     public func startAutoRun(initialPrompt: String) async {
         let config = preferences.autoRunConfig
 
-        // Harness 규칙 로드 (let으로 고정 — Sendable closure capture용)
-        let systemPromptExtra: String
+        // ADR-153 P1-8 — harness rules를 system prompt extra로 주입 (turn-1 user prompt prepend 제거).
+        // ADR-153 P1-2 — USER_PROFILE.md 제외: adapter의 userProfilePrompt로 이미 inject됨.
+        //                 3중 주입(system prompt + USER_PROFILE.md + harness rules) 방지.
         if config.autoLoadHarnessRules, let ws = selectedWorkspace {
             let wsURL = URL(fileURLWithPath: ws.directoryPath)
-            systemPromptExtra = await HarnessRulesLoader.loadAll(workspaceURL: wsURL)
+            let harnessRules = await HarnessRulesLoader.loadAll(
+                workspaceURL: wsURL,
+                excludeFiles: ["USER_PROFILE"]
+            )
+            // MainActor에서 property 설정 후 session respawn
+            await MainActor.run {
+                self.autoRunSystemPromptExtra = harnessRules.isEmpty ? nil : harnessRules
+            }
         } else {
-            systemPromptExtra = ""
+            await MainActor.run {
+                self.autoRunSystemPromptExtra = nil
+            }
+        }
+
+        // harness rules를 system prompt에 반영하기 위해 session respawn.
+        // userProfilePrompt에 autoRunSystemPromptExtra가 합산돼 --append-system-prompt로 전달됨.
+        if autoRunSystemPromptExtra != nil, let ws = selectedWorkspace {
+            let agentAd = adapter(for: ws)
+            let profilePrompt = userProfilePrompt
+            if let claudeSession = try? await agentAd.spawn(in: ws, userProfilePrompt: profilePrompt) {
+                if let existing = currentClaudeSession {
+                    await agentAd.terminate(existing)
+                }
+                currentClaudeSession = claudeSession
+                let captured = claudeSession
+                streamConsumeTask?.cancel()
+                streamConsumeTask = Task { [weak self] in
+                    await self?.consumeStream(captured)
+                }
+            }
+        }
+
+        defer {
+            // AutoRun 종료 시 extra 클리어 (다음 일반 spawn에 영향 없도록)
+            Task { @MainActor [weak self] in
+                self?.autoRunSystemPromptExtra = nil
+            }
         }
 
         // state stream 구독 → autoRunState 갱신
@@ -51,17 +89,10 @@ extension AppModel {
             let prompt = promptOverride ?? "(계속)"
             let turnStart = Date()
 
-            // 첫 turn에만 harness 규칙을 prompt 앞에 prepend
-            let effectivePrompt: String
-            if !systemPromptExtra.isEmpty && turn == 1 {
-                effectivePrompt = systemPromptExtra + "\n\n---\n\n" + prompt
-            } else {
-                effectivePrompt = prompt
-            }
-
             // 실제 메시지 전송 — sendMessage() 패턴과 동일
+            // ADR-153 P1-8 — harness rules는 system prompt로 이미 주입됨 (turn-1 prepend 불필요)
             await MainActor.run {
-                self.inputText = effectivePrompt
+                self.inputText = prompt
             }
             // 50ms 대기 — UI 반영
             try await Task.sleep(nanoseconds: 50_000_000)

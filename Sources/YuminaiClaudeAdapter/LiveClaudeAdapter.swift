@@ -15,22 +15,16 @@ public final actor LiveClaudeAdapter: ClaudeAdapter {
     private let environment: [String: String]
     private let extraArguments: [String]
     private var sessionSettings: SessionSettings
-    /// ADR-108 — 매 spawn 시 호출해 사용자 프로필 system prompt를 얻는 provider.
-    /// nil이면 주입 없음. Sendable closure로 actor 격리 안전.
-    private let userProfileProvider: (@Sendable () -> String?)?
-
     public init(
         claudePath: URL,
         sessionSettings: SessionSettings = .default,
         environment: [String: String] = ProcessEnvironment.augmented(),
-        extraArguments: [String] = [],
-        userProfileProvider: (@Sendable () -> String?)? = nil
+        extraArguments: [String] = []
     ) {
         self.claudePath = claudePath
         self.sessionSettings = sessionSettings
         self.environment = environment
         self.extraArguments = extraArguments
-        self.userProfileProvider = userProfileProvider
     }
 
     public func updateSettings(_ settings: SessionSettings) {
@@ -41,7 +35,10 @@ public final actor LiveClaudeAdapter: ClaudeAdapter {
         sessionSettings
     }
 
-    public func spawn(in workspace: Workspace) async throws -> any ClaudeStreamSession {
+    /// **ADR-153 P0-1** — `userProfilePrompt`를 spawn 호출 시점에 caller(MainActor)가 직접 전달.
+    /// 이전 `userProfileProvider` 클로저 + `MainActor.assumeIsolated` 패턴 제거.
+    /// caller가 @MainActor 컨텍스트에서 프로필 string을 미리 추출해 넘긴다.
+    public func spawn(in workspace: Workspace, userProfilePrompt: String? = nil) async throws -> any ClaudeStreamSession {
         let fileManager = FileManager.default
         guard fileManager.isExecutableFile(atPath: claudePath.path) else {
             throw YuminaiError.claudeNotInstalled(path: claudePath.path)
@@ -53,14 +50,12 @@ public final actor LiveClaudeAdapter: ClaudeAdapter {
 
         // ADR-049 + ADR-055 #1 — projectProfile을 system prompt appendix로 자동 inject.
         // Anthropic prompt caching 활용 — 같은 system context는 cache 적용됨.
-        // ADR-055 #1: `systemPromptAppendix()` 사용 — 결정적 ordering으로 cache key 안정화
-        // → child process도 같은 형식으로 inject 가능 (LiveChildClaudeProcess와 동일)
-        // ADR-108 — userProfile을 projectProfile 앞에 prepend (cache 친화적 ordering).
-        //            userProfile은 자주 안 바뀌므로 앞에 두면 cache hit 유지.
+        // ADR-153 P0-1 — userProfile은 caller가 spawn 전 MainActor에서 추출해 전달.
+        //                 provider 클로저 + assumeIsolated 패턴 제거.
         var combinedExtraArgs = extraArguments
 
         // 1) userProfile (짧고 자주 안 바뀜 → 앞에)
-        if let profilePrompt = userProfileProvider?() {
+        if let profilePrompt = userProfilePrompt {
             combinedExtraArgs.append(contentsOf: ["--append-system-prompt", profilePrompt])
         }
 

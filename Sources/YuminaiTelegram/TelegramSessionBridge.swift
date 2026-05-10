@@ -74,9 +74,19 @@ public actor TelegramSessionBridge {
     /// **ADR-114-B** — HITL 자동 취소 콜백 타입.
     public typealias HITLCancelCallback = @Sendable () async -> Void
 
+    /// **ADR-153 P1-3** — LLM tool_use stream에서 `CommandPolicyMatrix`를 통해 deny 평가.
+    /// `.deny` 결과면 즉시 `onHITLCancelRequired` 콜백 + 사용자 알림.
+    /// nil이면 CommandPolicy 검사를 skip (기존 동작).
+    private var commandPolicyMatrix: CommandPolicyMatrix?
+
     public init(client: any TelegramClient, configuration: Configuration) {
         self.client = client
         self.config = configuration
+    }
+
+    /// **ADR-153 P1-3** — CommandPolicyMatrix 주입. nil로 호출하면 비활성화.
+    public func setCommandPolicyMatrix(_ matrix: CommandPolicyMatrix?) {
+        self.commandPolicyMatrix = matrix
     }
 
     /// **ADR-098 P0-1** — HITL coordinator 주입. `makeSessionBridge` 직후 호출.
@@ -133,9 +143,19 @@ public actor TelegramSessionBridge {
             guard config.forwardToolCalls else { return }
             toolCount += 1
             await flushAssistantBuffer()
+            // ADR-153 P1-3 — CommandPolicyMatrix 검사: Bash tool input에서 command 추출 후 policy 평가.
+            if let matrix = commandPolicyMatrix {
+                let command = Self.extractCommand(name: name, input: input)
+                if let cmd = command, matrix.policy(for: cmd) == .deny {
+                    let summary = Self.summarizeToolCall(name: name, input: input, maxLen: 200)
+                    await send("🚫 CommandPolicy 차단 — \(summary)")
+                    await onHITLCancelRequired?()
+                    return
+                }
+            }
             // ADR-045 R2.H1 + ADR-056 Phase 2 + ADR-098 P0-1
             // Destructive tool 감지 시 HITL coordinator가 주입돼 있으면 차단+승인 흐름 진입.
-            // coordinator가 없으면 기존 "알림만" 동작 유지.
+            // ADR-153 P1-4 — isDestructiveToolCall을 HITLActionGuard.shouldRequestApproval로 단일화.
             if Self.isDestructiveToolCall(name: name, input: input) {
                 let summary = Self.summarizeToolCall(name: name, input: input, maxLen: 200)
                 let target = requestChatId ?? config.chatId
@@ -588,24 +608,24 @@ public actor TelegramSessionBridge {
         text.count > max ? String(text.prefix(max)) + "…" : text
     }
 
-    /// ADR-045 R2.H1 — destructive tool 검출 (휴리스틱).
-    /// 이름 매칭 + Bash인 경우 input 키워드 검사.
-    static func isDestructiveToolCall(name: String, input: String) -> Bool {
+    /// **ADR-153 P1-3** — Bash/Shell tool의 `command` key를 JSON input에서 추출.
+    /// 추출 실패 시 nil (CommandPolicy 검사 skip).
+    static func extractCommand(name: String, input: String) -> String? {
         let lowerName = name.lowercased()
-        let lowerInput = input.lowercased()
-        // 직접 destructive tool 이름
-        if lowerName == "bash" || lowerName == "shell" {
-            // 알려진 위험 패턴
-            let danger = [
-                "rm -rf", "rm -r ", "rm -fr",
-                "git reset --hard", "git push --force", "git push -f",
-                "git clean -fd", "git checkout --",
-                "drop table", "drop database", "truncate ",
-                "chmod -r 777", "kill -9",
-                "dd if=", " > /dev/sd", "mkfs",
-                "shutdown", "reboot ", "halt"
-            ]
-            return danger.contains { lowerInput.contains($0) }
+        guard lowerName == "bash" || lowerName == "shell" else { return nil }
+        guard let data = input.data(using: .utf8),
+              let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+              let cmd = json["command"] as? String else { return nil }
+        return cmd
+    }
+
+    /// ADR-045 R2.H1 + **ADR-153 P1-4** — Destructive tool 검출.
+    /// `HITLActionGuard.shouldRequestApproval(command:)` 단일 source of truth로 위임.
+    /// 이전 키워드 목록 중복 제거.
+    static func isDestructiveToolCall(name: String, input: String) -> Bool {
+        // Bash/Shell만 command 추출 후 HITLActionGuard 위임
+        if let command = extractCommand(name: name, input: input) {
+            return HITLActionGuard.shouldRequestApproval(command: command)
         }
         return false
     }
